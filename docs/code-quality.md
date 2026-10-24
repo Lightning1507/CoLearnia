@@ -11,7 +11,7 @@
 | Commit CI          | Conventional Commits cho commit range của PR                                   | Đã cấu hình                                                              |
 | Dependency audit   | pnpm audit, chặn high/critical                                                 | Đã cấu hình; không tự bỏ qua khi registry lỗi                            |
 | Secret scan        | Gitleaks CLI pin phiên bản, kiểm checksum; log redacted                        | Đã cấu hình trong CI                                                     |
-| Docker smoke       | Build hai image, chạy stack, kiểm qua Nginx                                    | Đã cấu hình trên Linux runner                                            |
+| Docker smoke       | Build hai image có layer cache, chạy stack, kiểm qua Nginx                     | Chạy khi thay đổi triển khai hoặc kích hoạt thủ công                     |
 | Database check     | Replica set primary, transaction commit/rollback                               | Đã cấu hình trong CI; chưa thay test nghiệp vụ                           |
 | Dependency updates | Dependabot cho npm, Actions và Docker theo tuần                                | Kích hoạt khi file cấu hình vào main; không tự merge                     |
 | Test nghiệp vụ/E2E | Policy, API/socket ACL, nhóm, reconnect, hai mạng và TURN                      | Phát triển theo feature IDs; scaffold chưa chứng minh các luồng này      |
@@ -19,6 +19,15 @@
 Danh sách required checks thực tế nằm ở Settings của repo. Check mới chỉ được bổ sung sau khi đã chạy để xác nhận tên/kết quả; không coi việc có file workflow là bằng chứng đã pass. Mọi thay đổi cấu hình trong PR cần merge trước khi áp dụng chung từ main.
 
 Unit/HTTP tests hiện có 7 ca ở contracts và HTTP foundation. Media smoke chỉ kiểm native worker/Router, chưa xác nhận cuộc gọi. Transaction check kiểm cơ chế DB, chưa kiểm transaction nhận lời mời hoặc chuyển owner.
+
+### Khi nào chạy Docker smoke
+
+- Tự chạy khi thay Dockerfile, Compose, `.dockerignore`, nội dung `infra/`, package manifests/lockfile, cấu hình Node/pnpm/TypeScript, `.env.example`, script cài hooks hoặc chính cấu hình CI/bộ lọc Docker.
+- PR so sánh từ điểm chung với nhánh gốc; push vào main so sánh toàn bộ khoảng commit vừa đẩy. Thay đổi chỉ ở source nghiệp vụ, giao diện hoặc tài liệu bỏ qua build Docker. Các check source và bảo mật vẫn chạy.
+- Job `Docker smoke` vẫn xuất hiện và thành công khi không cần build; lỗi xác định thay đổi sẽ làm job thất bại, không âm thầm bỏ qua.
+- Có thể chạy đầy đủ bằng GitHub Actions → CI → Run workflow, chọn nhánh cần kiểm tra. Nút này xuất hiện sau khi workflow được merge vào main.
+- Buildx dùng cache layer riêng cho server/web, không đẩy image lên registry. Lần đầu hoặc khi cache bị xóa vẫn cần build lại. Thiết lập theo [Docker GitHub Actions cache](https://docs.docker.com/build/ci/github-actions/cache/).
+- Việc kiểm MongoDB/transaction trong job `check` vẫn chạy mỗi PR; đó là kiểm hạ tầng DB, không phải build cả ứng dụng bằng Docker.
 
 **CI xanh nghĩa là những phép kiểm hiện có đã qua, không bảo đảm mọi hành vi của hệ thống đều đúng.**
 
