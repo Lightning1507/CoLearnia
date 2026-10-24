@@ -1,5 +1,5 @@
-FROM node:24.22.1-bookworm-slim AS build
-RUN corepack enable && corepack prepare pnpm@11.5.2 --activate
+FROM node:26.12.1-bookworm-slim AS build
+RUN npm install --global pnpm@11.5.2
 WORKDIR /repo
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
 COPY apps/server/package.json apps/server/package.json

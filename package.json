@@ -6,13 +6,13 @@
   "type": "module",
   "packageManager": "pnpm@11.5.2",
   "engines": {
-    "node": ">=24.0.0 <25",
+    "node": ">=26.12.1 <27",
     "pnpm": "11.5.2"
   },
   "devEngines": {
     "runtime": {
       "name": "node",
-      "version": "24.22.1",
+      "version": "26.12.1",
       "onFail": "download"
     }
   },
@@ -40,7 +40,7 @@
     "@commitlint/cli": "21.2.4",
     "@commitlint/config-conventional": "21.2.4",
     "@eslint/js": "9.39.1",
-    "@types/node": "24.19.2",
+    "@types/node": "26.6.5",
     "concurrently": "10.0.6",
     "eslint": "9.39.1",
     "eslint-plugin-react-hooks": "7.1.1",
