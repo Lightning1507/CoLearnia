@@ -1,0 +1,76 @@
+name: colearnia
+
+# Local development only. Mongo has no authentication and is bound to loopback.
+services:
+  mongo:
+    image: mongo:8.0.16
+    command: ['mongod', '--replSet', 'rs0', '--bind_ip_all']
+    ports:
+      - '127.0.0.1:27017:27017'
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ['CMD', 'mongosh', '--quiet', '--eval', 'db.adminCommand({ ping: 1 }).ok']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  mongo-init:
+    image: mongo:8.0.16
+    restart: 'no'
+    depends_on:
+      mongo:
+        condition: service_healthy
+    entrypoint: ['mongosh', '--host', 'mongo:27017', '--quiet', '/scripts/init-replica-set.js']
+    volumes:
+      - ./infra/mongo/init-replica-set.js:/scripts/init-replica-set.js:ro
+
+  server:
+    profiles: ['app']
+    build:
+      context: .
+      dockerfile: apps/server/Dockerfile
+    environment:
+      NODE_ENV: development
+      HOST: 0.0.0.0
+      PORT: 3001
+      APP_ORIGIN: http://localhost:8080
+      MONGO_URI: mongodb://mongo:27017/colearnia?replicaSet=rs0&directConnection=true
+      MEDIA_ENABLED: 'true'
+      MEDIA_LISTEN_IP: 0.0.0.0
+      MEDIA_ANNOUNCED_ADDRESS: ${MEDIA_ANNOUNCED_ADDRESS:-127.0.0.1}
+      MEDIA_PORT: 40000
+    depends_on:
+      mongo-init:
+        condition: service_completed_successfully
+    ports:
+      - '127.0.0.1:40000:40000/udp'
+      - '127.0.0.1:40000:40000/tcp'
+    volumes:
+      - app-files:/app/storage
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:3001/health/ready').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
+  web:
+    profiles: ['app']
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    ports:
+      - '127.0.0.1:8080:80'
+    depends_on:
+      server:
+        condition: service_healthy
+
+volumes:
+  mongo-data:
+  app-files:

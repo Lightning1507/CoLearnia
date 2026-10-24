@@ -1,0 +1,10 @@
+packages:
+  - apps/*
+  - packages/*
+
+saveExact: true
+strictPeerDependencies: true
+allowBuilds:
+  mediasoup: true
+  esbuild: true
+  '@tailwindcss/oxide': true

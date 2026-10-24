@@ -1,0 +1,48 @@
+{
+  "name": "colearnia",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Nền tảng học tập trực tuyến với không gian cộng tác và thảo luận nhóm thời gian thực",
+  "type": "module",
+  "packageManager": "pnpm@11.5.2",
+  "engines": {
+    "node": ">=24.0.0 <25",
+    "pnpm": "11.5.2"
+  },
+  "devEngines": {
+    "runtime": {
+      "name": "node",
+      "version": "24.22.1",
+      "onFail": "download"
+    }
+  },
+  "scripts": {
+    "dev": "pnpm --filter @colearnia/contracts build && concurrently -k -n contracts,server,web \"pnpm --filter @colearnia/contracts dev\" \"pnpm --filter @colearnia/server dev\" \"pnpm --filter @colearnia/web dev\"",
+    "build": "pnpm -r --sort run build",
+    "typecheck": "pnpm --filter @colearnia/contracts build && pnpm -r --sort run typecheck",
+    "lint": "eslint . --max-warnings=0",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "pnpm --filter @colearnia/contracts build && vitest run",
+    "test:watch": "vitest",
+    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build",
+    "infra:up": "docker compose up -d --wait mongo && docker compose run --rm mongo-init",
+    "infra:down": "docker compose down",
+    "infra:config": "docker compose config --quiet",
+    "media:smoke": "pnpm --filter @colearnia/server media:smoke",
+    "doctor": "node scripts/doctor.mjs"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.39.1",
+    "@types/node": "24.19.2",
+    "concurrently": "10.0.6",
+    "eslint": "9.39.1",
+    "eslint-plugin-react-hooks": "7.1.1",
+    "eslint-plugin-react-refresh": "0.5.7",
+    "globals": "17.13.0",
+    "prettier": "3.9.10",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.72.0",
+    "vitest": "5.0.5"
+  }
+}
