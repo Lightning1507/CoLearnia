@@ -53,6 +53,7 @@ CoLearnia/
 │   ├── nginx/              # REST/socket/SPA proxy cho local Compose
 │   └── coturn/             # Hướng dẫn cấu hình TURN cho PoC
 ├── docs/
+│   ├── technical-plan.md   # v2 — nguồn phạm vi chính
 │   ├── adr/                # Quyết định kiến trúc
 │   ├── contracts/          # Quy ước giao tiếp
 │   ├── runbooks/           # Vận hành và môi trường
@@ -62,7 +63,6 @@ CoLearnia/
 ├── storage/                # Dữ liệu local, không commit
 ├── .github/                # CI và PR template
 ├── docker-compose.yml
-├── TECHNICAL-PLAN.md        # v2 — nguồn phạm vi chính
 └── project-overview.html    # Giới thiệu ý tưởng sản phẩm
 ```
 
@@ -84,6 +84,12 @@ Thư mục module chưa triển khai được giữ bằng `.gitkeep`. Khi thêm
 
 Không dùng `docker compose down -v` nếu cần giữ dữ liệu. Không commit `.env`, token, certificate key, database hoặc frame tạm.
 
+## Hooks và CI
+
+`pnpm install` cài pre-commit và commit-msg hooks khi repo có Git. `pnpm lint:staged` kiểm file staged; `pnpm audit` kiểm dependency, chặn advisory high/critical.
+
+CI kiểm source, format commit trong PR, dependency audit, secret scan, transaction DB và build/chạy Docker qua Nginx. Dependabot được cấu hình tạo PR cập nhật dependency, Actions và Docker theo tuần sau khi cấu hình vào main; không tự merge. Xem [code quality](docs/code-quality.md) và [quy ước commit](CONTRIBUTING.md).
+
 ## Trạng thái bản init
 
 Đã có: monorepo, contracts nền, React shell đọc trạng thái server thật, Express có error envelope/request ID, kiểm biến môi trường, database connector, Socket.IO entry point, media runtime và smoke test; format/lint/typecheck/test/build; Compose local và CI.
@@ -102,7 +108,7 @@ Web local Compose: <http://localhost:8080>. Mongo/media ports chỉ bind loopbac
 
 ## Cách nhận việc
 
-1. Đọc [TECHNICAL-PLAN.md](TECHNICAL-PLAN.md), đặc biệt mục 1–5 và 15–16.
+1. Đọc [technical-plan.md](docs/technical-plan.md), đặc biệt mục 1–5 và 15–16.
 2. Chọn feature ID và reviewer; theo [CONTRIBUTING.md](CONTRIBUTING.md).
 3. Bắt đầu PoC tuần 1: B+C media/policy; D freeze/audio; A identity/Workspace; E Linux/staging/TURN.
 4. Giữ `main` build được; mỗi PR cập nhật contract và test có liên quan.

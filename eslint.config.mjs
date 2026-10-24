@@ -15,7 +15,13 @@ export default tseslint.config(
   {
     files: ['infra/mongo/*.js'],
     languageOptions: {
-      globals: { rs: 'readonly', db: 'readonly', sleep: 'readonly', print: 'readonly' },
+      globals: {
+        rs: 'readonly',
+        db: 'readonly',
+        sleep: 'readonly',
+        print: 'readonly',
+        ObjectId: 'readonly',
+      },
     },
   },
   {
