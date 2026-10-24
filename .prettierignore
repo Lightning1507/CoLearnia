@@ -3,6 +3,6 @@ dist
 coverage
 pnpm-lock.yaml
 docs/archive
-TECHNICAL-PLAN.md
+docs/technical-plan.md
 project-overview.html
 storage
