@@ -6,13 +6,14 @@ Monorepo khởi tạo theo technical plan v2: Workspace → kênh TEXT/LIVE → 
 
 ## Bắt đầu
 
-Yêu cầu: Node **24.22.1**, pnpm **11.5.2** và Docker Desktop chạy Linux containers. Phiên bản runtime/package manager được ghi ở `.node-version` và `package.json`. pnpm có thể tải runtime của project theo `devEngines.runtime`; không cần thay Node toàn máy.
+Yêu cầu: Node **26.12.1**, pnpm **11.5.2** và Docker Desktop chạy Linux containers. Phiên bản runtime/package manager được ghi ở `.node-version` và `package.json`. pnpm có thể tải runtime của project theo `devEngines.runtime`; không cần thay Node toàn máy.
 
 ```sh
-corepack enable
-corepack prepare pnpm@11.5.2 --activate
+npm install --global pnpm@11.5.2
 pnpm install
 ```
+
+Project cài pnpm trực tiếp bằng npm, không cần Corepack. Nếu máy từng dùng shim Corepack và npm báo `EEXIST`, chạy `corepack disable` rồi cài lại pnpm. Kiểm tra runtime thực tế bằng `pnpm exec node --version` (phải là `v26.12.1`).
 
 Tạo `.env` tại root từ `.env.example`:
 
