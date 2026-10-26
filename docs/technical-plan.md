@@ -1,12 +1,18 @@
 # CoLearnia — Technical plan
 
-**Phiên bản:** 2.0 · 24/10/2026  
+**Phiên bản:** 2.1 · cập nhật 26/10/2026, trên nền v2.0 ngày 24/10/2026\
 **Đề tài:** Nền tảng học nhóm trực tuyến tích hợp chia sẻ màn hình và tương tác thời gian thực.  
 **Nhóm:** 5 thành viên, ký hiệu A–E để gán tên khi khởi động.  
 **Thời gian mục tiêu:** 4 tuần xây dựng và kiểm thử tích hợp; 1–2 tuần tiếp theo hoàn thiện triển khai, tài liệu và chuẩn bị bảo vệ.  
-**Trạng thái:** phạm vi sản phẩm đã thống nhất; kiến trúc nền được chọn cho triển khai; nền media cần qua PoC đầu tuần 1. Chưa có mã nguồn hoặc số đo để xác nhận hiệu năng và lịch hoàn thành.
+**Trạng thái:** phạm vi sản phẩm đã thống nhất; repository đã có scaffold web/server/contracts, cấu hình CI và hạ tầng local. Môi trường local đã cài dependency, khởi tạo MongoDB replica set và chạy mediasoup worker; web/API và readiness đã được kiểm tra. Các luồng nghiệp vụ chưa được triển khai đầy đủ; nền media vẫn cần qua PoC đầu tuần 1. Chưa có số đo cuộc gọi thực để xác nhận hiệu năng hoặc lịch hoàn thành.
 
 Tài liệu là cơ sở chung để tạo backlog, viết contracts, triển khai và nghiệm thu. Các quy tắc nghiệp vụ dưới đây là thiết kế của CoLearnia; không phải API có sẵn của thư viện. Thông số ghi “khởi đầu” hoặc “mục tiêu thử” phải được kiểm chứng, không dùng làm cam kết hiệu năng.
+
+**Cập nhật v2.1:** đồng bộ runtime với repository sang Node.js 26.12.1/pnpm 11.5.2 và ghi nhận hiện trạng scaffold/local. Giữ nguyên phạm vi, kiến trúc sản phẩm và lộ trình v2.0. Các mục triển khai và kiểm thử bên dưới mô tả đích cần đạt; trạng thái đã hoàn thành phải đối chiếu source và evidence theo commit/môi trường. Native media smoke chỉ xác nhận worker/Router khởi động, chưa chứng minh camera/mic, cách ly nhóm hoặc TURN.
+
+**Tổ chức nguồn ngày 26/10/2026:** các mục nghiệp vụ, kiến trúc và dữ liệu đã được chuyển sang tài liệu theo miền, giữ nguyên nội dung baseline. Các heading bên dưới dẫn tới nguồn chi tiết; [mục lục tài liệu](README.md) ghi cách đọc và thứ tự xử lý khi có mâu thuẫn.
+
+**Trạng thái quyết định:** plan có cả quy tắc đã chốt, thiết kế khung, cấu hình thử và thông tin cần nhóm xác nhận; không phải mọi chi tiết implementation đều đã được chọn. Xem [bản đồ trạng thái](decision-status.md) để tra đúng nguồn. Review harness ngày 26/10 đã làm rõ cách diễn đạt ownerId trong tài liệu database, không đặt thêm unique index hoặc thay quy tắc một owner/Workspace.
 
 ## Mục lục
 
@@ -32,103 +38,11 @@ Tài liệu là cơ sở chung để tạo backlog, viết contracts, triển kh
 
 ## 1. Mục tiêu, ràng buộc và phạm vi
 
-### 1.1. Mục tiêu sản phẩm
-
-CoLearnia cung cấp Workspace lâu dài cho lớp hoặc nhóm học. Thành viên trao đổi trong kênh văn bản, vào phòng để gọi mic/camera và chia sẻ màn hình. Trong buổi học có điều hành, các nhóm nói và vẽ riêng nhưng vẫn nhận màn hình, tiếng giảng chung. Nhóm có thể dừng hình để cùng giải bài, nhận hỗ trợ, rồi công bố bài làm trước phòng.
-
-**Build xong sau tuần 4** nghĩa là toàn bộ chức năng thuộc scope đã tích hợp, chạy trên staging qua Internet, có xử lý lỗi và đạt kiểm thử bắt buộc. Hoàn thành module riêng hoặc chạy mock không được tính là hoàn thành luồng sản phẩm. Tuần 5–6 không được lập kế hoạch như thời gian viết phần lõi còn thiếu.
-
-### 1.2. Phạm vi bắt buộc và mức triển khai
-
-Tất cả các dòng dưới đây thuộc bản hiện tại, bao gồm camera, tài liệu, hỗ trợ riêng và trình bày toàn phòng.
-
-| ID | Chức năng | Mức triển khai và tiêu chí chính |
-|---|---|---|
-| AUTH-01 | Tài khoản | Đăng ký/đăng nhập/đăng xuất; refresh còn phiên; logout và hết hạn chặn REST/socket/media |
-| WS-01 | Workspace | Tạo, liệt kê, sửa tên, xóa; một owner, admin/member; tạo owner membership nguyên tử |
-| WS-02 | Lời mời | Link có hạn dùng, thu hồi và giới hạn lượt; join lặp không trùng thành viên |
-| WS-03 | Thành viên | Xem, đổi admin/member, loại thành viên, chuyển owner; không tự nâng quyền |
-| CH-01 | Kênh TEXT/LIVE | Tạo/đổi tên/xóa; loại bất biến; kênh còn khi phòng trống; quyền WORKSPACE/RESTRICTED đơn giản |
-| CHAT-01 | Chat | Tin văn bản, ảnh/tệp đính kèm, phân trang lịch sử kênh; có pending/error và chống gửi trùng |
-| FILE-01 | Tài liệu | Upload/download qua API kiểm quyền; chưa có sửa nội dung hay quản lý phiên bản |
-| LIVE-01 | Vào/rời | Lobby thiết bị, danh sách tham gia; một phiên sống/kênh và một call owner/tài khoản |
-| LIVE-02 | Mic và camera | Bật/tắt, chọn thiết bị cơ bản; truyền thật qua Internet; từ chối thiết bị vẫn có thể vào xem |
-| LIVE-03 | Screen share | Một nguồn chính, có lease; quyền share rõ; browser Stop dọn nguồn; screen audio khi môi trường hỗ trợ |
-| HOST-01 | Điều hành | FREE/MODERATED, nhận/chuyển host có thông báo và xác nhận; không chiếm host đang hợp lệ |
-| GRP-01 | Nhóm nhỏ | Host tạo/phân/chuyển/đóng nhóm; thành viên nhìn thấy nhóm và phạm vi hiện tại |
-| GRP-02 | Nguồn chung, trao đổi riêng | Screen chung; mic/camera/chat/board riêng đúng nhóm; chuyển nhóm thu đường nhận cũ |
-| BOARD-01 | Vẽ cơ bản | Bút, màu, con trỏ, undo nét gần nhất của mình, clear theo quyền; không làm tẩy theo từng điểm |
-| FREEZE-01 | Freeze/resume | Một frame chung/scope, audio tiếp tục; resume đến hình hiện tại, ẩn nét cũ |
-| HELP-01 | Hỗ trợ riêng | Gửi tin/ảnh hỏi host; host vào hỗ trợ có thông báo; tiếng hỗ trợ không sang nhóm khác |
-| FLOOR-01 | Phát biểu nhóm | Mời toàn bộ nhóm; từng người consent; chỉ mic đang bật của người đồng ý phát toàn phòng |
-| PRESENT-01 | Công bố bài làm | Một projection của context đã chọn, hình+nét; không công bố chat/history hay camera nhóm |
-| AUDIO-01 | Âm lượng | Mỗi người 0–100% cục bộ; giảm tiếng thảo luận khi announcement rồi khôi phục đúng |
-| REC-01 | Reconnect | Xác thực lại, snapshot lọc quyền, khôi phục media theo trạng thái hiện tại; không lấy lại grant cũ |
-
-Camera chưa có nền ảo, bộ lọc, làm đẹp. Vẽ chưa có hình khối, text, transform, nhận dạng chữ, bảng vô hạn hoặc CRDT. Quản lý quyền không có permission override nhiều tầng.
-
-### 1.3. Ngoài scope của đợt này
-
-- Quiz, câu hỏi/bình chọn A/B/C/D; đồng hồ; trạng thái tiến độ nhóm.
-- Thư viện bài làm, lưu/export ảnh lời giải lâu dài thành artifact.
-- Freeze cá nhân tách khỏi board nhóm; screen share riêng song song từng nhóm.
-- Ghi hình toàn phiên, VOD/HLS, phụ đề AI, chạy code trên server, điều khiển máy từ xa.
-
-Không xây collections, endpoints hoặc màn hình cho những phần trên trong đợt này. Frame tạm phục vụ freeze và ảnh được người dùng gửi vào chat là hai luồng riêng; hệ thống không tự lưu frame thành tài liệu.
-
-### 1.4. Ràng buộc và giả định phải theo dõi
-
-| Nội dung | Quyết định/giả định hiện tại | Người theo dõi |
-|---|---|---|
-| Nhóm và thời gian | 5 người, 4 tuần build + 1–2 tuần hoàn thiện | Cả nhóm |
-| Ngày bắt đầu/nộp | Chưa có ngày lịch; tuần tính từ kickoff | E ghi vào backlog |
-| Giờ làm thực tế | Chưa xác nhận; khai báo giờ/người/tuần trước khi nhận issue | Từng người |
-| Ngân sách | Chưa xác nhận; cần VPS/public IP, domain/TLS, băng thông và backup | E |
-| Kỹ năng WebRTC | Chưa xác nhận; PoC để đo năng lực triển khai | B+C, D hỗ trợ |
-| MongoDB | Chọn cho kế hoạch; A xác nhận yêu cầu học phần khi kickoff | A |
-| Browser | Chrome/Edge desktop là môi trường nghiệm thu; Firefox kiểm bổ sung; mobile để sau | D+E |
-| Runtime | Một app instance, một mediasoup worker ban đầu; không HA | B+E |
-| Mất server | Kết thúc media cũ, join mới; không cam kết giữ nét chưa lưu | B+C+D |
-
-Đây là kế hoạch mục tiêu, chưa là lời bảo đảm hoàn thành trong 4 tuần. Không tự đưa chức năng chính sang “nếu kịp”. Nếu capacity thiếu, nhóm cập nhật quyết định phạm vi/lịch một cách rõ ràng theo mục 18.
+Nguồn chi tiết: [phạm vi, ràng buộc và giả định](product/scope.md). Nội dung được chuyển từ v2.1, giữ nguyên quy tắc và số mục để truy vết.
 
 ## 2. Luồng nghiệm thu và mô hình nghiệp vụ
 
-### 2.1. Ba luồng bắt buộc
-
-**UC-01 — Tổ chức việc học:** đăng ký/đăng nhập → tạo Workspace → mời thành viên → tạo TEXT/LIVE → gửi tin/ảnh/tệp → thành viên khác đọc/tải đúng quyền. Người ngoài không tải được tệp bằng ID/URL lấy được.
-
-**UC-02 — Học nhóm tự do:** vào LIVE → bật mic/camera → một người share → cả phòng cùng freeze, vẽ và chỉnh âm lượng → resume → rời/vào lại. Không cần bật chế độ host để gọi tự do.
-
-**UC-03 — Buổi học có hướng dẫn:** nhận host → share bài giảng → chia ít nhất hai nhóm → riêng tư mic/camera/chat/board, chung screen và tiếng giảng → freeze/vẽ → hỏi host, host hỗ trợ riêng → quay lại hướng dẫn → mời nhóm, từng người consent → công bố bài làm → thu quyền → đóng nhóm/phiên.
-
-Kiểm lỗi và reconnect được chèn vào cả ba luồng, không chỉ demo đường đi thành công.
-
-### 2.2. Mô hình và thời gian tồn tại
-
-```text
-User
-└── Workspace
-    ├── Membership: owner / admin / member
-    ├── Channel TEXT → Conversation CHANNEL → Message / Attachment
-    └── Channel LIVE → LiveSession hiện tại
-                        ├── Participants + host + MAIN
-                        ├── BreakoutGroup A → chat + BoardContext riêng
-                        ├── BreakoutGroup B → chat + BoardContext riêng
-                        └── FloorGrant + PresentationView tạm
-```
-
-| Khái niệm | Vòng đời |
-|---|---|
-| Workspace/Channel | Lâu dài đến khi xóa; LIVE channel không phải cuộc gọi |
-| LiveSession | Một lượt sử dụng LIVE; ACTIVE → ENDING → ENDED |
-| SessionParticipant | Danh tính tham gia phiên; khác membership trong Workspace |
-| MAIN | Phạm vi người chưa vào nhóm; không là một kênh mới |
-| BreakoutGroup | Thuộc đúng một session; runtime và dữ liệu riêng bị khóa khi đóng |
-| BoardContext | Ngữ cảnh hình/nét của MAIN hoặc group, có version riêng |
-| Producer/Consumer | Object mediasoup trong RAM; không khôi phục bằng ID sau restart |
-
-Các bất biến: tối đa một session ACTIVE/ENDING giữ chỗ mỗi LIVE channel; một call owner generation/tài khoản; một main share; một floor active; một presentation active; một Consumer cho mỗi participant/producer.
+Nguồn chi tiết: [ba use case và vòng đời khái niệm](product/scope.md). Nội dung được chuyển từ v2.1, giữ nguyên quy tắc và số mục để truy vết.
 
 ## 3. Công nghệ và quyết định kiến trúc
 
@@ -139,7 +53,7 @@ Các bất biến: tối đa một session ACTIVE/ENDING giữ chỗ mỗi LIVE 
 | Web | React + TypeScript + Vite | Một app; giữ call controller khi đổi tab/panel |
 | UI | Tailwind, components chung | Mic/camera/scope/consent có trạng thái nhất quán |
 | State | Zustand + TanStack Query | Session projection và REST cache tách nhau; không persist track/transport |
-| Server | Node.js 24 LTS + Express + TypeScript | Pin patch và lockfile sau compatibility smoke test |
+| Server | Node.js 26.12.1 + Express + TypeScript | Runtime pin đồng bộ local/CI/Docker; pnpm 11.5.2, cài theo lockfile |
 | Validation/contracts | Zod trong packages/contracts | Kiểm runtime ở biên; types không thay validation |
 | Database | MongoDB + Mongoose, replica set một node | Transaction cho thao tác nhiều bản ghi; không có HA |
 | Realtime | Socket.IO | Signaling, chat, board; ack/dedupe/snapshot do app xây |
@@ -151,6 +65,10 @@ Các bất biến: tối đa một session ACTIVE/ENDING giữ chỗ mỗi LIVE 
 | CI | GitHub Actions | Lint/typecheck/tests/build; image theo commit SHA |
 
 Không cần Next.js, Kafka, Kubernetes hoặc một media microservice riêng cho topology đầu tiên. Framework web không giải quyết thay policy và vòng đời media.
+
+Runtime thực thi được xác định bởi `.node-version`, `package.json` (`engines`, `devEngines.runtime`, `packageManager`), lockfile và Dockerfiles. `devEngines.runtime` cho phép pnpm tải Node 26.12.1 và dùng runtime đó cho scripts của project. Kiểm sau cài bằng `pnpm exec node --version` và `pnpm doctor`; phiên bản trả về từ `node --version` ngoài pnpm có thể khác. Không bắt buộc thay Node mặc định của máy nếu pnpm chạy đúng runtime đã pin. Xem [runbook local](runbooks/local-development.md).
+
+Khi đổi runtime, cập nhật các nguồn pin và `@types/node` tương thích trong cùng thay đổi; chạy `pnpm check`, `pnpm media:smoke` và Docker smoke trên Linux trước khi merge. Các kiểm tra local đã qua không thay bằng chứng chạy image Linux hoặc PoC media qua Internet. Dependency tiếp tục dùng phiên bản chính xác trong manifests/lockfile; không tự nâng chỉ để lấy phiên bản mới nhất.
 
 ### 3.2. Sổ quyết định
 
@@ -169,305 +87,41 @@ Mỗi ADR trong repo ghi context, constraints, alternatives, decision, consequen
 
 ## 4. Kiến trúc, module và trạng thái
 
-```mermaid
-flowchart LR
-  B[React browser] <-->|HTTPS REST / Socket.IO| N[Nginx]
-  N <--> A[Node app: services + session manager + policy]
-  A <--> DB[(MongoDB replica set)]
-  A <--> F[(Private files / temporary frames)]
-  A -->|Media adapter| W[mediasoup worker / Router]
-  B <-->|WebRTC| W
-  B <-->|Relay khi cần| T[coturn]
-  T <--> W
-```
-
-HTTPS/Socket.IO là control plane; RTP audio/video/screen là media plane. Ảnh/tệp đi HTTP; event chỉ mang ID/metadata. Nginx không là HTTP proxy cho RTP. Một Router thuộc một worker; thêm CPU không tự chia một phiên lên nhiều lõi. [mediasoup scalability](https://mediasoup.org/documentation/v3/scalability/).
-
-### 4.1. Chủ sở hữu trạng thái
-
-| Module | Sở hữu | Không được tự làm |
-|---|---|---|
-| Auth/Workspace/Channel | Auth, membership, channel access | Tự cho admin nghe nhóm chưa tham gia |
-| Session manager | SessionState, participant/group, queue, call epoch | Chờ upload/picker/client ack lâu trong queue |
-| Policy | canPublish/canConsume/canReadBoard/canReadFile/projectSessionFor | Gọi UI hoặc tự tạo media |
-| Media adapter | Worker/router/transports/producers/consumers | Tin scope/owner do client khai |
-| Board service | Intent, frame context, strokes, board sequence | Ghi DB từng pointer event |
-| Chat/File service | Dữ liệu bền vững, dedupe, metadata/ACL | Phục vụ file chỉ vì biết ID |
-| Frontend controller | Runtime track/audio registry và projection để render | Cấp quyền dựa vào state cục bộ |
-
-REST/socket handlers validate/auth → gọi cùng application service → trả envelope. Không sao chép policy vào từng handler. Media adapter tối thiểu có publish/closeProducer/reconcileAllowedSources/closeParticipant/getStats; không dựng framework nhiều SFU trước nhu cầu.
-
-### 4.2. Runtime và thứ tự thay đổi
-
-```ts
-type SessionState = {
-  id: string; epoch: string;
-  mode: 'FREE' | 'MODERATED';
-  status: 'ACTIVE' | 'ENDING' | 'ENDED';
-  policyRevision: number;
-  hostParticipantId: string | null;
-  hostVoiceScope: 'GLOBAL' | 'GROUP' | 'MAIN';
-  helpTargetGroupId: string | null;
-  breakoutEnabled: boolean;
-  mainScreenProducerId: string | null;
-  screenSourceRevision: number;
-  activeFloorGrantId: string | null;
-  activePresentationId: string | null;
-  announcementId: string | null;
-};
-```
-
-Session manager serialize mutation quyền, không serialize mọi điểm vẽ. Chuyển nhóm/kick/revoke: dựng deny barrier → tính state mới → đóng media/fanout trái quyền → commit state → cấp media mới → gửi projection mới. Nếu lỗi, giữ nguồn bị thu ở trạng thái đóng, yêu cầu resync; không giữ tiếng riêng để UI trông liền mạch. Phần audio đã nhận/buffer không thể thu hồi tuyệt đối.
-
-`policyRevision` dùng cho quyền; `boardVersion` cho context; `strokeSequence` cho nét; `epoch` cho đời session; `callGeneration` cho chủ kết nối. Reserve intent ngắn trong queue, nhả queue cho I/O rồi kiểm epoch/version/quyền lại khi commit. Mọi resource đang tạo phải được đăng ký pending để revoke có thể hủy, hoặc đóng ngay khi phát hiện state đã cũ.
+Nguồn chi tiết: [module, chủ sở hữu trạng thái và thứ tự mutation](architecture.md). Nội dung được chuyển từ v2.1, giữ nguyên quy tắc và số mục để truy vết.
 
 ## 5. Phân quyền phát, nhận và công bố
 
-### 5.1. Ba lớp quyền
-
-Workspace: owner/admin/member. Session: host/member. Grant cụ thể: publish/share, board, floor, presentation. Admin không mặc nhiên là host và không nghe nhóm riêng. Owner/admin quản lý kênh; member không tự đổi role. RESTRICTED dùng allowlist rõ; owner/admin quản lý cấu hình không đồng nghĩa tự có quyền đọc private session.
-
-Host chỉ điều hành session mà mình đang tham gia. FREE không có breakout. Một participant có thể yêu cầu chuyển FREE → MODERATED và nhận host nếu chưa có host, qua mutation nguyên tử và thông báo toàn phòng; không cướp host. Chuyển về FREE đóng nhóm, floor/presentation/help/announcement theo đúng thứ tự thu quyền.
-
-### 5.2. Quyền publish
-
-| Nguồn/thao tác | FREE | MODERATED |
-|---|---|---|
-| MIC | Participant tự bật/tắt; tối đa một nguồn | Tương tự; nơi nhận theo policy, không theo client |
-| CAMERA | Participant tự bật/tắt; tối đa một nguồn | Tương tự; không tự global khi floor active |
-| Xin share | Participant hợp lệ, không có lease khác | Host; hoặc người được host cấp share grant hiện hành |
-| SCREEN | Chỉ chủ lease, một nguồn video | Cùng quy tắc và share grant còn hạn |
-| SCREEN_AUDIO | Tối đa một audio đi kèm lease/screen | Cùng quy tắc; thu cùng screen/grant |
-| Freeze/vẽ | Participant trong MAIN có board access | Participant cùng group; host khi đang hỗ trợ; MAIN theo board access |
-| Clear board | Chủ frame còn trong scope, hoặc chủ share ở LIVE | Thêm host nếu có quyền đọc/vẽ context hiện tại |
-
-Undo chỉ tác động nét do mình tạo. Server kiểm actor, transport ownership, kind/source, quota, epoch, grant và lease. Khi lease/grant bị thu, nguồn liên quan cũng bị đóng. Share grant không phải floor grant.
-
-Server kiểm quyền publish và định tuyến, không chứng thực được nội dung audio thật sự là mic hay tab chỉ từ nhãn nguồn. Bản đầu không cam kết chống publisher cố ý đưa nội dung khác vào track được phép công bố.
-
-### 5.3. Quyền nhận và đọc
-
-| Nguồn | Người được nhận |
-|---|---|
-| Main screen + screen audio | Participant đang có quyền session/channel |
-| MIC/CAMERA trong FREE | Các participant MAIN, trừ chính nguồn cần tránh self audio |
-| MIC/CAMERA thành viên khi breakout | Cùng group; MAIN chỉ nghe/xem MAIN; host được nhận group đang hỗ trợ |
-| MIC host khi GLOBAL | Cả session |
-| MIC host khi GROUP | Chỉ group đang hỗ trợ |
-| CAMERA host trong MODERATED | Cả session; không dùng camera để suy ra quyền audio |
-| MIC người có floor ACTIVE + consent | Toàn session, lấy hợp với quyền nhóm, không nhân đôi |
-| CAMERA người có floor | Giữ phạm vi cũ; không tự mở rộng |
-| Board/chat nhóm | Participant hiện thuộc nhóm; host đọc board/chat khi đang hỗ trợ |
-| HOST_PRIVATE | Người gửi và đúng host nhận ban đầu, khi phiên ACTIVE và cả hai còn quyền kênh |
-| Presentation | Participant session đọc projection đã chọn khi presentation còn ACTIVE |
-
-`canConsume` kiểm đúng đời Producer và trạng thái hiện tại, rồi mới kiểm codec bằng `router.canConsume()`. Được quyền mới tạo/resume Consumer; thu quyền đóng Consumer server. Danh sách nguồn và event được lọc; Socket.IO room chỉ do server quản lý. [mediasoup communication](https://mediasoup.org/documentation/v3/communication-between-client-and-server/).
-
-### 5.4. Snapshot và dữ liệu lịch sử
-
-`projectSessionFor(viewer)` chỉ trả metadata được phép: danh sách nhóm/số người có thể công khai trong session; producer IDs private, frame URL, nét, tin riêng và consent cá nhân chỉ tới audience phù hợp. Không gửi raw runtime map. Presentation không dùng endpoint board riêng của group.
-
-Khi đổi scope: rời fanout cũ, cập nhật `audienceEpoch`, xóa dữ liệu private cũ trong client cache, rồi nhận snapshot mới. Client bỏ event cũ theo epoch/version nhưng server vẫn phải chặn phát sai. Không bật tự replay packet private của Socket.IO; reconnect dùng snapshot mới và API lịch sử có ACL. [Socket.IO recovery](https://socket.io/docs/v4/connection-state-recovery/).
-
-Người mới vào group được đọc phần lịch sử group trong phiên đang ACTIVE; người rời mất quyền đọc tiếp. Host chỉ đọc group khi đang hỗ trợ. Đóng group/session khóa API đọc private, không mở rộng sang Workspace. Nội dung đã được người nhận xem hoặc tải không thể thu hồi khỏi bộ nhớ/ảnh chụp của họ.
+Nguồn chi tiết: [quyền publish/consume, snapshot và lịch sử](product/groups-media-policy.md). Nội dung được chuyển từ v2.1, giữ nguyên quy tắc và số mục để truy vết.
 
 ## 6. Cuộc gọi, camera và chia sẻ màn hình
 
-### 6.1. Join và quyền sở hữu call
-
-1. `POST /channels/:cid/live-session/join` xác thực membership/channel, lấy khóa channel và tìm/tạo session; unique DB bảo vệ bản ghi; dọn Router tạo thừa nếu DB insert thất bại.
-2. Cấp join ticket một lần, hạn 60 giây, gắn auth session/user/channel/session epoch. API retry cùng requestId không tạo phiên/ticket dùng song song.
-3. `session.join` consume ticket, kiểm lại quyền, giữ khóa theo user để cấp callGeneration. Nếu tài khoản đã gọi nơi khác, trả `CALL_ALREADY_ACTIVE`, UI yêu cầu người dùng chủ động chuyển phiên.
-4. Chuyển phiên: deny nguồn cũ → đóng tài nguyên cũ → tăng generation → bind participant mới. Late event từ socket cũ không đóng call mới. Unique participant theo session không thay registry toàn user.
-5. Trả projection, RTP capabilities, tham số send/recv transport. Client tạo transport, connect và xin publish nguồn được phép.
-6. Consumer server tạo paused → client gắn track và báo ready → server kiểm lại quyền/generation → resume hoặc close. [mediasoup communication](https://mediasoup.org/documentation/v3/communication-between-client-and-server/).
-
-Quy ước tránh deadlock: khi thực sự cần khóa lồng nhau, thứ tự là user ownership → channel lifecycle → session mutation; không lấy user/channel lock từ trong session queue. REST lấy channel lock đơn lẻ phải nhả trước khi trả ticket. Takeover giữ quyền chuyển theo user, reconcile từng session tuần tự, không khóa hai session cùng lúc; không giữ bất kỳ mutex nào khi chờ callback client. Cleanup registry dùng compare-and-delete theo generation để không cần đảo thứ tự khóa. Mọi close idempotent. Join bị hủy/time out phải dọn participant/ticket/resource pending.
-
-### 6.2. Thiết bị và camera
-
-- Xin mic/camera từ thao tác người dùng; lỗi permission/device có thông báo. Mic/camera tắt không bị server tự bật.
-- Đổi thiết bị bằng thay track tương thích hoặc đóng/tạo nguồn có kiểm quyền; một generation không có hai Producer MIC/CAMERA hoạt động.
-- Cấu hình thử đầu tiên: camera khoảng 360p–480p/15fps, screen ưu tiên chữ rõ khoảng 720p–1080p/5–15fps; là điểm bắt đầu để đo, không bảo đảm chất lượng mọi mạng.
-- Bản nghiệm thu 5 participant phải hiển thị được các camera hợp lệ. Khi thử tải cao hơn, page/pin tile và subscribe theo viewport; không nhận camera trái quyền dù UI ẩn.
-- Codec baseline được chọn sau smoke test browser mục tiêu, ghi chính xác vào config/lockfile; chưa cần nhiều codec hay simulcast phức tạp trước khi có số đo.
-
-### 6.3. Share lease và browser picker
-
-Flow chính để giữ user activation: xin lease từ server → khi được cấp hiển thị nút **“Chọn màn hình để chia sẻ”** → click gọi `getDisplayMedia()` trực tiếp → tạo Producer nếu lease/grant còn hợp lệ. Nếu hết lease/hủy picker/thua quyền: stop toàn bộ track vừa lấy, release lease và báo thử lại. Không giữ queue khi chờ picker.
-
-API yêu cầu thao tác người dùng và browser picker; không tự chọn màn hình hay tái dùng quyền capture. Audio phụ thuộc browser/OS/nguồn người dùng chọn. [MDN getDisplayMedia](https://developer.mozilla.org/en-US/docs/Web/API/MediaDevices/getDisplayMedia).
-
-Lease chờ picker khởi đầu 30 giây; khi commit chuyển thành share ownership gắn participant/generation, được giám sát theo signaling lease. Browser Stop/track ended/rời/kick/thu share grant: đóng SCREEN và SCREEN_AUDIO, release ownership, tăng source revision, hủy freeze intent cũ, xóa live overlay cũ. Frame đã FROZEN vẫn có thể dùng đến resume/cleanup nhưng hiển thị nguồn cũ đã dừng; không giả còn live.
-
-Một Producer có thể được nhận qua nhiều lý do quyền, nhưng chỉ tạo một Consumer mỗi receiver/producer. Client registry cũng chống attach audio hai lần.
+Nguồn chi tiết: [join, call ownership, thiết bị và screen lease](product/live-session.md). Nội dung được chuyển từ v2.1, giữ nguyên quy tắc và số mục để truy vết.
 
 ## 7. Freeze, vẽ cơ bản và presentation
 
-### 7.1. Board và thao tác cơ bản
-
-Mỗi scope có một board chung: MAIN ở phòng tự do/phần phòng chính, hoặc một group. Thành viên freeze/resume tác động đúng scope, UI ghi rõ “Tạm dừng hình của nhóm” và “Cho nhóm trở lại trực tiếp”. Chưa có freeze cá nhân.
-
-```ts
-type BoardState = {
-  id: string; scopeId: string; version: number;
-  status: 'LIVE' | 'FREEZING' | 'FROZEN';
-  sourceRevision: number; frameId: string | null;
-  strokeSequence: number;
-};
-type Stroke = {
-  id: string; boardId: string; contextVersion: number;
-  frameId: string | null; sourceRevision: number;
-  authorParticipantId: string; // server gán
-  points: Array<{ x: number; y: number }>; // 0..1
-  color: string; width: number;
-};
-```
-
-- Bút, palette màu, con trỏ, undo nét gần nhất của mình; clear toàn context theo quyền ở mục 5 và xác nhận.
-- FROZEN cho nét bền trong context hiện tại; LIVE dùng con trỏ/nét chỉ ngắn tự hết hạn, chưa có tracking vật thể/trang.
-- Tọa độ tính trên vùng hình thật, loại letterbox; resize và device pixel ratio không làm trôi nét.
-- Preview/cursor batch tối đa 20 lần/giây, cho phép mất; stroke commit có UUID, ack, sequence và version. Mất sequence lấy board snapshot đã lọc quyền.
-- Server gán author, kiểm membership/context hiện tại, màu/width/points/bytes. Undo là tombstone nét của mình, không cho xóa nét người khác bằng sửa ID.
-- Không dùng DB write cho từng điểm; runtime có stroke log/snapshot đủ khôi phục khi socket rớt ngắn trong cùng đời server.
-
-### 7.2. Freeze và resume
-
-```mermaid
-sequenceDiagram
-  participant C as Client
-  participant S as Session/Board service
-  participant F as Private file service
-  participant G as Peers cùng scope
-  C->>S: board.freeze.begin(version, sourceRevision)
-  S-->>C: intentId + expiresAt
-  Note over S: Nhả mutation queue khi chờ I/O
-  C->>C: Chụp một frame đang xem + encode Blob
-  C->>F: Upload HTTP với intent
-  F-->>C: temporaryFileId
-  C->>S: board.freeze.commit(intentId, fileId)
-  S->>S: Kiểm lại actor/epoch/quyền/version/source
-  S-->>G: board.state FROZEN + cùng frameId
-  G->>F: Tải frame với ACL scope
-```
-
-Client chụp video remote đang nhận hoặc screen track local nếu chính mình share; kiểm có frame giải mã sẵn/kích thước hợp lệ. Không suy mọi ảnh màu đen là lỗi. Dùng Canvas `drawImage(video, ...)`, không DOM screenshot toàn máy. [MDN drawImage](https://developer.mozilla.org/en-US/docs/Web/API/CanvasRenderingContext2D/drawImage).
-
-Server reserve intent có hạn và actor/context/generation; chỉ một intent thắng. Commit kiểm file thuộc intent, format/dimensions/size và các revision. Snapshot là ảnh do participant hợp lệ cung cấp; server không cam kết chứng thực ảnh chính xác tuyệt đối với bài giảng. Khi source đổi trước commit trả `SOURCE_CHANGED`; khi quyền đổi trả deny; request cũ không được ghi đè context mới. Hỏng upload/hết hạn trả LIVE và dọn file orphan.
-
-Video live tiếp tục nhận/giải mã dưới lớp ảnh, audio graph giữ nguyên. Khi FROZEN, nét gắn frame/source revision đã chốt, không bị từ chối chỉ vì giảng viên đã đổi nguồn mới ở phía live.
-
-Resume hủy intent pending nếu có, tăng boardVersion, đóng context cũ, bỏ lớp ảnh/nét để thấy video hiện tại. Không replay đoạn bỏ qua. Nếu nguồn không còn, hiển thị “Chưa có nguồn chia sẻ”, không giả live. Không có `artifact.save`, library hoặc export lâu dài trong scope này.
-
-### 7.3. Công bố hình và nét của nhóm
-
-- Host mời group; mỗi thành viên trong tập được mời được tự chấp nhận hoặc từ chối. Participant mới vào sau không tự thừa hưởng lời mời/consent.
-- Một thành viên đã consent chọn context của nhóm để công bố; server kiểm đang ở group và grant thuộc group đó. Chỉ một presentation active.
-- `PresentationView` chứa audience session, grantId, source mode, frame reference nếu FROZEN, bản nét được chọn và contextVersion. Toàn phòng đọc projection qua endpoint/event riêng, không mở ACL của board gốc.
-- Với FROZEN: giữ cùng frame, nhận cập nhật nét hợp lệ của chính context được công bố. Nếu nhóm resume/clear/chuyển context, projection giữ bản hình+nét cuối của lượt; không tự nhảy trang. Muốn đổi nội dung thì stop/start lượt công bố rõ ràng.
-- Với LIVE: hiển thị main screen hiện tại và các nét chỉ ngắn từ context đã chọn. Source đổi thì xóa overlay cũ; không hứa nét bám slide. Không chuyển sang một screen share nhóm thứ hai.
-- Host revoke/stop/đóng group hoặc session: khóa endpoint presentation, đóng fanout và grant, thu global Consumer rồi trở về view chung. Nội dung đã xem không thu hồi khỏi máy người nhận.
-
-Frame đang presentation giữ tham chiếu dù board nhóm đã resume. Clear hoặc undo sau khi projection tách khỏi context cũ không được tác động nhầm hình live mới. Khi hết mọi tham chiếu, frame vào cleanup queue.
+Nguồn chi tiết: [board, freeze/resume và presentation](product/board-collaboration.md). Nội dung được chuyển từ v2.1, giữ nguyên quy tắc và số mục để truy vết.
 
 ## 8. Điều hành, hỗ trợ và âm lượng
 
 ### 8.1. Host, group và hỗ trợ
 
-- Trong MODERATED, host tạo group và phân participant; người chưa phân thuộc MAIN. Host không là thành viên mọi group.
-- Chuyển group thu media/chat/board cũ trước, cập nhật membership và cấp nguồn mới. Close group thu floor/presentation liên quan, về MAIN; private history bị khóa.
-- Thành viên gửi text/ảnh/tệp tới đúng host qua HOST_PRIVATE; ảnh có thể chọn upload hoặc gửi ảnh chụp canvas hiện tại theo quyền. Đây là tệp tin nhắn trong phiên, không là thư viện/đầu ra lâu dài.
-- `host.help.enter` cấp quyền group đích, chuyển MIC host sang GROUP, hiển thị host đã vào trước khi mở scope hỗ trợ. Vào B thì thu A trước.
-- `host.help.leave` có thao tác ghi rõ quay lại hướng dẫn toàn phòng. Nếu MIC đang bật, UI yêu cầu xác nhận chuyển phạm vi; không tự phát global chỉ vì timeout/mất mạng.
-- Hỏi bằng tin nhắn không tự đổi scope mic. Host cũ giữ quyền đọc tin gửi riêng cho mình trong phiên theo ACL; host mới không tự nhận lịch sử đó. Người gửi có thể gửi câu hỏi mới cho host mới.
+Nguồn chi tiết: [đặc tả mục 8.1](product/groups-media-policy.md).
 
 ### 8.2. Floor, consent và trạng thái kết hợp
 
-`FloorGrant`: INVITED → ACTIVE → REVOKED/EXPIRED; có invitedParticipantIds, consent set và policyRevision. Host start khi ít nhất một người consent; người được mời có thể consent sau khi ACTIVE nếu vẫn trong tập mời/group. Người từ chối vẫn ở nhóm, không phát toàn phòng. MIC tắt không tự bật; người có MIC đang bật vẫn cần consent khi chuyển global.
-
-Thành viên rời group/rời phiên mất consent; reconnect sau mất control lease phải consent lại. Revoke đóng đường global, không đóng mic nhóm còn hợp lệ. Tập quyền được lấy hợp để không phát hai lần.
-
-Để giảm trạng thái chồng chéo, bản đầu chỉ một hoạt động điều hành chính tại một thời điểm: **hỗ trợ riêng hoặc lượt floor/presentation**. Host phải kết thúc hỗ trợ trước khi mở lượt trình bày. Announcement từ hỗ trợ riêng yêu cầu xác nhận kết thúc help và chuyển GLOBAL; không tự quay lại hỗ trợ sau announcement. Announcement trong lượt trình bày chỉ duck tiếng thảo luận, không thu grant âm thầm.
+Nguồn chi tiết: [đặc tả mục 8.2](product/groups-media-policy.md).
 
 ### 8.3. Chuyển host và host mất mạng
 
-Transfer cần target đang tham gia chấp nhận, có expiry. Khi commit: kết thúc help/floor/presentation/announcement, thu quyền host cũ/share grant điều hành, chuyển role và tăng revision. Để đơn giản, dừng main share khi transfer nếu nguồn phụ thuộc quyền cũ; người có quyền mới chủ động share lại.
-
-Host mới không tự bật mic/camera; MIC đang bật ở scope cũ được pause trong media policy tới khi xác nhận scope điều hành. Host cũ trở về member/MAIN với quyền bình thường; không giữ quyền nghe group hỗ trợ trước đó.
-
-Host mất signaling: không chuyển mic GROUP thành GLOBAL. Giữ vai trò trong grace; hết grace thu media/help/grants điều hành, đặt host trống, giữ room MODERATED. Sau đó participant có thể chủ động nhận host bằng mutation nguyên tử có thông báo; role Workspace không cho phép tiếp quản sớm hoặc nghe ngầm. Người khác vẫn xem main screen còn hợp lệ; main share của host mất lease phải dừng.
+Nguồn chi tiết: [đặc tả mục 8.3](product/live-session.md).
 
 ### 8.4. Audio graph
 
-```text
-remote mic mỗi người → participantGain → discussionBus ─┐
-host/global floor   → participantGain → priorityBus   ─┼→ master → output
-screen audio        → screenGain      → screenBus    ─┘
-```
-
-Mỗi track chỉ đi một bus theo scope hiện tại, không nhân stream. `effectiveGain = master × participantGain × busGain × announcementFactor`; chỉ discussionBus có factor giảm khi thông báo. Không giảm chính host/floor đang được ưu tiên. Ramp gain ngắn; khi kết thúc chỉ bỏ factor, không ghi đè gain cá nhân; mute local vẫn là 0.
-
-Preference lưu cục bộ theo user/Workspace/người nói, không theo producerId tạm. Không gắn cùng track vào audio element có tiếng và Web Audio output. Có nút bật âm thanh khi autoplay chặn, không loop mic local ra loa. Nhiều nguồn có thể cộng gây clipping dù từng gain ≤1; thử headroom/limiter khi cần. Announcement tối đa 30 giây, có timeout khôi phục cả khi host rớt. Volume không thay quyền: nguồn trái quyền không được nhận dù gain=0.
+Nguồn chi tiết: [đặc tả mục 8.4](product/live-session.md).
 
 ## 9. Dữ liệu, lịch sử và tính nhất quán
 
-### 9.1. MongoDB bền vững
-
-| Collection | Trường/ràng buộc chính |
-|---|---|
-| users | emailNormalized unique, passwordHash, displayName, status |
-| authSessions | userId, tokenHash unique, expiresAt, revokedAt; TTL dọn, request vẫn tự kiểm hạn |
-| workspaces | name, ownerId duy nhất, deletedAt; ownerId và membership role đồng bộ |
-| memberships | workspaceId+userId unique, role, status |
-| invitations | tokenHash unique, workspaceId, expiresAt, revokedAt, maxUses, uses |
-| channels | workspaceId, type bất biến, name/order, accessMode, allowedUserIds, deletedAt |
-| conversations | kind CHANNEL/SESSION/GROUP/HOST_PRIVATE, scope refs, participants cho tin riêng, closedAt, purgeAt |
-| messages | conversationId, senderId, clientMessageId, text, attachmentIds, createdAt; dedupe unique |
-| files | storageKey unique, uploaderId, purpose, accessRef, mime/size/dimensions, state, expiresAt |
-| liveSessions | channelId, epoch, mode, hostUserId, status, startedAt/endedAt, revision |
-| sessionParticipants | sessionId+userId unique, joinedAt/leftAt, current group metadata; không là nguồn runtime sau restart |
-| auditEvents | actor, action, scope/target, revision, timestamp; không lưu chat/audio/token |
-
-Không tạo SavedArtifact, polls, votes hoặc timers trong bản này. GroupRuntime không bắt buộc có collection: dữ liệu private chỉ được đọc khi session/group runtime còn hợp lệ. Conversation giữ refs và closedAt/purgeAt để khóa và dọn dù runtime đã mất.
-
-Index bắt buộc: messages unique `(conversationId,senderId,clientMessageId)`; history `(conversationId,createdAt,_id)`; liveSessions unique channelId với partial filter status ACTIVE/ENDING; indexes tra membership/channel/files; TTL cho auth/purge metadata phù hợp. Migration tạo index và test trên bản Mongo được pin, không chỉ dựa autoIndex của Mongoose.
-
-Một Workspace có đúng một owner. Không có thao tác hạ/xóa owner trực tiếp; transfer cập nhật ownerId và roles trong transaction. Owner rời phải transfer trước hoặc xóa Workspace.
-
-### 9.2. Runtime
-
-SessionRuntime giữ state/queue/participants; GroupRuntime giữ membership; MediaRuntime giữ objects thật; BoardRuntime giữ intents/frame/strokes; GrantRuntime giữ floor/consent/projection; ActiveCallRegistry theo user giữ callGeneration. Không serialize transport/producer vào DB. Presence socket không là identity lâu dài.
-
-### 9.3. Quyền lịch sử và retention
-
-| Dữ liệu | Quyền đọc | Kết thúc/xóa |
-|---|---|---|
-| CHANNEL chat/tệp | Membership và channel access hiện tại | Lưu đến khi kênh/Workspace xóa; soft delete khóa đọc ngay |
-| SESSION chat | Participant hiện tại, session ACTIVE | Khóa khi ENDED, purge sau 24 giờ |
-| GROUP chat/tệp | Cùng group đang mở; host đang hỗ trợ | Rời nhóm mất quyền đọc tiếp; close group/session khóa ngay, purge sau 24 giờ |
-| HOST_PRIVATE | Hai bên ban đầu còn quyền session/channel | Không chuyển audience khi transfer host; khóa khi ENDED, purge sau 24 giờ |
-| Frame/nét | Board ACL hoặc presentation ACL riêng | Không là bài lưu; giữ khi đang được dùng, dọn sau mất tham chiếu |
-
-Retention 24 giờ là mặc định vận hành khởi đầu để cleanup, không phải tính năng xem lại. Người ngoài runtime không được tải file private kể cả metadata chưa purge. Người mới vào group có thể đọc lịch sử group trong phiên đang mở; chính sách này phải hiển thị trong mô tả nhóm/room.
-
-Files CHANNEL chỉ gắn được vào đúng conversation/channel tương ứng. File nhóm/private không được gắn vào tin toàn Workspace bằng đổi attachmentId. Upload trước lưu STAGED với owner/scope; commit message atomically bind file READY; upload bỏ dở được dọn. Tin hỏi host có ảnh canvas là private attachment, không mở endpoint frame nhóm cho host khi host chưa được cấp board access.
-
-### 9.4. Transaction và đồng bộ runtime
-
-Mongo replica set một node được cấu hình từ dev/CI/staging. Transaction nhiều document cần deployment hỗ trợ; không gọi mediasoup hoặc chờ upload bên trong transaction DB. [MongoDB transactions](https://www.mongodb.com/docs/manual/core/transactions/).
-
-| Thao tác | Cách bảo đảm |
-|---|---|
-| Tạo Workspace | Workspace + owner membership + conversation/kênh mặc định nếu có trong một transaction |
-| Nhận invitation | Kiểm expiry/revoke/maxUses và upsert membership trong transaction; user đã là member không tốn lượt |
-| Transfer owner | Kiểm owner hiện tại/target; đổi ownerId và role hai bên nguyên tử |
-| Gửi message + attachment | Validate ACL và bind STAGED file cùng insert message; retry dùng unique clientMessageId |
-| Create live session | Khóa channel + unique DB; runtime Router chỉ được công bố khi metadata hợp lệ; failure cleanup |
-| Kick/đổi quyền/xóa kênh | Đặt deny barrier theo scope → đóng media/fanout → ghi DB → reconcile runtime → phát snapshot |
-
-Nếu DB lỗi sau thu media, không tự mở lại nguồn: participant nhận trạng thái cần resync, chỉ khôi phục sau khi xác thực DB và policy. Barrier phải chặn REST/file/socket liên quan, không chỉ handler kick. Sau crash, không có media runtime cũ; bootstrap đánh dấu phiên cũ ENDED và đóng conversation private trước khi cho join mới.
-
-Message insert thành công nhưng crash trước ack/fanout: retry trả đúng message cũ sau kiểm quyền, history lấy lại được. Không tuyên bố exactly-once toàn mạng hoặc thêm message broker chỉ vì trường hợp này.
+Nguồn chi tiết: [collections, index và trạng thái runtime](database/model.md). Nội dung được chuyển từ v2.1, giữ nguyên quy tắc và số mục để truy vết. Xem thêm [vòng đời dữ liệu và transaction](database/lifecycle.md).
 
 ## 10. REST, sự kiện và contracts
 
@@ -563,32 +217,7 @@ Socket.IO giữ thứ tự trên kết nối nhưng mặc định không bảo �
 
 ## 11. Reconnect và vòng đời tài nguyên
 
-### 11.1. Control lease và resume
-
-Socket disconnect không chứng minh media đã ngừng. Khi server nhận disconnect: chuyển participant sang RECONNECTING, chặn mutation mới, kết thúc announcement của nguồn đó, thu floor consent của participant và reconcile ngay các Consumer global. Không được giữ quyền global chỉ vì mic WebRTC còn chạy. Với mạng đứt mà chưa được phát hiện, control lease có deadline server và heartbeat; cửa sổ phát hiện này phải được đo.
-
-Giữ call ownership/nhóm tối đa 30 giây từ disconnect hoặc control lease hết hạn để reconnect; media thông thường còn lại được đóng chậm nhất cuối grace. Trong grace vẫn áp dụng mọi kick/move/revoke mới. Deadline không kéo dài bởi request cũ/generation cũ. Sau grace, đóng toàn bộ participant resources và phải join/consent lại.
-
-Resume ticket ngắn hạn, một lần, gắn auth/session epoch/callGeneration, rotate sau mỗi resume. Khi reconnect: auth và Origin/CSRF lại → kiểm registry/current membership → bind socket mới → gửi projection mới → recreate/reconcile transport nếu cần. Ticket không chứa quyền cũ để phục hồi. Nếu hết ticket nhưng còn auth hợp lệ, server chỉ cấp lại quyền resume sau kiểm participant/call ownership hiện hành; không chiếm call thiết bị mới.
-
-### 11.2. Bảng vòng đời
-
-| Tình huống | Xử lý bắt buộc |
-|---|---|
-| Transport failed | Close mapping cũ; ICE restart hoặc tạo transport theo adapter; không nhân Producer |
-| Rời phòng chủ động | Hủy intent/ticket/grant; leave fanout; close tracks/audio nodes/client controller và tài nguyên server |
-| Kick/mất channel access/logout/auth expiry | Deny barrier; close media/socket liên quan, chặn file/REST ngay |
-| Chuyển nhóm | Thu old scope trước, cấp new scope; hủy floor consent/intent cũ |
-| Group đóng | Thu presentation/floor/help; về MAIN; khóa history, dọn board không còn refs |
-| Stop share | Close screen + audio; invalidate intent/live overlay; frame frozen có trạng thái nguồn đã dừng |
-| Host rớt | Giữ scope an toàn, không auto global; hết grace thu host activity, cho tiếp quản rõ ràng |
-| Người cuối rời | Empty grace 60 giây rồi ENDING → close Router → ENDED; join phải tránh race với reaper |
-| Host kết thúc phiên | ENDING ngay, deny join/mutation, thu tất cả resources và khóa private conversations |
-| Worker chết | ENDED phiên liên quan, invalidate epoch, báo client join phiên mới; worker restart có health rõ |
-| App restart | Invalidate runtime/resume đời cũ; đóng metadata stale/private history trước readiness |
-| Xóa kênh/Workspace | Khóa đọc trước cleanup; kết thúc session; file không tiếp tục được cấp qua URL cũ |
-
-Resource generation giúp late `transportclose/producerclose/disconnect` không xóa nhầm object đời mới. Mọi close idempotent; đóng server phải báo client và ngược lại, không trông chờ thư viện tự đồng bộ nghiệp vụ.
+Nguồn chi tiết: [control lease, resume và cleanup tài nguyên](product/live-session.md). Nội dung được chuyển từ v2.1, giữ nguyên quy tắc và số mục để truy vết.
 
 ## 12. Màn hình và cấu trúc repository
 
@@ -663,11 +292,7 @@ Không áp cùng limiter command cho stroke preview; mỗi lớp có quota riên
 
 ### 13.3. Cleanup
 
-- Sweeper mỗi 60 giây: STAGED/orphan frame quá 15 phút; context hết refs dọn sau grace tối đa 5 phút; không xóa frame đang board/presentation sử dụng.
-- Private session messages/files khóa ngay khi close và purge sau 24 giờ. Metadata tombstone chỉ giữ đủ audit không chứa nội dung riêng.
-- Kênh/Workspace soft delete: khóa đọc ngay, purge tệp không còn references sau 7 ngày theo job; không có chức năng restore UI trong scope.
-- Cleanup kiểm cả disk lẫn metadata; TTL Mongo không tự xóa file. Quota áp dụng trước upload/commit, sweeper không là cách duy nhất ngăn đầy disk.
-- Worker/process crash: bootstrap và sweep đối chiếu epoch/reference; không phụ thuộc người dùng đóng tab đúng cách.
+Nguồn chi tiết: [đặc tả mục 13.3](database/lifecycle.md).
 
 ## 14. Kiểm thử và tiêu chí hoàn thành
 
@@ -837,7 +462,7 @@ Coturn cấu hình public/private address theo network thực, short-lived crede
 
 ### 17.3. Env và CI
 
-`.env.example`: APP_ORIGIN, PUBLIC_BASE_URL, MONGO_URI/replicaSet, SESSION_SECRET, AUTH_TTL, TURN_SECRET/TURN_URLS, MEDIA_LISTEN_IP, MEDIA_ANNOUNCED_ADDRESS, MEDIA_PORT, FILE_ROOT/TEMP_ROOT, quotas/timeouts. Secrets ở CI/server, không commit. Pin Node patch, mediasoup/server-client, Mongo image và lockfile sau smoke test; không dùng floating latest trong release.
+Danh mục env đích cần bổ sung theo feature vào `.env.example`: APP_ORIGIN, PUBLIC_BASE_URL, MONGO_URI/replicaSet, SESSION_SECRET, AUTH_TTL_SECONDS, TURN_SECRET/TURN_URLS, MEDIA_LISTEN_IP, MEDIA_ANNOUNCED_ADDRESS, MEDIA_PORT, FILE_ROOT/TEMP_ROOT, quotas/timeouts. Không coi mọi biến trong danh mục đã được scaffold sử dụng; contract cấu hình thực nằm ở schema env và `.env.example`. Secrets ở CI/server, không commit. Node 26.12.1/pnpm 11.5.2 đã được pin; mediasoup server/client, Mongo image và dependencies theo manifests/Compose/lockfile. Mỗi lần nâng phải kiểm tương thích; không dùng floating latest trong release.
 
 CI: install lockfile → lint/typecheck → policy/contract tests → integration với Mongo replica set → build web/server → build Linux image → tag commit SHA. Browser E2E đủ điều kiện chạy CI; test camera/audio/network thật có evidence staging bổ sung. Native mediasoup worker phải build/start được trên image Linux từ tuần 1.
 

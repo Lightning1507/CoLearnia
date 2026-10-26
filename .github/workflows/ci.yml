@@ -24,7 +24,8 @@ jobs:
           node-version-file: .node-version
       - run: npm install --global pnpm@11.5.2
       - run: pnpm install --frozen-lockfile
-      - run: pnpm check
+      - name: Repository checks including harness and architecture guards
+        run: pnpm check
       - run: pnpm media:smoke
       - run: docker compose config --quiet
       - run: pnpm infra:up

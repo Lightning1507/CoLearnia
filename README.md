@@ -10,7 +10,7 @@ Yêu cầu: Node **26.12.1**, pnpm **11.5.2** và Docker Desktop chạy Linux co
 
 ```sh
 npm install --global pnpm@11.5.2
-pnpm install
+pnpm install --frozen-lockfile
 ```
 
 Project cài pnpm trực tiếp bằng npm, không cần Corepack. Nếu máy từng dùng shim Corepack và npm báo `EEXIST`, chạy `corepack disable` rồi cài lại pnpm. Kiểm tra runtime thực tế bằng `pnpm exec node --version` (phải là `v26.12.1`).
@@ -54,7 +54,10 @@ CoLearnia/
 │   ├── nginx/              # REST/socket/SPA proxy cho local Compose
 │   └── coturn/             # Hướng dẫn cấu hình TURN cho PoC
 ├── docs/
-│   ├── technical-plan.md   # v2 — nguồn phạm vi chính
+│   ├── technical-plan.md   # v2.1 — kế hoạch và đường dẫn nguồn chi tiết
+│   ├── product/            # Phạm vi và nghiệp vụ theo miền
+│   ├── database/           # Model, runtime, transaction và retention đích
+│   ├── ai/                 # Workflow, onboarding Codex, task brief
 │   ├── adr/                # Quyết định kiến trúc
 │   ├── contracts/          # Quy ước giao tiếp
 │   ├── runbooks/           # Vận hành và môi trường
@@ -71,17 +74,18 @@ Thư mục module chưa triển khai được giữ bằng `.gitkeep`. Khi thêm
 
 ## Lệnh dùng chung
 
-| Lệnh                | Tác dụng                                            |
-| ------------------- | --------------------------------------------------- |
-| `pnpm dev`          | Build/watch contracts, chạy server và web           |
-| `pnpm check`        | Format check → ESLint → TypeScript → tests → build  |
-| `pnpm format`       | Format source/config bằng Prettier                  |
-| `pnpm test`         | Contract và HTTP foundation tests                   |
-| `pnpm media:smoke`  | Khởi động native worker + Router Opus/VP8, rồi đóng |
-| `pnpm doctor`       | Kiểm Node, .env, lockfile và Docker engine          |
-| `pnpm infra:up`     | MongoDB và khởi tạo rs0, giữ dữ liệu trong volume   |
-| `pnpm infra:down`   | Dừng Compose; không xóa volume                      |
-| `pnpm infra:config` | Kiểm cấu hình Compose                               |
+| Lệnh                 | Tác dụng                                               |
+| -------------------- | ------------------------------------------------------ |
+| `pnpm dev`           | Build/watch contracts, chạy server và web              |
+| `pnpm check`         | Harness → format → ESLint → TypeScript → tests → build |
+| `pnpm check:harness` | Test guards → kiểm nguồn, links và runtime pins        |
+| `pnpm format`        | Format source/config bằng Prettier                     |
+| `pnpm test`          | Contract và HTTP foundation tests                      |
+| `pnpm media:smoke`   | Khởi động native worker + Router Opus/VP8, rồi đóng    |
+| `pnpm doctor`        | Kiểm Node, .env, lockfile và Docker engine             |
+| `pnpm infra:up`      | MongoDB và khởi tạo rs0, giữ dữ liệu trong volume      |
+| `pnpm infra:down`    | Dừng Compose; không xóa volume                         |
+| `pnpm infra:config`  | Kiểm cấu hình Compose                                  |
 
 Không dùng `docker compose down -v` nếu cần giữ dữ liệu. Không commit `.env`, token, certificate key, database hoặc frame tạm.
 
@@ -109,9 +113,9 @@ Web local Compose: <http://localhost:8080>. Mongo/media ports chỉ bind loopbac
 
 ## Cách nhận việc
 
-1. Đọc [technical-plan.md](docs/technical-plan.md), đặc biệt mục 1–5 và 15–16.
-2. Chọn feature ID và reviewer; theo [CONTRIBUTING.md](CONTRIBUTING.md).
+1. Bắt đầu tại [AGENTS.md](AGENTS.md) và [mục lục nguồn](docs/README.md); chọn tài liệu đúng miền. Plan v2.1 giữ lịch/feature IDs, các link theo miền giữ đặc tả chi tiết.
+2. Chọn feature ID, owner và reviewer theo [AI workflow](docs/ai/workflow.md), [task template](docs/ai/task-template.md) và [CONTRIBUTING.md](CONTRIBUTING.md). Dùng GitHub Issues; GitHub Projects sẽ cấu hình sau.
 3. Bắt đầu PoC tuần 1: B+C media/policy; D freeze/audio; A identity/Workspace; E Linux/staging/TURN.
 4. Giữ `main` build được; mỗi PR cập nhật contract và test có liên quan.
 
-Tham khảo quy ước [contracts](docs/contracts/README.md) và [ADR-001](docs/adr/001-media-foundation.md). Phần vẽ/quiz/thư viện ngoài phạm vi v2 không được thêm vào bản init như tính năng đã có.
+Tham khảo quy ước [contracts](docs/contracts/README.md) và [ADR-001](docs/adr/001-media-foundation.md). Quiz/thư viện bài làm và công cụ vẽ nâng cao ngoài phạm vi; vẽ cơ bản vẫn thuộc scope. Bộ harness không thêm chức năng sản phẩm hoặc chứng minh toàn bộ luồng đã chạy.

@@ -2,6 +2,8 @@
 
 ## Các lớp kiểm soát
 
+Harness dùng chung: [điểm vào](../AGENTS.md), [mục lục nguồn](README.md) và [workflow AI](ai/workflow.md). `pnpm check:harness` chạy tests của checker/import guard, rồi kiểm file/link local, ignore và một số runtime pins; được nối đầu `pnpm check` trong local/CI. ESLint kiểm ranh giới web/server/contracts bằng AST cho import/re-export/dynamic import literal, type import và require literal. Chưa kiểm mọi alias, import tính động, ngữ nghĩa hoặc quyền thực thi agent; xem giới hạn trong workflow.
+
 | Lớp                | Cách thực hiện                                                                 | Trạng thái                                                               |
 | ------------------ | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------ |
 | Source             | TypeScript strict, ESLint, Prettier, contracts Zod                             | Đã cấu hình                                                              |
@@ -19,6 +21,8 @@
 Danh sách required checks thực tế nằm ở Settings của repo. Check mới chỉ được bổ sung sau khi đã chạy để xác nhận tên/kết quả; không coi việc có file workflow là bằng chứng đã pass. Mọi thay đổi cấu hình trong PR cần merge trước khi áp dụng chung từ main.
 
 Unit/HTTP tests hiện có 7 ca ở contracts và HTTP foundation. Media smoke chỉ kiểm native worker/Router, chưa xác nhận cuộc gọi. Transaction check kiểm cơ chế DB, chưa kiểm transaction nhận lời mời hoặc chuyển owner.
+
+Tests harness dùng repo/fixture tạm để thử nguồn thiếu, link hỏng, ignore, đường dẫn vượt repo, runtime lệch và mất cổng; không stage/commit/reset repo thật. Tests import guard kiểm cả trường hợp phải từ chối và được phép qua. CI chạy các tests này qua `pnpm check`, không phải một AI tự đánh dấu checkbox thành công.
 
 ### Khi nào chạy Docker smoke
 
