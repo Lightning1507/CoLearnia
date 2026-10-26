@@ -2,6 +2,7 @@
 
 ## Nhánh và PR
 
+- Nhận task theo [AI workflow](docs/ai/workflow.md) và [task brief](docs/ai/task-template.md); GitHub Issues là nơi nhận việc/trạng thái. GitHub Projects sẽ được cấu hình sau; bộ harness chưa tạo Project hoặc automation.
 - `main` là nhánh tích hợp. Tạo nhánh `feat/<feature-id>-<short-name>`, `fix/<short-name>` hoặc `chore/<short-name>`.
 - Commit: `feat(scope): ...`, `fix(scope): ...`, `chore(scope): ...`, `docs(scope): ...`, `test(scope): ...`.
 - PR nhỏ theo một đầu ra có thể kiểm tra; có feature ID, reviewer và lệnh/evidence đã chạy.
@@ -30,5 +31,7 @@
 ## Hoàn thành một chức năng
 
 Chạy `pnpm check`, bổ sung kiểm thử có ý nghĩa cho thay đổi. Các thay đổi auth/quyền/file/media phải có ca từ chối. Tài nguyên phải có cleanup; socket/track không được lưu vào localStorage hoặc persist store.
+
+`pnpm check:harness` chạy test guard và kiểm nguồn/links/runtime; được nối đầu `pnpm check` trong local/CI. Ranh giới import được kiểm qua ESLint. Các check này không chứng minh nghiệp vụ đúng, sandbox đúng hoặc media chạy thật. Xem [mục lục nguồn](docs/README.md) trước khi thay quy tắc; tác giả giải thích được contract, quyền và cleanup với reviewer khác.
 
 Ghi rõ phần mới chỉ là scaffold hoặc mock, không đánh dấu hoàn thành luồng gọi khi chưa truyền thật trên mạng. Gặp thay đổi contract thì người sử dụng contract review cùng PR.

@@ -3,6 +3,7 @@ import tseslint from 'typescript-eslint';
 import globals from 'globals';
 import reactHooks from 'eslint-plugin-react-hooks';
 import reactRefresh from 'eslint-plugin-react-refresh';
+import { architecturePlugin } from './scripts/architecture-rules.mjs';
 
 export default tseslint.config(
   { ignores: ['**/dist/**', '**/node_modules/**', '**/coverage/**', 'docs/archive/**'] },
@@ -11,6 +12,11 @@ export default tseslint.config(
   {
     languageOptions: { globals: globals.node },
     rules: { '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }] },
+  },
+  {
+    files: ['apps/**/*.{ts,tsx}', 'packages/contracts/src/**/*.ts'],
+    plugins: { architecture: architecturePlugin },
+    rules: { 'architecture/boundaries': 'error' },
   },
   {
     files: ['infra/mongo/*.js'],
