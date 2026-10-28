@@ -10,13 +10,13 @@ Sử dụng mediasoup v3, một Router/LiveSession, nhiều nhóm nghiệp vụ 
 
 ## Lý do và đánh đổi
 
-Chủ động điều khiển tiếng riêng/chung và nội dung trình bày. Đổi lại phải tự xây signaling, policy, reconnect và vòng đời tài nguyên. Một Router thuộc một worker; không tự chia một phiên theo nhiều lõi.
+Chủ động điều khiển nguồn chung cho DISCUSSION và nguồn độc lập ACTIVITY theo [group modes v2.3](../product/group-modes.md). Đổi lại phải tự xây signaling, policy, reconnect và vòng đời tài nguyên. Một Router thuộc một worker; không tự chia một phiên theo nhiều lõi.
 
 ## Điều kiện Accepted
 
 - Mic/camera và screen thật giữa hai mạng.
-- Hai nhóm riêng trong cùng phiên, screen chung, không có Consumer trái quyền.
-- Chuyển nhóm/revoke thật, không dùng gain=0 để che audio.
+- Kiểm hai DISCUSSION kế thừa MAIN và hai ACTIVITY độc lập mỗi group một share, member tự bấm không host duyệt; không có Consumer/metadata trái quyền. Kiểm hai group share song song, một group chỉ một nguồn, board theo nguồn; request/approval/join DISCUSSION không vượt phase ACTIVITY.
+- Chuyển/rời nhóm/revoke thật, không dùng gain=0 để che audio.
 - Freeze hình vẫn nghe tiếng và resume tới hình hiện tại.
 - Forced TURN có selected relay candidate và dữ liệu thật.
 - Ghi commit, môi trường và kết quả trong `docs/test-evidence`.

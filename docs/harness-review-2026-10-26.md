@@ -1,5 +1,7 @@
 # Review nội dung harness — 26/10/2026
 
+> Phạm vi theo thời điểm 26/10/2026. Quyết định team 27/10 về chat Everyone/Host và bỏ floor/presentation được ghi ở [trạng thái quyết định](decision-status.md). Nội dung/bằng chứng bên dưới không xác nhận scope mới đã triển khai.
+
 **Kết luận tại thời điểm review:** có hai lỗi hướng dẫn cụ thể cần sửa và một cách diễn đạt database cần làm rõ. Phần trích chuyển không làm mất/đổi các quy tắc baseline đã đối chiếu. Một số quy ước vận hành do agent cụ thể hóa thêm phải được phân biệt với quyết định sản phẩm. Các mô tả và số dòng trong findings ghi trạng thái trước khắc phục.
 
 **Khắc phục ngày 26/10/2026:** F1/F2/F3 đã được sửa tại database model và root AGENTS/workflow. Bổ sung [bản đồ trạng thái quyết định](decision-status.md) để phân biệt nội dung đã có trong plan với chi tiết còn cần hoàn thiện; không tự chọn thư viện auth, schema/index mới, người thật, ngày lịch hoặc budget. Báo cáo này được giữ để truy vết, không là chỉ dẫn áp dụng các câu cũ bị nhận xét.

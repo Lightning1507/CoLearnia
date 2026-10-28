@@ -54,7 +54,7 @@ CoLearnia/
 │   ├── nginx/              # REST/socket/SPA proxy cho local Compose
 │   └── coturn/             # Hướng dẫn cấu hình TURN cho PoC
 ├── docs/
-│   ├── technical-plan.md   # v2.1 — kế hoạch và đường dẫn nguồn chi tiết
+│   ├── technical-plan.md   # v2.3 — kế hoạch và đường dẫn nguồn chi tiết
 │   ├── product/            # Phạm vi và nghiệp vụ theo miền
 │   ├── database/           # Model, runtime, transaction và retention đích
 │   ├── ai/                 # Workflow, onboarding Codex, task brief
@@ -99,7 +99,7 @@ CI kiểm source, format commit trong PR, dependency audit, secret scan, transac
 
 Đã có: monorepo, contracts nền, React shell đọc trạng thái server thật, Express có error envelope/request ID, kiểm biến môi trường, database connector, Socket.IO entry point, media runtime và smoke test; format/lint/typecheck/test/build; Compose local và CI.
 
-**Chưa triển khai nghiệp vụ:** auth, Workspace/kênh CRUD, chat/tệp, session/group, signaling call, policy, freeze/vẽ, floor/presentation và reconnect. Thư viện đã cài không đồng nghĩa chức năng đã hoàn thành. Socket hiện từ chối toàn bộ kết nối với `AUTH_REQUIRED` cho tới khi có auth/CSRF/expiry đúng; không mở endpoint gọi ẩn danh để làm UI mẫu.
+**Chưa triển khai nghiệp vụ:** auth, Workspace/kênh CRUD, chat/tệp/DM/thread, session/group DISCUSSION/ACTIVITY, request duyệt nhóm, countdown, signaling call, policy, freeze/vẽ, chat Everyone/Host, về phòng chung và reconnect. Thư viện đã cài không đồng nghĩa chức năng đã hoàn thành. Socket hiện từ chối toàn bộ kết nối với `AUTH_REQUIRED` cho tới khi có auth/CSRF/expiry đúng; không mở endpoint gọi ẩn danh để làm UI mẫu.
 
 TURN chưa chạy trong Compose. Cần public IP/hostname/secret và bằng chứng relay khi làm ADR-001. Hai Dockerfile và profile `app` là nền local để kiểm tiếp trên Linux, không phải bản triển khai production.
 
@@ -113,7 +113,7 @@ Web local Compose: <http://localhost:8080>. Mongo/media ports chỉ bind loopbac
 
 ## Cách nhận việc
 
-1. Bắt đầu tại [AGENTS.md](AGENTS.md) và [mục lục nguồn](docs/README.md); chọn tài liệu đúng miền. Plan v2.1 giữ lịch/feature IDs, các link theo miền giữ đặc tả chi tiết.
+1. Bắt đầu tại [AGENTS.md](AGENTS.md) và [mục lục nguồn](docs/README.md); chọn tài liệu đúng miền. Plan v2.3 giữ lịch/feature IDs, các link theo miền giữ đặc tả chi tiết.
 2. Chọn feature ID, owner và reviewer theo [AI workflow](docs/ai/workflow.md), [task template](docs/ai/task-template.md) và [CONTRIBUTING.md](CONTRIBUTING.md). Dùng GitHub Issues; GitHub Projects sẽ cấu hình sau.
 3. Bắt đầu PoC tuần 1: B+C media/policy; D freeze/audio; A identity/Workspace; E Linux/staging/TURN.
 4. Giữ `main` build được; mỗi PR cập nhật contract và test có liên quan.

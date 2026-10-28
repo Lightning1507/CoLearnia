@@ -3,10 +3,12 @@
 ## Nguồn và phạm vi
 
 - Bắt đầu tại [mục lục](docs/README.md); chọn tài liệu đúng miền, không nạp toàn bộ lịch sử.
-- [Technical plan v2.1](docs/technical-plan.md) là baseline; các phần đã chuyển theo link là nguồn chi tiết hiện hành. ADR Proposed, research và archive không tự ghi đè quyết định đã chốt.
+- [Technical plan v2.3](docs/technical-plan.md) là baseline; các phần đã chuyển theo link là nguồn chi tiết hiện hành. ADR Proposed, research và archive không tự ghi đè quyết định đã chốt.
 - Đọc [trạng thái quyết định](docs/decision-status.md) khi cần phân biệt đã chọn hướng, chi tiết sẽ thiết kế và điều còn chờ kiểm chứng; không coi mọi mục trong plan là đã chốt tới mức implementation.
 - Code cho biết đã triển khai gì; tài liệu thiết kế không phải bằng chứng feature đã chạy. Xung đột chưa rõ: ghi nguồn và hỏi trước phần triển khai phụ thuộc.
-- Chỉ làm task được giao; không cắt camera/nhóm/help/presentation hoặc thêm quiz/timer/library. Theo [scope](docs/product/scope.md).
+- Chỉ làm task được giao; không tự cắt camera/nhóm/chat cuộc họp/hỗ trợ/về phòng chung hoặc thêm quiz/library/đồng hồ ngoài TIMER-01. Theo [scope](docs/product/scope.md).
+- Chat theo [messaging](docs/product/messaging.md): general mặc định, owner/admin tạo kênh, DM 1–1 text/ảnh/file, thread một cấp trong TEXT. Chat cuộc họp vẫn chỉ text/ảnh; không dùng quyền admin để đọc DM.
+- Nhóm/media theo [group modes](docs/product/group-modes.md): DISCUSSION xin host, kế thừa bài giảng và cấm share; ACTIVITY độc lập. MAIN và mỗi ACTIVITY một share riêng; member ACTIVITY không cần host duyệt. DISCUSSION vào bằng nút sau duyệt, đóng trước lượt ACTIVITY; TIMER-01 chỉ nhắc, host kết thúc. Đọc điểm mở trước code phụ thuộc.
 
 ## Package manager và lệnh
 
@@ -30,3 +32,5 @@
 - Báo phần đổi, lệnh/kết quả thực chạy, giới hạn, điểm mở và bước sau; dùng [mẫu](docs/ai/task-template.md).
 - Native worker ready không chứng minh camera/mic/TURN. Mock/schema/placeholder không là feature hoàn thành.
 - Chỉ commit khi được yêu cầu; nếu commit có đóng góp AI, ghi Co-Authored-By theo danh tính môi trường cung cấp, không giả danh hoặc bịa email/model.
+
+- [Host cuộc họp](docs/product/live-session.md#83-chuyển-host-và-host-mất-mạng): một kiểu cuộc họp, người bắt đầu là host; chuyển quyền có xác nhận, không tự nhận host. MAIN mọi participant tự share khi trống, không xin host/giành nguồn; DISCUSSION vẫn cấm share riêng. Host mất mạng quá grace: chọn ngẫu nhiên participant hợp lệ làm host tạm, tự hoàn quyền khi host cũ quay lại hợp lệ; các nhánh rời chủ động/nhiều sự cố đọc nguồn trước khi triển khai.

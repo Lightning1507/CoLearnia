@@ -64,6 +64,14 @@ test('broken local link fails', async (t) => {
   await assert.rejects(checkHarness(base), /ENOENT/);
 });
 
+for (const source of ['docs/product/messaging.md', 'docs/product/group-modes.md']) {
+  test(`${source} links are checked beyond source-map presence`, async (t) => {
+    const base = await fixture(t);
+    await writeFile(join(base, source), '[missing](absent.md)\n', { flag: 'a' });
+    await assert.rejects(checkHarness(base), /ENOENT/);
+  });
+}
+
 test('ignored source fails even if file exists', async (t) => {
   const base = await fixture(t);
   await writeFile(join(base, '.gitignore'), '\ndocs/database/model.md\n', { flag: 'a' });

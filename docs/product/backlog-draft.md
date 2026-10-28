@@ -1,0 +1,95 @@
+# Product backlog MVP — bản sơ bộ
+
+**Ngày:** khởi tạo 26/10/2026, cập nhật theo quyết định team 27/10/2026. **Mục đích:** review các nhóm tính năng, kết quả người dùng, ưu tiên và phụ thuộc trước khi tạo GitHub Issues/Projects. Đây là đề xuất tổ chức công việc theo baseline, chưa là lịch giao việc hoặc bằng chứng hoàn thành.
+
+Nguồn phạm vi: [scope và ba luồng nghiệm thu](scope.md). Nguồn mốc tích hợp, test IDs và phương án phân vai A–E tham khảo: [technical plan, mục 14–16](../technical-plan.md#14-kiểm-thử-và-tiêu-chí-hoàn-thành). Chi tiết còn mở: [trạng thái quyết định](../decision-status.md).
+
+Tài liệu này không theo dõi assignee, trạng thái, sprint hoặc tiến độ. Khi tạo Issues, dẫn link về đây cho cấu trúc nhóm tính năng; Issues/Projects giữ công việc và trạng thái thực. Khi đổi nghiệp vụ, sửa nguồn sở hữu được dẫn thay vì chỉ sửa backlog.
+
+## Cách đọc
+
+- **P0 — mở đường:** cần làm sớm để các luồng khác tích hợp và kiểm chứng được.
+- **P1 — hoàn thiện hành trình:** phát triển khi nền liên quan đủ dùng; vẫn bắt buộc trong MVP.
+- Cả P0 và P1 phải hoàn thành trong 4 tuần build theo DoD của plan. Không có nhóm “nếu kịp”. Thứ tự dưới đây là đề xuất triển khai, không thêm quyết định scope.
+- “Phụ thuộc” là điều kiện để tích hợp/nghiệm thu kết quả thật. Có thể phân tích, thống nhất contract và phát triển song song; không phải đợi toàn bộ nhóm trước hoàn tất mới bắt đầu nhóm sau.
+- Số PB không phải thứ tự làm tuần tự; DM/thread có thể triển khai song song khi nền message/file đủ dùng. PB-10 là lát cắt closeAll của PB-07/GRP-01, dùng chung nền nhóm và không tính effort hai lần.
+- Mã PB chỉ dùng nhận diện nhóm backlog, không thay feature ID hoặc UC ID hiện có. UC-01/02/03 hiện là ba hành trình nghiệm thu; chưa thay cho danh sách Use Case chi tiết ở bước phân tích tiếp theo.
+
+## Các nhóm tính năng
+
+| Nhóm                                      | Kết quả người dùng cần đạt                                                                                                                                             | Feature baseline    | Ưu tiên triển khai | Phụ thuộc chính để tích hợp                                                                            | Hành trình  |
+| ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------- | ------------------ | ------------------------------------------------------------------------------------------------------ | ----------- |
+| PB-01 · Tài khoản và phiên truy cập       | Đăng ký, đăng nhập, giữ phiên hợp lệ và đăng xuất; hết quyền thì dừng truy cập liên quan                                                                               | AUTH-01             | P0                 | Không phụ thuộc nhóm sản phẩm khác                                                                     | UC-01/02/03 |
+| PB-02 · Không gian học và thành viên      | Tạo, tìm lại và quản lý Workspace; mời người vào, quản lý vai trò và chuyển owner                                                                                      | WS-01/02/03         | P0                 | PB-01                                                                                                  | UC-01       |
+| PB-03 · Kênh học                          | Có general TEXT mặc định; owner/admin tạo, đổi tên, xóa kênh TEXT/LIVE; kênh còn khi cuộc gọi kết thúc                                                                 | CH-01               | P0                 | PB-01, PB-02                                                                                           | UC-01/02/03 |
+| PB-04 · Trao đổi và tài liệu              | Gửi/đọc tin, ảnh, tệp và lịch sử kênh; tải tài liệu đúng quyền, thấy lỗi gửi và thử lại an toàn                                                                        | CHAT-01, FILE-01    | P0                 | PB-01–03; chat kênh không chờ meeting. PB-09 dùng lại nền message/file                                 | UC-01/03    |
+| PB-05 · Cuộc gọi nhóm và chia sẻ màn hình | Vào/rời LIVE, mic/camera, share MAIN một người, mọi participant tự share khi trống không xin host; mode nhóm quyết định quyền share/nhận nguồn                         | LIVE-01/02/03       | P0                 | PB-01–03, EN-01; ACTIVITY mỗi nhóm một share, member tự share không host duyệt                         | UC-02/03    |
+| PB-06 · Cùng dừng hình và giải bài        | Freeze/vẽ trên nguồn hợp lệ: MAIN hoặc bài giảng trong DISCUSSION, nguồn riêng trong ACTIVITY; resume theo context                                                     | BOARD-01, FREEZE-01 | P0                 | PB-05/07; file ACL PB-04; board ACTIVITY theo screen duy nhất đang share                               | UC-02/03    |
+| PB-07 · Điều hành và nhóm nhỏ             | Người bắt đầu là host, chuyển quyền có xác nhận; xin DISCUSSION tên/mục đích/thành viên và host duyệt; host tổ chức ACTIVITY độc lập; tự về MAIN hoặc host chuyển/đóng | HOST-01, GRP-01/02  | P0                 | PB-05; media/chat/board theo mode PB-04/06; DISCUSSION vào bằng nút sau duyệt; kết thúc trước ACTIVITY | UC-03       |
+| PB-08 · Điều chỉnh âm thanh               | Chỉnh âm lượng nguồn được phép; DISCUSSION chỉnh tiếng giảng/trao đổi; ACTIVITY không nhận MAIN mặc định; duck đúng audience                                           | AUDIO-01            | P1                 | PB-05/07; không dùng volume để thay ACL                                                                | UC-02/03    |
+| PB-09 · Chat cuộc họp và hỗ trợ nhóm      | Gửi text/ảnh tới Everyone trong phòng/nhóm hiện tại hoặc Host riêng; host vào nhóm hỗ trợ có thông báo                                                                 | HELP-01             | P1                 | PB-04, PB-05, PB-07; ảnh canvas nếu dùng cần PB-06                                                     | UC-02/03    |
+| PB-10 · Về phòng chung và phát biểu       | Host kết thúc chia nhóm, đưa tất cả về MAIN; mọi người tự bật mic để phát biểu                                                                                         | GRP-01 (cùng PB-07) | P1                 | PB-05, PB-07; thu chat/board/help nhóm của PB-06/PB-09 khi đang dùng                                   | UC-03       |
+| PB-11 · Trở lại sau mất kết nối           | Kết nối lại theo quyền/trạng thái hiện tại, thấy đúng dữ liệu và media, không phục hồi grant hoặc đích chat cũ                                                         | REC-01              | P0 xuyên suốt      | PB-01 và nền session PB-05/PB-07; kiểm hồi quy cùng mọi nhóm có state liên quan                        | UC-01/02/03 |
+| PB-12 · Nhắn riêng thành viên             | Mở DM 1–1 trong cùng Workspace; gửi text/ảnh/file và đọc lịch sử chỉ giữa hai bên                                                                                      | CHAT-02             | P1                 | PB-01/02 và nền message/file PB-04; không cần LIVE                                                     | UC-01       |
+| PB-13 · Thread trong kênh                 | Trả lời theo tin gốc, xem số trả lời và mở panel thread; text/ảnh/file không làm trôi dòng chính                                                                       | CHAT-03             | P1                 | PB-03/04; ACL và lịch sử kênh                                                                          | UC-01       |
+| PB-14 · Thời lượng hoạt động              | Host đặt một countdown chung cho lượt ACTIVITY; hiển thị/nhắc hết giờ, host quyết định kết thúc                                                                        | TIMER-01            | P1                 | PB-07, snapshot/reconnect PB-11; không áp mặc định DISCUSSION                                          | UC-03       |
+
+## Ranh giới cần giữ khi phân rã
+
+| Nhóm     | Điều cần thể hiện trong đặc tả/tiêu chí chấp nhận tiếp theo                                                                                                                      | Nguồn chi tiết                                                                                                                                    |
+| -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| PB-01    | Logout/hết hạn chặn cả REST, socket và media; thư viện băm mật khẩu hoàn thiện trong task auth                                                                                   | [Tài khoản và kênh](workspace-channels.md)                                                                                                        |
+| PB-02/03 | Một owner/Workspace, tạo membership nguyên tử; không tự nâng role; RESTRICTED có quyền rõ; LIVE channel khác LiveSession                                                         | [Tài khoản và kênh](workspace-channels.md), [model DB](../database/model.md)                                                                      |
+| PB-04    | Tin đã ack không mất/chống gửi trùng; history phân trang; biết file ID/URL không đồng nghĩa được tải                                                                             | [Tài khoản và kênh](workspace-channels.md), [lifecycle DB](../database/lifecycle.md)                                                              |
+| PB-05    | MAIN một share; DISCUSSION cấm publish screen; ACTIVITY mỗi nhóm một share độc lập, member không host duyệt; nguồn bận phải chờ                                                  | [Group modes](group-modes.md), [live](live-session.md)                                                                                            |
+| PB-06    | Freeze chung theo MAIN/group, chưa có freeze cá nhân; undo nét mình, clear theo quyền; resume tới hình hiện tại, không lưu thư viện bài làm                                      | [Board collaboration](board-collaboration.md)                                                                                                     |
+| PB-07    | Chưa duyệt không có quyền; phân biệt DISCUSSION kế thừa/ACTIVITY độc lập; người được duyệt bấm vào mới có quyền; hai phase không chồng nhau, TTL/field limits thiết kế theo task | [Group modes](group-modes.md)                                                                                                                     |
+| PB-08    | Gain không thay ACL; bài giảng chỉ tới MAIN/DISCUSSION; không route MAIN/announcement vào ACTIVITY                                                                               | [Group modes](group-modes.md), [audio](live-session.md#84-audio-graph)                                                                            |
+| PB-09    | Everyone theo scope hiện tại; Host riêng; text/ảnh, không tệp bất kỳ; không tự đổi đích khi move/transfer host                                                                   | [Chat/help](groups-media-policy.md#81-host-group-và-hỗ-trợ)                                                                                       |
+| PB-10    | CloseAll về MAIN, mic người chuyển cần tự bật lại; không tự mang chat/board nhóm ra chung; không floor/consent/projection                                                        | [Về phòng chung](groups-media-policy.md#82-kết-thúc-chia-nhóm-và-về-phòng-chung), [board](board-collaboration.md#73-board-khi-kết-thúc-chia-nhóm) |
+| PB-11    | Mất mạng trong lúc move/revoke vẫn áp quyền mới; không replay packet private cũ; restart server cần join mới theo baseline                                                       | [Reconnect và lifecycle](live-session.md#11-reconnect-và-vòng-đời-tài-nguyên)                                                                     |
+| PB-12    | Đúng hai người trong Workspace, chống tạo hội thoại trùng; chặn người thứ ba/admin; thu file/event khi mất membership                                                            | [DM](messaging.md#chat-riêng-11--chat-02)                                                                                                         |
+| PB-13    | Một cấp trong TEXT, cùng ACL kênh; root cùng conversation, không nhân reply vào dòng chính; retry không tăng count lặp                                                           | [Thread](messaging.md#thread-trong-kênh--chat-03)                                                                                                 |
+| PB-14    | Deadline server; reconnect không reset; hết giờ không close/move/mute/revoke share; host kết thúc                                                                                | [Countdown](group-modes.md#thời-lượng-chung-cho-lượt-hoạt-động--timer-01)                                                                         |
+
+Đây là các điểm nhắc để phân tích, chưa phải bộ acceptance criteria đầy đủ của từng Issue. Khi phân rã, bổ sung ca thành công, từ chối/lỗi, cleanup và bằng chứng phù hợp theo [task brief](../ai/task-template.md).
+
+PB-12 chỉ có hai participant, không có group DM. PB-13 bản đầu một cấp trong TEXT; cùng quyền kênh, chưa có thread trong DM/cuộc họp hoặc follow/broadcast. Xem [messaging](messaging.md) để phân biệt general, kênh, DM và thread.
+
+## Công việc mở đường và nghiệm thu
+
+Các mục EN hỗ trợ delivery, không phải tính năng người dùng mới và không thay nhóm PB.
+
+| Mục                                     | Đầu ra cần có                                                                                                                     | Phụ thuộc / thời điểm theo baseline                                                     |
+| --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| EN-01 · Kiểm chứng nền media            | Đo cả DISCUSSION kế thừa MAIN/cấm share và ACTIVITY share độc lập; move/leave/revoke, board source/audio, forced TURN             | G1 theo plan; kiểm acquire tự động, cùng nhóm tranh share và nhóm khác share song song  |
+| EN-02 · Phân tích và hợp đồng chung     | UC/Activity chọn lọc; mô hình dữ liệu ban đầu; contract identity, scope/policy, media, board, message/file và reconnect nhất quán | Làm sớm cùng PB; chi tiết theo feature, không đợi thiết kế tất cả mới bắt đầu PoC       |
+| EN-03 · Môi trường tích hợp và vận hành | Staging HTTPS/Internet, CI, cấu hình triển khai; về cuối có deploy SHA, backup/restore và rollback/runbook                        | Staging từ tuần 1; cần nhóm cung cấp lịch, capacity và budget; chưa tự chọn/mua dịch vụ |
+| EN-04 · Nghiệm thu xuyên suốt           | UC-01/02/03 và T-01–T-14 có evidence; profile bắt buộc 5 người, hai mạng, camera đúng quyền; xử lý lỗi và cleanup                 | Kiểm cùng feature; tổng hợp G2/G3/G4, không dồn tất cả kiểm thử sang tuần 4             |
+
+## Thứ tự tích hợp đề xuất
+
+1. **Mở đường song song:** EN-01/02/03; PB-01–03 tạo đường truy cập thật; PB-11 thống nhất nguyên tắc recovery từ đầu.
+2. **Có hai hành trình cơ bản:** PB-04 hoàn thiện lát cắt trao đổi/tài liệu kênh của UC-01; PB-05/06 tạo UC-02 với mic/camera/share/freeze/vẽ. PB-07 phát triển cùng nền session để kiểm nhóm sớm, không chờ UC-02 hoàn tất mới làm isolation.
+3. **Đi hết buổi học có hướng dẫn:** PB-07 tích hợp chat/board riêng, PB-08/09/10/14 và PB-11 hoàn thiện cả hai nhánh group mode của UC-03 cùng các luồng mất kết nối; PB-12/13 hoàn thiện DM/thread của UC-01 trước G3.
+4. **Đạt nghiệm thu:** EN-04 kiểm hồi quy, network/privacy/races/cleanup; EN-03 hoàn thiện vận hành. Theo baseline, toàn scope có luồng thật cuối tuần 3 và đủ DoD cuối tuần 4.
+
+Không vẽ quan hệ PB-04 → PB-07 → PB-04 thành chuỗi chờ: chat/file kênh có thể hoàn thành trước; phần chat cuộc họp theo Everyone/Host mới cần session/group scope. Tương tự, board MAIN có thể tích hợp trước board nhóm. Những lát cắt này sẽ được tách khi lập Issues.
+
+## Đầu vào còn thiếu và bước kế tiếp
+
+- Phân công thật sẽ làm sau; A–E và các cột owner/reviewer trong plan chỉ là phương án tham khảo, không phải nhiệm vụ đã giao.
+- Tên/tài khoản thật cho A–E, giờ làm mỗi tuần, ngày kickoff/nộp, budget và yêu cầu hồ sơ của môn học chưa được xác nhận. Chưa gán người, ước lượng hoặc ngày cam kết trong bản này.
+- Cấu hình media cuối cùng chờ PoC; schema/index/migration và implementation auth tiếp tục cụ thể hóa theo nguồn hiện hành, không thiết kế lại mặc định.
+- Bước kế tiếp: dùng các nhóm PB để xác định actor và Use Case; chọn Activity cho luồng nhiều trạng thái/quyền; đối chiếu mô hình DB. Sau đó phân rã thành Issues có tiêu chí chấp nhận, phụ thuộc và reviewer, rồi cấu hình GitHub Projects.
+- Quiz/poll, đồng hồ ngoài countdown TIMER-01, thư viện/export bài làm, công cụ vẽ nâng cao, freeze cá nhân và screen riêng của DISCUSSION vẫn ngoài scope; ACTIVITY mỗi nhóm một share riêng, member không host duyệt theo [baseline](scope.md#13-ngoài-scope-của-đợt-này).
+
+**Điều chỉnh scope đã chốt 27/10:** PB-09/PB-10 theo mô tả mới ở trên. FLOOR-01/PRESENT-01 của v2.1 đã bỏ; PB-10 là lát cắt kết thúc nhóm của GRP-01, không cộng thêm feature mới. Sau bổ sung CHAT-02/03, MVP có 21 feature ID bắt buộc sau bổ sung TIMER-01.
+
+**Bổ sung chat Workspace:** general thuộc CH-01; PB-12/13 là scope mới theo chỉ đạo 27/10. Cần đưa effort vào capacity review trước khi chốt lịch giao việc; không tự coi giảm floor/presentation là đủ bù chi phí.
+
+**Cập nhật đã chốt:** TIMER-01 chung cho lượt ACTIVITY đã vào scope; không auto-close hoặc áp cho DISCUSSION. Dấu có tin mới cho kênh/DM vẫn là ý tưởng cần xác định hành vi/effort, chưa tự thêm feature. Nhóm xin tạo có tên/mục đích/danh sách; người được duyệt tự bấm vào; ACTIVITY mỗi nhóm một share, không host duyệt, không hoạt động cùng DISCUSSION theo [group modes](group-modes.md).
+
+### Làm rõ host sau review UC
+
+Một kiểu cuộc họp; không chia FREE/MODERATED hoặc bật chế độ điều hành. Người bắt đầu giữ host, người vào sau không tự nhận host; MAIN mọi participant tự share khi nguồn trống và không giành nguồn. Các feature ID/ưu tiên giữ nguyên. Mất mạng quá grace chọn ngẫu nhiên participant hợp lệ làm host tạm, host cũ quay lại hợp lệ tự nhận lại quyền trong cùng phiên. Nhánh rời chủ động/nhiều sự cố còn cần chốt tại [vòng đời host](live-session.md#83-chuyển-host-và-host-mất-mạng) trước đặc tả/implementation phụ thuộc.

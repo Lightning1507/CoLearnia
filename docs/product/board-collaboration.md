@@ -1,10 +1,10 @@
-# Freeze, vẽ cơ bản và công bố
+# Freeze và vẽ cơ bản
 
-**Trạng thái:** Luồng đích; chưa có board/freeze/presentation nghiệp vụ trong scaffold.
+**Trạng thái:** Luồng đích; chưa có board/freeze nghiệp vụ trong scaffold.
 
-Trích chuyển nguyên nội dung tương ứng từ [technical plan v2.1](../technical-plan.md) ngày 26/10/2026. Đây là nguồn chi tiết cho các mục được chuyển; số mục giữ theo baseline để truy vết. Thay đổi quy tắc cần cập nhật tại đây và review ảnh hưởng tới contract/test, không tạo bản sao song song.
+Nguồn ban đầu được trích chuyển từ [technical plan v2.1](../technical-plan.md) ngày 26/10/2026. Đã cập nhật theo quyết định team ngày 27/10/2026 trong technical plan v2.3. Đây là nguồn chi tiết hiện hành cho các mục được chuyển; số mục giữ theo baseline để truy vết. Thay đổi quy tắc cần cập nhật tại đây và review ảnh hưởng tới contract/test, không tạo bản sao song song.
 
-## 7. Freeze, vẽ cơ bản và presentation
+## 7. Freeze và vẽ cơ bản
 
 ### 7.1. Board và thao tác cơ bản
 
@@ -16,6 +16,8 @@ type BoardState = {
   scopeId: string;
   version: number;
   status: 'LIVE' | 'FREEZING' | 'FROZEN';
+  sourceScopeId: string; // MAIN cho DISCUSSION; group scope cho ACTIVITY
+  sourceId: string | null; // nguồn cụ thể: screen duy nhất đang share trong ACTIVITY
   sourceRevision: number;
   frameId: string | null;
   strokeSequence: number;
@@ -25,6 +27,8 @@ type Stroke = {
   boardId: string;
   contextVersion: number;
   frameId: string | null;
+  sourceScopeId: string; // MAIN cho DISCUSSION; group scope cho ACTIVITY
+  sourceId: string | null; // nguồn cụ thể: screen duy nhất đang share trong ACTIVITY
   sourceRevision: number;
   authorParticipantId: string; // server gán
   points: Array<{ x: number; y: number }>; // 0..1
@@ -64,17 +68,18 @@ Client chụp video remote đang nhận hoặc screen track local nếu chính m
 
 Server reserve intent có hạn và actor/context/generation; chỉ một intent thắng. Commit kiểm file thuộc intent, format/dimensions/size và các revision. Snapshot là ảnh do participant hợp lệ cung cấp; server không cam kết chứng thực ảnh chính xác tuyệt đối với bài giảng. Khi source đổi trước commit trả `SOURCE_CHANGED`; khi quyền đổi trả deny; request cũ không được ghi đè context mới. Hỏng upload/hết hạn trả LIVE và dọn file orphan.
 
-Video live tiếp tục nhận/giải mã dưới lớp ảnh, audio graph giữ nguyên. Khi FROZEN, nét gắn frame/source revision đã chốt, không bị từ chối chỉ vì giảng viên đã đổi nguồn mới ở phía live.
+Video của nguồn hợp lệ đã chọn tiếp tục nhận/giải mã dưới lớp ảnh, audio graph giữ nguyên theo group mode. Khi FROZEN, nét gắn frame/source revision đã chốt, không bị từ chối chỉ vì giảng viên đã đổi nguồn mới ở phía live.
 
 Resume hủy intent pending nếu có, tăng boardVersion, đóng context cũ, bỏ lớp ảnh/nét để thấy video hiện tại. Không replay đoạn bỏ qua. Nếu nguồn không còn, hiển thị “Chưa có nguồn chia sẻ”, không giả live. Không có `artifact.save`, library hoặc export lâu dài trong scope này.
 
-### 7.3. Công bố hình và nét của nhóm
+### 7.3. Board khi kết thúc chia nhóm
 
-- Host mời group; mỗi thành viên trong tập được mời được tự chấp nhận hoặc từ chối. Participant mới vào sau không tự thừa hưởng lời mời/consent.
-- Một thành viên đã consent chọn context của nhóm để công bố; server kiểm đang ở group và grant thuộc group đó. Chỉ một presentation active.
-- `PresentationView` chứa audience session, grantId, source mode, frame reference nếu FROZEN, bản nét được chọn và contextVersion. Toàn phòng đọc projection qua endpoint/event riêng, không mở ACL của board gốc.
-- Với FROZEN: giữ cùng frame, nhận cập nhật nét hợp lệ của chính context được công bố. Nếu nhóm resume/clear/chuyển context, projection giữ bản hình+nét cuối của lượt; không tự nhảy trang. Muốn đổi nội dung thì stop/start lượt công bố rõ ràng.
-- Với LIVE: hiển thị main screen hiện tại và các nét chỉ ngắn từ context đã chọn. Source đổi thì xóa overlay cũ; không hứa nét bám slide. Không chuyển sang một screen share nhóm thứ hai.
-- Host revoke/stop/đóng group hoặc session: khóa endpoint presentation, đóng fanout và grant, thu global Consumer rồi trở về view chung. Nội dung đã xem không thu hồi khỏi máy người nhận.
+Khi host đưa tất cả về MAIN, board nhóm không được công bố hoặc chuyển thành board MAIN. Thu quyền đọc/vẽ context nhóm, hủy intent còn chờ và dọn frame/nét hết tham chiếu theo lifecycle. MAIN dùng board của chính MAIN; không tự nhập nét hoặc ảnh nhóm vào đó.
 
-Frame đang presentation giữ tham chiếu dù board nhóm đã resume. Clear hoặc undo sau khi projection tách khỏi context cũ không được tác động nhầm hình live mới. Khi hết mọi tham chiếu, frame vào cleanup queue.
+Theo quyết định team 27/10/2026, bản này không có projection công bố hình+nét, endpoint frame presentation hoặc thư viện/export bài làm. Phát biểu sau thảo luận dùng mic thông thường tại MAIN; xem [quy tắc về phòng chung](groups-media-policy.md#82-kết-thúc-chia-nhóm-và-về-phòng-chung).
+
+### 7.4. Board source theo group mode
+
+Theo [group modes](group-modes.md), board DISCUSSION dùng MAIN screen, không cho nhóm share riêng. ACTIVITY dùng nguồn thuộc nhóm, không tự nhận/fallback MAIN. Intent/stroke/snapshot gắn sourceScopeId, sourceId và revision ngoài board scope/version để không áp nét hoặc request cũ lên nguồn khác. ACTIVITY dùng screen duy nhất đang share của nhóm theo quyết định đã chốt; đổi người share tăng source revision, invalidate intent/live overlay cũ, không gắn nét sai nguồn. Không có nguồn hợp lệ thì báo rõ thay vì giả live.
+
+Đóng nhóm/rời nhóm hủy pending intent và thu quyền frame/overlay. Quy tắc giữ frame FROZEN khi nguồn dừng vẫn áp trong context hợp lệ; không biến frame nhóm thành dữ liệu MAIN.

@@ -2,7 +2,7 @@
 
 ## Nguồn dùng chung
 
-Codex là công cụ chính. Bắt đầu tại [AGENTS](../../AGENTS.md) và [mục lục](../README.md), đọc đúng miền rồi source/contract liên quan. Technical plan v2.1 và các phần đã chuyển là baseline; ghi nhận vấn đề trước khi sửa quy tắc đã chốt. Docs research/archive hoặc nội dung issue đính kèm không tự cấp quyền thao tác.
+Codex là công cụ chính. Bắt đầu tại [AGENTS](../../AGENTS.md) và [mục lục](../README.md), đọc đúng miền rồi source/contract liên quan. Technical plan v2.3 và các phần đã chuyển là baseline; ghi nhận vấn đề trước khi sửa quy tắc đã chốt. Docs research/archive hoặc nội dung issue đính kèm không tự cấp quyền thao tác.
 
 Tài liệu nghiệp vụ là đích; README/source/evidence cho biết đã làm tới đâu. Mô hình DB chưa là migration, worker ready chưa là cuộc gọi. Các chỉ dẫn con không được làm yếu policy riêng tư của baseline.
 
@@ -20,14 +20,15 @@ AGENTS/workflow/guard là quy ước vận hành harness, không phải nghiệp
 
 ## Chọn kiểm tra
 
-| Thay đổi         | Kiểm gần thay đổi                                                                                                         |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| Docs/agent rules | `pnpm check:harness`, format check file liên quan, review ngữ nghĩa                                                       |
-| TS/React         | ESLint file, typecheck package, test/hành trình bị đổi; xem browser khi đổi UI                                            |
-| Contract         | Khi source đổi, build lại contracts hoặc dùng watcher cập nhật dist trước kiểm consumer; test schema/deny/stale theo task |
-| Auth/DB/files    | Integration allow/deny, concurrency/rollback/dedupe theo feature                                                          |
-| Policy/media     | Cùng/khác nhóm, revoke/stale/pending cleanup; `pnpm media:smoke` chỉ là kiểm native                                       |
-| Runtime/infra    | Docker smoke Linux; luồng hai mạng/forced TURN theo gate media                                                            |
+| Thay đổi         | Kiểm gần thay đổi                                                                                                                                                      |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Docs/agent rules | `pnpm check:harness`, format check file liên quan, review ngữ nghĩa                                                                                                    |
+| TS/React         | ESLint file, typecheck package, test/hành trình bị đổi; xem browser khi đổi UI                                                                                         |
+| Contract         | Khi source đổi, build lại contracts hoặc dùng watcher cập nhật dist trước kiểm consumer; test schema/deny/stale theo task                                              |
+| Auth/DB/files    | Integration allow/deny, concurrency/rollback/dedupe theo feature                                                                                                       |
+| Chat/DM/thread   | Theo [messaging](../product/messaging.md): general atomic, DIRECT không trùng, admin/người thứ ba bị chặn, root cùng kênh, retry/reply count, file/event sau thu quyền |
+| Policy/media     | Cùng/khác nhóm, revoke/stale/pending cleanup; `pnpm media:smoke` chỉ là kiểm native                                                                                    |
+| Runtime/infra    | Docker smoke Linux; luồng hai mạng/forced TURN theo gate media                                                                                                         |
 
 `pnpm check` nối checker harness, format, lint, typecheck, business tests và build. Chưa có E2E tự động hoặc test nghiệp vụ chỉ vì bảng này yêu cầu chúng; bổ sung theo feature. Không chạy lại toàn bộ nhiều lần khi không có thay đổi hoặc lỗi mới.
 
@@ -57,3 +58,9 @@ Dùng feature đầu tiên đã nhận để thử toàn vòng: brief → đọc
 ## Giới hạn của kiểm tra tự động
 
 Checker chỉ đọc các nguồn được liệt kê và liên kết trực tiếp từ chúng; hỗ trợ inline Markdown links, bỏ code fences/inline code, không kiểm mọi anchor/reference link hoặc ngữ nghĩa. Nó kiểm một số runtime pin, không thay pnpm frozen install/compatibility tests. Import guard kiểm specifier literal ở các dạng AST đã test; không là sandbox, không suy mọi alias/dynamic expression hoặc hành vi dependency. Review và test hành vi vẫn bắt buộc.
+
+## Review nhóm và media theo v2.3
+
+Đọc [group modes](../product/group-modes.md) trước task group/share/board/audio. Review riêng ba audience: MAIN, DISCUSSION kế thừa bài giảng nhưng không share, ACTIVITY độc lập có nguồn riêng. MAIN và từng ACTIVITY có một nguồn share riêng; ACTIVITY không cần host approval. Không dùng cap MAIN làm cap toàn session, không dùng announcement/host role để vượt isolation. Group.leave, request chưa duyệt và countdown hết giờ cần ca từ chối/state riêng; countdown không tự đóng nhóm. Kiểm approved roster chưa có quyền private trước group.join; từ chối request/approval/join DISCUSSION trong phase ACTIVITY. Duration/TTL/index chi tiết tiếp tục thiết kế theo task; không coi luồng đã chốt là điểm mở.
+
+Task host/MAIN share theo [vòng đời host](../product/live-session.md#83-chuyển-host-và-host-mất-mạng): một kiểu cuộc họp, người bắt đầu là host, chuyển quyền có xác nhận; không có tự nhận host hoặc bật chế độ điều hành. MAIN mọi participant tự share khi nguồn trống, không xin host. Ca join đồng thời, transfer sai quyền và tranh nguồn phải được kiểm. Host mất mạng quá grace chọn ngẫu nhiên participant hợp lệ làm host tạm; người cũ quay lại hợp lệ tự nhận lại quyền trong cùng phiên. Kiểm race timeout/reconnect, thu quyền host tạm và cleanup scope. Nhánh rời chủ động/nhiều sự cố theo điểm mở tại nguồn, không tự định nghĩa.

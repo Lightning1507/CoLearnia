@@ -1,14 +1,22 @@
 # CoLearnia — Technical plan
 
-**Phiên bản:** 2.1 · cập nhật 26/10/2026, trên nền v2.0 ngày 24/10/2026\
+**Phiên bản:** 2.3 · cập nhật 27/10/2026, trên nền v2.2 cùng ngày\
 **Đề tài:** Nền tảng học nhóm trực tuyến tích hợp chia sẻ màn hình và tương tác thời gian thực.  
-**Nhóm:** 5 thành viên, ký hiệu A–E để gán tên khi khởi động.  
+**Nhóm:** 5 thành viên; A–E là phương án phân vai tham khảo, phân công thật sẽ thống nhất sau.\
 **Thời gian mục tiêu:** 4 tuần xây dựng và kiểm thử tích hợp; 1–2 tuần tiếp theo hoàn thiện triển khai, tài liệu và chuẩn bị bảo vệ.  
 **Trạng thái:** phạm vi sản phẩm đã thống nhất; repository đã có scaffold web/server/contracts, cấu hình CI và hạ tầng local. Môi trường local đã cài dependency, khởi tạo MongoDB replica set và chạy mediasoup worker; web/API và readiness đã được kiểm tra. Các luồng nghiệp vụ chưa được triển khai đầy đủ; nền media vẫn cần qua PoC đầu tuần 1. Chưa có số đo cuộc gọi thực để xác nhận hiệu năng hoặc lịch hoàn thành.
 
 Tài liệu là cơ sở chung để tạo backlog, viết contracts, triển khai và nghiệm thu. Các quy tắc nghiệp vụ dưới đây là thiết kế của CoLearnia; không phải API có sẵn của thư viện. Thông số ghi “khởi đầu” hoặc “mục tiêu thử” phải được kiểm chứng, không dùng làm cam kết hiệu năng.
 
-**Cập nhật v2.1:** đồng bộ runtime với repository sang Node.js 26.12.1/pnpm 11.5.2 và ghi nhận hiện trạng scaffold/local. Giữ nguyên phạm vi, kiến trúc sản phẩm và lộ trình v2.0. Các mục triển khai và kiểm thử bên dưới mô tả đích cần đạt; trạng thái đã hoàn thành phải đối chiếu source và evidence theo commit/môi trường. Native media smoke chỉ xác nhận worker/Router khởi động, chưa chứng minh camera/mic, cách ly nhóm hoặc TURN.
+**Cập nhật v2.3:** phân biệt MAIN, DISCUSSION thành viên xin host duyệt và ACTIVITY host tổ chức độc lập. MAIN một người share; DISCUSSION kế thừa bài giảng và cấm share riêng; ACTIVITY mỗi nhóm một share độc lập; mọi member tự bấm không xin host, board theo nguồn đó. Host duyệt DISCUSSION rồi người được chọn bấm Vào nhóm; kết thúc DISCUSSION trước ACTIVITY và không nhận request DISCUSSION trong lượt hoạt động. Thêm tự về MAIN và TIMER-01 countdown chung cho lượt hoạt động, chỉ nhắc hết giờ. Xem [group modes](product/group-modes.md) là nguồn chi tiết; các quy tắc này thay mô hình mọi nhóm cùng nhận MAIN của v2.2. Chưa thay code nghiệp vụ hoặc chứng minh PoC đạt.
+
+**Lịch sử cập nhật v2.2 theo team 27/10/2026:** HELP-01 là chat text/ảnh chọn Everyone theo scope hiện tại hoặc Host riêng, kèm host vào nhóm hỗ trợ. Kết thúc chia nhóm đưa tất cả về MAIN để tự bật mic; bỏ FLOOR-01/PRESENT-01 và cơ chế floor/consent/projection. GRP-01 bao gồm thao tác về phòng chung; không tạo feature ID thay thế. Các quy tắc chi tiết, contracts đích, dữ liệu, test và backlog đã được đồng bộ; tài liệu lịch sử ngày 26/10 không ghi đè quyết định này. Đây là thay đổi thiết kế, chưa là code đã chạy.
+
+**Bổ sung messaging ngày 27/10/2026:** Workspace mới có general TEXT; owner/admin tạo kênh khác. Thêm CHAT-02 (DM 1–1 text/ảnh/file) và CHAT-03 (thread một cấp trong TEXT). Xem [messaging](product/messaging.md) cho phạm vi, quyền và các chi tiết còn mở. Chat cuộc họp HELP-01 vẫn chỉ text/ảnh. Scope tăng cần ước lượng lại, chưa có bằng chứng đủ capacity chỉ vì bỏ floor/presentation.
+
+**Lịch sử cập nhật v2.1:** đồng bộ runtime với repository sang Node.js 26.12.1/pnpm 11.5.2 và ghi nhận hiện trạng scaffold/local. Giữ nguyên phạm vi, kiến trúc sản phẩm và lộ trình v2.0. Các mục triển khai và kiểm thử bên dưới mô tả đích cần đạt; trạng thái đã hoàn thành phải đối chiếu source và evidence theo commit/môi trường. Native media smoke chỉ xác nhận worker/Router khởi động, chưa chứng minh camera/mic, cách ly nhóm hoặc TURN.
+
+**Chốt đơn giản hóa cuộc họp ngày 27/10/2026:** giữ baseline v2.3, thay quy tắc FREE/MODERATED cũ bằng một kiểu cuộc họp. Người bắt đầu là host; người vào sau không tự nhận host; chuyển quyền cần người nhận xác nhận. MAIN mọi participant tự share khi trống, một nguồn tại một thời điểm, không xin host hoặc giành nguồn. DISCUSSION/ACTIVITY và hai phase giữ nguyên. [Policy](product/groups-media-policy.md) và [vòng đời host](product/live-session.md#83-chuyển-host-và-host-mất-mạng) là nguồn chi tiết; host mất mạng quá grace được thay tạm bằng participant hợp lệ chọn ngẫu nhiên, tự hoàn quyền khi host cũ quay lại hợp lệ trong cùng phiên. Rời chủ động và các nhánh nhiều sự cố còn cần đặc tả. Đây là thiết kế, không là code đã chạy.
 
 **Tổ chức nguồn ngày 26/10/2026:** các mục nghiệp vụ, kiến trúc và dữ liệu đã được chuyển sang tài liệu theo miền, giữ nguyên nội dung baseline. Các heading bên dưới dẫn tới nguồn chi tiết; [mục lục tài liệu](README.md) ghi cách đọc và thứ tự xử lý khi có mâu thuẫn.
 
@@ -22,7 +30,7 @@ Tài liệu là cơ sở chung để tạo backlog, viết contracts, triển kh
 4. [Kiến trúc, module và trạng thái](#4-kiến-trúc-module-và-trạng-thái)
 5. [Phân quyền phát, nhận và công bố](#5-phân-quyền-phát-nhận-và-công-bố)
 6. [Cuộc gọi, camera và chia sẻ màn hình](#6-cuộc-gọi-camera-và-chia-sẻ-màn-hình)
-7. [Freeze, vẽ cơ bản và presentation](#7-freeze-vẽ-cơ-bản-và-presentation)
+7. [Freeze và vẽ cơ bản](#7-freeze-và-vẽ-cơ-bản)
 8. [Điều hành, hỗ trợ và âm lượng](#8-điều-hành-hỗ-trợ-và-âm-lượng)
 9. [Dữ liệu, lịch sử và tính nhất quán](#9-dữ-liệu-lịch-sử-và-tính-nhất-quán)
 10. [REST, sự kiện và contracts](#10-rest-sự-kiện-và-contracts)
@@ -38,11 +46,11 @@ Tài liệu là cơ sở chung để tạo backlog, viết contracts, triển kh
 
 ## 1. Mục tiêu, ràng buộc và phạm vi
 
-Nguồn chi tiết: [phạm vi, ràng buộc và giả định](product/scope.md). Nội dung được chuyển từ v2.1, giữ nguyên quy tắc và số mục để truy vết.
+Nguồn chi tiết: [phạm vi, ràng buộc và giả định](product/scope.md). Nguồn được chuyển từ v2.1 và đã cập nhật theo v2.3; giữ số mục để truy vết.
 
 ## 2. Luồng nghiệm thu và mô hình nghiệp vụ
 
-Nguồn chi tiết: [ba use case và vòng đời khái niệm](product/scope.md). Nội dung được chuyển từ v2.1, giữ nguyên quy tắc và số mục để truy vết.
+Nguồn chi tiết: [ba use case và vòng đời khái niệm](product/scope.md). Nguồn được chuyển từ v2.1 và đã cập nhật theo v2.3; giữ số mục để truy vết.
 
 ## 3. Công nghệ và quyết định kiến trúc
 
@@ -51,7 +59,7 @@ Nguồn chi tiết: [ba use case và vòng đời khái niệm](product/scope.md
 | Thành phần | Lựa chọn | Quy tắc sử dụng |
 |---|---|---|
 | Web | React + TypeScript + Vite | Một app; giữ call controller khi đổi tab/panel |
-| UI | Tailwind, components chung | Mic/camera/scope/consent có trạng thái nhất quán |
+| UI | Tailwind, components chung | Mic/camera/scope/đích chat có trạng thái nhất quán |
 | State | Zustand + TanStack Query | Session projection và REST cache tách nhau; không persist track/transport |
 | Server | Node.js 26.12.1 + Express + TypeScript | Runtime pin đồng bộ local/CI/Docker; pnpm 11.5.2, cài theo lockfile |
 | Validation/contracts | Zod trong packages/contracts | Kiểm runtime ở biên; types không thay validation |
@@ -83,23 +91,23 @@ Khi đổi runtime, cập nhật các nguồn pin và `@types/node` tương thí
 
 ADR-001: mediasoup cho app kiểm soát việc tạo/đóng từng Consumer; đánh đổi là tự làm signaling/lifecycle. LiveKit là phương án thay thế cần chứng minh policy tương đương; selective subscription UI không đủ bằng chứng. Mesh không là hướng triển khai bản chính. Chỉ duy trì một SFU. Nếu PoC thất bại, phân biệt lỗi IP/ICE/cấu hình với thiếu năng lực triển khai, ghi quyết định cùng bằng chứng trước khi đổi.
 
-Mỗi ADR trong repo ghi context, constraints, alternatives, decision, consequences, owner/reviewer, kết quả xác nhận và trigger xem lại. Gate thất bại không tự cho phép cắt camera/breakout/presentation.
+Mỗi ADR trong repo ghi context, constraints, alternatives, decision, consequences, owner/reviewer, kết quả xác nhận và trigger xem lại. Gate thất bại không tự cho phép cắt camera/breakout/hỗ trợ.
 
 ## 4. Kiến trúc, module và trạng thái
 
-Nguồn chi tiết: [module, chủ sở hữu trạng thái và thứ tự mutation](architecture.md). Nội dung được chuyển từ v2.1, giữ nguyên quy tắc và số mục để truy vết.
+Nguồn chi tiết: [module, chủ sở hữu trạng thái và thứ tự mutation](architecture.md). Nguồn được chuyển từ v2.1 và đã cập nhật theo v2.3; giữ số mục để truy vết.
 
 ## 5. Phân quyền phát, nhận và công bố
 
-Nguồn chi tiết: [quyền publish/consume, snapshot và lịch sử](product/groups-media-policy.md). Nội dung được chuyển từ v2.1, giữ nguyên quy tắc và số mục để truy vết.
+Nguồn chi tiết: [quyền publish/consume, snapshot và lịch sử](product/groups-media-policy.md). Nguồn được chuyển từ v2.1 và đã cập nhật theo v2.3; giữ số mục để truy vết.
 
 ## 6. Cuộc gọi, camera và chia sẻ màn hình
 
-Nguồn chi tiết: [join, call ownership, thiết bị và screen lease](product/live-session.md). Nội dung được chuyển từ v2.1, giữ nguyên quy tắc và số mục để truy vết.
+Nguồn chi tiết: [join, call ownership, thiết bị và screen lease](product/live-session.md). Nguồn được chuyển từ v2.1 và đã cập nhật theo v2.3; giữ số mục để truy vết.
 
-## 7. Freeze, vẽ cơ bản và presentation
+## 7. Freeze và vẽ cơ bản
 
-Nguồn chi tiết: [board, freeze/resume và presentation](product/board-collaboration.md). Nội dung được chuyển từ v2.1, giữ nguyên quy tắc và số mục để truy vết.
+Nguồn chi tiết: [board và freeze/resume](product/board-collaboration.md). Nguồn được chuyển từ v2.1 và đã cập nhật theo v2.3; giữ số mục để truy vết.
 
 ## 8. Điều hành, hỗ trợ và âm lượng
 
@@ -107,7 +115,7 @@ Nguồn chi tiết: [board, freeze/resume và presentation](product/board-collab
 
 Nguồn chi tiết: [đặc tả mục 8.1](product/groups-media-policy.md).
 
-### 8.2. Floor, consent và trạng thái kết hợp
+### 8.2. Kết thúc chia nhóm và về phòng chung
 
 Nguồn chi tiết: [đặc tả mục 8.2](product/groups-media-policy.md).
 
@@ -117,11 +125,16 @@ Nguồn chi tiết: [đặc tả mục 8.3](product/live-session.md).
 
 ### 8.4. Audio graph
 
+
 Nguồn chi tiết: [đặc tả mục 8.4](product/live-session.md).
+
+### 8.5. Countdown lượt hoạt động
+
+Nguồn chi tiết: [group modes và TIMER-01](product/group-modes.md), [policy 8.5](product/groups-media-policy.md#85-countdown-cho-lượt-hoạt-động).
 
 ## 9. Dữ liệu, lịch sử và tính nhất quán
 
-Nguồn chi tiết: [collections, index và trạng thái runtime](database/model.md). Nội dung được chuyển từ v2.1, giữ nguyên quy tắc và số mục để truy vết. Xem thêm [vòng đời dữ liệu và transaction](database/lifecycle.md).
+Nguồn chi tiết: [collections, index và trạng thái runtime](database/model.md). Nguồn được chuyển từ v2.1 và đã cập nhật theo v2.3; giữ số mục để truy vết. Xem thêm [vòng đời dữ liệu và transaction](database/lifecycle.md).
 
 ## 10. REST, sự kiện và contracts
 
@@ -150,7 +163,7 @@ REST `/api/v1`; Zod validate ở biên. Cookie auth `HttpOnly; Secure; SameSite=
 }
 ```
 
-Policy mutation yêu cầu expectedPolicyRevision; board dùng contextVersion/strokeSequence riêng; chat không bắt gửi policy revision cho mỗi tin nhưng luôn kiểm ACL. Ack nghĩa server đã xử lý, không bảo đảm mọi peer đã render. Client nhận STALE_STATE resync trước khi yêu cầu lại; không tự phát lại mic/share/consent.
+Policy mutation yêu cầu expectedPolicyRevision; board dùng contextVersion/strokeSequence riêng; chat không bắt gửi policy revision cho mỗi tin nhưng luôn kiểm ACL. Ack nghĩa server đã xử lý, không bảo đảm mọi peer đã render. Client nhận STALE_STATE resync trước khi yêu cầu lại; không tự phát lại mic/share hoặc gửi tin tới đích đã stale.
 
 Idempotency key gồm actor+operation+scope+requestId và payload hash. Cùng ID khác payload trả conflict. Trước trả kết quả cũ vẫn kiểm quyền; không trả ticket/file/private data đã mất quyền. Cache runtime khởi đầu 10 phút, tối đa 10.000 kết quả/app, loại ticket đã consume khỏi khả năng dùng lại. Message dedupe bền theo DB. Retry quá cache phải lấy state trước, không tự coi thao tác chưa chạy.
 
@@ -172,14 +185,17 @@ HTTP: 400 malformed, 401 chưa/hết auth, 403 sai quyền, 404 không thấy t�
 | GET, POST /workspaces/:wid/channels | Filter access; owner/admin tạo |
 | PATCH, DELETE /channels/:cid | Owner/admin; type bất biến; thu phiên và file access khi xóa |
 | GET /channels/:cid/messages?before=... | Chỉ TEXT + channel access; cursor phân trang |
-| POST /channels/:cid/messages | CHANNEL message service, dedupe |
+| POST /channels/:cid/messages | CHANNEL message service, dedupe; rootMessageId cho reply một cấp, kiểm root cùng kênh |
 | GET /conversations/:id/messages?before=... | ACL theo kind; session/group phải ACTIVE/open |
+| POST /workspaces/:wid/direct-conversations | Hai member hiện tại; tìm/tạo DIRECT với một người khác, unique cặp theo Workspace |
+| GET /workspaces/:wid/direct-conversations | Chỉ hội thoại của actor hiện còn quyền |
+| POST /conversations/:id/messages | DIRECT ACL, text/ảnh/file, dedupe; không phụ thuộc LiveSession |
+| GET /channels/:cid/messages/:mid/replies?before=... | TEXT access, root cùng conversation; phân trang replies |
 | POST /channels/:cid/live-session/join | Kiểm LIVE/access, tìm/tạo session, join ticket |
 | POST /sessions/:sid/leave | Participant/generation; idempotent |
 | POST /files; GET /files/:fid/content | Upload staged có purpose/scope; tải kiểm ACL/expiry/barrier mỗi request |
 | POST /sessions/:sid/freeze-frames | Multipart intent; upload tạm, không commit board |
 | GET /sessions/:sid/boards/:bid/frame | Board ACL hiện tại, file còn tham chiếu hợp lệ |
-| GET /sessions/:sid/presentations/:pid/frame | Chỉ presentation ACTIVE + participant access; không dùng quyền board riêng |
 
 Upload đi HTTP, không truyền Base64 file/video qua Socket.IO. Chat socket/REST gọi cùng message service. Lịch sử trả cursor và giới hạn trang; không tải toàn bộ conversation một request.
 
@@ -189,21 +205,20 @@ Upload đi HTTP, không truyền Base64 file/video qua Socket.IO. Chat socket/RE
 |---|---|---|
 | Phiên | session.join/leave/resync | Ticket/auth/epoch/generation; projection |
 | Call ownership | call.takeover | Thao tác xác nhận user; thu call cũ trước |
-| Host/mode | session.setMode; host.transfer.invite/accept | Host hiện tại/target; revision; cleanup activity |
+| Host | host.transfer.invite/accept | Người bắt đầu giữ host; chỉ host hiện tại mời chuyển và target xác nhận; revision; cleanup activity |
 | Transport | media.transport.create/connect | Direction và transport owner |
 | Publish | media.producer.create/pause/resume/close | canPublish + owner + source/kind + quota |
 | Receive | media.consumer.create/ready/close | canConsume ở create và ready; dedupe |
-| Share | screen.grant/revoke/acquire/release | Host grant, lease/generation/expiry |
-| Nhóm | group.create/assign/close | Host; thu scope cũ trước |
+| Share | screen.acquire/release | Actor/group mode/scope, lease/source generation; MAIN mọi participant tự share không xin host, một nguồn, DISCUSSION deny, ACTIVITY một nguồn/group, member tự share không host approval |
+| Nhóm | group.request.create/approve/reject; group.join/create/assign/leave/close/closeAll; activity.start/end | Request có tên/mục đích/thành viên; host duyệt DISCUSSION rồi actor trong roster chủ động join; ACTIVITY chặn request/approve/join DISCUSSION, start đóng DISCUSSION trước; leave chỉ actor |
 | Hỗ trợ | host.help.enter/leave | Host, activity conflict và xác nhận scope |
-| Chat | message.send | Conversation ACL + clientMessageId |
+| Chat | message.send | Conversation ACL + clientMessageId; cuộc họp text/ảnh, Everyone theo scope hoặc Host đích hiện tại; stale thì từ chối |
 | Freeze | board.freeze.begin/commit; board.resume | Intent, version, source/generation |
 | Vẽ | board.cursor; board.stroke.preview/commit/undo; board.clear | Board ACL, author, sequence/quota |
-| Floor | floor.invite/accept/decline/start/revoke | Tập mời, consent, membership hiện tại |
-| Công bố | presentation.start/stop | Active floor, context được chọn, projection ACL |
-| Thông báo | announcement.start/stop | Host, scope GLOBAL, ID/deadline |
+| Thông báo | announcement.start/stop | Host, audience MAIN/DISCUSSION theo mode; không tự mở audio vào ACTIVITY độc lập |
+| Countdown | activityRound.start; activityRound state/expired | Host, duration/deadline server; hết giờ chỉ nhắc. Edit/pause/extend chưa chốt |
 
-Events tương ứng: `session.snapshot`, `participant.joined/left`, `group.updated`, `host.changed`, `media.available/closed`, `consumer.closed`, `screen.changed`, `board.state/stroke`, `floor.changed`, `presentation.changed`, `announcement.changed`, `message.created`, `session.ending/ended`. Không có event quiz/timer/library.
+Events tương ứng: `session.snapshot`, `participant.joined/left`, `group.updated`, `host.changed`, `media.available/closed`, `consumer.closed`, `screen.changed`, `board.state/stroke`, `announcement.changed`, `group.request.changed`, `activityRound.changed/expired`, `message.created`, `session.ending/ended`. Không có event quiz/library hoặc đồng hồ ngoài TIMER-01.
 
 ### 10.4. Giao nhận và khôi phục
 
@@ -211,23 +226,25 @@ Socket.IO giữ thứ tự trên kết nối nhưng mặc định không bảo �
 
 - Message: validate → insert/bind → ack → fanout; mất event lấy history.
 - Private event không buffer để tự replay sau reconnect; cursor/preview có thể mất.
-- Client chặn thao tác nhạy cảm khi offline, bỏ pending command cũ trước resync; không để Socket.IO tự flush một lệnh floor/share/board cũ sang scope mới.
+- Client chặn thao tác nhạy cảm khi offline, bỏ pending command cũ trước resync; không để Socket.IO tự flush một lệnh chat/share/board cũ sang scope mới.
 - Private clients cần reset cache theo audienceEpoch. Gap sequence board lấy snapshot; policy revision gap không đồng nghĩa thiếu event vì các audience được nhận tập event khác nhau.
 - Trong contracts phải có schema command/ack/event, payload giới hạn và ví dụ allow/deny; ID/tên giống nhau ở frontend/backend.
 
 ## 11. Reconnect và vòng đời tài nguyên
 
-Nguồn chi tiết: [control lease, resume và cleanup tài nguyên](product/live-session.md). Nội dung được chuyển từ v2.1, giữ nguyên quy tắc và số mục để truy vết.
+Nguồn chi tiết: [control lease, resume và cleanup tài nguyên](product/live-session.md). Nguồn được chuyển từ v2.1 và đã cập nhật theo v2.3; giữ số mục để truy vết.
 
 ## 12. Màn hình và cấu trúc repository
 
 ### 12.1. Màn hình
 
-Auth; Workspace list/join invitation; Workspace shell; TEXT channel; lobby; RoomPage dùng chung FREE/MODERATED; group panel; host controls; invitation/consent/presentation view; quản lý thành viên/kênh.
+Auth; Workspace list/join invitation; Workspace shell; TEXT channel; lobby; RoomPage một kiểu cuộc họp có host; group panel; host controls; request nhóm tên/mục đích/thành viên và duyệt; chat Everyone/Host, countdown lượt ACTIVITY, Về phòng chung và kết thúc chia nhóm; quản lý thành viên/kênh.
 
-RoomPage có main screen hoặc projection, camera tiles, danh sách người, chat, scope badge, mic/camera/share/volume/board controls. Hiển thị rõ “MIC trong nhóm / toàn phòng / đang hỗ trợ” và “hình đã dừng, tiếng vẫn trực tiếp”. Mọi chuyển phạm vi công bố phải nhìn thấy được. Chat/panel chuyển tab không unmount call controller.
+Workspace shell có general/kênh, danh sách DM của chính mình và panel thread trong TEXT.
 
-Không tạo màn hình quiz/timer/library, hoặc hai ứng dụng độc lập cho phòng nhóm và lớp học. Chưa yêu cầu avatar upload để hoàn thành Workspace; ảnh gửi chat/tệp vẫn thuộc scope.
+RoomPage có nguồn hợp lệ theo MAIN/DISCUSSION/ACTIVITY hoặc frame đã freeze của scope hiện tại, camera tiles, danh sách người, chat, scope badge, mic/camera/share/volume/board controls. Hiển thị rõ “MIC trong nhóm / toàn phòng / đang hỗ trợ” và “hình đã dừng, tiếng vẫn trực tiếp”. Mọi chuyển phạm vi công bố phải nhìn thấy được. Chat/panel chuyển tab không unmount call controller.
+
+Không tạo màn hình quiz/library hoặc đồng hồ ngoài countdown TIMER-01, hoặc hai ứng dụng độc lập cho phòng nhóm và lớp học. Chưa yêu cầu avatar upload để hoàn thành Workspace; ảnh gửi chat/tệp vẫn thuộc scope.
 
 ### 12.2. Repository
 
@@ -240,7 +257,7 @@ colearnia/
   apps/server/src/
     modules/{auth,workspaces,channels,messages,files}/
     realtime/{handlers,schemas,rooms}/
-    live/{session-manager,policy,media,groups,board,floor}/
+    live/{session-manager,policy,media,groups,board}/
     jobs/{file-cleanup,session-reaper}/
   packages/contracts/
   infra/{nginx,coturn,mongo}/
@@ -275,7 +292,7 @@ Browser có thể sửa mọi request. Server tự tra actor/owner/scope/permiss
 | Message | 4.000 ký tự; trang history tối đa 50 tin |
 | Stroke | 2.000 điểm/nét, giới hạn width/palette; 1.000 nét/context và 2 MiB dữ liệu nét/context |
 | Cursor/preview | 20 batch/giây/user; không ghi DB |
-| Producer | MIC/CAMERA/SCREEN/SCREEN_AUDIO tối đa một mỗi loại theo quyền/lease |
+| Producer | MIC/CAMERA và SCREEN/SCREEN_AUDIO theo actor/source policy; MAIN một share. ACTIVITY một nguồn/group không host approval; quota bytes/bitrate tiếp tục đo |
 | Consumer | Một/participant/producer |
 | Share picker lease / freeze intent | 30 giây / 15 giây |
 | Join/resume ticket | 60 giây, một lần, rotate |
@@ -298,7 +315,7 @@ Nguồn chi tiết: [đặc tả mục 13.3](database/lifecycle.md).
 
 ### 14.1. Workload nghiệm thu
 
-**Profile bắt buộc ban đầu:** 5 participant = 1 host + 2 group × 2 người; một main screen; camera của cả 5 được bật và nhận đúng quyền; 30 phút; ít nhất hai mạng độc lập; Chrome và Edge desktop. Ghi máy/OS/browser/VPS/region, bitrate/độ phân giải và ICE selected candidate.
+**Profile bắt buộc ban đầu:** 5 participant = 1 host + 2 group × 2 người. Chạy riêng kịch bản DISCUSSION kế thừa MAIN và ACTIVITY độc lập có screen nhóm với một share/group và hai group share đồng thời; ghi rõ số nguồn screen; camera của cả 5 được bật và nhận đúng quyền; 30 phút; ít nhất hai mạng độc lập; Chrome và Edge desktop. Ghi máy/OS/browser/VPS/region, bitrate/độ phân giải và ICE selected candidate.
 
 **Profile mở rộng để đo:** tăng tới 10 rồi 12 participant, camera nhận tối đa 4 tile/client; chạy cùng test matrix nếu capacity cho phép. Đây chưa là cam kết phát hành 12 người. Giới hạn phát hành do số đo quyết định. Profile 5 người cũng chưa được xem là đã đạt nếu chưa có evidence.
 
@@ -311,11 +328,11 @@ Các ngưỡng dưới đây là **mục tiêu thử ban đầu trên profile/m�
 | ID | Tình huống | Mục tiêu và phép đo |
 |---|---|---|
 | Q-01 | Join có nguồn đang phát | p95 ≤8 giây từ xác nhận join tới audio/video frame đầu; tách signaling/media |
-| Q-02 | Xem screen chung | p95 độ trễ quan sát ≤1,5 giây; đồng hồ tại nguồn/receiver, không trừ timestamp hai máy chưa đồng bộ |
+| Q-02 | Xem screen theo group mode | p95 độ trễ quan sát ≤1,5 giây; đồng hồ tại nguồn/receiver, không trừ timestamp hai máy chưa đồng bộ |
 | Q-03 | Freeze frame ≤2 MiB | p95 ≤2 giây click tới peer cùng scope hiển thị; ghi tốc độ mạng, số mẫu |
 | Q-04 | Vẽ | p95 stroke commit → ack ≤500 ms; độ trễ peer đo qua vòng đi-về/clock offset riêng |
 | Q-05 | Revoke/chuyển nhóm | Không có Consumer trái policy sau commit; mục tiêu thu Consumer p95 ≤1 giây; đo buffer audio riêng |
-| Q-06 | Reconnect | Không khôi phục grant/consent cũ; mục tiêu p95 ≤10 giây sau mạng trở lại ổn định trong cùng epoch |
+| Q-06 | Reconnect | Không khôi phục grant hoặc đích chat đã stale; mục tiêu p95 ≤10 giây sau mạng trở lại ổn định trong cùng epoch |
 | Q-07 | Cleanup | Sau 20 vòng join/leave và hết grace, resource count trở về baseline; không tăng disk/RAM không giới hạn |
 | Q-08 | Riêng tư | Không tạo Consumer/đọc API/file/event private trái quyền, kể cả request tự tạo |
 
@@ -326,15 +343,15 @@ Thu ít nhất 20 mẫu cho thao tác lặp Q-01/Q-03/Q-04/Q-06, báo p50/p95 v�
 | ID | Phạm vi | Ca quan trọng | Owner/reviewer |
 |---|---|---|---|
 | T-01 | Auth/Workspace | Sai Workspace/channel, tự nâng role, transfer owner, hết auth khi socket mở | A/C |
-| T-02 | DB concurrency | Invitation maxUses đồng thời, join cùng channel, rollback tạo Workspace, message dedupe | A/E |
-| T-03 | Camera/mic/share | Hai mạng, chọn thiết bị, denied, browser Stop, hai người xin share, lease hết trong picker | B/D |
+| T-02 | DB concurrency | Invitation maxUses, join channel, rollback Workspace/general, DM đồng thời, message/reply dedupe và reply count | A/E |
+| T-03 | Camera/mic/share | Hai mạng, device denied, MAIN tranh lease/browser Stop; DISCUSSION deny screen; ACTIVITY member tự share, cùng nhóm chỉ một nguồn, hai nhóm độc lập, nguồn bận không giành | B/D |
 | T-04 | Publish/consume | Giả nguồn/owner/transport/grant; Consumer ready sau revoke; duplicate receive | B/C |
-| T-05 | Group isolation | Hai nhóm đồng thời nói/vẽ/chat; move/kick; host hỗ trợ chỉ đúng nhóm; camera không tự global | C/B |
+| T-05 | Group modes/isolation | Request chưa duyệt không cấp quyền; DISCUSSION duyệt rồi bấm vào; phase ACTIVITY chặn DISCUSSION; ACTIVITY không nhận MAIN; host help, move/kick/leave đúng scope; không metadata leak | C/B |
 | T-06 | Board | Cùng frame, resize/letterbox, undo đúng author, quota, hai freeze, resume trước upload xong | D/C |
-| T-07 | Floor/presentation | Mời cả nhóm, một người từ chối, mic tắt, member mới/rời, projection không lộ private history | C/D |
-| T-08 | Hình/tiếng | Freeze trang 3, nguồn sang 5, audio liên tục, resume tới 5; giữ frame presentation khi nhóm resume | D/B |
+| T-07 | Về MAIN/countdown | Leave chỉ actor; closeAll về MAIN, tự bật lại mic; deadline chung/resync; hết giờ không auto-close/mute/share revoke | C/D |
+| T-08 | Board source/hình/tiếng | Freeze đúng nguồn theo mode, source revision theo scope; audio liên tục, resume đúng nguồn; không trộn nét/group/MAIN khi đổi nguồn hoặc về MAIN | D/B |
 | T-09 | Audio | Group+global cùng nguồn không echo; local mute; duck/restore; announcement host rớt | D/B |
-| T-10 | History/file | Attachment sai scope, file URL sau kick, group đóng/ENDED, host mới không đọc tin cũ | A/C |
+| T-10 | History/file/chat target | Everyone/Host đúng scope; DM chặn người thứ ba/admin; thread root sai kênh; file sau kick/close/ENDED; history phân trang | A/C |
 | T-11 | Reconnect | Move/revoke khi mất mạng; socket cũ; hai thiết bị/two-channel takeover; private packet cũ | E/C+B |
 | T-12 | Network/failure | Forced TURN, chặn signaling còn media, worker/app restart, cleanup sau leave/crash | B+E/C |
 | T-13 | End-to-end | UC-01/02/03 trên staging, người mới dùng không cần sửa DB | E/toàn nhóm |
@@ -350,13 +367,15 @@ UI + xử lý server + runtime validation + ACL + trạng thái lỗi + cleanup 
 
 ### 15.1. Trách nhiệm A–E
 
+**Phương án tham khảo, chưa giao việc:** theo chỉ đạo 27/10, nhóm sẽ phân công thật sau. Mọi ký hiệu A–E ở bảng owner/reviewer, contracts, test, lộ trình và checklist chỉ minh họa cách phối hợp; không dùng chúng làm assignee mặc định hoặc yêu cầu gán người ngay. Khi lập Issues, nhóm quyết định lại theo capacity; không mặc định dồn DM/thread/reconnect/vận hành vào một người.
+
 | Người | Frontend + backend | Đầu ra | Reviewer chính |
 |---|---|---|---|
-| A | Auth/forms, Workspace/sidebar/kênh/thành viên/tệp; models, auth, transactions, file ACL | AUTH/WS/CH/FILE, data migrations | C quyền; E deploy |
+| A | Auth/forms, Workspace/sidebar/kênh/thành viên/tệp; models, auth, transactions, file ACL | AUTH/WS/CH/FILE, DIRECT ACL và data migrations | C quyền; E deploy |
 | B | Lobby/camera tiles/device/share; mediasoup transport/producer/consumer, metrics/cleanup | LIVE và media adapter; phối hợp REC | C routing; D client/audio |
-| C | Group/host/consent UI; SessionState, policy, grants/help/floor, transfer | HOST/GRP/HELP/FLOOR, policy core | B media; E races/recovery |
-| D | Canvas/freeze/volume/presentation view; board ACL/intents/strokes và audio graph | BOARD/FREEZE/AUDIO; PRESENT cùng C | C ACL; B audio |
-| E | Chat/composer/reconnect UI; message/dedupe; CI/Compose/staging/test harness/runbooks | CHAT, tích hợp REC, vận hành | A data; B+C recovery |
+| C | Group/host/chat target UI; SessionState, policy, grants/help, về MAIN, transfer | HOST/GRP/HELP, policy core | B media; E races/recovery |
+| D | Canvas/freeze/volume view; board ACL/intents/strokes và audio graph | BOARD/FREEZE/AUDIO | C ACL; B audio |
+| E | Chat/composer/reconnect UI; message/dedupe; CI/Compose/staging/test harness/runbooks | CHAT-01/02/03, tích hợp REC, vận hành | A data; B+C recovery |
 
 Testing do người làm module chịu, không dồn E. B+C cùng PoC routing; D hỗ trợ freeze, E hỗ trợ Internet/TURN. B hỗ trợ D audio/track lifecycle; C hỗ trợ D board ACL. Mỗi module có runbook ngắn để người khác debug khi owner bận.
 
@@ -367,9 +386,9 @@ Testing do người làm module chịu, không dồn E. B+C cùng PoC routing; D
 | Identity/channel access | A → B/C/D/E | Actor, membership/current access, deny barrier, expiry |
 | Session projection/policy | C → B/D/E | Scope, epoch/revision/generation, host/group/grant state |
 | Media registry | B → C/D/E | Stable participant/source ID, track generation, screen readiness, close callbacks |
-| Board context | D → C/E | Context/frame/version/sequence, refs, projection lifecycle |
-| Message/file | A+E → C/D | Purpose/scope, staged bind, history ACL, upload/error envelope |
-| Reconnect protocol | C+B → E+D | Auth/resume, snapshot/reset, resource reconcile, consent reset |
+| Board context | D → C/E | Context/frame/version/sequence, refs, cleanup khi đóng nhóm |
+| Message/file | A+E → C/D | Purpose/scope, CHANNEL/DIRECT/thread/meeting ACL, root/cursor, dedupe, staged bind, upload/error envelope |
+| Reconnect protocol | C+B → E+D | Auth/resume, snapshot/reset, resource reconcile, reset scope/đích chat |
 
 D có thể dựng canvas với video test trong development nhưng chỉ được nghiệm thu FREEZE sau khi tích hợp screen thật. Tương tự, UI host/group không hoàn thành nếu media scope còn mock.
 
@@ -391,44 +410,44 @@ Main luôn build được; PR nhỏ theo luồng có UI+server+test; contract th
 | WS-01/02/03 | UC-01 | T-01, T-02, T-13 | A | Tuần 2–3 |
 | CH-01 | UC-01/02/03 | T-01, T-02, T-10 | A | Tuần 2 |
 | CHAT-01 | UC-01/03 | T-02, T-05, T-10, T-13 | E | Tuần 2 |
+| CHAT-02/03 | UC-01 | T-01, T-02, T-10, T-13 | E; A review ACL/data | Mục tiêu tuần 3, xác nhận capacity cùng nhóm |
 | FILE-01 | UC-01/03 | T-02, T-10, T-13 | A+E | Tuần 2 |
 | LIVE-01 | UC-02/03 | T-02, T-11, T-12 | B+C | Tuần 1–2 |
 | LIVE-02/03 | UC-02/03 | T-03, T-04, T-12 | B | Tuần 2 |
 | HOST-01 | UC-03 | T-01, T-05, T-07, T-11 | C | Tuần 3 |
-| GRP-01/02 | UC-03 | T-04, T-05, T-11 | C+B | Tuần 2 |
+| GRP-01/02 | UC-03 | T-04, T-05, T-07, T-11 | C+B | Tuần 2–3 |
 | BOARD-01/FREEZE-01 | UC-02/03 | T-05, T-06, T-08 | D | Tuần 2–3 |
-| HELP-01 | UC-03 | T-05, T-10, T-11 | C | Tuần 3 |
-| FLOOR-01 | UC-03 | T-04, T-07, T-11 | C+B | Tuần 3 |
-| PRESENT-01 | UC-03 | T-07, T-08, T-10 | C+D | Tuần 3 |
+| HELP-01 | UC-02/03 | T-05, T-10, T-11 | C+E | Tuần 3 |
 | AUDIO-01 | UC-02/03 | T-04, T-09 | D+B | Tuần 3 |
+| TIMER-01 | UC-03 | T-07, T-11, T-13 | Phân công sau; A–E chỉ tham khảo | Trước G3, ước lượng lại cùng nhóm |
 | REC-01 | UC-01/02/03 | T-01, T-11, T-12, T-13 | E+B+C+D | Tuần 3 |
 | CI/deploy/runbook | UC-01/02/03 | T-13, T-14 | E, cả nhóm hỗ trợ | Staging tuần 1; release tuần 4 |
 
 ## 16. Lộ trình 4 tuần và giai đoạn hoàn thiện
 
-Tuần tính từ kickoff, chưa gắn ngày khi chưa có lịch bắt đầu. Các chức năng được triển khai theo lát cắt tuần tự để tích hợp, **không chuyển camera/tài liệu/help/presentation thành phần tùy chọn**.
+Tuần tính từ kickoff, chưa gắn ngày khi chưa có lịch bắt đầu. Các chức năng được triển khai theo lát cắt tuần tự để tích hợp, **không chuyển camera/tài liệu/chat cuộc họp/help/về MAIN thành phần tùy chọn**.
 
 | Mốc | A | B | C | D | E | Đầu ra chung |
 |---|---|---|---|---|---|---|
 | Ngày 1–3 | Auth/membership skeleton, replica set | Mic/screen/camera tối thiểu hai mạng, TURN | Session/group policy, move/revoke | Freeze frame chung thử, audio tiếp tục | HTTPS/staging/Compose, evidence | Gate nền media; hợp đồng nền |
-| Cuối tuần 1 | Auth + Workspace/channel API/UI skeleton | Media registry/lobby cơ bản | Host FREE/MODERATED, group skeleton | Canvas/board version, freeze contract | Chat skeleton, CI | Join qua Workspace trên staging, core policy tests |
-| Tuần 2 | Invitation/member/file/chat ACL | Mic/camera/share lease hoàn chỉnh, cleanup | Groups/host tools, isolation/reconcile, help skeleton | Pen/cursor/undo, freeze/resume tích hợp, audio graph | Chat bền, file composer, reconnect skeleton | UC-01 và phần chính UC-02; hai group đúng scope |
-| Tuần 3 | Kick/owner transfer/transactions hoàn thiện | Recovery, pending consumer races, share grants | Help/floor/consent/transfer host | Presentation hình+nét, volume/ducking, frame races | Tích hợp REC, E2E UC-01/02/03 | Toàn scope có luồng thật; khóa thêm tính năng |
-| Tuần 4 | API/file negative tests, fix | Browser/network/resource/load tests, fix | Revoke/group/host races, fix | Board/presentation/audio tests, UX lỗi | Bug triage, deploy SHA, evidence | Release candidate đủ DoD, blocker = 0 |
+| Cuối tuần 1 | Auth + Workspace/channel API/UI skeleton | Media registry/lobby cơ bản | Host từ lúc bắt đầu phiên, group skeleton | Canvas/board version, freeze contract | Chat skeleton, CI | Join qua Workspace trên staging, core policy tests |
+| Tuần 2 | Invitation/member/file/chat ACL | Mic/camera/share lease hoàn chỉnh, cleanup | Groups/host tools, isolation/reconcile, help skeleton | Pen/cursor/undo, freeze/resume tích hợp, audio graph | Chat kênh bền, file composer, reconnect skeleton | Lát cắt kênh/tệp UC-01 và phần chính UC-02; hai group đúng scope |
+| Tuần 3 | Kick/owner transfer/transactions hoàn thiện | Recovery, pending consumer races, share ownership | Chat Everyone/Host, help, về MAIN, transfer host | Volume/ducking, frame races, cleanup board nhóm | DM/thread tích hợp, REC, E2E UC-01/02/03 | Toàn scope có luồng thật; khóa thêm tính năng |
+| Tuần 4 | API/file negative tests, fix | Browser/network/resource/load tests, fix | Revoke/group/host races, fix | Board/chat scope/audio tests, UX lỗi | Bug triage, deploy SHA, evidence | Release candidate đủ DoD, blocker = 0 |
 | Tuần 5 | Data/permission report | Media explanation | Domain/policy explanation | Freeze/audio explanation | Restore/rollback/runbook/demo script | Production hardening, tài liệu, rehearsal |
 | Tuần 6 nếu có | Cả nhóm sửa lỗi và diễn tập; không mở scope mới | | | | | Bảo vệ và bàn giao |
 
 ### Gate G1 — hết ngày 3
 
-Có 5 participant, hai group, mic/camera hoạt động đúng quyền, chung screen, chuyển nhóm/revoke thật, frame freeze chung có audio, TURN forced relay. UI có thể thô. Lưu commit, cấu hình và bằng chứng. Đạt thì ADR-001 Accepted; chưa đạt thì báo nguyên nhân và timebox xử lý/đổi hướng ngay, không tiếp tục xây nhiều UI phụ thuộc chưa chắc.
+Có 5 participant; PoC hai group DISCUSSION kế thừa bài giảng/cấm publish screen và hai ACTIVITY độc lập với MAIN/các group khác, mỗi nhóm một nguồn share độc lập, member không xin host, board theo nguồn đó. Move/leave/revoke thật, frame freeze theo nguồn hợp lệ có audio và forced TURN. Kiểm host duyệt chưa tự chuyển người, người được chọn bấm vào mới có quyền và hai loại nhóm không active đồng thời; cấu hình bitrate/codec vẫn phải đo. UI có thể thô. Lưu commit, cấu hình và bằng chứng. Đạt thì ADR-001 Accepted; chưa đạt thì báo nguyên nhân và timebox xử lý/đổi hướng ngay, không tiếp tục xây nhiều UI phụ thuộc chưa chắc.
 
 ### Gate G2 — cuối tuần 2
 
-Người mới đăng nhập → Workspace → kênh → chat/tệp → LIVE mic/camera/share, chia hai nhóm. Freeze/vẽ/audio ở mức tích hợp; group isolation không có blocker. Nếu chưa đạt, dừng chỉnh giao diện trang trí và tập trung dependency/bottleneck. Không bỏ chức năng lõi mà không cập nhật phạm vi với nhóm.
+Người mới đăng nhập → Workspace có general → kênh → chat/tệp → LIVE mic/camera/share MAIN, xin/duyệt DISCUSSION và chia ACTIVITY theo policy đã chốt. Đây là lát cắt kênh/tệp của UC-01; DM/thread tích hợp tuần 3 trước G3, không gọi toàn UC-01 hoàn thành ở G2. Freeze/vẽ/audio ở mức tích hợp; group isolation không có blocker. Nếu chưa đạt, dừng chỉnh giao diện trang trí và tập trung dependency/bottleneck. Không bỏ chức năng lõi mà không cập nhật phạm vi với nhóm.
 
 ### Gate G3 — cuối tuần 3
 
-UC-01/02/03 đi hết, có help/floor/presentation/volume/reconnect; không cần thao tác DB. Đóng băng tính năng. Lỗi còn lại có owner và bước tái hiện. Không đưa quiz/library/timer vào vì còn tuần dự phòng.
+UC-01/02/03 đi hết, có general/DM/thread, cả hai group mode, request/approval, chat Everyone/Host, help, tự về MAIN/closeAll, countdown và volume/reconnect; không cần thao tác DB. Đóng băng tính năng. Lỗi còn lại có owner và bước tái hiện. Không đưa quiz/library hoặc đồng hồ ngoài TIMER-01 vào vì còn tuần dự phòng.
 
 ### Gate G4 — cuối tuần 4
 
@@ -505,7 +524,7 @@ Dự toán tách compute, egress, file storage, TURN relay path và backup. Tín
 
 ### 18.2. Quy tắc thay đổi
 
-Được tự đơn giản hóa trong mức đã chốt: layout, animation, avatar, cấu hình codec/bitrate, camera pagination, cách undo nguyên nét và công cụ vận hành tối thiểu. Không tự cắt tài khoản/Workspace/chat/tệp, camera, nhóm riêng, freeze/vẽ cơ bản, help, floor/presentation, volume hoặc reconnect.
+Được tự đơn giản hóa trong mức đã chốt: layout, animation, avatar, cấu hình codec/bitrate, camera pagination, cách undo nguyên nét và công cụ vận hành tối thiểu. Không tự cắt tài khoản/Workspace/chat/tệp, camera, hai group mode, freeze/vẽ cơ bản, chat cuộc họp/help/về MAIN, TIMER-01, volume hoặc reconnect.
 
 Nếu cần đổi chức năng chính/SFU/lịch: ghi vấn đề, bằng chứng, lựa chọn, chi phí, ảnh hưởng UC/test; nhóm xác nhận và cập nhật version/scope. Không giảm kiểm quyền, dùng video giả thay cuộc gọi hoặc đặt gain=0 để che nguồn không nên nhận. Lát cắt học tự do và moderated là thứ tự xây, không là quyền bỏ lát cắt sau.
 
@@ -535,8 +554,6 @@ Source và lockfile chạy lại được; website Internet; Compose/env example
 | Epoch / generation | Đời session / đời quyền sở hữu call hoặc object; vô hiệu sự kiện cũ |
 | Revision / version / sequence | Phiên bản policy / context board / thứ tự nét riêng |
 | Lease / intent | Quyền giữ nguồn tạm có hạn / thao tác chờ commit có version |
-| Floor grant / consent | Quyền được mời phát biểu / đồng ý của từng người |
-| Presentation projection | Phần hình/nét được công bố, không là toàn bộ board riêng |
 | Snapshot | Bản trạng thái được lọc quyền; frame snapshot là ảnh tạm khác khái niệm này |
 | Staging / release candidate | Môi trường tích hợp Internet / bản đủ điều kiện nghiệm thu cuối |
 
@@ -555,7 +572,9 @@ Các nguồn giải thích cơ chế nền; thông số, schemas, quyền và ph
 - [mediasoup-demo Peer.ts](https://github.com/versatica/mediasoup-demo/blob/v3/server/src/Peer.ts): tham khảo lifecycle; app vẫn cần policy riêng.
 - [eduMEET](https://github.com/edumeet/edumeet), [MiroTalk SFU](https://github.com/miroslavpejic85/mirotalksfu), [LiveKit Meet](https://github.com/livekit-examples/meet), [BigBlueButton](https://github.com/bigbluebutton/bigbluebutton): tham khảo kiến trúc/workflow; không fork mặc định hoặc suy hiệu năng từ tính năng quảng bá. Kiểm license của đúng phần code trước tái sử dụng.
 
-### 19.3. Thay đổi so với bản 23/10/2026
+### 19.3. Lịch sử thay đổi v2.0–v2.1 so với bản 23/10/2026
+
+Các dòng dưới ghi quyết định tại thời điểm v2.0–v2.1; phần floor/presentation đã được thay bằng v2.2 ở đầu tài liệu và nguồn product hiện hành.
 
 - Lịch 10+2 tuần chuyển thành 4 tuần build + 1–2 tuần hoàn thiện, có gate ngày 3/tuần 2/3/4 và staging từ tuần 1.
 - Giữ camera, tài liệu, hỗ trợ riêng, floor/presentation trong scope bắt buộc; định nghĩa mức cơ bản thay vì chuyển thành phần tùy chọn.
