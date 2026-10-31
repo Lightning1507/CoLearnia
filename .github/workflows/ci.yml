@@ -110,7 +110,7 @@ jobs:
         run: node scripts/docker-smoke-required.mjs
       - name: Set up Docker Buildx
         if: steps.changes.outputs.required == 'true'
-        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Build images with layer cache
         if: steps.changes.outputs.required == 'true'
         uses: docker/bake-action@59cb1203cd42bcefd40a1b6d73b589e48c86040e # v7.5.0
