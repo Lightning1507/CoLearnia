@@ -10,7 +10,7 @@ RUN pnpm install --frozen-lockfile --ignore-scripts
 COPY . .
 RUN pnpm --filter @colearnia/contracts build && pnpm --filter @colearnia/web build
 
-FROM nginx:1.28.0-alpine AS runtime
+FROM nginx:1.31.7-alpine AS runtime
 COPY infra/nginx/default.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /repo/apps/web/dist /usr/share/nginx/html
 EXPOSE 80
