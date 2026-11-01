@@ -1,0 +1,263 @@
+// Nguon: docs/database/collection-design.md va integrity-and-migrations.md.
+// Visualization only: Table = MongoDB collection; Ref = application reference, NOT enforced FK.
+// Embedded documents/arrays stay in their parent. No fictitious join tables.
+// Quoted dotted fields below are visual paths into scope/binding, NOT extra top-level fields.
+// Nullable means field PRESENT with null; absent variant fields are explained in notes.
+// Not executable MongoDB schema, SQL DDL, migration, or full index/validator specification.
+Project CoLearnia_MongoDB {
+  Note: '13 MongoDB collections - thiet ke dich sau review buoc 6, chua tao schema/migration. ObjectId = BSON ObjectId; BSONDate = UTC Date; Number = safe integer theo service/validator. Ref chi minh hoa tham chieu, MongoDB khong tu enforce foreign key. Doc notes cho embedded scope/binding/authorization. Khong export SQL de khoi tao MongoDB.'
+}
+
+Table users {
+  Note: 'Danh tính tài khoản. Hash không trả API/log; chưa chọn thư viện băm.'
+  _id ObjectId [pk, not null]
+  emailNormalized String [not null, unique, note: 'String bắt buộc; Khóa email đăng nhập; normalization thống nhất trong auth service']
+  passwordHash String [not null, note: 'String bắt buộc, private; Hash có tham số của implementation được chọn; không trả API/log']
+  displayName String [not null, note: 'String bắt buộc; Tên hiển thị hiện tại, không snapshot lặp vào từng tin']
+  status String [not null, note: 'ACTIVE / DISABLED; Hiệu lực xác thực theo baseline; không bổ sung màn hình khóa tài khoản']
+  createdAt BSONDate [not null]
+  updatedAt BSONDate [not null]
+}
+
+Table authSessions {
+  Note: 'Phiên xác thực, không phải cuộc họp. TTL expiresAt; hiệu lực kiểm ngay ở server.'
+  _id ObjectId [pk, not null]
+  userId ObjectId [not null, note: 'Id → users; Chủ phiên xác thực']
+  tokenHash String [not null, unique, note: 'String, private; Không lưu token cookie nguyên bản']
+  expiresAt BSONDate [not null, note: 'Date bắt buộc; Hạn tuyệt đối kiểm mỗi lần dùng, không chờ TTL']
+  revokedAt BSONDate [null, note: 'Date hoặc null; Logout/rotate/revoke làm phiên cũ không hợp lệ']
+  createdAt BSONDate [not null]
+  updatedAt BSONDate [not null]
+}
+
+Table workspaces {
+  Note: 'Owner chuẩn ở ownerId, nhất quán với role bằng CAS + transaction; không unique ownerId.'
+  _id ObjectId [pk, not null]
+  name String [not null, note: 'String bắt buộc; Theo input Workspace, không đặt thêm quy tắc tên ở DB']
+  ownerId ObjectId [not null, note: 'Id → users; Owner duy nhất của Workspace; phải khớp membership OWNER hiện hành']
+  revision Number [not null, note: 'Int ≥0; Phiên bản mutation của Workspace/owner']
+  deletedAt BSONDate [null, note: 'Date hoặc null; Tombstone khóa truy cập; không là restore feature']
+  createdAt BSONDate [not null]
+  updatedAt BSONDate [not null]
+}
+
+Table memberships {
+  Note: 'Một cặp Workspace/user kể cả REMOVED. Rejoin tăng incarnation; không tự hồi PRIVATE.'
+  _id ObjectId [pk, not null]
+  workspaceId ObjectId [not null, note: 'Id → workspaces/users; Một document theo cặp']
+  userId ObjectId [not null, note: 'Id → workspaces/users; Một document theo cặp']
+  role String [not null, note: 'OWNER / ADMIN / MEMBER; Vai trò hiện tại; REMOVED không cho dùng role cũ']
+  status String [not null, note: 'ACTIVE / REMOVED; Hiệu lực membership']
+  incarnation Number [not null, note: 'Int ≥1; Tăng đúng một lần khi REMOVED → ACTIVE; lần đầu là 1']
+  revision Number [not null, note: 'Int ≥0; CAS cho thay đổi quyền; khác incarnation']
+  joinedAt BSONDate [not null, note: 'Date; Lần gia nhập hiện tại; rejoin cập nhật']
+  removedAt BSONDate [null, note: 'Date hoặc null; Được gán khi bị loại; rejoin đặt null']
+  createdAt BSONDate [not null]
+  updatedAt BSONDate [not null]
+  indexes {
+    (workspaceId, userId) [unique]
+  }
+}
+
+Table invitations {
+  Note: 'Link mời theo Workspace; không lưu token raw. uses tăng chỉ khi gia nhập thật.'
+  _id ObjectId [pk, not null]
+  workspaceId ObjectId [not null, note: 'Id → workspaces/users; Phạm vi và actor phát hành']
+  createdByUserId ObjectId [not null, note: 'Id → workspaces/users; Phạm vi và actor phát hành']
+  tokenHash String [not null, unique, note: 'String, private; Tra link mà không lưu token raw']
+  expiresAt BSONDate [not null, note: 'Date; Hết hạn kiểm server']
+  revokedAt BSONDate [null, note: 'Date hoặc null; Thu hồi chặn nhận mới']
+  maxUses Number [not null, note: 'Int >0; Giới hạn lượt của link theo baseline']
+  uses Number [not null, note: 'Int ≥0; Lượt nhận thành công, không tính user đã ACTIVE']
+  createdAt BSONDate [not null]
+  updatedAt BSONDate [not null]
+}
+
+Table channels {
+  Note: 'TEXT hoặc LIVE; WORKSPACE hoặc PRIVATE. Hai thuộc tính bất biến trong MVP.'
+  _id ObjectId [pk, not null]
+  workspaceId ObjectId [not null, note: 'Id → workspaces; Phạm vi kênh']
+  type String [not null, note: 'TEXT / LIVE; Bất biến']
+  name String [not null, note: 'String; Tên hiện hành, general là tên khởi tạo']
+  order Number [not null, note: 'Int ≥0; Sắp thứ tự hiển thị theo khung baseline; chưa thêm UC kéo thả']
+  accessMode String [not null, note: 'WORKSPACE / PRIVATE; Không đổi sau tạo trong bản đầu']
+  revision Number [not null, note: 'Int ≥0; Mutation cấu hình/quyền kênh']
+  deletedAt BSONDate [null, note: 'Date hoặc null; Xóa khóa cả nội dung/phiên liên quan']
+  createdAt BSONDate [not null]
+  updatedAt BSONDate [not null]
+}
+
+Table channelAccessGrants {
+  Note: 'Chỉ PRIVATE. Một cặp channel/membership; grant phải khớp incarnation hiện tại.'
+  _id ObjectId [pk, not null]
+  workspaceId ObjectId [not null, note: 'Id → workspaces; Phục vụ tra/reconcile theo Workspace; phải khớp channel/membership']
+  channelId ObjectId [not null, note: 'Id → channels PRIVATE; Không tạo grant cho WORKSPACE']
+  membershipId ObjectId [not null, note: 'Id → memberships; Tư cách của người được cấp trong Workspace']
+  membershipIncarnation Number [not null, note: 'Int ≥1; Bản incarnation được cấp, phải khớp membership hiện tại']
+  grantedByUserId ObjectId [not null, note: 'Id → users; Owner/admin thực hiện lần cấp hiện hành']
+  grantedAt BSONDate [not null, note: 'Date; Lần thêm/cấp lại hiện hành']
+  revokedAt BSONDate [null, note: 'Date hoặc null; Gỡ khỏi kênh; cấp lại cập nhật version/grantedAt và đặt null']
+  createdAt BSONDate [not null]
+  updatedAt BSONDate [not null]
+  indexes {
+    (channelId, membershipId) [unique]
+  }
+}
+
+Table conversations {
+  Note: 'scope là embedded document theo kind, không phải collection khác. CHANNEL: channelId. DIRECT: hai participantUserIds + pairKey. SESSION: channelId/sessionId. GROUP: thêm groupId UUID runtime. HOST_PRIVATE: channelId/sessionId/hai participantUserIds/pairKey. Hai bên cố định; không đổi theo host mới. Unique theo kind dùng partial indexes ở integrity-and-migrations.md.'
+  _id ObjectId [pk, not null]
+  workspaceId ObjectId [not null, note: 'Id; Phạm vi cho mọi kind']
+  kind String [not null, note: 'CHANNEL / DIRECT / SESSION / GROUP / HOST_PRIVATE; Quyết định scope và ACL']
+  scope Document [not null, note: 'Cấu trúc theo bảng dưới; Tham chiếu đích thực, server xác lập; xem Table Note cho 5 variant; DIRECT/HOST_PRIVATE có pairKey scalar']
+  "scope.channelId" ObjectId [null, note: 'Đường dẫn trong scope: bắt buộc CHANNEL/SESSION/GROUP/HOST_PRIVATE; vắng mặt ở DIRECT, không phải field null tùy ý.']
+  "scope.sessionId" ObjectId [null, note: 'Đường dẫn trong scope: bắt buộc SESSION/GROUP/HOST_PRIVATE; vắng mặt ở CHANNEL/DIRECT.']
+  closedAt BSONDate [null, note: 'Date hoặc null; Đã khóa theo vòng đời, không tự mở lại']
+  purgeAt BSONDate [null, note: 'Date hoặc null; Hạn dọn khi đã đóng; không coi TTL là kiểm quyền']
+  createdAt BSONDate [not null]
+  updatedAt BSONDate [not null]
+}
+
+Table messages {
+  Note: 'Thread một cấp chỉ CHANNEL. attachmentIds là mảng 0–4 tham chiếu files; mỗi file chỉ bind một tin hoặc một frame context. Không có collection thread.'
+  _id ObjectId [pk, not null]
+  conversationId ObjectId [not null, note: 'Id → conversations; Scope duy nhất của tin, không lặp Workspace/group refs']
+  senderId ObjectId [not null, note: 'Id → users; Server gán từ auth']
+  clientMessageId UUID [not null, note: 'UUID String; Khóa retry của người gửi trong conversation']
+  text String [not null, note: 'String, có thể rỗng nếu có attachment; Giới hạn 4.000 ký tự khởi đầu theo plan; không nhận tin trống cả text/file']
+  attachmentIds "ObjectId[]" [not null, note: 'Id[] → files, 0–4 khởi đầu; Mỗi file READY bind đúng chính tin này; mỗi phần tử là ObjectId tham chiếu files._id, không là quan hệ SQL nhiều-nhiều']
+  rootMessageId ObjectId [null, note: 'Id → messages hoặc null; Null là root; reply chỉ CHANNEL/TEXT cùng conversation']
+  replyCount Number [null, note: 'Int ≥0, chỉ root CHANNEL; Counter hiển thị; insert reply/dedupe cập nhật nhất quán; chỉ có ở root CHANNEL, vắng mặt với reply hoặc kind khác']
+  createdAt BSONDate [not null]
+  indexes {
+    (conversationId, senderId, clientMessageId) [unique]
+  }
+}
+
+Table files {
+  Note: 'Chỉ metadata; byte nằm ở kho private. Scope ATTACHMENT: conversationId; FRAME: sessionId/epoch/boardId/contextVersion/groupId (nullable MAIN). Binding MESSAGE: messageId; BOARD_FRAME: intentId. authorization: memberships gồm 1–2 snapshot membershipId/incarnation/revision, channel gồm channelId/revision hoặc null cho DIRECT. Stamp chặn bind upload cũ, READY tải theo ACL hiện tại. Không TTL files.'
+  _id ObjectId [pk, not null]
+  workspaceId ObjectId [not null, note: 'Id → workspaces/users; Phạm vi và chủ upload do server gán']
+  uploaderId ObjectId [not null, note: 'Id → workspaces/users; Phạm vi và chủ upload do server gán']
+  storageKey String [not null, unique, note: 'String, private; Khóa ngẫu nhiên trong kho private, không là public URL']
+  originalName String [null, note: 'String hoặc null; Tên tải xuống đã chuẩn hóa; frame không cần tên người dùng']
+  purpose String [not null, note: 'ATTACHMENT / FRAME; Chặn đổi mục đích để vượt ACL']
+  mimeType String [null, note: 'String hoặc null khi chưa kiểm xong; MIME thực được xác minh; không tin header client']
+  byteSize Number [null, note: 'Int ≥0 hoặc null khi chưa upload xong; Kích thước thực đã kiểm; không nhét byte vào document']
+  reservedBytes Number [not null, note: 'Int ≥0; Chỗ quota đang giữ khi STAGED; commit/release phải tính đúng một lần']
+  dimensions Document [null, note: '{ width: Int >0, height: Int >0 } hoặc null; Bắt buộc cho ảnh/frame đã xác minh; null cho file không ảnh']
+  state String [not null, note: 'STAGED / READY / DELETE_PENDING; Trạng thái lưu trữ/cleanup, không là quyền đọc']
+  scope Document [not null, note: 'Cấu trúc theo loại ở dưới; Scope cấp upload và quyền hiện tại; xem cấu trúc trong Table Note, không tạo collection riêng']
+  authorization Document [not null, note: 'Cấu trúc bắt buộc, server gán; Snapshot version khi cấp upload; dùng chặn commit cũ, không là quyền download; xem cấu trúc trong Table Note, không tạo collection riêng']
+  binding Document [null, note: 'Cấu trúc theo loại hoặc null; Null khi chưa bind; READY phải có binding hợp lệ; xem cấu trúc trong Table Note, không tạo collection riêng']
+  "scope.conversationId" ObjectId [null, note: 'Đường dẫn trong scope: bắt buộc ATTACHMENT; vắng mặt ở FRAME.']
+  "scope.sessionId" ObjectId [null, note: 'Đường dẫn trong scope: bắt buộc FRAME; vắng mặt ở ATTACHMENT.']
+  "binding.messageId" ObjectId [null, note: 'Đường dẫn trong binding: có khi bind MESSAGE; STAGED có binding null, FRAME dùng intentId runtime.']
+  expiresAt BSONDate [null, note: 'Date hoặc null; Hạn STAGED theo lifecycle; null sau bind thành công; không tự TTL xóa mất cleanup metadata']
+  cleanupAfter BSONDate [null, note: 'Date hoặc null; Hạn dọn sau bỏ dở/đóng hội thoại/hết frame refs; null khi chưa đủ điều kiện; kiểm refs lại trước xóa']
+  createdAt BSONDate [not null]
+  updatedAt BSONDate [not null]
+}
+
+Table liveSessions {
+  Note: 'Metadata phiên. Một ACTIVE/ENDING mỗi channel bằng partial unique; ENDED được lưu nhiều phiên. Nhóm/round/deadline/board/media nằm ở RAM, không dựng lại sau restart.'
+  _id ObjectId [pk, not null]
+  workspaceId ObjectId [not null, note: 'Id; Kênh LIVE còn hợp lệ, Workspace phải khớp']
+  channelId ObjectId [not null, note: 'Id; Kênh LIVE còn hợp lệ, Workspace phải khớp']
+  epoch UUID [not null, note: 'RuntimeId; Đời phiên; command cũ không áp phiên khác']
+  hostUserId ObjectId [null, note: 'Id hoặc null; Metadata host hiện hành; null chỉ khi không còn host hợp lệ/đã kết thúc, không là cơ chế tự nhận host']
+  status String [not null, note: 'ACTIVE / ENDING / ENDED; Không mode FREE/MODERATED']
+  revision Number [not null, note: 'Int ≥0; Phiên bản metadata DB cho lifecycle/host']
+  startedAt BSONDate [not null, note: 'Date; Tạo phiên mới']
+  endedAt BSONDate [null, note: 'Date hoặc null; Khi ENDED; không tự xóa kênh']
+  createdAt BSONDate [not null]
+  updatedAt BSONDate [not null]
+}
+
+Table sessionParticipants {
+  Note: 'Một cặp session/user. lastScope là embedded MAIN hoặc GROUP với groupId UUID, hoặc null. Metadata không cấp quyền runtime.'
+  _id ObjectId [pk, not null]
+  sessionId ObjectId [not null, note: 'Id → liveSessions/users; Một document theo cặp']
+  userId ObjectId [not null, note: 'Id → liveSessions/users; Một document theo cặp']
+  joinedAt BSONDate [not null, note: 'Date; Lần join hợp lệ gần nhất trong phiên']
+  leftAt BSONDate [null, note: 'Date hoặc null; Lần rời/thu quyền; reconnect trong grace không nhân document']
+  lastScope Document [null, note: '{ kind: MAIN } hoặc { kind: GROUP, groupId: RuntimeId } hoặc null; Metadata vị trí gần nhất đã hoàn tất; không là grant']
+  lastScopeAt BSONDate [null, note: 'Date hoặc null; Thời điểm metadata trên được ghi']
+  createdAt BSONDate [not null]
+  updatedAt BSONDate [not null]
+  indexes {
+    (sessionId, userId) [unique]
+  }
+}
+
+Table auditEvents {
+  Note: 'Metadata kiểm soát, append-only; target là embedded kind/id. Không chứa chat/token/payload riêng. Chưa chọn retention metadata.'
+  _id ObjectId [pk, not null]
+  actorUserId ObjectId [null, note: 'Id hoặc null; Null khi tác vụ hệ thống']
+  action String [not null, note: 'String có danh mục trong service; Thao tác auth/quyền/lifecycle có ý nghĩa']
+  workspaceId ObjectId [null, note: 'Id hoặc null; Scope liên quan, không suy quyền tra cứu audit']
+  sessionId ObjectId [null, note: 'Id hoặc null; Scope liên quan, không suy quyền tra cứu audit']
+  target Document [not null, note: '{ kind: String, id: String }; Loại/ID đích; RuntimeId có thể là đích mà không có collection']
+  requestId UUID [null, note: 'UUID String hoặc null; Liên kết thao tác; tác vụ tự động có thể không request client']
+  revision Number [null, note: 'Int ≥0 hoặc null; Phiên bản liên quan nếu có']
+  outcome String [not null, note: 'SUCCEEDED / DENIED / FAILED; Kết quả, không dump payload lỗi']
+  createdAt BSONDate [not null]
+}
+
+Ref: authSessions.userId > users._id
+Ref: workspaces.ownerId > users._id
+Ref: memberships.workspaceId > workspaces._id
+Ref: memberships.userId > users._id
+Ref: invitations.workspaceId > workspaces._id
+Ref: invitations.createdByUserId > users._id
+Ref: channels.workspaceId > workspaces._id
+Ref: channelAccessGrants.workspaceId > workspaces._id
+Ref: channelAccessGrants.channelId > channels._id
+Ref: channelAccessGrants.membershipId > memberships._id
+Ref: channelAccessGrants.grantedByUserId > users._id
+Ref: conversations.workspaceId > workspaces._id
+Ref: messages.conversationId > conversations._id
+Ref: messages.senderId > users._id
+Ref: messages.rootMessageId > messages._id
+Ref: files.workspaceId > workspaces._id
+Ref: files.uploaderId > users._id
+Ref: liveSessions.workspaceId > workspaces._id
+Ref: liveSessions.channelId > channels._id
+Ref: liveSessions.hostUserId > users._id
+Ref: sessionParticipants.sessionId > liveSessions._id
+Ref: sessionParticipants.userId > users._id
+Ref: auditEvents.actorUserId > users._id
+Ref: auditEvents.workspaceId > workspaces._id
+Ref: auditEvents.sessionId > liveSessions._id
+
+// Groups below are only layout categories, NOT extra collections.
+TableGroup Identity {
+  users
+  authSessions
+}
+TableGroup Workspace {
+  workspaces
+  memberships
+  invitations
+  channels
+  channelAccessGrants
+}
+TableGroup Messaging {
+  conversations
+  messages
+  files
+}
+TableGroup Meetings {
+  liveSessions
+  sessionParticipants
+}
+TableGroup Operations {
+  auditEvents
+}
+
+// Conditional embedded paths: visual application references, NOT SQL foreign keys.
+Ref: conversations."scope.channelId" > channels._id
+Ref: conversations."scope.sessionId" > liveSessions._id
+Ref: files."scope.conversationId" > conversations._id
+Ref: files."scope.sessionId" > liveSessions._id
+Ref: files."binding.messageId" > messages._id
