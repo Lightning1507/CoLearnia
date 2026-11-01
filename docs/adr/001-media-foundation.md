@@ -12,6 +12,10 @@ Sử dụng mediasoup v3, một Router/LiveSession, nhiều nhóm nghiệp vụ 
 
 Chủ động điều khiển nguồn chung cho DISCUSSION và nguồn độc lập ACTIVITY theo [group modes v2.3](../product/group-modes.md). Đổi lại phải tự xây signaling, policy, reconnect và vòng đời tài nguyên. Một Router thuộc một worker; không tự chia một phiên theo nhiều lõi.
 
+## Capacity bổ sung ngày 01/11/2026
+
+Theo [capacity](../capacity.md), gate chức năng 5 người vẫn giữ; 25 là mốc thử tiếp, 50 là mở rộng có điều kiện. Camera nhận có chọn lọc theo viewport/pin và đo Consumer/bitrate, không tự tạo pool worker hoặc Router/group. Accepted theo PoC chức năng không đồng nghĩa C-25/C-50 đạt; workload lớn phải có bằng chứng riêng. ADR vẫn Proposed, chưa có bằng chứng mới từ cập nhật tài liệu.
+
 ## Điều kiện Accepted
 
 - Mic/camera và screen thật giữa hai mạng.
