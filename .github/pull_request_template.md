@@ -1,22 +1,39 @@
-## Thay đổi
+<!-- Viết nội dung bằng tiếng Việt cho reviewer chưa biết task. Giữ What, Why, Environment Variables và Developer Test; có thể xóa How/Limits khi không cần. PR nhỏ viết ngắn, không điền cho đủ heading. -->
 
-- Feature/issue ID:
-- Owner / reviewer / contract consumers:
-- Hành vi trước/sau:
-- Nguồn nghiệp vụ/kiến trúc/database áp dụng và ngoài phạm vi:
+## What — Thay đổi gì?
 
-## Kiểm tra
+<!-- Nêu kết quả và hành vi trước/sau nếu hữu ích; dẫn issue/feature thật nếu có. -->
 
-- [ ] Format, lint, typecheck, tests và build đã chạy
-- [ ] Harness checks đã chạy qua `pnpm check`; thay rule/CI có lý do và ca kiểm guard
-- [ ] Contract/schema được cập nhật nếu thay đổi giao tiếp
-- [ ] Có ca kiểm quyền từ chối nếu liên quan auth, nhóm, media hoặc file
-- [ ] Có cleanup/reconnect phù hợp nếu tạo tài nguyên
+-
 
-## Minh chứng và giới hạn
+## Why — Vì sao cần thay đổi?
 
-- Lệnh đã chạy / kết quả:
-- Commit hoặc working-tree snapshot / môi trường:
-- Ảnh, log hoặc test evidence liên quan:
-- Phần chưa hoàn thành:
-- Quyết định cần reviewer / bước tiếp:
+<!-- Nêu vấn đề và tác động đối với người dùng hoặc quá trình phát triển. -->
+
+-
+
+## How — Thực hiện như thế nào?
+
+<!-- Tùy chọn: giải thích cách làm, lựa chọn kỹ thuật hoặc phạm vi đáng review. Xóa mục này nếu What/Why đã đủ rõ; không kể lại từng dòng code. -->
+
+-
+
+## Environment Variables — Biến môi trường
+
+<!-- Không có thay đổi thì giữ “Không có”. Nếu có: ghi tên biến, mục đích, bắt buộc/tùy chọn, default không nhạy cảm và cấu hình dev/production cần cập nhật (.env.example/runbook). Không ghi giá trị secret. -->
+
+- Không có.
+
+## Developer Test — Tác giả đã kiểm tra
+
+<!-- Ghi loại kiểm tra phù hợp: Unit / Integration / Manual / kiểm tài liệu; lệnh hoặc bước thực chạy, kết quả và evidence/môi trường khi cần. Có thể xóa các dòng gợi ý không áp dụng. Không tích sẵn pass hoặc bắt PR tài liệu phải có test code. -->
+
+- Kiểm tra đã chạy và kết quả:
+- `pnpm check`: <!-- Ghi kết quả thực; chưa chạy thì nêu rõ lý do. -->
+- Chưa kiểm / giới hạn kiểm chứng: <!-- Ghi “Không có bổ sung” nếu không có. -->
+
+## Limits — Giới hạn và việc tiếp theo
+
+<!-- Tùy chọn: nêu giới hạn, rủi ro, migration/deploy/rollback hoặc việc tiếp theo đáng lưu ý. Xóa mục nếu không có; phần kiểm thử chưa chạy vẫn phải ghi ở Developer Test. -->
+
+-

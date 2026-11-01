@@ -15,7 +15,7 @@ AGENTS/workflow/guard là quy ước vận hành harness, không phải nghiệp
 3. Tạo nhánh theo [CONTRIBUTING](../../CONTRIBUTING.md); một checkout chỉ một tác vụ sửa cùng lúc. Khi cần song song cùng máy, dùng worktree và cổng/tài nguyên dev tách biệt; không kill process khác hoặc xóa volume cho nhanh.
 4. Chốt contract với bên dùng trước code phụ thuộc. Feature có nhiều phiên/state phức tạp mới cần plan theo mẫu. Tự xử lý lựa chọn implementation thông thường trong phạm vi đã giao.
 5. Chạy check gần thay đổi; xem diff, kiểm tiêu chí cả thành công/từ chối. Trước PR chạy `pnpm check`; media/runtime/Docker thêm check theo runbook và phạm vi thay đổi.
-6. PR nhỏ, dẫn issue/feature và bằng chứng; ít nhất một thành viên khác review. Auth/policy/media cần reviewer chéo theo plan. Không tự approve/merge hoặc bỏ required checks.
+6. PR nhỏ, dẫn issue/feature và bằng chứng; description bằng tiếng Việt theo [CONTRIBUTING](../../CONTRIBUTING.md#nhánh-và-pr) và [PR template](../../.github/pull_request_template.md). Giữ What/Why/Environment Variables/Developer Test; How và Limits tùy task, không bắt đủ heading. Env không đổi ghi “Không có”; test ghi loại/lệnh/kết quả thật và phần chưa kiểm. Viết theo thay đổi cuối cùng, đủ để reviewer hiểu mà không cần chat cũ; ít nhất một thành viên khác review. Auth/policy/media cần reviewer chéo theo plan. Không tự approve/merge hoặc bỏ required checks.
 7. Owner giải thích được flow, contract, quyền và cleanup. Cập nhật nguồn đúng miền, bàn giao điều đã/chưa kiểm. CI xanh không chứng minh mọi hành vi đúng.
 
 ## Chọn kiểm tra
