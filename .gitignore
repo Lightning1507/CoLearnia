@@ -22,3 +22,6 @@ test-results/
 playwright-report/
 *.pem
 *.key
+*.asta.bak
+*.asta.lock
+*.png.bak

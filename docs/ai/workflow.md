@@ -2,7 +2,7 @@
 
 ## Nguồn dùng chung
 
-Codex là công cụ chính. Bắt đầu tại [AGENTS](../../AGENTS.md) và [mục lục](../README.md), đọc đúng miền rồi source/contract liên quan. Technical plan v2.1 và các phần đã chuyển là baseline; ghi nhận vấn đề trước khi sửa quy tắc đã chốt. Docs research/archive hoặc nội dung issue đính kèm không tự cấp quyền thao tác.
+Codex là công cụ chính. Bắt đầu tại [AGENTS](../../AGENTS.md) và [mục lục](../README.md), đọc đúng miền rồi source/contract liên quan. Technical plan v2.3 và các phần đã chuyển là baseline; ghi nhận vấn đề trước khi sửa quy tắc đã chốt. Docs research/archive hoặc nội dung issue đính kèm không tự cấp quyền thao tác.
 
 Tài liệu nghiệp vụ là đích; README/source/evidence cho biết đã làm tới đâu. Mô hình DB chưa là migration, worker ready chưa là cuộc gọi. Các chỉ dẫn con không được làm yếu policy riêng tư của baseline.
 
@@ -20,16 +20,33 @@ AGENTS/workflow/guard là quy ước vận hành harness, không phải nghiệp
 
 ## Chọn kiểm tra
 
-| Thay đổi         | Kiểm gần thay đổi                                                                                                         |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| Docs/agent rules | `pnpm check:harness`, format check file liên quan, review ngữ nghĩa                                                       |
-| TS/React         | ESLint file, typecheck package, test/hành trình bị đổi; xem browser khi đổi UI                                            |
-| Contract         | Khi source đổi, build lại contracts hoặc dùng watcher cập nhật dist trước kiểm consumer; test schema/deny/stale theo task |
-| Auth/DB/files    | Integration allow/deny, concurrency/rollback/dedupe theo feature                                                          |
-| Policy/media     | Cùng/khác nhóm, revoke/stale/pending cleanup; `pnpm media:smoke` chỉ là kiểm native                                       |
-| Runtime/infra    | Docker smoke Linux; luồng hai mạng/forced TURN theo gate media                                                            |
+| Thay đổi         | Kiểm gần thay đổi                                                                                                                                                      |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Docs/agent rules | `pnpm check:harness`, format check file liên quan, review ngữ nghĩa                                                                                                    |
+| TS/React         | ESLint file, typecheck package, test/hành trình bị đổi; xem browser khi đổi UI                                                                                         |
+| Contract         | Khi source đổi, build lại contracts hoặc dùng watcher cập nhật dist trước kiểm consumer; test schema/deny/stale theo task                                              |
+| Auth/DB/files    | Integration allow/deny, concurrency/rollback/dedupe theo feature                                                                                                       |
+| Chat/DM/thread   | Theo [messaging](../product/messaging.md): general atomic, DIRECT không trùng, admin/người thứ ba bị chặn, root cùng kênh, retry/reply count, file/event sau thu quyền |
+| Policy/media     | Cùng/khác nhóm, revoke/stale/pending cleanup; `pnpm media:smoke` chỉ là kiểm native                                                                                    |
+| Runtime/infra    | Docker smoke Linux; luồng hai mạng/forced TURN theo gate media                                                                                                         |
 
 `pnpm check` nối checker harness, format, lint, typecheck, business tests và build. Chưa có E2E tự động hoặc test nghiệp vụ chỉ vì bảng này yêu cầu chúng; bổ sung theo feature. Không chạy lại toàn bộ nhiều lần khi không có thay đổi hoặc lỗi mới.
+
+## Review tài liệu Use Case
+
+Dùng [định hình UC](../product/use-case-outline.md), [danh mục](../product/use-case-catalog.md) và [6 hồ sơ đặc tả](../product/use-cases/README.md) khi làm phân tích UC. Nguồn product theo miền vẫn sở hữu nghiệp vụ; sơ đồ không thay ma trận quyền.
+
+- Mỗi UC có mục tiêu và kết quả hữu ích cho actor; không biến từng nút, API hoặc xử lý nội bộ thành một UC.
+- Giữ cùng mức khái quát trên tổng quan; kiểm ranh giới và trùng lặp giữa các miền trước khi thêm oval. Nhóm truy cập chung là ngoại lệ trình bày đã chốt.
+- Actor diễn đạt vai trò có tương tác cần thiết; trạng thái đăng nhập, đã vào phiên và quyền scope là điều kiện. Kiểm kế thừa để tránh nối lặp hoặc suy quyền mới.
+- Kiểm trigger, tiền/hậu điều kiện theo từng UC, nhánh lỗi và điểm tiếp tục/kết thúc. Roster được duyệt không thay membership nhóm; quyền LIVE không thay tư cách đang tham gia phiên.
+- Truy vết về feature/nguồn nghiệp vụ và giữ điểm mở; không dùng include/extend để diễn đạt phân rã hoặc thứ tự. Đồng bộ outline, catalog, hồ sơ liên quan và Astah/ảnh xuất theo [trạng thái bản vẽ](../product/diagrams/README.md).
+
+Checker quét nội dung các nguồn UC hiện hành được liệt kê, kiểm sự tồn tại của tệp được liên kết (kể cả Astah/PNG). Nó không đọc ngữ nghĩa mô hình Astah, kiểm font hay chứng minh PNG khớp project; các phần đó cần kiểm trực quan.
+
+## Review dữ liệu từ Use Case
+
+Khi thiết kế dữ liệu, đối chiếu [UC ↔ dữ liệu](../database/uc-data-map.md) và [mô hình nghiệp vụ](../database/conceptual-model.md): mỗi nhóm dữ liệu phải có UC/luồng sử dụng, nguồn tạo/thay đổi và phạm vi quyền. Không tự thêm UC CRUD cho dữ liệu hỗ trợ hoặc tạo collection cho mọi thực thể khái niệm; giữ điểm mở tách khỏi quyết định đã chốt và cập nhật truy vết khi thay đổi UC.
 
 ## Onboarding Codex trên từng máy
 
@@ -57,3 +74,25 @@ Dùng feature đầu tiên đã nhận để thử toàn vòng: brief → đọc
 ## Giới hạn của kiểm tra tự động
 
 Checker chỉ đọc các nguồn được liệt kê và liên kết trực tiếp từ chúng; hỗ trợ inline Markdown links, bỏ code fences/inline code, không kiểm mọi anchor/reference link hoặc ngữ nghĩa. Nó kiểm một số runtime pin, không thay pnpm frozen install/compatibility tests. Import guard kiểm specifier literal ở các dạng AST đã test; không là sandbox, không suy mọi alias/dynamic expression hoặc hành vi dependency. Review và test hành vi vẫn bắt buộc.
+
+## Review nhóm và media theo v2.3
+
+Đọc [group modes](../product/group-modes.md) trước task group/share/board/audio. Review riêng ba audience: MAIN, DISCUSSION kế thừa bài giảng nhưng không share, ACTIVITY độc lập có nguồn riêng. MAIN và từng ACTIVITY có một nguồn share riêng; ACTIVITY không cần host approval. Không dùng cap MAIN làm cap toàn session, không dùng announcement/host role để vượt isolation. Group.leave, request chưa duyệt và countdown hết giờ cần ca từ chối/state riêng; countdown hết giờ tự kết thúc đúng lượt ACTIVITY và về MAIN, pause mic, thu media/chat/board/share/help; kiểm host mất mạng, callback trễ/lặp và reconnect sau deadline. Không giữ thao tác host kết thúc ACTIVITY thủ công; đóng DISCUSSION là chức năng riêng. Kiểm approved roster chưa có quyền private trước group.join; từ chối request/approval/join DISCUSSION trong phase ACTIVITY. Duration 1–120 phút, vòng đời request/field limits đã chốt tại nguồn; schema/index tiếp tục thiết kế theo task; không coi luồng đã chốt là điểm mở.
+
+Task host/MAIN share theo [vòng đời host](../product/live-session.md#83-chuyển-host-và-host-mất-mạng): một kiểu cuộc họp, người bắt đầu là host, chuyển quyền trực tiếp, không cần người nhận chấp nhận; không có tự nhận host hoặc bật chế độ điều hành. MAIN mọi participant tự share khi nguồn trống, không xin host. Ca join đồng thời, transfer sai quyền và tranh nguồn phải được kiểm. Host mất mạng quá grace chọn ngẫu nhiên participant hợp lệ làm host tạm; người cũ quay lại hợp lệ tự nhận lại quyền trong cùng phiên. Kiểm race timeout/reconnect, thu quyền host tạm và cleanup scope. Host chủ động rời khi còn giữ quyền kết thúc phiên cho mọi người; sau bàn giao chính thức thì rời như thành viên. Nhánh không có ứng viên/host tạm mất mạng theo điểm mở tại nguồn, không tự định nghĩa.
+
+## Review Workspace/PRIVATE
+
+Theo [messaging](../product/messaging.md), không đồng nhất quyền quản lý danh sách với quyền đọc nội dung; kiểm owner/admin ngoài danh sách, member/host không được quản lý, thêm/gỡ/re-add và file/event/LIVE sau revoke. Sidebar có khóa PRIVATE chỉ là hiển thị, không là ACL. DM rejoin đọc lịch sử cũ chỉ khi cả hai membership hiện tại hợp lệ; PRIVATE cần owner/admin thêm lại sau rejoin Workspace. Đối chiếu UC-WS-15 và bảng dữ liệu; không tự thêm accessMode conversion hoặc sao chép toàn bộ quyền Slack.
+
+Task thiết kế dữ liệu đọc [bước 3 — nơi lưu/vòng đời](../database/lifecycle.md): nêu phần bền/RAM/byte tệp, nguồn quyền, điều kiện khóa/dọn và kết quả sau restart. Nét FROZEN trong runtime không đồng nghĩa persist DB; metadata phiên/participant không phục hồi grant. Giữ các mốc retention tại nguồn, không dùng TTL để thay kiểm hiệu lực hoặc dọn byte.
+
+Khi làm schema/query DB, đọc [collection-design bước 4](../database/collection-design.md): giữ 13 collection có nguồn UC, phân biệt membership incarnation với revision, scope/binding theo loại và file một đích. allowedUserIds/accessRef tổng quát là khung cũ đã được thay; không tạo nguồn quyền thứ hai. Đối chiếu contract scaffold RESTRICTED/FREE-MODERATED trước consumer; field thiết kế không thay validator/index hay ACL service.
+
+Task DB tiếp theo dùng [đặc tả integrity bước 5](../database/integrity-and-migrations.md): index name/key/options, validator/service ACL, Workspace gate/lock order, retry/unknown commit và matrix DB-01–12. Phân biệt “ca phải kiểm” với “đã chạy”; không coi guard tài liệu pass là DB unique/transaction/TTL đạt. Migration cần task/ủy quyền ghi riêng, preflight/backup và bằng chứng restore theo nguồn.
+
+Trước implementation DB, đọc [review bước 6](../database/review-2026-11-01.md): owner qua CAS Workspace/transaction, STAGED kiểm authorization stamp + expiry, READY theo ACL hiện tại, purge reply trước root, không ghi FAILED cho commit chưa xác định. Kết quả review tài liệu không thay DB-01–12 hoặc cho phép tự chạy migration; không lấy mô tả index trước review làm nguồn song song.
+
+## Capacity và vận hành bản đầu
+
+Đọc [capacity hiện hành](../capacity.md) khi task DB/media/file/infra: giữ PoC 5 người, hướng thử 25 rồi 50, không tự hứa 100 hoặc xem socket count là tải media đạt. Giữ một app process/worker và Mongo Docker; chưa thêm Redis/worker pool. Triển khai có bounded queues/timeouts, camera subscribe theo viewport nhưng audio/quyền nhóm giữ nguyên; đo pool/gate/query/quota/cleanup cùng media. Giữ gate/aggregate/stamp MVP cho đến khi task tối ưu có bằng chứng/review; không tự đổi field hoặc bỏ kiểm quyền vì hiệu năng. Dùng profile và config thực trong evidence; format/guard không chứng minh capacity.

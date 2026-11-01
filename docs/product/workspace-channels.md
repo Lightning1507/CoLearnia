@@ -1,12 +1,12 @@
 # Tài khoản, Workspace, kênh, chat và tệp
 
-**Trạng thái:** hướng dẫn triển khai theo baseline v2.1; các module nghiệp vụ này chưa có trong scaffold. Đây là bản đồ theo luồng công việc, không thêm quyền hay endpoints mới.
+**Trạng thái:** hướng dẫn triển khai theo baseline v2.3; các module nghiệp vụ này chưa có trong scaffold. Đây là bản đồ theo luồng công việc, không thêm quyền hay endpoints mới.
 
 ## Nguồn chính theo câu hỏi
 
 | Câu hỏi                             | Nguồn chi tiết                                                                                                               |
 | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| Phải hoàn thành gì?                 | [Scope: AUTH-01, WS-01/02/03, CH-01, CHAT-01, FILE-01; UC-01](scope.md)                                                      |
+| Phải hoàn thành gì?                 | [Scope: AUTH-01, WS-01/02/03, CH-01, CHAT-01/02/03, FILE-01; UC-01](scope.md)                                                |
 | Ai được làm gì?                     | [REST chính, mục 10.2](../technical-plan.md#102-rest-chính), [ba lớp quyền, mục 5.1](groups-media-policy.md#51-ba-lớp-quyền) |
 | Cookie/auth/CSRF và lỗi?            | [Quy ước giao tiếp, mục 10.1](../technical-plan.md#101-quy-ước-chung)                                                        |
 | Dữ liệu và index?                   | [Model, mục 9.1](../database/model.md#91-mongodb-bền-vững)                                                                   |
@@ -16,7 +16,7 @@
 ## Lát cắt để giao việc
 
 - Tài khoản: form → bootstrap CSRF → register/login → cookie session → me/logout; expiry/logout phải tác động socket/media liên quan. Không dùng mock identity làm auth thật.
-- Workspace: tạo kèm owner membership nguyên tử; mọi truy cập tra membership hiện tại. Chuyển owner và nhận invitation cần kiểm đồng thời theo lifecycle.
+- Workspace: tạo kèm owner membership, kênh general TEXT và conversation CHANNEL nguyên tử; mọi truy cập tra membership hiện tại. Chuyển owner và nhận invitation cần kiểm đồng thời theo lifecycle.
 - Kênh: phân biệt TEXT/LIVE lâu dài với một lượt LiveSession; type bất biến, list lọc access. Owner/admin quản lý cấu hình không tự có quyền nghe nhóm riêng.
 - Chat/tệp: service chung cho REST/socket, dedupe bền, phân trang; attachment STAGED được bind đúng conversation trong transaction. ID/URL biết trước không cấp quyền tải.
 
@@ -31,3 +31,13 @@ Các dòng trên giúp chọn phạm vi issue, không thay chi tiết trong các
 - Implementation băm mật khẩu và cấu hình đo thực tế, như mục 13.1 của plan.
 - Field types, nullability, validation chi tiết và index migration theo [model](../database/model.md); không phát sinh collections ngoài scope.
 - Đặc tả Zod còn thiếu phải được thống nhất với bên dùng contract trước hoặc cùng PR.
+
+## Chat mở rộng ngày 27/10/2026
+
+Nguồn chi tiết: [general, DM 1–1 và thread](messaging.md). CHAT-02/03 là bổ sung phạm vi, chưa có code/schema nghiệp vụ. Owner/admin giữ quyền tạo kênh; không suy member được tạo kênh từ quyền nhắn tin. Thread bản đầu chỉ trong TEXT; DM text/ảnh/file khác HOST_PRIVATE chỉ text/ảnh trong cuộc họp.
+
+## PRIVATE và định hướng sidebar — 01/11/2026
+
+Nguồn sở hữu: [messaging](messaging.md#kênh-private-và-quyền-quản-lý--chốt-ngày-01112026). TEXT/LIVE độc lập với WORKSPACE/PRIVATE; chỉ owner/admin tạo kênh và quản lý danh sách PRIVATE, không tự có quyền nội dung ngoài danh sách. UC-WS-15 bao phủ thêm/gỡ quyền sau tạo; PRIVATE có biểu tượng khóa. Sidebar tham khảo Slack, chưa là UI đã triển khai.
+
+Rejoin Workspace theo [messaging](messaging.md): có thể mở lại DM khi cả hai membership hợp lệ, nhưng quyền kênh PRIVATE cũ không tự phục hồi; owner/admin phải thêm lại từng kênh. Khi loại thành viên cần vô hiệu quyền PRIVATE cùng các truy cập đang mở.

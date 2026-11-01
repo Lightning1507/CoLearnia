@@ -1,5 +1,7 @@
 # Nghiên cứu harness cho CoLearnia
 
+> Phạm vi theo thời điểm 26/10/2026. Quyết định team 27/10 về chat Everyone/Host và bỏ floor/presentation được ghi ở [trạng thái quyết định](decision-status.md). Nội dung/bằng chứng bên dưới không xác nhận scope mới đã triển khai.
+
 Ngày khảo sát: **26/10/2026**. Nhóm 5 người, chủ yếu dùng **Codex**, mục tiêu 4 tuần build và 1–2 tuần hoàn thiện. Báo cáo là đề xuất để review, chưa là chỉ dẫn agent có hiệu lực hoặc quyết định thay đổi kiến trúc sản phẩm.
 
 ## 1. Đề xuất chính

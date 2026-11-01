@@ -2,53 +2,50 @@
 
 **Trạng thái:** Policy đích; scaffold chưa triển khai module policy, grant hoặc nhóm.
 
-Trích chuyển nguyên nội dung tương ứng từ [technical plan v2.1](../technical-plan.md) ngày 26/10/2026. Đây là nguồn chi tiết cho các mục được chuyển; số mục giữ theo baseline để truy vết. Thay đổi quy tắc cần cập nhật tại đây và review ảnh hưởng tới contract/test, không tạo bản sao song song.
+Nguồn ban đầu được trích chuyển từ [technical plan v2.1](../technical-plan.md) ngày 26/10/2026. Đã cập nhật theo quyết định team ngày 27/10/2026 trong technical plan v2.3. Đây là nguồn chi tiết hiện hành cho các mục được chuyển; số mục giữ theo baseline để truy vết. Thay đổi quy tắc cần cập nhật tại đây và review ảnh hưởng tới contract/test, không tạo bản sao song song.
 
 ## 5. Phân quyền phát, nhận và công bố
 
 ### 5.1. Ba lớp quyền
 
-Workspace: owner/admin/member. Session: host/member. Grant cụ thể: publish/share, board, floor, presentation. Admin không mặc nhiên là host và không nghe nhóm riêng. Owner/admin quản lý kênh; member không tự đổi role. RESTRICTED dùng allowlist rõ; owner/admin quản lý cấu hình không đồng nghĩa tự có quyền đọc private session.
+Workspace: owner/admin/member. Session: host/member. Grant cụ thể: publish/share, board. Admin không mặc nhiên là host và không nghe nhóm riêng. Owner/admin quản lý kênh; member không tự đổi role. PRIVATE dùng allowlist rõ; owner/admin quản lý cấu hình không đồng nghĩa tự có quyền đọc private session.
 
-Host chỉ điều hành session mà mình đang tham gia. FREE không có breakout. Một participant có thể yêu cầu chuyển FREE → MODERATED và nhận host nếu chưa có host, qua mutation nguyên tử và thông báo toàn phòng; không cướp host. Chuyển về FREE đóng nhóm, floor/presentation/help/announcement theo đúng thứ tự thu quyền.
+Host chỉ điều hành session mà mình đang tham gia. Chỉ có một kiểu cuộc họp: người bắt đầu LiveSession trở thành host, không có bước bật chế độ điều hành. Người vào sau không tự nhận hoặc giành host; host chuyển quyền trực tiếp cho participant hợp lệ, không cần người nhận chấp nhận. Chỉ một host tại một thời điểm; không thêm co-host/presenter. Owner/admin Workspace không mặc nhiên là host. Xem [vòng đời host](live-session.md#83-chuyển-host-và-host-mất-mạng) cho cơ chế host tạm ngẫu nhiên khi mất mạng quá grace và tự hoàn quyền khi host cũ quay lại; host chủ động rời khi còn giữ quyền kết thúc phiên cho mọi người; sau bàn giao chính thức người cũ rời như thành viên. Không có ứng viên/host tạm mất mạng vẫn là điểm mở.
 
-### 5.2. Quyền publish
+### 5.2. Quyền publish theo bối cảnh
 
-| Nguồn/thao tác | FREE                                             | MODERATED                                                            |
-| -------------- | ------------------------------------------------ | -------------------------------------------------------------------- |
-| MIC            | Participant tự bật/tắt; tối đa một nguồn         | Tương tự; nơi nhận theo policy, không theo client                    |
-| CAMERA         | Participant tự bật/tắt; tối đa một nguồn         | Tương tự; không tự global khi floor active                           |
-| Xin share      | Participant hợp lệ, không có lease khác          | Host; hoặc người được host cấp share grant hiện hành                 |
-| SCREEN         | Chỉ chủ lease, một nguồn video                   | Cùng quy tắc và share grant còn hạn                                  |
-| SCREEN_AUDIO   | Tối đa một audio đi kèm lease/screen             | Cùng quy tắc; thu cùng screen/grant                                  |
-| Freeze/vẽ      | Participant trong MAIN có board access           | Participant cùng group; host khi đang hỗ trợ; MAIN theo board access |
-| Clear board    | Chủ frame còn trong scope, hoặc chủ share ở LIVE | Thêm host nếu có quyền đọc/vẽ context hiện tại                       |
+Nguồn chi tiết: [MAIN / DISCUSSION / ACTIVITY](group-modes.md). Mọi cuộc họp đều có các chức năng điều hành theo quyền host; không dùng thì gọi ở MAIN bình thường. DISCUSSION/ACTIVITY vẫn là hai loại nhóm, không phải hai chế độ cuộc họp.
 
-Undo chỉ tác động nét do mình tạo. Server kiểm actor, transport ownership, kind/source, quota, epoch, grant và lease. Khi lease/grant bị thu, nguồn liên quan cũng bị đóng. Share grant không phải floor grant.
+| Nguồn/thao tác      | MAIN                                                            | DISCUSSION                                          | ACTIVITY                                                             |
+| ------------------- | --------------------------------------------------------------- | --------------------------------------------------- | -------------------------------------------------------------------- |
+| MIC/CAMERA          | Participant tự bật/tắt; audience theo scope                     | Thành viên trao đổi riêng trong nhóm                | Thành viên trao đổi riêng trong nhóm                                 |
+| Bắt đầu share       | Mọi participant ở MAIN tự share khi nguồn trống, không xin host | Thành viên bị từ chối; ẩn UI không thay kiểm server | Mọi member trong nhóm tự share, không host duyệt; nguồn bận phải chờ |
+| SCREEN/SCREEN_AUDIO | Một người share MAIN; audio đi kèm nguồn hợp lệ                 | Không publish nguồn riêng; kế thừa MAIN             | Một nguồn đang share/group; chỉ audience nhóm, không dùng lease MAIN |
+| Freeze/vẽ           | Board MAIN                                                      | Board nhóm trên hình bài giảng MAIN                 | Board nhóm trên nguồn screen duy nhất đang share của nhóm            |
+| Undo/clear          | Undo nét mình; clear theo quyền context                         | Cùng quy tắc, trong context nhóm                    | Cùng quy tắc, trong context nhóm                                     |
 
-Server kiểm quyền publish và định tuyến, không chứng thực được nội dung audio thật sự là mic hay tab chỉ từ nhãn nguồn. Bản đầu không cam kết chống publisher cố ý đưa nội dung khác vào track được phép công bố.
+Server kiểm actor, transport ownership, group mode/scope, source/kind, quota, revision, lease/ownership. Không cho client tự khai ACTIVITY hoặc dùng quyền share MAIN để vượt lệnh cấm của DISCUSSION. MAIN và mỗi ACTIVITY độc quyền nguồn riêng theo quyết định đã chốt; reserve lease tự động không là xin host duyệt.
+
+Clear theo baseline: chủ frame còn trong scope hoặc chủ nguồn share của context LIVE; host chỉ clear khi có quyền đọc/vẽ context hiện tại. Khi quyền bị thu, đóng nguồn liên quan và Consumer server. Không chứng thực được nội dung track chỉ bằng nhãn nguồn client.
 
 ### 5.3. Quyền nhận và đọc
 
-| Nguồn                               | Người được nhận                                                                |
-| ----------------------------------- | ------------------------------------------------------------------------------ |
-| Main screen + screen audio          | Participant đang có quyền session/channel                                      |
-| MIC/CAMERA trong FREE               | Các participant MAIN, trừ chính nguồn cần tránh self audio                     |
-| MIC/CAMERA thành viên khi breakout  | Cùng group; MAIN chỉ nghe/xem MAIN; host được nhận group đang hỗ trợ           |
-| MIC host khi GLOBAL                 | Cả session                                                                     |
-| MIC host khi GROUP                  | Chỉ group đang hỗ trợ                                                          |
-| CAMERA host trong MODERATED         | Cả session; không dùng camera để suy ra quyền audio                            |
-| MIC người có floor ACTIVE + consent | Toàn session, lấy hợp với quyền nhóm, không nhân đôi                           |
-| CAMERA người có floor               | Giữ phạm vi cũ; không tự mở rộng                                               |
-| Board/chat nhóm                     | Participant hiện thuộc nhóm; host đọc board/chat khi đang hỗ trợ               |
-| HOST_PRIVATE                        | Người gửi và đúng host nhận ban đầu, khi phiên ACTIVE và cả hai còn quyền kênh |
-| Presentation                        | Participant session đọc projection đã chọn khi presentation còn ACTIVE         |
+| Nguồn                                   | Audience được nhận                                                                |
+| --------------------------------------- | --------------------------------------------------------------------------------- |
+| MAIN screen + screen audio              | Người ở MAIN và thành viên DISCUSSION có quyền; không tự gửi tới ACTIVITY         |
+| MIC/CAMERA participant MAIN             | Người ở MAIN; riêng mic/camera host hướng dẫn được cấp theo dòng dưới             |
+| Host hướng dẫn tại MAIN                 | MAIN và DISCUSSION; không tự phát mic/camera/announcement vào ACTIVITY            |
+| MIC/CAMERA/SCREEN/SCREEN_AUDIO của nhóm | Cùng group; host khi đang hỗ trợ đúng group; không phát sang MAIN hoặc group khác |
+| MIC/CAMERA host khi hỗ trợ GROUP        | Group đang hỗ trợ; không đồng thời phát hỗ trợ sang MAIN/group khác               |
+| Everyone / SESSION chat                 | Participant hiện tại MAIN; không phát cho group khác                              |
+| Board/chat nhóm                         | Participant hiện thuộc nhóm; host đọc khi đang hỗ trợ đúng nhóm                   |
+| HOST_PRIVATE                            | Người gửi và đúng host nhận ban đầu, khi phiên ACTIVE và cả hai còn quyền kênh    |
 
-`canConsume` kiểm đúng đời Producer và trạng thái hiện tại, rồi mới kiểm codec bằng `router.canConsume()`. Được quyền mới tạo/resume Consumer; thu quyền đóng Consumer server. Danh sách nguồn và event được lọc; Socket.IO room chỉ do server quản lý. [mediasoup communication](https://mediasoup.org/documentation/v3/communication-between-client-and-server/).
+`canConsume` kiểm đời Producer, audience, group mode và state hiện tại trước `router.canConsume()`. Tạo paused và kiểm lại lúc ready; revoke đóng Consumer. Endpoint, event và metadata nguồn dùng cùng ACL. Không dùng gain=0 để giả isolation. [mediasoup communication](https://mediasoup.org/documentation/v3/communication-between-client-and-server/).
 
 ### 5.4. Snapshot và dữ liệu lịch sử
 
-`projectSessionFor(viewer)` chỉ trả metadata được phép: danh sách nhóm/số người có thể công khai trong session; producer IDs private, frame URL, nét, tin riêng và consent cá nhân chỉ tới audience phù hợp. Không gửi raw runtime map. Presentation không dùng endpoint board riêng của group.
+`projectSessionFor(viewer)` chỉ trả metadata được phép: danh sách nhóm/số người có thể công khai trong session; producer IDs private, frame URL, nét, tin riêng chỉ tới audience phù hợp. Không gửi raw runtime map.
 
 Khi đổi scope: rời fanout cũ, cập nhật `audienceEpoch`, xóa dữ liệu private cũ trong client cache, rồi nhận snapshot mới. Client bỏ event cũ theo epoch/version nhưng server vẫn phải chặn phát sai. Không bật tự replay packet private của Socket.IO; reconnect dùng snapshot mới và API lịch sử có ACL. [Socket.IO recovery](https://socket.io/docs/v4/connection-state-recovery/).
 
@@ -56,17 +53,27 @@ Người mới vào group được đọc phần lịch sử group trong phiên 
 
 ### 8.1. Host, group và hỗ trợ
 
-- Trong MODERATED, host tạo group và phân participant; người chưa phân thuộc MAIN. Host không là thành viên mọi group.
-- Chuyển group thu media/chat/board cũ trước, cập nhật membership và cấp nguồn mới. Close group thu floor/presentation liên quan, về MAIN; private history bị khóa.
-- Thành viên gửi text/ảnh/tệp tới đúng host qua HOST_PRIVATE; ảnh có thể chọn upload hoặc gửi ảnh chụp canvas hiện tại theo quyền. Đây là tệp tin nhắn trong phiên, không là thư viện/đầu ra lâu dài.
+- Trong cuộc họp, DISCUSSION đi qua yêu cầu tên/mục đích/thành viên, host duyệt rồi từng người được chọn bấm Vào nhóm; ACTIVITY do host tạo/phân khi chuyển sang lượt hoạt động. Theo [group modes](group-modes.md), người chưa phân vẫn ở MAIN; host không là thành viên mọi group.
+- Thành viên có thể tự về MAIN; host có thể điều chuyển người và đóng một/tất cả DISCUSSION. ACTIVITY chỉ kết thúc theo deadline/lỗi bắt đầu/kết thúc phiên, không có lệnh host đóng thủ công. Chuyển group thu media/chat/board/screen cũ trước, cập nhật membership và cấp nguồn mới. Đóng nhóm kết thúc help liên quan, đưa thành viên của nhóm đó về MAIN; private history bị khóa, nhóm khác không bị đóng theo.
+- Chat cuộc họp chỉ gửi text và ảnh, chọn **Everyone** hoặc **Host**. Everyone ánh xạ vào scope hiện tại: không chia nhóm là SESSION/MAIN; khi đang chia nhóm, thành viên trong group gửi vào GROUP đó, người chưa phân nhóm gửi vào MAIN. Everyone không phát xuyên các nhóm. Host đang hỗ trợ dùng group hỗ trợ làm scope Everyone; ngoài hỗ trợ dùng MAIN. UI ghi rõ đích gửi và đổi nhãn theo scope.
+- Host ánh xạ vào HOST_PRIVATE giữa người gửi và đúng host nhận tại thời điểm gửi; không có nhắn riêng tùy ý tới mọi participant. Không có host hợp lệ thì vô hiệu lựa chọn Host và báo rõ, không tự đổi sang Everyone.
+- Server kiểm scope/host hiện tại khi gửi và bind ảnh; đích đã stale do chuyển nhóm/host phải trả lỗi để người dùng xác nhận đích mới, không tự chuyển tin private sang Everyone hoặc host mới. Lịch sử/ảnh cũ giữ ACL ban đầu.
+- Ảnh có thể upload hoặc gửi ảnh chụp canvas hiện tại theo quyền; đây là attachment trong phiên, không là thư viện bài làm. Tệp bất kỳ chỉ thuộc chat/tài liệu kênh, không thuộc chat cuộc họp. Chọn Host không tự cấp quyền board cho host hay tự chuyển mic.
 - `host.help.enter` cấp quyền group đích, chuyển MIC host sang GROUP, hiển thị host đã vào trước khi mở scope hỗ trợ. Vào B thì thu A trước.
-- `host.help.leave` có thao tác ghi rõ quay lại hướng dẫn toàn phòng. Nếu MIC đang bật, UI yêu cầu xác nhận chuyển phạm vi; không tự phát global chỉ vì timeout/mất mạng.
+- `host.help.leave` là thao tác host chủ động rời nhóm hỗ trợ về MAIN, độc lập với bật/tắt mic và không yêu cầu xác nhận mic riêng. Thu quyền nhận/phát ở nhóm trước khi chuyển phạm vi; mic giữ nguyên trạng thái: đang bật thì từ lúc chuyển phát theo MAIN/hướng dẫn cho DISCUSSION, đang tắt thì vẫn tắt. UI hiển thị phạm vi hiện tại; ACTIVITY khác không nhận nguồn đó. Mất mạng/timeout/đóng nhóm ngoài thao tác rời chủ động không tự phát mic global.
 - Hỏi bằng tin nhắn không tự đổi scope mic. Host cũ giữ quyền đọc tin gửi riêng cho mình trong phiên theo ACL; host mới không tự nhận lịch sử đó. Người gửi có thể gửi câu hỏi mới cho host mới.
 
-### 8.2. Floor, consent và trạng thái kết hợp
+### 8.2. Kết thúc chia nhóm và về phòng chung
 
-`FloorGrant`: INVITED → ACTIVE → REVOKED/EXPIRED; có invitedParticipantIds, consent set và policyRevision. Host start khi ít nhất một người consent; người được mời có thể consent sau khi ACTIVE nếu vẫn trong tập mời/group. Người từ chối vẫn ở nhóm, không phát toàn phòng. MIC tắt không tự bật; người có MIC đang bật vẫn cần consent khi chuyển global.
+- ACTIVITY: deadline server hết hạn tự kết thúc toàn lượt và đưa người còn quyền về MAIN, không chờ host. DISCUSSION: host vẫn có thể đóng một hoặc tất cả nhóm trao đổi, hoặc chúng được đóng trước khi bắt đầu ACTIVITY. Không xóa vai trò host; không có lệnh host kết thúc thủ công ACTIVITY trong scope hiện tại.
+- Kết thúc help và thu quyền media/chat/board liên quan tới các nhóm đang đóng trước khi đưa người còn quyền về MAIN. Đóng một DISCUSSION chỉ tác động nhóm đích; nhóm khác tiếp tục. Hết lượt ACTIVITY đóng mọi ACTIVITY của lượt; người đã ở MAIN không bị reset thiết bị. Không xóa announcement MAIN còn hợp lệ chỉ vì đóng một DISCUSSION; snapshot thể hiện đúng phạm vi đã thay đổi.
+- Mic của người chuyển từ nhóm về MAIN được pause ở server; người dùng tự bật lại để phát biểu. Không tự bật thiết bị đã tắt; camera đang bật chuyển sang audience MAIN theo policy, nên UI phải thông báo rõ phạm vi phòng chung. Host chủ động rời help dùng 8.1; hết giờ đóng nhóm là cleanup tự động, không áp nhánh giữ mic để phát tiếng hỗ trợ ra MAIN.
+- Người ở MAIN nghe/xem nhau theo policy MAIN và vẫn nhận main screen. Không có FloorGrant, lời mời/consent phát biểu hay PresentationView. Không tự mang frame/nét/chat nhóm ra phòng chung; board MAIN là context riêng.
+- Conversation nhóm đóng, API history/ảnh nhóm bị khóa và frame/nét nhóm vào cleanup theo lifecycle. Reconnect hoặc lệnh chậm từ nhóm cũ không mở lại nhóm, mic hay đích gửi cũ.
+- Announcement chỉ phát tại scope hướng dẫn MAIN/DISCUSSION; host đang hỗ trợ phải kết thúc hỗ trợ về MAIN trước, theo thao tác rời tại 8.1, không có xác nhận mic riêng. Không tự quay lại hỗ trợ sau announcement.
 
-Thành viên rời group/rời phiên mất consent; reconnect sau mất control lease phải consent lại. Revoke đóng đường global, không đóng mic nhóm còn hợp lệ. Tập quyền được lấy hợp để không phát hai lần.
+### 8.5. Countdown cho lượt hoạt động
 
-Để giảm trạng thái chồng chéo, bản đầu chỉ một hoạt động điều hành chính tại một thời điểm: **hỗ trợ riêng hoặc lượt floor/presentation**. Host phải kết thúc hỗ trợ trước khi mở lượt trình bày. Announcement từ hỗ trợ riêng yêu cầu xác nhận kết thúc help và chuyển GLOBAL; không tự quay lại hỗ trợ sau announcement. Announcement trong lượt trình bày chỉ duck tiếng thảo luận, không thu grant âm thầm.
+TIMER-01 theo [thời lượng chung](group-modes.md#thời-lượng-chung-cho-lượt-hoạt-động--timer-01): deadline server và countdown chung; hết giờ tự đóng các ACTIVITY của lượt, thu scope cũ và đưa người còn quyền về MAIN. Mic từ nhóm về được pause để tự bật lại; không công khai chat/board. Không áp mặc định cho DISCUSSION.
+
+Phase giảng/hoạt động theo [group modes](group-modes.md#hai-giai-đoạn-không-chồng-nhau): kết thúc DISCUSSION trước ACTIVITY; không nhận/duyệt/join DISCUSSION khi đang ACTIVITY. Hết thời lượng, hệ thống kết thúc lượt và hoàn tất cleanup về MAIN/GUIDANCE rồi mới nhận request DISCUSSION lại.
