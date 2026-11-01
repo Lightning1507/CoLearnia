@@ -3,10 +3,14 @@
 ## Nguồn và phạm vi
 
 - Bắt đầu tại [mục lục](docs/README.md); chọn tài liệu đúng miền, không nạp toàn bộ lịch sử.
-- [Technical plan v2.1](docs/technical-plan.md) là baseline; các phần đã chuyển theo link là nguồn chi tiết hiện hành. ADR Proposed, research và archive không tự ghi đè quyết định đã chốt.
+- [Technical plan v2.3](docs/technical-plan.md) là baseline; các phần đã chuyển theo link là nguồn chi tiết hiện hành. ADR Proposed, research và archive không tự ghi đè quyết định đã chốt.
 - Đọc [trạng thái quyết định](docs/decision-status.md) khi cần phân biệt đã chọn hướng, chi tiết sẽ thiết kế và điều còn chờ kiểm chứng; không coi mọi mục trong plan là đã chốt tới mức implementation.
 - Code cho biết đã triển khai gì; tài liệu thiết kế không phải bằng chứng feature đã chạy. Xung đột chưa rõ: ghi nguồn và hỏi trước phần triển khai phụ thuộc.
-- Chỉ làm task được giao; không cắt camera/nhóm/help/presentation hoặc thêm quiz/timer/library. Theo [scope](docs/product/scope.md).
+- Chỉ làm task được giao; không tự cắt camera/nhóm/chat cuộc họp/hỗ trợ/về phòng chung hoặc thêm quiz/library/đồng hồ ngoài TIMER-01. Theo [scope](docs/product/scope.md).
+- Chat theo [messaging](docs/product/messaging.md): general mặc định, owner/admin tạo kênh, DM 1–1 text/ảnh/file, thread một cấp trong TEXT. Chat cuộc họp vẫn chỉ text/ảnh; không dùng quyền admin để đọc DM.
+- Nhóm/media theo [group modes](docs/product/group-modes.md): DISCUSSION xin host, kế thừa bài giảng và cấm share; ACTIVITY độc lập. MAIN và mỗi ACTIVITY một share riêng; member ACTIVITY không cần host duyệt. DISCUSSION vào bằng nút sau duyệt, đóng trước lượt ACTIVITY; TIMER-01 hết giờ tự kết thúc lượt ACTIVITY, đưa mọi người về MAIN; thành viên có thể tự về sớm. Đọc điểm mở trước code phụ thuộc.
+
+- Capacity theo [baseline](docs/capacity.md): giữ PoC 5 người, thử 25 trước rồi 50 nếu đạt; chưa cam kết phát hành hoặc 100. Giữ một app process/worker, Mongo Docker; task DB/media/file phải kiểm queue/pool/gate/quota và tải kết hợp, không tự thêm Redis/worker pool hoặc cắt camera/quyền để đạt số lượng.
 
 ## Package manager và lệnh
 
@@ -30,3 +34,7 @@
 - Báo phần đổi, lệnh/kết quả thực chạy, giới hạn, điểm mở và bước sau; dùng [mẫu](docs/ai/task-template.md).
 - Native worker ready không chứng minh camera/mic/TURN. Mock/schema/placeholder không là feature hoàn thành.
 - Chỉ commit khi được yêu cầu; nếu commit có đóng góp AI, ghi Co-Authored-By theo danh tính môi trường cung cấp, không giả danh hoặc bịa email/model.
+
+- [Host cuộc họp](docs/product/live-session.md#83-chuyển-host-và-host-mất-mạng): một kiểu cuộc họp, người bắt đầu là host; chuyển quyền trực tiếp, không cần người nhận chấp nhận, không tự nhận host. MAIN mọi participant tự share khi trống, không xin host/giành nguồn; DISCUSSION vẫn cấm share riêng. Host mất mạng quá grace: chọn ngẫu nhiên participant hợp lệ làm host tạm, tự hoàn quyền khi host cũ quay lại hợp lệ; host chủ động rời khi còn giữ quyền thì kết thúc phiên cho mọi người; nhánh không có ứng viên/nhiều sự cố đọc nguồn trước khi triển khai.
+
+- PRIVATE theo [messaging](docs/product/messaging.md): owner/admin quản lý danh sách, nội dung vẫn cần membership và channel access; thêm/re-add thấy lịch sử còn lưu, gỡ thu event/file/LIVE ngay. TEXT/LIVE độc lập WORKSPACE/PRIVATE; khóa trên UI không thay ACL. DM rejoin chỉ mở lịch sử khi cả hai membership hợp lệ; PRIVATE cũ không tự phục hồi sau rejoin Workspace, owner/admin phải thêm lại.

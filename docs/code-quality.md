@@ -4,6 +4,8 @@
 
 Harness dùng chung: [điểm vào](../AGENTS.md), [mục lục nguồn](README.md) và [workflow AI](ai/workflow.md). `pnpm check:harness` chạy tests của checker/import guard, rồi kiểm file/link local, ignore và một số runtime pins; được nối đầu `pnpm check` trong local/CI. ESLint kiểm ranh giới web/server/contracts bằng AST cho import/re-export/dynamic import literal, type import và require literal. Chưa kiểm mọi alias, import tính động, ngữ nghĩa hoặc quyền thực thi agent; xem giới hạn trong workflow.
 
+[Messaging](product/messaging.md) là nguồn bắt buộc được checker đọc trực tiếp, gồm kiểm liên kết local của chính tài liệu đó. Checker không chứng minh DM riêng tư, thread đúng ACL hoặc general được tạo nguyên tử; cần kiểm hành vi theo T-01/T-02/T-10/T-13 khi triển khai.
+
 | Lớp                | Cách thực hiện                                                                 | Trạng thái                                                               |
 | ------------------ | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------ |
 | Source             | TypeScript strict, ESLint, Prettier, contracts Zod                             | Đã cấu hình                                                              |
@@ -58,7 +60,7 @@ Policy/media phải có review chéo. Chưa gán CODEOWNERS khi nhóm chưa cung
 
 ## Tiếp tục nâng chất lượng trong kế hoạch 4 tuần
 
-1. Policy tests allow/deny trước routing: cùng/khác nhóm, host hỗ trợ, consent, revoke, chuyển nhóm.
+1. Policy tests allow/deny trước routing: cùng/khác nhóm, host hỗ trợ, Everyone/Host, revoke, chuyển nhóm/về MAIN.
 2. Integration tests cho lời mời đồng thời, message dedupe, file ACL và Socket.IO.
 3. PoC staging hai mạng và forced TURN, lưu bằng chứng cùng commit.
 4. E2E Workspace → kênh → gọi → nhóm khi nghiệp vụ đã chạy được.
@@ -77,3 +79,5 @@ Commit `.prettierrc.json`, `.prettierignore`, package.json, lockfile, source đ�
 - [lint-staged](https://github.com/lint-staged/lint-staged).
 - [Gitleaks](https://github.com/gitleaks/gitleaks).
 - [Dependabot](https://docs.github.com/en/code-security/reference/supply-chain-security/dependabot-options-reference).
+
+[Group modes](product/group-modes.md) cũng là nguồn checker đọc trực tiếp. Tests nguồn/links không kiểm policy media hoặc hết giờ có tự đóng nhóm; khi triển khai cần T-03/04/05/07/08/11/12 theo từng mode. Không ghi pass PoC ACTIVITY khi còn dùng chung MAIN hoặc chỉ ẩn UI share của DISCUSSION.

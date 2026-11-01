@@ -64,10 +64,42 @@ test('broken local link fails', async (t) => {
   await assert.rejects(checkHarness(base), /ENOENT/);
 });
 
+for (const source of [
+  'docs/product/messaging.md',
+  'docs/product/group-modes.md',
+  'docs/product/use-case-outline.md',
+  'docs/product/use-case-catalog.md',
+  'docs/product/use-cases/README.md',
+  'docs/product/diagrams/README.md',
+  'docs/product/diagrams/plan.md',
+  'docs/capacity.md',
+  'docs/product/diagrams/activity-overview.md',
+  ...sources.filter((source) => source.startsWith('docs/database/')),
+  ...sources.filter((source) => /use-cases\/0[1-6]-/.test(source)),
+]) {
+  test(`${source} links are checked beyond source-map presence`, async (t) => {
+    const base = await fixture(t);
+    await writeFile(join(base, source), '[missing](absent.md)\n', { flag: 'a' });
+    await assert.rejects(checkHarness(base), /ENOENT/);
+  });
+}
+
 test('ignored source fails even if file exists', async (t) => {
   const base = await fixture(t);
   await writeFile(join(base, '.gitignore'), '\ndocs/database/model.md\n', { flag: 'a' });
   await assert.rejects(checkHarness(base), /Required sources are ignored/);
+});
+
+test('missing UC dossier or diagram artifact fails', async (t) => {
+  for (const source of [
+    'docs/product/use-cases/02-discussion.md',
+    'docs/product/diagrams/CoLearnia-use-cases.asta',
+    'docs/product/diagrams/use-case-overview.png',
+  ]) {
+    const base = await fixture(t);
+    await rm(join(base, source));
+    await assert.rejects(checkHarness(base), /ENOENT/);
+  }
 });
 
 test('personal paths and overlong entry point fail', async (t) => {

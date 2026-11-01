@@ -6,7 +6,7 @@
 - `main` là nhánh tích hợp. Tạo nhánh `feat/<feature-id>-<short-name>`, `fix/<short-name>` hoặc `chore/<short-name>`.
 - Commit: `feat(scope): ...`, `fix(scope): ...`, `chore(scope): ...`, `docs(scope): ...`, `test(scope): ...`.
 - PR nhỏ theo một đầu ra có thể kiểm tra; có feature ID, reviewer và lệnh/evidence đã chạy.
-- `main` được bảo vệ: cần PR, một review, required checks thành công và xử lý hết hội thoại. Quy tắc áp dụng cả admin, chặn force push/xóa nhánh. Dùng squash merge để giữ lịch sử tuyến tính.
+- **Chính sách đích cho `main`:** cấu hình bảo vệ cần PR, một review, required checks thành công và xử lý hết hội thoại. Quy tắc áp dụng cả admin, chặn force push/xóa nhánh. Dùng squash merge để giữ lịch sử tuyến tính. Tài liệu này không xác nhận settings GitHub đã được bật; kiểm cấu hình repository trước tích hợp.
 - Không tự merge thay đổi policy/media khi chưa có review chéo; không tự approve PR của mình.
 
 ## Local hooks
