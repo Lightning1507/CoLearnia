@@ -1,5 +1,7 @@
 # Evidence — đồng bộ group modes v2.3 và harness
 
+> Ghi chú cập nhật 29/10/2026: nội dung countdown chỉ nhắc/chờ host dưới đây là snapshot trước quyết định mới. Nguồn hiện hành là [group modes](../product/group-modes.md) và HS-03 bản 3: ACTIVITY hết thời lượng tự kết thúc/về MAIN. Không sửa ngược kết quả kiểm tra lịch sử thành bằng chứng cho hành vi mới.
+
 **Ngày:** 27/10/2026. Working tree branch `chore/project-harness`, base `ccc9566`; bao gồm các chỉnh sửa tài liệu chưa commit trước đó. Đây là kiểm tra tài liệu/checker, không là nghiệm thu media.
 
 ## Phạm vi

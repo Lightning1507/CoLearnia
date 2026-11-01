@@ -16,14 +16,14 @@ Nguồn ban đầu được trích chuyển từ [technical plan v2.1](../techni
 5. Trả projection, RTP capabilities, tham số send/recv transport. Client tạo transport, connect và xin publish nguồn được phép.
 6. Consumer server tạo paused → client gắn track và báo ready → server kiểm lại quyền/generation → resume hoặc close. [mediasoup communication](https://mediasoup.org/documentation/v3/communication-between-client-and-server/).
 
-Quy ước tránh deadlock: khi thực sự cần khóa lồng nhau, thứ tự là user ownership → channel lifecycle → session mutation; không lấy user/channel lock từ trong session queue. REST lấy channel lock đơn lẻ phải nhả trước khi trả ticket. Takeover giữ quyền chuyển theo user, reconcile từng session tuần tự, không khóa hai session cùng lúc; không giữ bất kỳ mutex nào khi chờ callback client. Cleanup registry dùng compare-and-delete theo generation để không cần đảo thứ tự khóa. Mọi close idempotent. Join bị hủy/time out phải dọn participant/ticket/resource pending.
+Quy ước tránh deadlock: khi thực sự cần khóa lồng nhau, thứ tự là user ownership → Workspace mutation gate (nếu cần kiểm/commit quyền Workspace) → channel lifecycle → session mutation; không lấy user/Workspace/channel lock từ trong session queue. Chi tiết cổng DB một process theo [integrity bước 5](../database/integrity-and-migrations.md). REST lấy channel lock đơn lẻ phải nhả trước khi trả ticket. Takeover giữ quyền chuyển theo user, reconcile từng session tuần tự, không khóa hai session cùng lúc; không giữ bất kỳ mutex nào khi chờ callback client. Cleanup registry dùng compare-and-delete theo generation để không cần đảo thứ tự khóa. Mọi close idempotent. Join bị hủy/time out phải dọn participant/ticket/resource pending.
 
 ### 6.2. Thiết bị và camera
 
 - Xin mic/camera từ thao tác người dùng; lỗi permission/device có thông báo. Mic/camera tắt không bị server tự bật.
 - Đổi thiết bị bằng thay track tương thích hoặc đóng/tạo nguồn có kiểm quyền; một generation không có hai Producer MIC/CAMERA hoạt động.
 - Cấu hình thử đầu tiên: camera khoảng 360p–480p/15fps, screen ưu tiên chữ rõ khoảng 720p–1080p/5–15fps; là điểm bắt đầu để đo, không bảo đảm chất lượng mọi mạng.
-- Bản nghiệm thu 5 participant phải hiển thị được các camera hợp lệ. Khi thử tải cao hơn, page/pin tile và subscribe theo viewport; không nhận camera trái quyền dù UI ẩn.
+- Gate 5 participant phải hiển thị được các camera hợp lệ. Theo [capacity hiện hành](../capacity.md), hướng thử 10 → 25 rồi mở rộng 50; khi share nội dung lớn, camera ở sidebar. Thử tối đa 4 camera từ xa/client theo viewport/pin, server pause/close Consumer thật; không chỉ ẩn video đã nhận. Đây không là giới hạn người được bật camera; audio giữ theo scope, không bị cắt vì camera ngoài viewport. Chưa có profile 25/50 đạt; không nhận camera trái quyền dù UI ẩn.
 - Codec baseline được chọn sau smoke test browser mục tiêu, ghi chính xác vào config/lockfile; chưa cần nhiều codec hay simulcast phức tạp trước khi có số đo.
 
 ### 6.3. Share lease và browser picker
@@ -40,7 +40,7 @@ Một Producer có thể được nhận qua nhiều lý do quyền, nhưng ch�
 
 ### 8.3. Chuyển host và host mất mạng
 
-Chỉ có một kiểu cuộc họp, không còn FREE/MODERATED. Người bắt đầu LiveSession được gán host nguyên tử cùng việc tạo phiên; join sau vào phiên đang có không tạo host thứ hai. Người khác không tự nhận host. Host có thể chuyển quyền: target đang tham gia chấp nhận, có expiry; khi commit kết thúc help/announcement, thu quyền điều hành host cũ, chuyển role và tăng revision. MAIN share không phụ thuộc vai trò host nên không bị dừng chỉ vì chuyển host; mất quyền scope/rời/mất lease vẫn phải đóng nguồn.
+Chỉ có một kiểu cuộc họp, không còn FREE/MODERATED. Người bắt đầu LiveSession được gán host nguyên tử cùng việc tạo phiên; join sau vào phiên đang có không tạo host thứ hai. Người khác không tự nhận host. Theo xác nhận ngày 01/11/2026, host chọn một participant đang kết nối/còn quyền trong chính phiên để chuyển quyền trực tiếp, không có bước mời/chờ người nhận chấp nhận. Server kiểm lại actor/target/revision; khi commit kết thúc help/announcement, thu quyền điều hành host cũ, chuyển role và tăng revision, thông báo host mới cho phòng. Nếu target không còn hợp lệ thì từ chối, không bàn giao một phần. Đây là bàn giao chính thức: người cũ trở thành thành viên, không tự lấy lại quyền khi vào lại. MAIN share không phụ thuộc vai trò host nên không bị dừng chỉ vì chuyển host; mất quyền scope/rời/mất lease vẫn phải đóng nguồn.
 
 Host mới không tự bật mic/camera; MIC đang bật ở scope cũ được pause trong media policy tới khi xác nhận scope điều hành; MAIN/DISCUSSION khác ACTIVITY độc lập. Host cũ trở về member/MAIN với quyền bình thường; không giữ quyền nghe group hỗ trợ trước đó.
 
@@ -48,13 +48,17 @@ Host mất signaling: không chuyển MIC GROUP thành hướng dẫn MAIN/DISCU
 
 **Đã chốt khi mất mạng quá grace:**
 
-- Server thu media/help/quyền điều hành của kết nối cũ, chọn ngẫu nhiên một participant hiện đang kết nối và còn quyền tham gia phiên làm **host tạm**. Không ưu tiên owner/admin và không cần bước chấp nhận như chuyển host chủ động; thông báo rõ cho cuộc họp.
+- Server thu media/help/quyền điều hành của kết nối cũ, chọn ngẫu nhiên một participant hiện đang kết nối và còn quyền tham gia phiên làm **host tạm**. Không ưu tiên owner/admin và không cần bước chấp nhận; chuyển host chủ động cũng không cần người nhận chấp nhận; thông báo rõ cho cuộc họp.
 - Ghi nhận danh tính host bị mất mạng để hoàn quyền trong chính LiveSession này. Khi người đó kết nối lại hoặc join lại sau grace, server xác thực danh tính/quyền hiện tại rồi tự động thu quyền host tạm và trả quyền host cho người cũ; không cần host tạm đồng ý. Không tin cờ “host cũ” do client khai.
 - Chuyển/hoàn quyền nguyên tử, tăng revision và phát host.changed; tại một thời điểm chỉ một host có quyền điều hành. Event trễ không phục hồi host tạm hoặc kết nối cũ.
 - Thu help/announcement của host trước khi cấp quyền điều hành mới. Không tự bật mic/camera, phát tiếng hỗ trợ cũ ra MAIN, chuyển người/board/chat nhóm hoặc reset countdown chỉ vì đổi host. MAIN share của người còn quyền tiếp tục; nguồn của kết nối mất lease phải đóng. ACTIVITY vẫn không nhận MAIN mặc định.
-- Đây là xử lý tự động của hệ thống, không mở nút tự nhận host cho thành viên. Quyền hoàn lại chỉ áp dụng cho sự cố mất mạng trong phiên còn hoạt động, không áp dụng sang LiveSession mới hoặc tự hủy một lần chuyển host chủ động đã xác nhận.
+- Đây là xử lý tự động của hệ thống, không mở nút tự nhận host cho thành viên. Quyền hoàn lại chỉ áp dụng cho sự cố mất mạng trong phiên còn hoạt động, không áp dụng sang LiveSession mới hoặc tự hủy một lần chuyển host chủ động đã hoàn tất.
 
-**Nhánh còn cần chốt khi đặc tả:** host chủ động rời mà chưa chuyển quyền; không còn participant hợp lệ để chọn; host tạm cũng mất mạng; host tạm thực hiện chuyển host chủ động trước khi host cũ quay lại. Không tự thêm chuỗi ưu tiên/đồng host hoặc cơ chế hoàn quyền cho các nhánh này. Phiên đã kết thúc hoặc người cũ mất quyền kênh thì không được phục hồi vai trò.
+**Host chủ động rời cuộc họp:** nếu vẫn giữ quyền host thì kết thúc phiên cho mọi người theo UC-LIVE-10, không tự chọn người thay. UI phải thể hiện rõ “Kết thúc cuộc họp cho mọi người”. Nếu đã chuyển quyền chính thức thành công thì người cũ rời như thành viên, cuộc họp tiếp tục. Rời nhóm hỗ trợ về MAIN không phải rời cuộc họp và không kết thúc phiên. Mất kết nối không phải lệnh kết thúc: đóng tab/crash hoặc timeout đi qua nhánh mất mạng nếu server không nhận được thao tác kết thúc hợp lệ.
+
+**Bàn giao khi đang thay tạm:** chuyển quyền chủ động thành công là bàn giao chính thức, thay thế đích hoàn quyền của lần mất mạng trước; người host trước bàn giao không tự lấy lại quyền.
+
+**Nhánh còn cần chốt khi đặc tả:** không còn participant hợp lệ để chọn; host tạm cũng mất mạng. Không tự thêm chuỗi ưu tiên/đồng host hoặc cơ chế hoàn quyền cho các nhánh này. Phiên đã kết thúc hoặc người cũ mất quyền kênh thì không được phục hồi vai trò.
 
 ### 8.4. Audio graph
 
@@ -101,4 +105,4 @@ Resource generation giúp late `transportclose/producerclose/disconnect` không 
 
 ### 11.3. Leave nhóm và countdown
 
-`group.leave` chuyển chính actor về MAIN theo [group modes](group-modes.md); không phải session.leave hoặc quyền chuyển người khác. Thu nguồn/Consumer nhóm cũ, đóng share nhóm của người rời, pause mic trước khi cấp MAIN. Reconnect dùng group mode/membership/source hiện tại; không phục hồi quyền share từ client cache. Countdown ACTIVITY lấy deadline/round hiện tại, không reset hoặc tự close nhóm. Test cùng nhóm chỉ một share thắng, hai nhóm share đồng thời, không có bước host duyệt; reconnect không tự resume share hoặc join DISCUSSION khi đang phase ACTIVITY.
+`group.leave` chuyển chính actor về MAIN theo [group modes](group-modes.md); không phải session.leave hoặc quyền chuyển người khác. Thu nguồn/Consumer nhóm cũ, đóng share nhóm của người rời, pause mic trước khi cấp MAIN. Reconnect dùng group mode/membership/source hiện tại; không phục hồi quyền share từ client cache. Countdown ACTIVITY lấy deadline/round hiện tại, không reset; đến hạn server tự kết thúc đúng lượt và đưa người còn quyền về MAIN, thu scope nhóm/pause mic. Reconnect sau deadline không mở lại nhóm cũ; callback cũ không tác động lượt mới. Test cùng nhóm chỉ một share thắng, hai nhóm share đồng thời, không có bước host duyệt; reconnect không tự resume share hoặc join DISCUSSION khi đang phase ACTIVITY.

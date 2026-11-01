@@ -35,3 +35,9 @@ Các dòng trên giúp chọn phạm vi issue, không thay chi tiết trong các
 ## Chat mở rộng ngày 27/10/2026
 
 Nguồn chi tiết: [general, DM 1–1 và thread](messaging.md). CHAT-02/03 là bổ sung phạm vi, chưa có code/schema nghiệp vụ. Owner/admin giữ quyền tạo kênh; không suy member được tạo kênh từ quyền nhắn tin. Thread bản đầu chỉ trong TEXT; DM text/ảnh/file khác HOST_PRIVATE chỉ text/ảnh trong cuộc họp.
+
+## PRIVATE và định hướng sidebar — 01/11/2026
+
+Nguồn sở hữu: [messaging](messaging.md#kênh-private-và-quyền-quản-lý--chốt-ngày-01112026). TEXT/LIVE độc lập với WORKSPACE/PRIVATE; chỉ owner/admin tạo kênh và quản lý danh sách PRIVATE, không tự có quyền nội dung ngoài danh sách. UC-WS-15 bao phủ thêm/gỡ quyền sau tạo; PRIVATE có biểu tượng khóa. Sidebar tham khảo Slack, chưa là UI đã triển khai.
+
+Rejoin Workspace theo [messaging](messaging.md): có thể mở lại DM khi cả hai membership hợp lệ, nhưng quyền kênh PRIVATE cũ không tự phục hồi; owner/admin phải thêm lại từng kênh. Khi loại thành viên cần vô hiệu quyền PRIVATE cùng các truy cập đang mở.

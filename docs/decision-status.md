@@ -1,63 +1,59 @@
-# Đọc trạng thái quyết định trong technical plan
+# Trạng thái quyết định CoLearnia
 
-Technical plan đã đề cập các chủ đề dưới đây, nhưng không phải tất cả đều được chốt tới mức implementation. Bản đồ này giải thích cách đọc các nguồn hiện hành ngày 27/10/2026; không đặt thêm nghiệp vụ, không là backlog hoặc sổ quyết định song song. Khi chốt một chi tiết, cập nhật nguồn sở hữu được dẫn, rồi đồng bộ mô tả ở đây nếu cần.
+**Cập nhật 01/11/2026.** Đây là mục lục trạng thái, không là bản sao quy tắc nghiệp vụ. [Technical plan v2.3](technical-plan.md) và nguồn chi tiết theo miền là baseline; research/archive/ADR Proposed không tự ghi đè quyết định. Source/evidence cho biết phần đã chạy, thiết kế cho biết đích cần triển khai.
 
-## Phân biệt trạng thái
+## Cách hiểu trạng thái
 
-- **Đã chốt baseline:** thực hiện theo quy tắc hiện hành; đổi phạm vi hoặc kiến trúc chính theo quy trình thay đổi trong plan.
-- **Đã có thiết kế khung:** phần quan trọng đã nêu; chi tiết implementation được hoàn thiện trong task liên quan và review cùng code/contract.
-- **Đã chọn để kiểm chứng:** được phép xây PoC theo hướng chọn, nhưng chưa được tuyên bố đạt điều kiện nghiệm thu.
-- **Cần thông tin từ nhóm:** không tự điền tên, ngày, số giờ hoặc ngân sách thành cam kết.
-- **Để đợt sau theo chỉ đạo:** chưa triển khai ở đợt harness; không có nghĩa bị loại khỏi kế hoạch quản lý dự án.
+- **Đã chốt:** làm theo nguồn; thay scope/quyền cần review thay đổi.
+- **Đã thiết kế:** có cấu trúc/quy tắc đích; chưa có nghĩa có code hoặc test đạt.
+- **Chờ kiểm chứng:** hướng được chọn cho PoC/benchmark, chưa là khả năng phục vụ đã đạt.
+- **Cần nhóm cung cấp:** không tự điền tên, ngày hoặc tiền thành cam kết.
 
-## Các chủ đề đã được hỏi lại
+Chi tiết implementation thông thường được chọn/review trong task được giao. Chỉ hỏi lại khi mơ hồ ảnh hưởng phần phụ thuộc; không hỏi lại toàn bộ baseline hoặc dừng việc độc lập.
 
-| Chủ đề             | Đã có và đã chốt ở mức nào?                                                                                        | Phần còn cần hoàn thiện / kiểm chứng                                                                                  | Nguồn sở hữu và thời điểm xử lý                                                                                                                                                                    |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Băm mật khẩu       | Phải băm mật khẩu; plan nêu Argon2id hoặc bcrypt                                                                   | Chọn implementation/thư viện cụ thể và cấu hình có số đo; chưa có lựa chọn duy nhất được ghi                          | [Plan 13.1](technical-plan.md#131-biên-tin-cậy), [task tài khoản](product/workspace-channels.md#điểm-cần-chốt-khi-triển-khai); giải quyết khi triển khai auth                                      |
-| Database           | MongoDB/Mongoose, replica set; có danh mục collections, field chính, unique/dedupe/index và transaction quan trọng | Types/nullability/enums chi tiết, index specification, migration executable và kiểm thử; không thiết kế DB lại từ đầu | [Model 9.1–9.2](database/model.md), [lifecycle 9.3–9.4](database/lifecycle.md); hoàn thiện theo feature và trước khi chạy migration                                                                |
-| Media              | mediasoup v3 được chọn để PoC, một Router/LiveSession; có workload và cấu hình thử                                 | Codec/bitrate/capacity sau browser/network test; bằng chứng để Accepted. Opus/VP8 của scaffold chưa thay PoC          | [Live 6.2](product/live-session.md#62-thiết-bị-và-camera), [ADR-001](adr/001-media-foundation.md), [plan 14](technical-plan.md#14-kiểm-thử-và-tiêu-chí-hoàn-thành); theo gate tuần 1 và nghiệm thu |
-| Người thật cho A–E | Plan có phương án phân vai, owner/reviewer theo ký hiệu để tham khảo                                               | Phân công thật sẽ làm sau theo chỉ đạo 27/10; chưa gán người hoặc coi A–E là nhiệm vụ đã giao                         | [Plan 15.1](technical-plan.md#15-phân-công-và-hợp-đồng-tích-hợp), [18.3](technical-plan.md#183-checklist-khởi-động); nhóm cung cấp khi kickoff/nhận việc                                           |
-| Lịch và budget     | Mục tiêu 4 tuần build + 1–2 tuần hoàn thiện; có gate, cách tính capacity và yêu cầu hạ tầng                        | Ngày bắt đầu/nộp, giờ thực tế, ngân sách và lựa chọn dịch vụ; chưa có cam kết tài chính cụ thể                        | [Scope 1.4](product/scope.md#14-ràng-buộc-và-giả-định-phải-theo-dõi), plan mục 15.3/16/17.5/18.3; nhóm xác nhận trước cam kết lịch hoặc mua dịch vụ                                                |
-| GitHub Projects    | Người dùng đã chọn dùng Projects; Issues nhận việc/trạng thái, PR review/bằng chứng                                | Fields, views, statuses, labels và automation chưa được cấu hình; người dùng để sau harness                           | [AI workflow](ai/workflow.md#nhận-việc-triển-khai-review); nguồn là chỉ đạo bổ sung ngày 26/10, không phải chi tiết sẵn có trong plan sản phẩm ban đầu                                             |
+## Quyết định sản phẩm đã chốt
 
-Không phải mọi chi tiết implementation còn mở đều cần hỏi lại người dùng. Owner có thể nghiên cứu, đề xuất và triển khai lựa chọn kỹ thuật trong task được giao, ghi lý do và review phù hợp; không được tự đổi quy tắc/phạm vi đã chốt hoặc bịa thông tin của nhóm. Quyết định thật sự còn mơ hồ và ảnh hưởng phần phụ thuộc cần được làm rõ trước phần đó, không buộc dừng mọi task độc lập.
+| Miền          | Quyết định chính                                                                                                                                                                                                             | Nguồn sở hữu                                                                            |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| Scope         | Camera/mic/share, nhóm, chat, hỗ trợ, board cơ bản; không quiz/poll/library/recording/công cụ vẽ nâng cao hoặc đồng hồ ngoài TIMER-01                                                                                        | [Scope](product/scope.md)                                                               |
+| Workspace     | General TEXT sinh nguyên tử cùng Workspace/owner/conversation; owner/admin tạo kênh. General không được thêm bảo vệ bất biến riêng                                                                                           | [Workspace](product/workspace-channels.md), [messaging](product/messaging.md)           |
+| Chat bền      | Kênh và DM 1–1 text/ảnh/file; thread một cấp chỉ TEXT; admin không đọc DM. Cả hai membership hợp lệ trở lại thì mở lịch sử DM còn lưu                                                                                        | [Messaging](product/messaging.md)                                                       |
+| PRIVATE       | TEXT/LIVE độc lập WORKSPACE/PRIVATE; không đổi accessMode sau tạo. Owner/admin thêm/gỡ, kể cả tự thêm; quản lý không tự cấp quyền đọc. Thêm lại thấy lịch sử còn lưu; rejoin Workspace cần cấp lại PRIVATE                   | [Messaging](product/messaging.md#kênh-private-và-quyền-quản-lý--chốt-ngày-01112026)     |
+| Cuộc họp/host | Một kiểu cuộc họp; người bắt đầu là host. Gán host trực tiếp, không cần chấp nhận. Host còn quyền chủ động rời thì kết thúc phiên; sau bàn giao rời như thành viên                                                           | [Live session 8.3](product/live-session.md#83-chuyển-host-và-host-mất-mạng)             |
+| Host mất mạng | Quá grace chọn ngẫu nhiên participant hợp lệ làm host tạm; người cũ quay lại hợp lệ tự hoàn quyền. Bàn giao chính thức, kể cả bởi host tạm, thay thế đích hoàn quyền cũ                                                      | [Live session 8.3](product/live-session.md#83-chuyển-host-và-host-mất-mạng)             |
+| Share/nhóm    | MAIN một share; DISCUSSION xin host, kế thừa bài giảng, cấm share riêng, tự bấm vào sau duyệt. ACTIVITY độc lập, mỗi nhóm một share, mọi member tự share khi trống; không giành nguồn                                        | [Group modes](product/group-modes.md)                                                   |
+| Phase/request | Đóng DISCUSSION trước ACTIVITY; chặn request/duyệt/join DISCUSSION trong lượt. Người gửi hủy pending, không sửa; pending hết hiệu lực theo phase/phiên, không TTL phút; tên ≤80, mục đích ≤500, roster hợp lệ không trùng    | [Group modes](product/group-modes.md)                                                   |
+| TIMER-01      | Duration chung số nguyên 1–120 phút trước start; không edit/extend/pause. Deadline tự kết thúc ACTIVITY/về MAIN/pause mic; tự về sớm chỉ chuyển người bấm. Host không đóng ACTIVITY thủ công; vẫn đóng một/tất cả DISCUSSION | [Group modes](product/group-modes.md), [HS-03](product/use-cases/03-activity.md)        |
+| Lỗi start     | Hủy lượt chưa hoàn tất, về MAIN; không khôi phục DISCUSSION đã đóng. Host có thể chủ động bắt đầu lại sau cleanup                                                                                                            | [HS-03](product/use-cases/03-activity.md)                                               |
+| Chat/help     | Meeting chỉ text/ảnh, Everyone theo MAIN/nhóm hiện tại hoặc riêng đúng host. Host hỗ trợ một nhóm có thông báo; tự rời help về MAIN giữ trạng thái mic, khác cleanup do sự cố/nhóm đóng                                      | [Policy](product/groups-media-policy.md), [HS-06](product/use-cases/06-private-help.md) |
+| Về MAIN/board | Không floor grant/consent phát biểu/công bố board riêng; về MAIN tự bật mic. Frame/nét thuộc context runtime, không library hoặc dữ liệu phục hồi buổi học                                                                   | [Policy](product/groups-media-policy.md), [board](product/board-collaboration.md)       |
 
-## Quy ước harness và yêu cầu sản phẩm
+## Thiết kế và kiểm chứng kỹ thuật
 
-[AGENTS](../AGENTS.md), [workflow](ai/workflow.md), task template và các guard là quy ước vận hành được cụ thể hóa trong đợt harness đã được người dùng đồng ý triển khai. Chúng không tự trở thành nghiệp vụ sản phẩm hoặc yêu cầu môn học.
+| Chủ đề            | Đã có                                                                                                                                                        | Còn cần thực hiện                                                                                                                                                                                     |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Database          | MongoDB/Mongoose; 46 UC → 16 khái niệm → 13 collection; field/typed scopes, grant incarnation, index/validator/transaction/cleanup/migration đích            | Chưa Mongoose schema/index/migration nghiệp vụ; DB-01–12 chưa chạy. [Model](database/model.md), [collection-design](database/collection-design.md), [integrity](database/integrity-and-migrations.md) |
+| DB so với runtime | Auth/quyền/chat/file metadata bền; nhóm/request/round/board/nét/media ở RAM, byte ngoài DB                                                                   | Bootstrap/sweeper và restore phải kiểm; không phục hồi phiên sau restart. [Lifecycle](database/lifecycle.md)                                                                                          |
+| Capacity          | Giữ gate chức năng 5; thử 10 → 25 trước, 50 nếu đạt; 100 không bắt buộc. Một app process, một mediasoup worker, Router/LIVE; Mongo local Docker rs0 một node | Chưa profile đạt; cần queue/pool/gate/quota budget hữu hạn và tải kết hợp. Không tự thêm Redis/multiapp/sharding. [Capacity](capacity.md)                                                             |
+| Media             | mediasoup v3 chọn cho PoC, scaffold có Opus/VP8/native worker                                                                                                | ADR-001 còn Proposed; chưa chứng minh mic/camera/share/TURN/isolation/reconnect hoặc capacity. [ADR](adr/001-media-foundation.md)                                                                     |
+| Contracts         | Có schema scaffold và error/envelope; đã ghi đích PRIVATE/một kiểu họp/ObjectId/RuntimeId                                                                    | Source còn RESTRICTED/FREE-MODERATED, resourceId rộng; đồng bộ trước consumer nghiệp vụ. [Contracts](contracts/README.md)                                                                             |
+| UC/bản vẽ         | 5 actor, 8 oval tổng quan, 46 UC và 6 hồ sơ trọng tâm; đã có 6 hình UC + 1 Activity, PNG xuất lại 01/11                                                      | Đã kiểm ảnh xuất: WS-15 nối owner/admin, chuyển host chỉ nối host, GRP-09 gồm một/tất cả và GRP-10 đã gộp. [Trạng thái bản vẽ](product/diagrams/README.md)                                            |
 
-Ví dụ thuộc lớp vận hành: cách chia file, commit/attribution, giới hạn 100 dòng cho entry point, danh sách nguồn checker, dạng pin được checker hỗ trợ, danh sách import bị cấm và checklist onboarding. Các chi tiết này có thể được review/chỉnh cùng harness, không dùng để suy thêm tính năng, quyền hoặc schema nghiệp vụ.
+[Review DB bước 6](database/review-2026-11-01.md) ghi những sửa trước; [review tổng thể trước push](review-before-push-2026-11-01.md) ghi kết quả và giới hạn mới nhất. Không dùng review làm schema thứ hai hoặc bằng chứng DB/media chạy đúng.
 
-Giá trị quota/timeout/retention/bitrate ghi là khởi đầu hoặc mục tiêu thử trong baseline vẫn phải được kiểm chứng theo điều kiện đã ghi; không xem chúng là SLA hoặc lời hứa hiệu năng.
+## Điểm mở cần xử lý theo task
 
-## Quyết định scope bổ sung ngày 27/10/2026
+| Điểm mở                                                                              | Khi nào cần quyết định                                                                                                            |
+| ------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
+| Thư viện/tham số hash; input limits còn thiếu như displayName; thời hạn auth session | Task auth/contracts trước handler tương ứng; plan mới chọn yêu cầu/hướng, chưa chọn mọi giá trị                                   |
+| Không có ứng viên host hoặc host tạm cũng mất mạng                                   | Chốt policy tại live-session trước triển khai nhánh phụ thuộc; không suy kết thúc/kế vị từ nullable field                         |
+| Retention audit/User/invitation/metadata phiên và participant                        | Trước vận hành dài hạn/cleanup đầy đủ; chưa tự TTL hoặc purge                                                                     |
+| Queue/pool/timeouts, quota frame theo board và tài nguyên máy                        | Trước chạy profile; số khởi đầu không là SLA hoặc capacity đạt                                                                    |
+| Người thật cho A–E, giờ làm, lịch bắt đầu/nộp, budget/VPS                            | Nhóm cung cấp khi chia việc/cam kết lịch hoặc mua dịch vụ; A–E trong plan chỉ tham khảo                                           |
+| GitHub Projects, labels/automation và branch protection thực tế                      | Issues nhận việc, PR lưu review; Projects do người dùng để sau harness. Quy ước repo không chứng minh đã bật settings trên GitHub |
 
-Team đã xác nhận hai thay đổi, được đưa vào technical plan v2.2 và nguồn product:
+## Harness và nguồn lịch sử
 
-- **PB-09 / HELP-01:** chat cuộc họp chỉ text/ảnh. Everyone theo MAIN khi ở phòng chung hoặc GROUP hiện tại khi đã chia nhóm; Host là tin riêng tới đúng host. Host có thể vào nhóm hỗ trợ. Chat/tài liệu kênh vẫn giữ khả năng gửi tệp.
-- **PB-10 / GRP-01:** host kết thúc chia nhóm, tất cả về MAIN rồi tự bật mic phát biểu. Bỏ FLOOR-01/PRESENT-01, lời mời/consent và projection công bố hình+nét. Giữ PB-10 làm nhóm backlog của hành trình về phòng chung, không tạo một feature ID mới.
+[AGENTS](../AGENTS.md), [workflow](ai/workflow.md), [task brief](ai/task-template.md) và guard là quy ước làm việc đã được đồng ý, không là feature sản phẩm hoặc yêu cầu môn học mới. CI xanh không xác nhận ngữ nghĩa/UML/ACL hoặc cấu hình sandbox.
 
-Nguồn sở hữu: [scope](product/scope.md), [chat/help và về phòng chung](product/groups-media-policy.md), [board khi đóng nhóm](product/board-collaboration.md). Research/review/evidence ngày 26/10 mô tả baseline cũ và không tự cập nhật thành bằng chứng cho thay đổi này.
-
-## Bổ sung chat Workspace ngày 27/10/2026
-
-Người dùng bổ sung general TEXT khi tạo Workspace, DM 1–1 với text/ảnh/file và thread theo tin trong kênh; đã xác nhận chỉ owner/admin tạo kênh. CHAT-02/03 được thêm vào scope. Nguồn chi tiết: [messaging](product/messaging.md).
-
-Phạm vi tối thiểu được cụ thể hóa để phân rã: thread một cấp trong TEXT, chưa thread DM/cuộc họp, chưa follow/broadcast/typing/read receipt. Chi tiết này là cách giới hạn thiết kế bản đầu, không phải tính năng đầy đủ của Slack. Cần chốt trước implementation phụ thuộc: lịch sử DM khi rejoin, cách tính/lưu badge chưa đọc nếu đưa vào, index/migration và effort/capacity. Không tự thêm bảo vệ đặc biệt cho general hoặc cam kết số giờ/ngày hoàn thành.
-
-## Ghi nhận review backlog ngày 27/10/2026
-
-Ưu tiên trong backlog là thứ tự triển khai, không phải mức tùy chọn; PB-04 không chờ meeting, PB-10 chia sẻ nền GRP-01 và không tính effort hai lần. Nhóm sẽ phân công sau, A–E chỉ tham khảo. Tại thời điểm review, dấu có tin mới và hẹn giờ còn đang cân nhắc. Sau xác nhận về countdown, TIMER-01 đã vào scope v2.3 như phần cập nhật dưới; dấu có tin mới vẫn chưa chốt.
-
-## Điều chỉnh group modes — baseline v2.3
-
-Xác nhận người dùng 27/10 thay mô hình mọi nhóm nhận chung MAIN: MAIN một share; DISCUSSION thành viên xin tạo (tên, mục đích, danh sách), host duyệt, kế thừa bài giảng và cấm share riêng; ACTIVITY host tổ chức độc lập MAIN/các nhóm khác, được share nhóm. Tự về MAIN chỉ chuyển actor; TIMER-01 cho một lượt ACTIVITY đếm ngược/nhắc, host quyết định kết thúc. Nguồn hiện hành: [group modes](product/group-modes.md). Các câu timer ngoài scope hoặc mọi group nhận MAIN ở lịch sử v2.2 không còn áp dụng cho thiết kế hiện hành.
-
-**Đã chốt sau review:** mọi member ACTIVITY tự share không xin host; mỗi group một nguồn và board theo nguồn đó. DISCUSSION host duyệt rồi người được chọn bấm Vào nhóm; người ngoài danh sách không vào. Kết thúc DISCUSSION trước ACTIVITY, trong lượt không nhận request DISCUSSION, host kết thúc về MAIN mới cho xin lại.
-
-**Chi tiết còn thiết kế theo task:** request sửa/hủy/TTL/field limits, duration limits và controls countdown mở rộng, schema/index và capacity có số đo. Không tự thêm chuyển mode tại chỗ, nhóm mở cho người ngoài danh sách hoặc tính năng gia hạn/tạm dừng. Countdown không là đồng hồ đa mục đích hay collection timer bền vững. A–E vẫn chỉ tham khảo; scope/effort/PoC phải được đánh giá lại.
-
-## Đơn giản hóa host và cuộc họp — đã chốt 27/10/2026
-
-Một kiểu cuộc họp thay FREE/MODERATED: người bắt đầu là host, người vào sau không tự nhận host; host chuyển quyền có xác nhận. MAIN mọi participant tự share khi trống, không xin host, một nguồn tại một thời điểm và không giành nguồn. Giữ nguyên DISCUSSION/ACTIVITY, hai phase và isolation. Không thêm người chủ trì được chỉ định hoặc mở quyền quản trị Workspace. Nguồn: [policy](product/groups-media-policy.md), [vòng đời host](product/live-session.md#83-chuyển-host-và-host-mất-mạng). **Đã chốt bổ sung:** mất mạng quá grace chọn ngẫu nhiên participant đang kết nối/hợp lệ làm host tạm; host cũ quay lại hợp lệ trong cùng phiên được tự hoàn quyền. Không cần chấp nhận khi hệ thống thay tạm/hoàn quyền; chuyển host chủ động vẫn có xác nhận. **Còn mở:** rời chủ động chưa chuyển host, không có ứng viên, host tạm cũng mất mạng hoặc chủ động chuyển quyền trước lúc host cũ trở lại. Cơ chế tự nhận host cũ không còn hiệu lực. Giới hạn media nghiệm thu vẫn 5 participant, chưa chốt tải lớp 40–50 người.
+Các quyết định cũ “FREE/MODERATED”, “chuyển host cần chấp nhận”, “timer chỉ nhắc/chờ host” và “rejoin tự hồi PRIVATE” không là baseline hiện hành. Research/review/evidence cũ giữ giá trị tại thời điểm ghi; đọc nguồn hiện hành ở trên trước implementation.

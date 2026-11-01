@@ -16,7 +16,7 @@
 
 ## F1 — P2: Biến collection nhóm từ tùy chọn thành bị cấm
 
-Vị trí: [database model dòng 39](database/model.md#chi-tiết-cần-hoàn-thiện-trong-task-database), đối chiếu mục 9.1 cùng file.
+Vị trí: [database model dòng 39](database/model.md#mức-hoàn-thiện-và-bước-tiếp), đối chiếu mục 9.1 cùng file.
 
 - Baseline tại mục 9.1 ghi: “GroupRuntime không bắt buộc có collection”.
 - Đoạn agent bổ sung lại ghi: “Không tự thêm collections nhóm/artifact/quiz/timer”.

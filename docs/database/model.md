@@ -1,52 +1,55 @@
 # Mô hình dữ liệu và trạng thái runtime
 
-**Trạng thái:** Thiết kế đích, chưa phải Mongoose schemas/migrations đã tồn tại. Scaffold mới có database connector và Mongo replica set.
+**Trạng thái:** thiết kế đích đã [review chéo bước 6](review-2026-11-01.md). Bước 4–5 ngày 01/11/2026 đã mô tả collection/document và đặc tả integrity/migration; chưa có Mongoose schemas, index/migration nghiệp vụ hoặc bằng chứng feature chạy chỉ từ tài liệu này. Scaffold có database connector và Mongo replica set.
 
-Nội dung mục 9.1–9.2 được chuyển từ [technical plan v2.1](../technical-plan.md) ngày 26/10/2026; cách diễn đạt ownerId đã được làm rõ theo review cùng ngày để tránh suy thành unique index. Đã cập nhật runtime/chat theo quyết định team 27/10/2026, baseline v2.3. Đây là nguồn chi tiết cho các mục được chuyển; số mục giữ theo baseline để truy vết. Thay đổi quy tắc cần cập nhật tại đây và review ảnh hưởng tới contract/test, không tạo bản sao song song.
+Đọc theo thứ tự: [UC ↔ dữ liệu](uc-data-map.md) → [mô hình nghiệp vụ](conceptual-model.md) → [nơi lưu/vòng đời](lifecycle.md) → [collection/field/nhúng-tham chiếu](collection-design.md) → [index/validation/concurrency/migration](integrity-and-migrations.md). E01–E16 là khái niệm, không phải 16 collection.
+
+Mục 9.1–9.2 giữ số từ [technical plan](../technical-plan.md) để truy vết; chi tiết field và lựa chọn vật lý hiện hành do collection-design sở hữu, retention/cleanup do lifecycle sở hữu, cơ chế transaction/khóa/index do integrity-and-migrations sở hữu. Không dùng khung allowedUserIds/accessRef cũ như schema song song với bản thiết kế mới.
+
+Để xem trực quan hoặc xuất ảnh: [DBML 13 collection cho dbdiagram.io](diagrams/README.md). Đây là bản vẽ từ thiết kế, không phải SQL/schema hoặc database đang chạy.
+
+**Vận hành/capacity bản đầu:** MongoDB local dùng Docker Compose (mongo:8.0.16, rs0 một node, named volume); chưa tạo collection chỉ bằng chạy mongo-init. Theo [capacity](../capacity.md), hướng kiểm chứng 25 rồi thử 50, chưa có cam kết phát hành. Giữ 13 collection; kiểm gate/quota/stamp/query trước đổi field, không thêm Redis/sharding từ mục tiêu số người.
 
 ### 9.1. MongoDB bền vững
 
-| Collection          | Trường/ràng buộc chính                                                                                                           |
-| ------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| users               | emailNormalized unique, passwordHash, displayName, status                                                                        |
-| authSessions        | userId, tokenHash unique, expiresAt, revokedAt; TTL dọn, request vẫn tự kiểm hạn                                                 |
-| workspaces          | name, ownerId tham chiếu owner của Workspace, deletedAt; đồng bộ với owner membership                                            |
-| memberships         | workspaceId+userId unique, role, status                                                                                          |
-| invitations         | tokenHash unique, workspaceId, expiresAt, revokedAt, maxUses, uses                                                               |
-| channels            | workspaceId, type bất biến, name/order, accessMode, allowedUserIds, deletedAt                                                    |
-| conversations       | kind CHANNEL/DIRECT/SESSION/GROUP/HOST_PRIVATE, scope refs, participants cho tin riêng, closedAt, purgeAt                        |
-| messages            | conversationId, senderId, clientMessageId, text, attachmentIds, rootMessageId nullable cho thread TEXT, createdAt; dedupe unique |
-| files               | storageKey unique, uploaderId, purpose, accessRef, mime/size/dimensions, state, expiresAt                                        |
-| liveSessions        | channelId, epoch, hostUserId, status, startedAt/endedAt, revision                                                                |
-| sessionParticipants | sessionId+userId unique, joinedAt/leftAt, current group metadata; không là nguồn runtime sau restart                             |
-| auditEvents         | actor, action, scope/target, revision, timestamp; không lưu chat/audio/token                                                     |
+Thiết kế có **13 collection**: 12 collection baseline và channelAccessGrants biểu diễn quyền PRIVATE theo UC-WS-15. Collection mới là quan hệ quyền đã được đồng ý, không thêm tính năng hay actor.
 
-Không tạo SavedArtifact, polls, votes hoặc timers trong bản này. GroupRuntime không bắt buộc có collection: dữ liệu private chỉ được đọc khi session/group runtime còn hợp lệ. Conversation giữ refs và closedAt/purgeAt để khóa và dọn dù runtime đã mất.
+| Collection          | Vai trò và quyết định chính                                                                          |
+| ------------------- | ---------------------------------------------------------------------------------------------------- |
+| users               | Danh tính và thông tin xác thực; không nhúng membership                                              |
+| authSessions        | Phiên xác thực/tokenHash, expiry/revoke server                                                       |
+| workspaces          | Owner duy nhất trong từng Workspace, revision và tombstone                                           |
+| memberships         | Một cặp Workspace/user, role/status; incarnation tăng khi rejoin sau bị loại                         |
+| invitations         | Link mời có tokenHash, hạn/thu hồi/giới hạn lượt                                                     |
+| channels            | TEXT/LIVE và WORKSPACE/PRIVATE; không nhúng mảng quyền                                               |
+| channelAccessGrants | Grant theo channel/membership/incarnation; thay allowedUserIds, không tự phục hồi PRIVATE sau rejoin |
+| conversations       | CHANNEL/DIRECT/SESSION/GROUP/HOST_PRIVATE; scope theo kind, đóng/purge                               |
+| messages            | Tin/reply độc lập, dedupe, root reference và attachment IDs                                          |
+| files               | Metadata có purpose/scope/binding và lịch dọn; byte ở kho private                                    |
+| liveSessions        | Metadata lifecycle/host/epoch; không thay SessionRuntime                                             |
+| sessionParticipants | Metadata tham gia/vị trí gần nhất, không cấp quyền runtime                                           |
+| auditEvents         | Actor/action/target/kết quả; không chép nội dung riêng                                               |
 
-Index bắt buộc: messages unique `(conversationId,senderId,clientMessageId)`; history `(conversationId,createdAt,_id)`; liveSessions unique channelId với partial filter status ACTIVE/ENDING; indexes tra membership/channel/files; TTL cho auth/purge metadata phù hợp. Migration tạo index và test trên bản Mongo được pin, không chỉ dựa autoIndex của Mongoose.
+Kiểu field, required/null, enum thiết kế và điều kiện theo loại ở [bước 4](collection-design.md). Không có SavedArtifact, polls, votes, timer, request/group/board/stroke collection trong thiết kế hiện tại. GroupRuntime và board/nét ở RAM; conversation/file giữ refs đủ để khóa và dọn sau khi runtime mất.
 
-Một Workspace có đúng một owner. Không có thao tác hạ/xóa owner trực tiếp; transfer cập nhật ownerId và roles trong transaction. Owner rời phải transfer trước hoặc xóa Workspace.
+**Các ràng buộc index baseline phải giữ ở bước 5:** emailNormalized, auth/invitation tokenHash và storageKey unique theo collection; messages dedupe theo conversationId/senderId/clientMessageId; history theo conversation và cursor; một LiveSession ACTIVE/ENDING mỗi channel; một membership mỗi Workspace/user; một DIRECT/cặp/Workspace; index tra membership/channel/grant/files và TTL chỉ cho auth; purge nội dung/tệp bằng job. Key/options cụ thể nằm ở [bước 5](integrity-and-migrations.md), chưa là migration đã chạy. Không chỉ dựa Mongoose autoIndex hay unique validator.
+
+Một Workspace có đúng một owner; transfer owner cập nhật Workspace và hai membership nhất quán. Không unique ownerId trên toàn hệ thống. Một LIVE channel có nhiều phiên qua thời gian; không unique channelId cho mọi lịch sử phiên.
 
 ### 9.2. Runtime
 
-SessionRuntime giữ state/queue/participants, help và share leases/ownership; GroupRuntime giữ mode DISCUSSION/ACTIVITY và membership; MediaRuntime giữ objects thật; BoardRuntime giữ intents/frame/strokes; ActiveCallRegistry theo user giữ callGeneration. Không serialize transport/producer vào DB. Presence socket không là identity lâu dài.
+SessionRuntime giữ phase, participants/group membership, mutation queue, policyRevision, host tạm/đích hoàn quyền, help/announcement và share ownership. GroupRuntime giữ DISCUSSION/ACTIVITY, roster/phân công và scope. ActivityRound giữ draft/thời lượng/deadline chung. BoardRuntime giữ intent/frame context/nét/sequence. MediaRuntime giữ objects thật; ActiveCallRegistry giữ callGeneration theo user.
 
-## Chi tiết cần hoàn thiện trong task database
+Metadata DB revision khác policyRevision runtime; lastScope/hostUserId không khôi phục quyền sau restart. Không serialize transport/producer hoặc từng điểm vẽ vào DB. Byte frame dùng files và kho private, context/refs hiện hành do runtime kiểm. Xem [bước 3](lifecycle.md).
 
-- Danh mục trên là baseline, không là schema thực. Khi triển khai từng collection, ghi types/nullability, enum/validation và index specification chính xác trong source/migration cùng PR.
-- Cần xác nhận cách biểu diễn soft-delete/status, partial filter ACTIVE/ENDING và TTL/purge trên phiên bản Mongo pin; có ca đồng thời/rollback. Không tự chạy migration từ task tài liệu.
-- Quy tắc đã chốt là mỗi Workspace có đúng một owner. Không suy từ đó ra `unique(ownerId)` trên toàn collection; cardinality user–Workspace cần được mô tả rõ khi thiết kế index, không tự bổ sung giới hạn một Workspace cho mỗi user.
-- GroupRuntime không bắt buộc persist. Nếu cần collection hỗ trợ nhóm, ghi lý do, vòng đời, ACL và review thiết kế trước khi triển khai; không coi collection nhóm là tính năng ngoài scope.
-- Auth hashing implementation, các field phụ và cách migrate dữ liệu hiện hữu chưa được chốt chỉ bằng tài liệu này. Không thêm collections cho artifact/quiz/timer ngoài scope. Xem [trạng thái quyết định](../decision-status.md).
+Host theo [live session 8.3](../product/live-session.md#83-chuyển-host-và-host-mất-mạng): gán trực tiếp không chờ chấp nhận; host còn quyền chủ động rời kết thúc phiên. Bàn giao chính thức khác thay tạm/hoàn quyền; không giải quyết nhánh thiếu ứng viên/host tạm mất mạng bằng schema.
 
-Nguồn liên quan: [lifecycle](lifecycle.md), [contracts](../contracts/README.md), [Workspace](../product/workspace-channels.md).
+## Mức hoàn thiện và bước tiếp
 
-Chat cuộc họp (HELP-01) chỉ cho text/ảnh. Everyone chọn conversation SESSION cho MAIN hoặc GROUP hiện tại; Host chọn HOST_PRIVATE gắn đúng host nhận. Scope/recipient không lấy nguyên từ client mà phải kiểm tại thời điểm gửi. CHANNEL chat/tài liệu vẫn cho tệp theo FILE-01. Không tạo model FloorGrant/PresentationView trong bản hiện tại.
+- Bước 4 chọn ObjectId cho document bền/foreign refs, RuntimeId UUID cho đối tượng runtime, Date UTC và cấu trúc có kiểu; không tự sửa schema Zod/code ở đợt tài liệu.
+- PRIVATE dùng grant gắn membership incarnation; đổi role không tăng incarnation, bị loại rồi rejoin tăng và cần owner/admin cấp lại grant. DM vẫn cùng conversation khi cả hai membership hợp lệ.
+- Thread một cấp trong TEXT, không nhúng reply list; file bind một message hoặc một frame context, không tái dùng frame để mở chat khác scope. HOST_PRIVATE có cặp cố định trong phiên, không đổi audience theo host mới.
+- **Bước 5 đã đặc tả:** [index/options/validation, CAS/transaction/deny barrier, quota, purge, migration/rollback và matrix DB-01–12](integrity-and-migrations.md). Chưa có schema/migration hoặc integration test đã chạy; [bước 6](review-2026-11-01.md) ghi kết quả review và điều kiện trước implementation. Chi tiết tham chiếu chéo không được giao phó chỉ cho Mongoose ref/populate.
+- Thư viện hash, retention audit/metadata và nhánh host nhiều sự cố vẫn mở tại [trạng thái quyết định](../decision-status.md). Không thêm chức năng quản trị metadata chỉ vì dữ liệu được lưu.
 
-### Bổ sung thiết kế messaging
-
-Theo [messaging](../product/messaging.md), DIRECT có workspaceId và đúng hai participant user IDs; khóa cặp chuẩn hóa không phân biệt thứ tự, unique theo Workspace để chống tạo trùng. Không dùng HOST_PRIVATE cho DM bền vững. Messages giữ cùng conversation khi reply; root thuộc cùng conversation CHANNEL, chỉ một cấp. History kênh lọc tin gốc, replies có cursor riêng. Index root/cursor, ràng buộc cặp và cập nhật reply count phải được thiết kế/test trong migration; đây chưa là schema executable. Không cần tạo collection thread riêng mặc định.
-
-### Nhóm và countdown v2.3
-
-[Group modes](../product/group-modes.md) thêm request tên/mục đích/danh sách người và activity round deadline. Hướng thiết kế là runtime của LiveSession, không tự thêm collection timer bền vững; request schema/TTL và group persistence cụ thể vẫn cần thiết kế theo task. Danh sách được duyệt khác membership đã bấm Vào nhóm; session groupPhase chặn DISCUSSION trong lượt ACTIVITY. Member ACTIVITY share không host duyệt, mỗi group một nguồn active và board bám nguồn đó. Audit ghi hành động/ID và kết quả, không sao chép mục đích/nội dung chat riêng vào log. Source registry/board refs cần scope+source generation; metadata participant không tự cấp quyền loại nhóm sau restart. Timer expired chỉ là state để nhắc, không là transaction đóng group.
+Nguồn liên quan: [contracts](../contracts/README.md), [Workspace](../product/workspace-channels.md), [kiến trúc](../architecture.md). Bước tài liệu này không chạy reset, seed, migration hoặc thay schema DB đang dùng.

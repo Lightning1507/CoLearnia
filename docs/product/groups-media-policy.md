@@ -8,9 +8,9 @@ Nguồn ban đầu được trích chuyển từ [technical plan v2.1](../techni
 
 ### 5.1. Ba lớp quyền
 
-Workspace: owner/admin/member. Session: host/member. Grant cụ thể: publish/share, board. Admin không mặc nhiên là host và không nghe nhóm riêng. Owner/admin quản lý kênh; member không tự đổi role. RESTRICTED dùng allowlist rõ; owner/admin quản lý cấu hình không đồng nghĩa tự có quyền đọc private session.
+Workspace: owner/admin/member. Session: host/member. Grant cụ thể: publish/share, board. Admin không mặc nhiên là host và không nghe nhóm riêng. Owner/admin quản lý kênh; member không tự đổi role. PRIVATE dùng allowlist rõ; owner/admin quản lý cấu hình không đồng nghĩa tự có quyền đọc private session.
 
-Host chỉ điều hành session mà mình đang tham gia. Chỉ có một kiểu cuộc họp: người bắt đầu LiveSession trở thành host, không có bước bật chế độ điều hành. Người vào sau không tự nhận hoặc giành host; host chuyển quyền cho participant khác và người nhận xác nhận. Owner/admin Workspace không mặc nhiên là host. Xem [vòng đời host](live-session.md#83-chuyển-host-và-host-mất-mạng) cho cơ chế host tạm ngẫu nhiên khi mất mạng quá grace và tự hoàn quyền khi host cũ quay lại; rời chủ động/nhiều sự cố còn cần đặc tả.
+Host chỉ điều hành session mà mình đang tham gia. Chỉ có một kiểu cuộc họp: người bắt đầu LiveSession trở thành host, không có bước bật chế độ điều hành. Người vào sau không tự nhận hoặc giành host; host chuyển quyền trực tiếp cho participant hợp lệ, không cần người nhận chấp nhận. Chỉ một host tại một thời điểm; không thêm co-host/presenter. Owner/admin Workspace không mặc nhiên là host. Xem [vòng đời host](live-session.md#83-chuyển-host-và-host-mất-mạng) cho cơ chế host tạm ngẫu nhiên khi mất mạng quá grace và tự hoàn quyền khi host cũ quay lại; host chủ động rời khi còn giữ quyền kết thúc phiên cho mọi người; sau bàn giao chính thức người cũ rời như thành viên. Không có ứng viên/host tạm mất mạng vẫn là điểm mở.
 
 ### 5.2. Quyền publish theo bối cảnh
 
@@ -54,26 +54,26 @@ Người mới vào group được đọc phần lịch sử group trong phiên 
 ### 8.1. Host, group và hỗ trợ
 
 - Trong cuộc họp, DISCUSSION đi qua yêu cầu tên/mục đích/thành viên, host duyệt rồi từng người được chọn bấm Vào nhóm; ACTIVITY do host tạo/phân khi chuyển sang lượt hoạt động. Theo [group modes](group-modes.md), người chưa phân vẫn ở MAIN; host không là thành viên mọi group.
-- Thành viên có thể tự về MAIN; host vẫn có thể chuyển người/đóng nhóm. Chuyển group thu media/chat/board/screen cũ trước, cập nhật membership và cấp nguồn mới. Close group kết thúc help liên quan, đưa thành viên về MAIN; private history bị khóa.
+- Thành viên có thể tự về MAIN; host có thể điều chuyển người và đóng một/tất cả DISCUSSION. ACTIVITY chỉ kết thúc theo deadline/lỗi bắt đầu/kết thúc phiên, không có lệnh host đóng thủ công. Chuyển group thu media/chat/board/screen cũ trước, cập nhật membership và cấp nguồn mới. Đóng nhóm kết thúc help liên quan, đưa thành viên của nhóm đó về MAIN; private history bị khóa, nhóm khác không bị đóng theo.
 - Chat cuộc họp chỉ gửi text và ảnh, chọn **Everyone** hoặc **Host**. Everyone ánh xạ vào scope hiện tại: không chia nhóm là SESSION/MAIN; khi đang chia nhóm, thành viên trong group gửi vào GROUP đó, người chưa phân nhóm gửi vào MAIN. Everyone không phát xuyên các nhóm. Host đang hỗ trợ dùng group hỗ trợ làm scope Everyone; ngoài hỗ trợ dùng MAIN. UI ghi rõ đích gửi và đổi nhãn theo scope.
 - Host ánh xạ vào HOST_PRIVATE giữa người gửi và đúng host nhận tại thời điểm gửi; không có nhắn riêng tùy ý tới mọi participant. Không có host hợp lệ thì vô hiệu lựa chọn Host và báo rõ, không tự đổi sang Everyone.
 - Server kiểm scope/host hiện tại khi gửi và bind ảnh; đích đã stale do chuyển nhóm/host phải trả lỗi để người dùng xác nhận đích mới, không tự chuyển tin private sang Everyone hoặc host mới. Lịch sử/ảnh cũ giữ ACL ban đầu.
 - Ảnh có thể upload hoặc gửi ảnh chụp canvas hiện tại theo quyền; đây là attachment trong phiên, không là thư viện bài làm. Tệp bất kỳ chỉ thuộc chat/tài liệu kênh, không thuộc chat cuộc họp. Chọn Host không tự cấp quyền board cho host hay tự chuyển mic.
 - `host.help.enter` cấp quyền group đích, chuyển MIC host sang GROUP, hiển thị host đã vào trước khi mở scope hỗ trợ. Vào B thì thu A trước.
-- `host.help.leave` có thao tác ghi rõ quay lại hướng dẫn toàn phòng. Nếu MIC đang bật, UI yêu cầu xác nhận chuyển phạm vi về MAIN/hướng dẫn cho DISCUSSION; không tự phát global chỉ vì timeout/mất mạng.
+- `host.help.leave` là thao tác host chủ động rời nhóm hỗ trợ về MAIN, độc lập với bật/tắt mic và không yêu cầu xác nhận mic riêng. Thu quyền nhận/phát ở nhóm trước khi chuyển phạm vi; mic giữ nguyên trạng thái: đang bật thì từ lúc chuyển phát theo MAIN/hướng dẫn cho DISCUSSION, đang tắt thì vẫn tắt. UI hiển thị phạm vi hiện tại; ACTIVITY khác không nhận nguồn đó. Mất mạng/timeout/đóng nhóm ngoài thao tác rời chủ động không tự phát mic global.
 - Hỏi bằng tin nhắn không tự đổi scope mic. Host cũ giữ quyền đọc tin gửi riêng cho mình trong phiên theo ACL; host mới không tự nhận lịch sử đó. Người gửi có thể gửi câu hỏi mới cho host mới.
 
 ### 8.2. Kết thúc chia nhóm và về phòng chung
 
-- Host chọn **Kết thúc chia nhóm / Đưa tất cả về phòng chung**. Đây là một thao tác toàn phiên; không chỉ gọi nhóm được chọn và không xóa vai trò host.
-- Kết thúc help/announcement đang diễn ra; thu quyền media/chat/board của các group trước khi đóng nhóm, đặt mọi participant về MAIN và tắt breakout. Snapshot mới hiển thị rõ đã về phòng chung.
-- Mic của người chuyển từ nhóm về MAIN được pause ở server; người dùng tự bật lại để phát biểu. Không tự bật thiết bị đã tắt; camera đang bật chuyển sang audience MAIN theo policy, nên UI phải thông báo rõ phạm vi phòng chung. Host kết thúc help vẫn theo quy tắc xác nhận scope mic tại 8.1.
+- ACTIVITY: deadline server hết hạn tự kết thúc toàn lượt và đưa người còn quyền về MAIN, không chờ host. DISCUSSION: host vẫn có thể đóng một hoặc tất cả nhóm trao đổi, hoặc chúng được đóng trước khi bắt đầu ACTIVITY. Không xóa vai trò host; không có lệnh host kết thúc thủ công ACTIVITY trong scope hiện tại.
+- Kết thúc help và thu quyền media/chat/board liên quan tới các nhóm đang đóng trước khi đưa người còn quyền về MAIN. Đóng một DISCUSSION chỉ tác động nhóm đích; nhóm khác tiếp tục. Hết lượt ACTIVITY đóng mọi ACTIVITY của lượt; người đã ở MAIN không bị reset thiết bị. Không xóa announcement MAIN còn hợp lệ chỉ vì đóng một DISCUSSION; snapshot thể hiện đúng phạm vi đã thay đổi.
+- Mic của người chuyển từ nhóm về MAIN được pause ở server; người dùng tự bật lại để phát biểu. Không tự bật thiết bị đã tắt; camera đang bật chuyển sang audience MAIN theo policy, nên UI phải thông báo rõ phạm vi phòng chung. Host chủ động rời help dùng 8.1; hết giờ đóng nhóm là cleanup tự động, không áp nhánh giữ mic để phát tiếng hỗ trợ ra MAIN.
 - Người ở MAIN nghe/xem nhau theo policy MAIN và vẫn nhận main screen. Không có FloorGrant, lời mời/consent phát biểu hay PresentationView. Không tự mang frame/nét/chat nhóm ra phòng chung; board MAIN là context riêng.
 - Conversation nhóm đóng, API history/ảnh nhóm bị khóa và frame/nét nhóm vào cleanup theo lifecycle. Reconnect hoặc lệnh chậm từ nhóm cũ không mở lại nhóm, mic hay đích gửi cũ.
-- Announcement từ hỗ trợ riêng vẫn yêu cầu xác nhận kết thúc help và chuyển về scope hướng dẫn MAIN/DISCUSSION; không tự quay lại hỗ trợ sau announcement.
+- Announcement chỉ phát tại scope hướng dẫn MAIN/DISCUSSION; host đang hỗ trợ phải kết thúc hỗ trợ về MAIN trước, theo thao tác rời tại 8.1, không có xác nhận mic riêng. Không tự quay lại hỗ trợ sau announcement.
 
 ### 8.5. Countdown cho lượt hoạt động
 
-TIMER-01 theo [thời lượng chung](group-modes.md#thời-lượng-chung-cho-lượt-hoạt-động--timer-01): deadline server, đếm ngược và nhắc hết giờ, host chủ động kết thúc. Không tự close/mute/move và không mặc định áp cho nhóm DISCUSSION.
+TIMER-01 theo [thời lượng chung](group-modes.md#thời-lượng-chung-cho-lượt-hoạt-động--timer-01): deadline server và countdown chung; hết giờ tự đóng các ACTIVITY của lượt, thu scope cũ và đưa người còn quyền về MAIN. Mic từ nhóm về được pause để tự bật lại; không công khai chat/board. Không áp mặc định cho DISCUSSION.
 
-Phase giảng/hoạt động theo [group modes](group-modes.md#hai-giai-đoạn-không-chồng-nhau): kết thúc DISCUSSION trước ACTIVITY; không nhận/duyệt/join DISCUSSION khi đang ACTIVITY. Host kết thúc lượt về MAIN rồi mới nhận request lại; timer expired không đổi phase.
+Phase giảng/hoạt động theo [group modes](group-modes.md#hai-giai-đoạn-không-chồng-nhau): kết thúc DISCUSSION trước ACTIVITY; không nhận/duyệt/join DISCUSSION khi đang ACTIVITY. Hết thời lượng, hệ thống kết thúc lượt và hoàn tất cleanup về MAIN/GUIDANCE rồi mới nhận request DISCUSSION lại.

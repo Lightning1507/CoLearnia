@@ -8,7 +8,7 @@
 
 Tài liệu là cơ sở chung để tạo backlog, viết contracts, triển khai và nghiệm thu. Các quy tắc nghiệp vụ dưới đây là thiết kế của CoLearnia; không phải API có sẵn của thư viện. Thông số ghi “khởi đầu” hoặc “mục tiêu thử” phải được kiểm chứng, không dùng làm cam kết hiệu năng.
 
-**Cập nhật v2.3:** phân biệt MAIN, DISCUSSION thành viên xin host duyệt và ACTIVITY host tổ chức độc lập. MAIN một người share; DISCUSSION kế thừa bài giảng và cấm share riêng; ACTIVITY mỗi nhóm một share độc lập; mọi member tự bấm không xin host, board theo nguồn đó. Host duyệt DISCUSSION rồi người được chọn bấm Vào nhóm; kết thúc DISCUSSION trước ACTIVITY và không nhận request DISCUSSION trong lượt hoạt động. Thêm tự về MAIN và TIMER-01 countdown chung cho lượt hoạt động, chỉ nhắc hết giờ. Xem [group modes](product/group-modes.md) là nguồn chi tiết; các quy tắc này thay mô hình mọi nhóm cùng nhận MAIN của v2.2. Chưa thay code nghiệp vụ hoặc chứng minh PoC đạt.
+**Cập nhật v2.3:** phân biệt MAIN, DISCUSSION thành viên xin host duyệt và ACTIVITY host tổ chức độc lập. MAIN một người share; DISCUSSION kế thừa bài giảng và cấm share riêng; ACTIVITY mỗi nhóm một share độc lập; mọi member tự bấm không xin host, board theo nguồn đó. Host duyệt DISCUSSION rồi người được chọn bấm Vào nhóm; kết thúc DISCUSSION trước ACTIVITY và không nhận request DISCUSSION trong lượt hoạt động. Theo cập nhật TIMER-01 ngày 29/10/2026, thêm tự về MAIN và countdown chung cho lượt hoạt động, hết giờ tự kết thúc ACTIVITY và đưa người còn quyền về MAIN, không chờ host. Xem [group modes](product/group-modes.md) là nguồn chi tiết; các quy tắc này thay mô hình mọi nhóm cùng nhận MAIN của v2.2. Chưa thay code nghiệp vụ hoặc chứng minh PoC đạt.
 
 **Lịch sử cập nhật v2.2 theo team 27/10/2026:** HELP-01 là chat text/ảnh chọn Everyone theo scope hiện tại hoặc Host riêng, kèm host vào nhóm hỗ trợ. Kết thúc chia nhóm đưa tất cả về MAIN để tự bật mic; bỏ FLOOR-01/PRESENT-01 và cơ chế floor/consent/projection. GRP-01 bao gồm thao tác về phòng chung; không tạo feature ID thay thế. Các quy tắc chi tiết, contracts đích, dữ liệu, test và backlog đã được đồng bộ; tài liệu lịch sử ngày 26/10 không ghi đè quyết định này. Đây là thay đổi thiết kế, chưa là code đã chạy.
 
@@ -16,11 +16,13 @@ Tài liệu là cơ sở chung để tạo backlog, viết contracts, triển kh
 
 **Lịch sử cập nhật v2.1:** đồng bộ runtime với repository sang Node.js 26.12.1/pnpm 11.5.2 và ghi nhận hiện trạng scaffold/local. Giữ nguyên phạm vi, kiến trúc sản phẩm và lộ trình v2.0. Các mục triển khai và kiểm thử bên dưới mô tả đích cần đạt; trạng thái đã hoàn thành phải đối chiếu source và evidence theo commit/môi trường. Native media smoke chỉ xác nhận worker/Router khởi động, chưa chứng minh camera/mic, cách ly nhóm hoặc TURN.
 
-**Chốt đơn giản hóa cuộc họp ngày 27/10/2026:** giữ baseline v2.3, thay quy tắc FREE/MODERATED cũ bằng một kiểu cuộc họp. Người bắt đầu là host; người vào sau không tự nhận host; chuyển quyền cần người nhận xác nhận. MAIN mọi participant tự share khi trống, một nguồn tại một thời điểm, không xin host hoặc giành nguồn. DISCUSSION/ACTIVITY và hai phase giữ nguyên. [Policy](product/groups-media-policy.md) và [vòng đời host](product/live-session.md#83-chuyển-host-và-host-mất-mạng) là nguồn chi tiết; host mất mạng quá grace được thay tạm bằng participant hợp lệ chọn ngẫu nhiên, tự hoàn quyền khi host cũ quay lại hợp lệ trong cùng phiên. Rời chủ động và các nhánh nhiều sự cố còn cần đặc tả. Đây là thiết kế, không là code đã chạy.
+**Đơn giản hóa cuộc họp ngày 27/10, cập nhật 01/11/2026:** giữ baseline v2.3, thay quy tắc FREE/MODERATED cũ bằng một kiểu cuộc họp. Người bắt đầu là host; người vào sau không tự nhận host; chuyển quyền trực tiếp, không cần người nhận chấp nhận; bàn giao chính thức khác thay host tạm do mất mạng. MAIN mọi participant tự share khi trống, một nguồn tại một thời điểm, không xin host hoặc giành nguồn. DISCUSSION/ACTIVITY và hai phase giữ nguyên. [Policy](product/groups-media-policy.md) và [vòng đời host](product/live-session.md#83-chuyển-host-và-host-mất-mạng) là nguồn chi tiết; host mất mạng quá grace được thay tạm bằng participant hợp lệ chọn ngẫu nhiên, tự hoàn quyền khi host cũ quay lại hợp lệ trong cùng phiên. Host chủ động rời khi còn giữ quyền kết thúc phiên cho mọi người; sau bàn giao chính thức người cũ rời như thành viên. Không có ứng viên/host tạm mất mạng còn cần đặc tả. Không thêm co-host/co-organizer/presenter. Đây là thiết kế, không là code đã chạy.
 
 **Tổ chức nguồn ngày 26/10/2026:** các mục nghiệp vụ, kiến trúc và dữ liệu đã được chuyển sang tài liệu theo miền, giữ nguyên nội dung baseline. Các heading bên dưới dẫn tới nguồn chi tiết; [mục lục tài liệu](README.md) ghi cách đọc và thứ tự xử lý khi có mâu thuẫn.
 
 **Trạng thái quyết định:** plan có cả quy tắc đã chốt, thiết kế khung, cấu hình thử và thông tin cần nhóm xác nhận; không phải mọi chi tiết implementation đều đã được chọn. Xem [bản đồ trạng thái](decision-status.md) để tra đúng nguồn. Review harness ngày 26/10 đã làm rõ cách diễn đạt ownerId trong tài liệu database, không đặt thêm unique index hoặc thay quy tắc một owner/Workspace.
+
+**Bổ sung baseline capacity ngày 01/11/2026:** [capacity](capacity.md) sở hữu định hướng 25 người là mốc thử trước, 50 là mốc mở rộng sau khi đạt; không cam kết 100 hoặc coi số kết nối là capacity media. Giữ gate chức năng 5 người, kiến trúc một app process/worker và MongoDB Docker; camera nhận có chọn lọc, overload/queue hữu hạn và đo tải kết hợp là yêu cầu triển khai. Chưa có benchmark đạt các mốc mới, chưa thêm Redis/worker pool hoặc đổi schema từ đợt tài liệu.
 
 ## Mục lục
 
@@ -182,8 +184,8 @@ HTTP: 400 malformed, 401 chưa/hết auth, 403 sai quyền, 404 không thấy t�
 | POST /workspaces/:wid/owner-transfer | Owner → target member; transaction |
 | POST /workspaces/:wid/invitations; DELETE /invitations/:iid | Owner/admin tạo/thu link |
 | POST /invitations/accept | Token trong body; transaction, không log |
-| GET, POST /workspaces/:wid/channels | Filter access; owner/admin tạo |
-| PATCH, DELETE /channels/:cid | Owner/admin; type bất biến; thu phiên và file access khi xóa |
+| GET, POST /workspaces/:wid/channels | Filter access WORKSPACE/PRIVATE; owner/admin tạo; xem quyền PRIVATE tại messaging |
+| PATCH, DELETE /channels/:cid | Owner/admin; type và accessMode không đổi sau tạo; quản lý danh sách PRIVATE theo messaging; thu phiên và file access khi xóa |
 | GET /channels/:cid/messages?before=... | Chỉ TEXT + channel access; cursor phân trang |
 | POST /channels/:cid/messages | CHANNEL message service, dedupe; rootMessageId cho reply một cấp, kiểm root cùng kênh |
 | GET /conversations/:id/messages?before=... | ACL theo kind; session/group phải ACTIVE/open |
@@ -205,18 +207,18 @@ Upload đi HTTP, không truyền Base64 file/video qua Socket.IO. Chat socket/RE
 |---|---|---|
 | Phiên | session.join/leave/resync | Ticket/auth/epoch/generation; projection |
 | Call ownership | call.takeover | Thao tác xác nhận user; thu call cũ trước |
-| Host | host.transfer.invite/accept | Người bắt đầu giữ host; chỉ host hiện tại mời chuyển và target xác nhận; revision; cleanup activity |
+| Host | Chuyển host trực tiếp; tên event chốt trong task contracts | Chỉ host hiện tại gán cho participant hợp lệ, không chờ chấp nhận; kiểm revision và cleanup help/announcement; host chủ động rời khi còn quyền kết thúc phiên |
 | Transport | media.transport.create/connect | Direction và transport owner |
 | Publish | media.producer.create/pause/resume/close | canPublish + owner + source/kind + quota |
 | Receive | media.consumer.create/ready/close | canConsume ở create và ready; dedupe |
 | Share | screen.acquire/release | Actor/group mode/scope, lease/source generation; MAIN mọi participant tự share không xin host, một nguồn, DISCUSSION deny, ACTIVITY một nguồn/group, member tự share không host approval |
-| Nhóm | group.request.create/approve/reject; group.join/create/assign/leave/close/closeAll; activity.start/end | Request có tên/mục đích/thành viên; host duyệt DISCUSSION rồi actor trong roster chủ động join; ACTIVITY chặn request/approve/join DISCUSSION, start đóng DISCUSSION trước; leave chỉ actor |
-| Hỗ trợ | host.help.enter/leave | Host, activity conflict và xác nhận scope |
+| Nhóm | group.request.create/approve/reject; hủy pending (tên event chốt theo contracts); group.join/create/assign/leave; discussion close/closeAll; activity.start | Request có tên/mục đích/thành viên; host duyệt DISCUSSION rồi actor trong roster chủ động join; ACTIVITY chặn request/approve/join DISCUSSION, start đóng DISCUSSION trước; lỗi chuyển một phần thì hủy lượt về MAIN, không khôi phục DISCUSSION cũ; leave chỉ actor; host close/closeAll chỉ DISCUSSION; ACTIVITY tự kết thúc theo deadline |
+| Hỗ trợ | host.help.enter/leave | Host, nhóm hiện hành; chủ động leave về MAIN giữ trạng thái mic, không hỏi xác nhận mic riêng; cleanup/sự cố không tự phát chung |
 | Chat | message.send | Conversation ACL + clientMessageId; cuộc họp text/ảnh, Everyone theo scope hoặc Host đích hiện tại; stale thì từ chối |
 | Freeze | board.freeze.begin/commit; board.resume | Intent, version, source/generation |
 | Vẽ | board.cursor; board.stroke.preview/commit/undo; board.clear | Board ACL, author, sequence/quota |
 | Thông báo | announcement.start/stop | Host, audience MAIN/DISCUSSION theo mode; không tự mở audio vào ACTIVITY độc lập |
-| Countdown | activityRound.start; activityRound state/expired | Host, duration/deadline server; hết giờ chỉ nhắc. Edit/pause/extend chưa chốt |
+| Countdown | activityRound.start; activityRound state/expired | Host đặt duration; deadline server hết hạn tự kết thúc đúng lượt ACTIVITY, cleanup/về MAIN. Số nguyên 1–120 phút trước bắt đầu; không edit/pause/extend khi chạy |
 
 Events tương ứng: `session.snapshot`, `participant.joined/left`, `group.updated`, `host.changed`, `media.available/closed`, `consumer.closed`, `screen.changed`, `board.state/stroke`, `announcement.changed`, `group.request.changed`, `activityRound.changed/expired`, `message.created`, `session.ending/ended`. Không có event quiz/library hoặc đồng hồ ngoài TIMER-01.
 
@@ -238,7 +240,7 @@ Nguồn chi tiết: [control lease, resume và cleanup tài nguyên](product/liv
 
 ### 12.1. Màn hình
 
-Auth; Workspace list/join invitation; Workspace shell; TEXT channel; lobby; RoomPage một kiểu cuộc họp có host; group panel; host controls; request nhóm tên/mục đích/thành viên và duyệt; chat Everyone/Host, countdown lượt ACTIVITY, Về phòng chung và kết thúc chia nhóm; quản lý thành viên/kênh.
+Auth; Workspace list/join invitation; Workspace shell; TEXT channel; lobby; RoomPage một kiểu cuộc họp có host; group panel; host controls; request nhóm tên/mục đích/thành viên và duyệt; chat Everyone/Host, countdown lượt ACTIVITY, Về phòng chung sớm, ACTIVITY hết giờ tự về MAIN; host đóng DISCUSSION; quản lý thành viên/kênh.
 
 Workspace shell có general/kênh, danh sách DM của chính mình và panel thread trong TEXT.
 
@@ -288,7 +290,7 @@ Browser có thể sửa mọi request. Server tự tra actor/owner/scope/permiss
 | Tài nguyên | Giá trị khởi đầu |
 |---|---|
 | File attachment | 10 MiB/file; 4 attachment/message; quota Workspace 500 MiB |
-| Frame tạm | 1920×1080, 2 MiB; quota bytes tạm/session 20 MiB |
+| Frame tạm | 1920×1080, 2 MiB/frame; 20 MiB/session chỉ là cấu hình thử nhỏ. Profile 25/50 phải lập ngân sách board/session/server hữu hạn theo [capacity](capacity.md#4-findings-db-quyết-định-hiện-tại-và-cổng-kiểm-chứng) trước chạy; chưa tự đổi quota |
 | Message | 4.000 ký tự; trang history tối đa 50 tin |
 | Stroke | 2.000 điểm/nét, giới hạn width/palette; 1.000 nét/context và 2 MiB dữ liệu nét/context |
 | Cursor/preview | 20 batch/giây/user; không ghi DB |
@@ -317,7 +319,7 @@ Nguồn chi tiết: [đặc tả mục 13.3](database/lifecycle.md).
 
 **Profile bắt buộc ban đầu:** 5 participant = 1 host + 2 group × 2 người. Chạy riêng kịch bản DISCUSSION kế thừa MAIN và ACTIVITY độc lập có screen nhóm với một share/group và hai group share đồng thời; ghi rõ số nguồn screen; camera của cả 5 được bật và nhận đúng quyền; 30 phút; ít nhất hai mạng độc lập; Chrome và Edge desktop. Ghi máy/OS/browser/VPS/region, bitrate/độ phân giải và ICE selected candidate.
 
-**Profile mở rộng để đo:** tăng tới 10 rồi 12 participant, camera nhận tối đa 4 tile/client; chạy cùng test matrix nếu capacity cho phép. Đây chưa là cam kết phát hành 12 người. Giới hạn phát hành do số đo quyết định. Profile 5 người cũng chưa được xem là đã đạt nếu chưa có evidence.
+**Profile capacity đã đồng ý ngày 01/11:** theo [capacity](capacity.md#5-profile-và-bằng-chứng-nghiệm-thu), tăng 10 → 25 người làm mốc kiểm chứng trước, sau đó thử 50 nếu 25 đạt. Camera nhận chọn lọc, thử tối đa 4 camera từ xa/client; không giới hạn quyền bật camera hoặc bỏ audio theo viewport. Kiểm MAIN, hai mode nhóm và tải kết hợp, không chỉ signaling. Không cam kết mức phát hành 25/50 trước số đo; 100 là hướng tham khảo ngoài mục tiêu bắt buộc hiện tại. Gate 5 người vẫn chưa đạt nếu chưa có evidence.
 
 Test forced TURN riêng phải chứng minh selected relay candidate và traffic thật; chỉ cấu hình TURN URL không tính là pass. Không dùng 5 tab một máy thay bằng chứng hai mạng/thiết bị khi đánh giá camera/audio/ICE.
 
@@ -348,7 +350,7 @@ Thu ít nhất 20 mẫu cho thao tác lặp Q-01/Q-03/Q-04/Q-06, báo p50/p95 v�
 | T-04 | Publish/consume | Giả nguồn/owner/transport/grant; Consumer ready sau revoke; duplicate receive | B/C |
 | T-05 | Group modes/isolation | Request chưa duyệt không cấp quyền; DISCUSSION duyệt rồi bấm vào; phase ACTIVITY chặn DISCUSSION; ACTIVITY không nhận MAIN; host help, move/kick/leave đúng scope; không metadata leak | C/B |
 | T-06 | Board | Cùng frame, resize/letterbox, undo đúng author, quota, hai freeze, resume trước upload xong | D/C |
-| T-07 | Về MAIN/countdown | Leave chỉ actor; closeAll về MAIN, tự bật lại mic; deadline chung/resync; hết giờ không auto-close/mute/share revoke | C/D |
+| T-07 | Về MAIN/countdown | Leave chỉ actor; deadline chung hết hạn tự đóng ACTIVITY/thu share/help/chat/board, về MAIN/pause mic; reconnect/callback trễ không phục hồi nhóm cũ; host đóng DISCUSSION | C/D |
 | T-08 | Board source/hình/tiếng | Freeze đúng nguồn theo mode, source revision theo scope; audio liên tục, resume đúng nguồn; không trộn nét/group/MAIN khi đổi nguồn hoặc về MAIN | D/B |
 | T-09 | Audio | Group+global cùng nguồn không echo; local mute; duck/restore; announcement host rớt | D/B |
 | T-10 | History/file/chat target | Everyone/Host đúng scope; DM chặn người thứ ba/admin; thread root sai kênh; file sau kick/close/ENDED; history phân trang | A/C |
@@ -447,7 +449,7 @@ Người mới đăng nhập → Workspace có general → kênh → chat/tệp 
 
 ### Gate G3 — cuối tuần 3
 
-UC-01/02/03 đi hết, có general/DM/thread, cả hai group mode, request/approval, chat Everyone/Host, help, tự về MAIN/closeAll, countdown và volume/reconnect; không cần thao tác DB. Đóng băng tính năng. Lỗi còn lại có owner và bước tái hiện. Không đưa quiz/library hoặc đồng hồ ngoài TIMER-01 vào vì còn tuần dự phòng.
+UC-01/02/03 đi hết, có general/DM/thread, cả hai group mode, request/approval, chat Everyone/Host, help, tự về MAIN sớm/hết thời lượng ACTIVITY, đóng DISCUSSION, countdown và volume/reconnect; không cần thao tác DB. Đóng băng tính năng. Lỗi còn lại có owner và bước tái hiện. Không đưa quiz/library hoặc đồng hồ ngoài TIMER-01 vào vì còn tuần dự phòng.
 
 ### Gate G4 — cuối tuần 4
 
@@ -456,6 +458,8 @@ UC-01/02/03 đi hết, có general/DM/thread, cả hai group mode, request/appro
 ## 17. Triển khai và vận hành
 
 ### 17.1. Topology bản đầu
+
+Theo [capacity bản đầu](capacity.md#6-docker-mongodb-và-giới-hạn-bản-đầu), chấp nhận app/worker restart kết thúc LIVE, drain trước deploy; không có HA hoặc giữ phiên qua crash. MongoDB local chạy Docker, không nhầm replica set một node với backup/failover. Chưa thêm Redis, nhiều app instance hoặc worker pool từ định hướng tải.
 
 Một VPS Linux có public IPv4, Docker Compose: Nginx, Node app với một mediasoup worker/WebRtcServer và một Router/session, Mongo replica set một node, coturn. Private volumes: DB/permanent files/temp frames. Một app process; không chạy nhiều PM2/Node replicas hoặc rolling deploy chồng phiên bản khi session state còn trong RAM.
 
