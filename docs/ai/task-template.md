@@ -2,7 +2,11 @@
 
 Copy phần phù hợp vào GitHub Issue/PR; đây là mẫu, không là task đang thực hiện. Chưa có GitHub Project được cấu hình bởi harness.
 
+Khi viết PR description, chuyển brief/bàn giao thành nội dung tiếng Việt theo [PR template](../../.github/pull_request_template.md) và [quy ước PR](../../CONTRIBUTING.md#nhánh-và-pr): giữ What, Why, Environment Variables và Developer Test; How/Limits chỉ khi có thông tin cần giải thích. Không dán nguyên brief, điền cho đủ heading hoặc dùng mẫu bàn giao thay format PR. Env không đổi ghi “Không có”; test nêu kết quả thật và phần chưa kiểm.
+
 ## Brief trước triển khai
+
+PR title dùng tiếng Anh theo `<type>(<scope>): <short description> (#<issue>)`; số Issue chỉ thêm khi đã có thật. Description bằng tiếng Việt; `Closes #...` chỉ khi hoàn tất Issue, còn đóng góp một phần dùng `Refs #...`. Xem CONTRIBUTING để dùng chung quy ước, không lấy tên nhánh làm title mặc định.
 
 - Feature ID / issue / owner / reviewer / nhánh:
 - Kết quả quan sát được:
