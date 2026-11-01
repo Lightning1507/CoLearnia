@@ -6,6 +6,8 @@ Khi viết PR description, chuyển brief/bàn giao thành nội dung tiếng Vi
 
 ## Brief trước triển khai
 
+PR title dùng tiếng Anh theo `<type>(<scope>): <short description> (#<issue>)`; số Issue chỉ thêm khi đã có thật. Description bằng tiếng Việt; `Closes #...` chỉ khi hoàn tất Issue, còn đóng góp một phần dùng `Refs #...`. Xem CONTRIBUTING để dùng chung quy ước, không lấy tên nhánh làm title mặc định.
+
 - Feature ID / issue / owner / reviewer / nhánh:
 - Kết quả quan sát được:
 - Nguồn áp dụng: đường dẫn + mục; quyết định đã chốt/điểm chưa rõ:
