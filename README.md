@@ -6,6 +6,8 @@ Monorepo khởi tạo theo technical plan v2: Workspace → kênh TEXT/LIVE → 
 
 ## Bắt đầu
 
+Mới tham gia team? Đọc [Hướng dẫn nhập môn CoLearnia](docs/team-onboarding.md) để hiểu sản phẩm, luồng chính và phần việc trước khi đi vào setup kỹ thuật.
+
 Yêu cầu: Node **26.12.1**, pnpm **11.5.2** và Docker Desktop chạy Linux containers. Phiên bản runtime/package manager được ghi ở `.node-version` và `package.json`. pnpm có thể tải runtime của project theo `devEngines.runtime`; không cần thay Node toàn máy.
 
 ```sh
