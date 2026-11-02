@@ -21,6 +21,7 @@
 
 ## Triển khai và an toàn
 
+- Khi chia việc/estimate, dùng [FR và AC](docs/product/functional-requirements.md) cùng PB/UC; FR chưa là task đã giao hoặc cam kết lịch.
 - Theo [workflow AI](docs/ai/workflow.md), [task brief](docs/ai/task-template.md) và [CONTRIBUTING](CONTRIBUTING.md); tạo nhánh đúng quy ước, giữ thay đổi có sẵn.
 - GitHub Issues nhận việc/trạng thái; PR lưu review/bằng chứng. GitHub Projects sẽ cấu hình sau; không dựng thêm bảng trạng thái cạnh tranh trong repo.
 - Đọc [kiến trúc](docs/architecture.md), [contracts](docs/contracts/README.md), [model DB](docs/database/model.md) và [lifecycle](docs/database/lifecycle.md) theo miền. Không tự chạy reset/seed/migration hoặc thay schema từ task tài liệu/UI.

@@ -4,13 +4,15 @@
 
 Nguồn phạm vi: [scope và ba luồng nghiệm thu](scope.md). Nguồn mốc tích hợp, test IDs và phương án phân vai A–E tham khảo: [technical plan, mục 14–16](../technical-plan.md#14-kiểm-thử-và-tiêu-chí-hoàn-thành). Chi tiết còn mở: [trạng thái quyết định](../decision-status.md).
 
+[Bản Functional Requirements](functional-requirements.md) chi tiết hóa các PB thành hành vi và tiêu chí chấp nhận để review, estimate và chia Issue; không phải thêm 53 tính năng mới.
+
 Tài liệu này không theo dõi assignee, trạng thái, sprint hoặc tiến độ. Khi tạo Issues, dẫn link về đây cho cấu trúc nhóm tính năng; Issues/Projects giữ công việc và trạng thái thực. Khi đổi nghiệp vụ, sửa nguồn sở hữu được dẫn thay vì chỉ sửa backlog.
 
 ## Cách đọc
 
 - **P0 — mở đường:** cần làm sớm để các luồng khác tích hợp và kiểm chứng được.
 - **P1 — hoàn thiện hành trình:** phát triển khi nền liên quan đủ dùng; vẫn bắt buộc trong MVP.
-- Cả P0 và P1 phải hoàn thành trong 4 tuần build theo DoD của plan. Không có nhóm “nếu kịp”. Thứ tự dưới đây là đề xuất triển khai, không thêm quyết định scope.
+- P0/P1 đều đang thuộc scope mục tiêu: 4 tuần phát triển chính + 1–2 tuần hoàn thiện, tích hợp và staging từ sớm theo DoD của plan. Scope/lịch cam kết cần estimate và review tính khả thi từ FR; chưa tự chuyển chức năng sang “nếu kịp” hoặc bảo đảm AI sẽ làm kịp.
 - “Phụ thuộc” là điều kiện để tích hợp/nghiệm thu kết quả thật. Có thể phân tích, thống nhất contract và phát triển song song; không phải đợi toàn bộ nhóm trước hoàn tất mới bắt đầu nhóm sau.
 - Số PB không phải thứ tự làm tuần tự; DM/thread có thể triển khai song song khi nền message/file đủ dùng. PB-10 là lát cắt về MAIN sau chia nhóm của PB-07/GRP-01, phối hợp TIMER-01 cho ACTIVITY, dùng chung nền nhóm và không tính effort hai lần.
 - Mã PB chỉ dùng nhận diện nhóm backlog, không thay feature ID hoặc UC ID hiện có. UC-01/02/03 hiện là ba hành trình nghiệm thu; chưa thay cho danh sách Use Case chi tiết ở bước phân tích tiếp theo.
@@ -81,7 +83,7 @@ Không vẽ quan hệ PB-04 → PB-07 → PB-04 thành chuỗi chờ: chat/file 
 - Phân công thật sẽ làm sau; A–E và các cột owner/reviewer trong plan chỉ là phương án tham khảo, không phải nhiệm vụ đã giao.
 - Tên/tài khoản thật cho A–E, giờ làm mỗi tuần, ngày kickoff/nộp, budget và yêu cầu hồ sơ của môn học chưa được xác nhận. Chưa gán người, ước lượng hoặc ngày cam kết trong bản này.
 - Cấu hình media cuối cùng chờ PoC; schema/index/migration và implementation auth tiếp tục cụ thể hóa theo nguồn hiện hành, không thiết kế lại mặc định.
-- Bước kế tiếp: dùng các nhóm PB để xác định actor và Use Case; chọn Activity cho luồng nhiều trạng thái/quyền; đối chiếu mô hình DB. Sau đó phân rã thành Issues có tiêu chí chấp nhận, phụ thuộc và reviewer, rồi cấu hình GitHub Projects.
+- Bước kế tiếp: review [FR và AC](functional-requirements.md) cùng UC/flow UI đã có; người phụ trách đề xuất contract, task, effort và rủi ro. Từ đó chốt scope/milestone/sprint, tạo Issues có phụ thuộc/reviewer và cấu hình GitHub Projects. Không làm lại UC/DB từ đầu.
 - Quiz/poll, đồng hồ ngoài countdown TIMER-01, thư viện/export bài làm, công cụ vẽ nâng cao, freeze cá nhân và screen riêng của DISCUSSION vẫn ngoài scope; ACTIVITY mỗi nhóm một share riêng, member không host duyệt theo [baseline](scope.md#13-ngoài-scope-của-đợt-này).
 
 **Điều chỉnh scope đã chốt 27/10:** PB-09/PB-10 theo mô tả mới ở trên. FLOOR-01/PRESENT-01 của v2.1 đã bỏ; PB-10 là lát cắt kết thúc nhóm của GRP-01, không cộng thêm feature mới. Sau bổ sung CHAT-02/03, MVP có 21 feature ID bắt buộc sau bổ sung TIMER-01.

@@ -1,0 +1,261 @@
+# Functional Requirements MVP — bản phân tích để chia việc
+
+**Ngày:** 02/11/2026. **Trạng thái:** bản chi tiết hóa từ nghiệp vụ đã chốt để team review/estimate; chưa là cam kết lịch, task đã giao hoặc feature đã chạy. Không tự cắt/thêm scope.
+
+## Mục đích và nguồn có hiệu lực
+
+[Backlog](backlog-draft.md) gom kết quả theo PB; [UC catalog](use-case-catalog.md) mô tả mục tiêu actor; FR dưới đây tách thành hành vi có thể kiểm chứng để nhìn rõ effort, phụ thuộc và rủi ro. Một UC có thể có nhiều FR, một FR có thể phục vụ nhiều UC; không tạo thêm oval UC cho từng FR. Hồ sơ HS vẫn mô tả trình tự/nhánh trọng tâm, không chép lại ở đây.
+
+Nguồn sở hữu quy tắc vẫn là [scope](scope.md), tài liệu product được dẫn từng mục, [trạng thái quyết định](../decision-status.md), [thiết kế DB](../database/model.md) và [contracts](../contracts/README.md). Khi đổi nghiệp vụ, sửa nguồn sở hữu và FR/bên dùng cùng lượt. Nếu FR và nguồn mâu thuẫn thì xử lý trước task phụ thuộc, không lấy FR làm cách ghi đè âm thầm.
+
+## Cách đọc và mức chi tiết
+
+- Mã `FR-<PB>-<số>` giữ ổn định để Issue dẫn tới yêu cầu; không là số Issue, không tự thay feature ID hoặc UC ID. UC trong bảng lược tiền tố `UC-`.
+- Mỗi dòng có kết quả cần đạt và tiêu chí chấp nhận (AC) quan sát được, gồm đường thành công và điều kiện từ chối/lỗi có ý nghĩa. Dùng role/scope trong nguồn, không coi việc ẩn nút là kiểm quyền.
+- Một FR có thể gom vài hành vi liên quan. Khi viết proposal/Issue, tách AC thành từng kết quả kiểm được, chỉ rõ task bao phủ phần nào; không bắt buộc tăng mã FR hoặc tạo một ticket cho mỗi dòng. Ví dụ FR-02-06 tách AC xem danh sách/đổi vai trò, FR-03-02 tách liệt kê/mở/đổi tên, FR-07-04 tách xét duyệt/chủ động vào nhóm.
+- Các phụ thuộc PB dưới đây mô tả sản phẩm khi tích hợp đầy đủ, không bắt mọi miền chờ nhau hoàn thành toàn bộ. Thứ tự xây dựng tối thiểu ở [miền phụ trách](delivery-domains.md#thứ-tự-xây-dựng-và-tích-hợp).
+- AC là điều phải kiểm, **không phải ca đã pass**. Issue có thể tách nhỏ AC theo task, bổ sung dữ liệu fixture và cách kiểm; không tự bỏ ca thu quyền vì UI đã chạy.
+- Ranh giới file/API/schema, lệnh socket, thuật toán và thông số chưa chốt thuộc proposal/contract của task. Không tạo FR riêng cho từng endpoint, button, index hoặc collection hỗ trợ.
+- Chưa gán owner/estimate/sprint. Ưu tiên P0/P1 kế thừa backlog, đều đang thuộc scope; số FR không tương đương số task hoặc số ngày. Các module dùng chung và kết quả tích hợp phải tránh cộng effort hai lần.
+- Khung dự kiến người dùng cập nhật là 6–7 tuần tổng, dùng AI hỗ trợ phần lớn code; nhịp 4 tuần phát triển chính và phần hoàn thiện vẫn cần kiểm lại khi có estimate. Tích hợp/staging/demo bắt đầu từ sớm. Mức scope cam kết cuối cùng cần estimate của người làm và PoC, không suy AI code sẽ bảo đảm kịp.
+
+## Các FR theo nhóm backlog
+
+### PB-01 · Tài khoản và phiên truy cập
+
+**Feature:** AUTH-01. **Nguồn:** [workspace-channels](workspace-channels.md).
+
+**Phụ thuộc và điểm cần tính effort:** Không phụ thuộc PB khác; mọi miền dùng kết quả xác thực. Rủi ro là UI đăng xuất nhưng socket/media vẫn hoạt động. Thư viện/tham số hash và các giới hạn input còn thiếu phải chốt trong task auth.
+
+| FR / UC truy vết  | Yêu cầu chức năng                                                                                                                                    | Tiêu chí chấp nhận tối thiểu                                                                                                                                                                 |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| FR-01-01 · ACC-01 | **Đăng ký tài khoản.** Hệ thống phải cho người chưa có tài khoản đăng ký bằng thông tin hợp lệ theo contract auth.                                   | Đăng ký hợp lệ tạo đúng một tài khoản có thể đăng nhập. Thông tin sai hoặc định danh trùng trả lỗi rõ, không báo tạo thành công và không tạo tài khoản dở dang.                              |
+| FR-01-02 · ACC-02 | **Đăng nhập và duy trì phiên.** Hệ thống phải xác thực tài khoản, thiết lập phiên truy cập và cho người dùng tiếp tục truy cập khi phiên còn hợp lệ. | Đúng thông tin thì mở trạng thái đã đăng nhập; sai thông tin không cấp phiên. Tải lại trang khi phiên còn hạn giữ truy cập; phiên hết hạn/bị thu hồi bị từ chối, không chỉ chuyển giao diện. |
+| FR-01-03 · ACC-03 | **Đăng xuất và thu phiên.** Hệ thống phải cho người dùng đăng xuất, thu phiên truy cập liên quan và dừng truy cập REST/socket/media của phiên đó.    | Sau đăng xuất không dùng lại phiên cũ để gọi API, gửi socket hoặc tiếp tục media. Đăng xuất lặp không gây lỗi tài nguyên; không kết thúc tùy tiện phiên đăng nhập độc lập khác.              |
+
+### PB-02 · Workspace và thành viên
+
+**Feature:** WS-01/02/03. **Nguồn:** [workspace-channels](workspace-channels.md).
+
+**Phụ thuộc và điểm cần tính effort:** Cần PB-01. Tạo Workspace, nhận lời mời, chuyển owner và thu membership có rủi ro đồng thời; dùng thiết kế DB hiện hành, không để mỗi owner module tự chọn quy tắc khác.
+
+| FR / UC truy vết    | Yêu cầu chức năng                                                                                                                               | Tiêu chí chấp nhận tối thiểu                                                                                                                                                                               |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| FR-02-01 · WS-01    | **Tạo Workspace.** Người đã đăng nhập phải tạo được Workspace cùng một owner membership, general TEXT có quyền WORKSPACE và hội thoại kênh.     | Kết quả thành công có đủ các thành phần và người tạo là owner. Lỗi giữa chừng không để Workspace thiếu general/membership; không tạo thêm owner do retry.                                                  |
+| FR-02-02 · WS-02/03 | **Xem và đổi tên Workspace.** Hệ thống phải liệt kê Workspace người dùng còn membership; cho owner/admin đổi tên Workspace trong quyền quản lý. | Người dùng mở được Workspace của mình; member thường không đổi tên. Mất membership thì không tiếp tục truy cập bằng ID hoặc dữ liệu cache; đổi tên lỗi không hiển thị thành công giả.                      |
+| FR-02-03 · WS-04    | **Xóa Workspace.** Chỉ owner hiện tại được xóa Workspace; hệ thống phải ngừng truy cập và thu tài nguyên liên quan theo lifecycle.              | Owner xóa được; admin/member bị từ chối. Socket, file và LIVE không tiếp tục cấp truy cập mới sau thu quyền; thất bại phải báo đúng trạng thái, không coi xóa byte nền là điều kiện để chặn truy cập.      |
+| FR-02-04 · WS-05/06 | **Tạo và thu hồi lời mời.** Owner/admin phải tạo được link mời có hạn dùng, giới hạn lượt và thu hồi link thuộc Workspace của mình.             | Link còn hiệu lực dùng được trong giới hạn; link hết hạn, thu hồi hoặc hết lượt bị từ chối. Member không tạo/thu link; không thao tác lời mời của Workspace khác.                                          |
+| FR-02-05 · WS-07    | **Tham gia qua lời mời.** Người dùng phải nhận được membership khi chấp nhận lời mời hợp lệ sau xác thực.                                       | Chấp nhận thành công mở Workspace/general; retry hoặc chấp nhận đồng thời không tạo membership trùng hay dùng vượt lượt. Rejoin không tự khôi phục PRIVATE cũ; link không hợp lệ không cấp một phần quyền. |
+| FR-02-06 · WS-08/09 | **Xem thành viên và đổi vai trò.** Thành viên phải xem được danh sách trong Workspace; chỉ owner được đổi vai trò admin/member theo baseline.   | Danh sách không lẫn Workspace khác. Owner đổi vai trò hợp lệ được; member/admin không tự nâng quyền hoặc hạ owner bằng chức năng này. UI và thao tác sau đổi dùng quyền mới.                               |
+| FR-02-07 · WS-10    | **Loại thành viên.** Owner/admin phải loại được người nằm trong quyền quản lý; admin không loại owner hoặc admin khác.                          | Người bị loại mất quyền nội dung/event/file/LIVE liên quan. Admin thao tác trên owner/admin bị chặn; không chỉ xóa tên khỏi danh sách trong khi nguồn media vẫn được cấp.                                  |
+| FR-02-08 · WS-11    | **Chuyển owner.** Owner phải chuyển được quyền sở hữu cho một thành viên hợp lệ, giữ đúng một owner.                                            | Thành công chỉ có owner mới và quyền hai người được cập nhật theo thiết kế. Đích không hợp lệ/người gọi không là owner bị từ chối; hai yêu cầu đồng thời không tạo hai owner.                              |
+
+### PB-03 · Kênh học và PRIVATE
+
+**Feature:** CH-01. **Nguồn:** [messaging](messaging.md).
+
+**Phụ thuộc và điểm cần tính effort:** Cần PB-01/02. Điểm dễ estimate thiếu: quyền quản lý cấu hình khác quyền đọc nội dung; thu access PRIVATE tác động cả chat, file và LIVE.
+
+| FR / UC truy vết    | Yêu cầu chức năng                                                                                                                                                      | Tiêu chí chấp nhận tối thiểu                                                                                                                                                                                                                |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| FR-03-01 · WS-12    | **Tạo kênh TEXT/LIVE.** Owner/admin phải tạo được kênh TEXT hoặc LIVE với accessMode WORKSPACE hoặc PRIVATE; hai thuộc tính là độc lập.                                | TEXT mở trao đổi văn bản, LIVE mở vào cuộc gọi; member thường không tạo kênh. PRIVATE không tự mở cho toàn Workspace; type/accessMode không đổi sau tạo trong scope hiện tại.                                                               |
+| FR-03-02 · WS-12/13 | **Liệt kê, mở và đổi tên kênh.** Hệ thống phải hiển thị các kênh nội dung người dùng được truy cập, phân biệt TEXT/LIVE và dấu khóa PRIVATE; owner/admin đổi tên được. | Người ngoài PRIVATE không mở nội dung qua sidebar hoặc ID. Quản lý cấu hình ngoài danh sách không trả kèm tin/file; member không đổi tên. Tên general không tạo thêm quy tắc bảo vệ chưa chốt.                                              |
+| FR-03-03 · WS-14    | **Xóa kênh và kết thúc tài nguyên.** Owner/admin phải xóa được kênh; quyền nội dung và tài nguyên liên quan phải bị thu.                                               | Xóa kênh đang có LIVE không để phiên/media cũ tiếp tục cấp quyền; lịch sử/file bị chặn theo lifecycle. Kết thúc một cuộc gọi bình thường không xóa kênh LIVE; không tự tái tạo general đã xóa.                                              |
+| FR-03-04 · WS-15    | **Quản lý danh sách PRIVATE.** Owner/admin phải thêm/gỡ được thành viên Workspace hợp lệ trong danh sách PRIVATE, kể cả thêm chính mình.                               | Ngoài danh sách vẫn quản lý được cấu hình nhưng không đọc/gửi/tải/vào LIVE; member/host thường không quản lý được. Thêm/re-add mở lịch sử còn lưu; gỡ thu quyền ngay. Rejoin Workspace phải được thêm lại PRIVATE; không hồi media/nhóm cũ. |
+
+### PB-04 · Chat kênh và tài liệu
+
+**Feature:** CHAT-01, FILE-01. **Nguồn:** [messaging](messaging.md).
+
+**Phụ thuộc và điểm cần tính effort:** Cần PB-01–03. File có thể dùng chung nền upload/ACL với DM và chat họp nhưng không dùng chung phạm vi quyền. Transaction/retry và file tải sau revoke cần tính effort, không chỉ composer.
+
+| FR / UC truy vết     | Yêu cầu chức năng                                                                                                                                  | Tiêu chí chấp nhận tối thiểu                                                                                                                                                                                                                             |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| FR-04-01 · MSG-01    | **Gửi tin trong kênh TEXT.** Thành viên có channel access phải gửi được text, ảnh và file vào đúng kênh TEXT, với danh tính gửi từ phiên xác thực. | Bên cùng quyền nhận được tin đã gửi; người ngoài kênh không nhận event hoặc gửi bằng ID. Tin sai định dạng/giới hạn bị báo lỗi; LIVE không trở thành kênh TEXT do gọi API gửi tin.                                                                       |
+| FR-04-02 · MSG-01    | **Trạng thái gửi và retry.** Hệ thống phải hiển thị đang gửi/thành công/lỗi và cho thử lại mà không tạo bản sao của cùng lần gửi.                  | Mất phản hồi rồi retry không sinh hai tin đã lưu; cùng khóa retry với nội dung khác không âm thầm ghi đè. Chỉ báo thành công khi server xác nhận lưu hợp lệ; lỗi upload/bind không để tin thành công nhưng thiếu attachment.                             |
+| FR-04-03 · MSG-02    | **Đọc hội thoại và lịch sử.** Người có quyền phải xem được tin gốc hiện tại và tải lịch sử kênh theo trang, đúng thứ tự.                           | Tải nhiều trang không lẫn kênh hoặc đưa reply thread vào dòng chính. Mất quyền giữa lúc đọc thì yêu cầu/event tiếp theo bị chặn; không tải toàn bộ lịch sử không giới hạn để thay phân trang.                                                            |
+| FR-04-04 · MSG-01/08 | **Đính kèm và tải tài liệu.** Hệ thống phải kiểm loại/kích thước/quota, gắn file đúng một đích hợp lệ và kiểm quyền mỗi lần tải.                   | File thuộc tin đã lưu được người còn quyền tải; biết ID/URL không cho người khác tải. Upload sai/quá hạn/lỗi không được bind như file hợp lệ; thu quyền chặn tải mới và tài nguyên tạm được dọn theo lifecycle. Chat kênh/DM cho file; chat họp chỉ ảnh. |
+
+### PB-05 · Cuộc gọi và chia sẻ màn hình
+
+**Feature:** LIVE-01/02/03. **Nguồn:** [live-session](live-session.md).
+
+**Phụ thuộc và điểm cần tính effort:** Cần PB-01–03 và EN-01 (PoC media). Rủi ro cao: media thật qua hai mạng/TURN, quyền thiết bị, tranh nguồn và cleanup; Figma/mock không chứng minh các FR này đạt.
+
+| FR / UC truy vết   | Yêu cầu chức năng                                                                                                                                                             | Tiêu chí chấp nhận tối thiểu                                                                                                                                                                                                                     |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| FR-05-01 · LIVE-01 | **Chuẩn bị thiết bị và vào LIVE.** Người có quyền kênh LIVE phải xem lobby, chọn trạng thái thiết bị rồi vào phiên hiện có hoặc tạo phiên mới.                                | Từ chối quyền mic/camera vẫn vào xem được, không tự bật thiết bị khi join. Hai người tạo đồng thời chỉ có một phiên sống/host; người khởi tạo thành công là host, người vào sau không lấy host.                                                  |
+| FR-05-02 · LIVE-01 | **Một cuộc gọi chủ động cho mỗi tài khoản.** Khi tài khoản đang gọi nơi khác, hệ thống phải báo xung đột và chỉ chuyển cuộc gọi khi người dùng chủ động xác nhận.             | Không âm thầm đá cuộc gọi cũ khi mở tab/join. Sau xác nhận thu tài nguyên cũ trước cấp mới; callback của kết nối cũ không đóng cuộc gọi mới.                                                                                                     |
+| FR-05-03 · LIVE-04 | **Mic, camera và người tham gia.** Participant phải chọn/bật/tắt mic/camera, xem người tham gia và nghe/xem nguồn đúng phạm vi đang có quyền.                                 | Thiết bị lỗi/từ chối có thông báo và vẫn xem được nguồn hợp lệ. MAIN, DISCUSSION, ACTIVITY không rò media nhóm; camera ngoài vùng xem được điều chỉnh luồng nhận theo capacity, không cắt quyền bật camera hoặc audio chỉ để giảm tải.           |
+| FR-05-04 · LIVE-05 | **Bắt đầu và dừng share theo phạm vi.** Participant ở MAIN hoặc ACTIVITY phải tự share khi nguồn scope trống; mỗi scope có một nguồn, không xin host hoặc giành nguồn.        | Hai người tranh cùng nguồn chỉ một người thắng; hai ACTIVITY share đồng thời độc lập. DISCUSSION bị chặn share cả khi cố gọi ngoài UI. Hủy picker, browser Stop, rời/mất quyền đóng nguồn và giải phóng chỗ; người khác đang share thì phải chờ. |
+| FR-05-05 · LIVE-02 | **Rời cuộc gọi và điều hướng Workspace.** Member phải rời được cuộc gọi mà không xóa kênh; chuyển xem Workspace phải giữ bộ điều khiển cuộc gọi đang hoạt động theo baseline. | Rời thực sự đóng tài nguyên cá nhân; chỉ xem chat/mở panel không ngắt call hoặc làm nhân đôi audio. Host còn quyền chủ động rời dùng kết thúc toàn phiên ở FR-07-02; muốn rời như member phải chuyển host trước.                                 |
+
+### PB-06 · Vẽ chỉ dẫn và cùng dừng hình
+
+**Feature:** BOARD-01, FREEZE-01. **Nguồn:** [board-collaboration](board-collaboration.md).
+
+**Phụ thuộc và điểm cần tính effort:** Cần PB-05; board nhóm cần PB-07, frame cần nền file PB-04. Rủi ro cao: actor/scope/source thay đổi khi thao tác đang chờ. Thời gian/fade nét tự biến mất chưa chốt, không tự gán số giây.
+
+| FR / UC truy vết    | Yêu cầu chức năng                                                                                                                                                          | Tiêu chí chấp nhận tối thiểu                                                                                                                                                                                                                                                                                                                                                                                                              |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| FR-06-01 · BOARD-02 | **Host vẽ trực tiếp tại MAIN.** Chỉ host hiện hành ở MAIN/hướng dẫn được vẽ trên nguồn MAIN, có bút/màu và lựa chọn nét thường hoặc tự biến mất.                           | Host vẽ được cả khi người khác share; member/share owner không là host bị chặn. Vẽ không dừng nguồn/audio; nét thường không bị áp TTL của nét tạm. MAIN không có freeze/resume, không tracking khi slide cuộn/đổi nội dung.                                                                                                                                                                                                               |
+| FR-06-02 · BOARD-01 | **Dừng hình chung trong nhóm.** Thành viên DISCUSSION/ACTIVITY có quyền phải chốt được một frame chung từ nguồn nhóm được phép nhận.                                       | DISCUSSION chụp bài giảng MAIN, ACTIVITY chụp nguồn riêng; cả nhóm thấy cùng frame, audio vẫn chạy, MAIN/nhóm khác không dừng. Chưa có nguồn/upload lỗi/nguồn đổi trước commit không báo freeze thành công; hai người dừng đồng thời chỉ chốt một context.                                                                                                                                                                                |
+| FR-06-03 · BOARD-02 | **Vẽ chung và hoàn tác.** Người có quyền nhóm phải vẽ/chỉ dẫn trong context hiện hành và undo nét gần nhất của mình.                                                       | Nét FROZEN gắn frame/context, tọa độ đúng khi resize/letterbox; LIVE nhóm chỉ dẫn tạm. Undo không xóa nét người khác; lệnh cũ hoặc người đã rời không ghi vào context mới. MAIN undo cũng chỉ nét của host đang thao tác.                                                                                                                                                                                                                 |
+| FR-06-04 · BOARD-02 | **Xóa nét đúng quyền.** Hệ thống phải yêu cầu xác nhận khi clear: MAIN chỉ host hiện hành; nhóm theo chủ frame/chủ nguồn LIVE hoặc host đủ quyền context tại nguồn policy. | Hủy xác nhận không xóa; xác nhận rồi vẫn kiểm lại quyền hiện tại. Host không tự clear nhóm chưa vào hỗ trợ; đổi/dừng nguồn MAIN xóa overlay cũ, đổi host thu quyền vẽ/clear cũ.                                                                                                                                                                                                                                                           |
+| FR-06-05 · BOARD-05 | **Trở lại hình trực tiếp.** Thành viên nhóm phải resume về hình hiện tại, kết thúc context frame/nét cũ của đúng nhóm.                                                     | Không phát lại đoạn bỏ qua hoặc dừng nhóm khác. Nguồn dừng khi FROZEN vẫn giữ frame hợp lệ để giải thích; resume khi không còn nguồn hiển thị chưa có share, ACTIVITY không fallback MAIN. Một người rời chỉ bị thu quyền và dọn tài nguyên riêng/pending intent của mình; không xóa frame/nét chung còn được nhóm dùng. Đóng nhóm hoặc resume kết thúc context tương ứng, dọn dữ liệu hết tham chiếu; không tự công bố hoặc lưu library. |
+
+### PB-07 · Host và vòng đời nhóm
+
+**Feature:** HOST-01, GRP-01/02. **Nguồn:** [group-modes](group-modes.md).
+
+**Phụ thuộc và điểm cần tính effort:** Cần PB-05, dùng chung PB-06/09/10/14 khi tích hợp. Rủi ro cao: chuyển scope, partial failure, host disconnect và deadline. Không coi đây là một task; không triển khai nhánh kế vị chưa chốt bằng suy đoán.
+
+| FR / UC truy vết                                | Yêu cầu chức năng                                                                                                                                                                     | Tiêu chí chấp nhận tối thiểu                                                                                                                                                                                                                                                                 |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| FR-07-01 · GRP-01                               | **Chuyển quyền host trực tiếp.** Host hiện hành phải gán được quyền host cho participant hợp lệ trong phiên, không cần người nhận chấp nhận.                                          | Người mới có quyền host, người cũ mất quyền điều hành; người không là host không chuyển được. Không đổi vai trò Workspace, không reset countdown hoặc tự mở nhóm; thao tác đang chờ của host cũ được kiểm lại quyền.                                                                         |
+| FR-07-02 · LIVE-10                              | **Kết thúc cuộc họp.** Host phải kết thúc được cuộc họp cho mọi người; host chủ động rời khi còn giữ quyền cũng kết thúc toàn phiên.                                                  | Phiên ngừng nhận thao tác mới, thu media/nhóm/chat họp/board theo lifecycle và UI báo đã kết thúc. Member không kết thúc toàn phiên; kết thúc lặp an toàn, không xóa kênh LIVE/Workspace.                                                                                                    |
+| FR-07-03 · GRP-02                               | **Gửi và hủy yêu cầu DISCUSSION.** Trong giai đoạn giảng, member phải gửi được yêu cầu tên, mục đích và danh sách participant đề xuất; người gửi hủy được yêu cầu pending theo nguồn. | Tên ≤80, mục đích ≤500 ký tự; roster hợp lệ/cùng phiên/không trùng. Yêu cầu chưa duyệt không có quyền nhóm; chưa có UC sửa hoặc TTL tự hết hạn cố định. Trong ACTIVITY không nhận yêu cầu mới.                                                                                               |
+| FR-07-04 · GRP-03/04                            | **Xét duyệt và chủ động vào DISCUSSION.** Host phải duyệt/từ chối yêu cầu; sau duyệt chỉ người được chọn và còn hợp lệ mới chủ động bấm Vào nhóm.                                     | Duyệt không tự chuyển người và không tự cấp nội dung private trước join. Người ngoài roster/yêu cầu bị từ chối hoặc phase đã chuyển ACTIVITY không vào được; nhóm hợp lệ nhận bài giảng MAIN, trao đổi riêng và không share riêng.                                                           |
+| FR-07-05 · GRP-05                               | **Chuẩn bị ACTIVITY.** Host phải tạo các nhóm hoạt động và phân participant trước khi bắt đầu lượt.                                                                                   | Chuẩn bị không chuyển người ngay; người chưa phân vẫn ở MAIN. Chỉ host quản lý được cấu hình; phân công/đích không hợp lệ bị báo để sửa trước bắt đầu, không tạo quyền vào nhóm bằng dữ liệu client tự khai.                                                                                 |
+| FR-07-06 · GRP-06                               | **Bắt đầu lượt ACTIVITY.** Khi phân công/thời lượng hợp lệ, host phải bắt đầu được lượt: đóng DISCUSSION trước, mở ACTIVITY và chuyển người được phân.                                | Trong lượt không nhận/duyệt/join DISCUSSION; mỗi ACTIVITY độc lập MAIN/nhóm khác và member tự share nguồn nhóm. Lỗi sau chuyển một phần phải hủy lượt, thu phần đã mở, đưa người về MAIN; không khôi phục DISCUSSION, không giữ nửa lượt thành công.                                         |
+| FR-07-07 · GRP-07                               | **Điều chuyển thành viên.** Host phải điều chuyển được participant tới phòng/nhóm hợp lệ theo phase và mode.                                                                          | Thu media/chat/board/share/help cũ trước cấp đích; không mang nội dung nhóm cũ sang nhóm mới. Đích đã đóng/participant mất quyền bị từ chối; không dùng move để vượt cấm DISCUSSION trong ACTIVITY.                                                                                          |
+| FR-07-08 · GRP-09                               | **Kết thúc DISCUSSION.** Trong giai đoạn giảng, host phải chọn đóng một hoặc tất cả nhóm DISCUSSION.                                                                                  | Người thuộc nhóm được chọn về MAIN theo PB-10; nhóm không chọn tiếp tục. Khóa nội dung/private scope đã đóng; không dùng chức năng này đóng riêng ACTIVITY hoặc kết thúc lượt ACTIVITY thủ công. GRP-10 là mã gộp, không task riêng.                                                         |
+| FR-07-09 · GRP-01/LIVE-01 (nhánh host mất mạng) | **Host tạm khi mất kết nối.** Sau thời gian grace theo nguồn, hệ thống phải chọn ngẫu nhiên participant hợp lệ làm host tạm và tự hoàn quyền khi host gốc quay lại hợp lệ.            | Trong grace không có nút tự nhận host; khi phục hồi thu quyền host tạm và không có hai host đồng thời. Chuyển host chính thức cập nhật đích theo policy, không tự giành lại từ dữ liệu cũ. Không có ứng viên/host tạm cũng mất mạng còn là điểm mở, chưa có AC hoàn chỉnh cho hai nhánh này. |
+
+### PB-08 · Điều chỉnh âm thanh
+
+**Feature:** AUDIO-01. **Nguồn:** [live-session](live-session.md).
+
+**Phụ thuộc và điểm cần tính effort:** Cần PB-05/07. Rủi ro: đổi volume nhưng route sai nguồn, nhân đôi tiếng hoặc restore ghi đè lựa chọn người nghe. PoC phải thử audio thật, không chỉ slider.
+
+| FR / UC truy vết                 | Yêu cầu chức năng                                                                                                                                             | Tiêu chí chấp nhận tối thiểu                                                                                                                                                                                                                 |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| FR-08-01 · LIVE-04 (gồm LIVE-07) | **Âm lượng nghe cục bộ.** Participant phải chỉnh được âm lượng nguồn được phép nhận; DISCUSSION phân biệt tiếng giảng và tiếng trao đổi trong nhóm.           | Thay đổi chỉ ảnh hưởng thiết bị/người nghe đó; không thay mic người khác. ACTIVITY không có nguồn MAIN mặc định; volume 0 không thay việc thu quyền nguồn trái phép. Autoplay bị chặn có cách chủ động bật tiếng, không phát loop mic local. |
+| FR-08-02 · GRP-13                | **Ưu tiên hướng dẫn chung.** Host ở MAIN/hướng dẫn phải thông báo được tới MAIN/DISCUSSION; hệ thống giảm tiếng trao đổi và khôi phục khi thông báo kết thúc. | Không phát thông báo sang ACTIVITY; host hỗ trợ phải rời hỗ trợ về MAIN trước. Kết thúc/timeout/mất kết nối khôi phục factor nhưng giữ volume/mute người nghe đã chọn; không phát tiếng hỗ trợ cũ ra toàn phòng.                             |
+
+### PB-09 · Chat cuộc họp và hỗ trợ
+
+**Feature:** HELP-01. **Nguồn:** [groups-media-policy](groups-media-policy.md).
+
+**Phụ thuộc và điểm cần tính effort:** Cần PB-04/05/07; ảnh canvas dùng PB-06 nếu người dùng chọn gửi. Rủi ro: đổi nhóm/host khi ảnh hoặc tin còn pending; không nhầm chat họp với DM Workspace.
+
+| FR / UC truy vết   | Yêu cầu chức năng                                                                                                                                       | Tiêu chí chấp nhận tối thiểu                                                                                                                                                                                                                                                 |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| FR-09-01 · LIVE-08 | **Trao đổi với Everyone.** Participant phải gửi/đọc được text và ảnh tới Everyone trong scope hiện tại: MAIN hoặc đúng nhóm đang tham gia.              | MAIN không phát tin vào mọi nhóm, nhóm A không nhận tin riêng B. UI ghi rõ đích; khi scope thay đổi server không tự chuyển tin/ảnh đang chờ tới đích mới. File bất kỳ và thread không thuộc chat họp.                                                                        |
+| FR-09-02 · LIVE-09 | **Trao đổi riêng với host.** Participant phải gửi được text/ảnh tới host hợp lệ và host trả lời riêng đúng người trong phiên.                           | Không là nhắn riêng tùy ý mọi participant. Host mới không nhận lịch sử gửi host cũ; đích stale phải báo để xác nhận lại, không đổi sang Everyone. Không có host hợp lệ vô hiệu đích Host; chọn Host không tự vào nhóm hoặc đổi mic.                                          |
+| FR-09-03 · GRP-12  | **Host vào và rời hỗ trợ nhóm.** Host phải vào hỗ trợ một nhóm có thông báo rõ, nhận/gửi nội dung và mic trong đúng nhóm đích rồi chủ động rời về MAIN. | Vào B thu quyền A trước; không nghe tất cả nhóm. Rời chủ động giữ trạng thái bật/tắt mic nhưng chuyển audience MAIN/hướng dẫn, không xác nhận mic riêng; đóng nhóm/timeout tự động không được phát tiếng hỗ trợ cũ ra MAIN. Không bắt buộc có tin nhắn trước để được hỗ trợ. |
+
+### PB-10 · Trở về phòng chung và phát biểu
+
+**Feature:** GRP-01 (lát cắt chung). **Nguồn:** [groups-media-policy](groups-media-policy.md).
+
+**Phụ thuộc và điểm cần tính effort:** Cần PB-07/14, phối hợp media/chat/board/help. Đây là kết quả tích hợp dùng lại vòng đời nhóm, không cộng effort một hệ chuyển phòng thứ hai.
+
+| FR / UC truy vết                          | Yêu cầu chức năng                                                                                                              | Tiêu chí chấp nhận tối thiểu                                                                                                                                                                                                                                      |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| FR-10-01 · GRP-08/09; GRP-06/11 (hết giờ) | **Về MAIN đúng phạm vi.** Member phải tự về MAIN sớm; hệ thống đưa người về khi DISCUSSION bị đóng hoặc lượt ACTIVITY hết hạn. | Tự về chỉ chuyển chính mình, không đóng nhóm/hủy giờ người khác. Thu quyền nhóm cũ trước, pause mic người chuyển để tự bật phát biểu; không reset thiết bị người vốn ở MAIN. Không công khai chat/frame/nét nhóm, không floor grant hoặc lời mời phát biểu riêng. |
+
+### PB-11 · Mất kết nối và đồng bộ lại
+
+**Feature:** REC-01. **Nguồn:** [live-session](live-session.md).
+
+**Phụ thuộc và điểm cần tính effort:** Xuyên PB-01/04–10/12–14. Cần thiết kế cùng từng module; không đợi cuối dự án mới thêm một task reconnect bao hết. Grace không là lời hứa mọi mạng được phát hiện tức thì.
+
+| FR / UC truy vết                                 | Yêu cầu chức năng                                                                                                                                                                  | Tiêu chí chấp nhận tối thiểu                                                                                                                                                                                   |
+| ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| FR-11-01 · LIVE-01 và các UC đang thao tác       | **Hiển thị mất kết nối và resync.** Hệ thống phải báo trạng thái reconnect, kiểm lại phiên/quyền rồi đồng bộ trạng thái hiện hành trong cửa sổ cho phép.                           | Kick/move/PRIVATE revoke trong lúc rớt mạng vẫn có hiệu lực. Reconnect không tự bật thiết bị đã tắt, phát lại nét/request private hoặc gửi tin tới host/scope cũ; quá grace cần join lại theo nguồn.           |
+| FR-11-02 · MSG-01/04/06; LIVE-05; BOARD-01/02/05 | **Đối soát thao tác chưa rõ kết quả.** Sau mất phản hồi, hệ thống phải đối soát tin/share/board theo trạng thái server thay vì mặc định thao tác thất bại rồi thực hiện lại tùy ý. | Tin/reply retry không trùng; share/context cũ không được ghi vào nguồn mới. UI không giữ trạng thái thành công từ mock/cache khi server đã từ chối; ảnh/tài nguyên pending không còn quyền được hủy/dọn.       |
+| FR-11-03 · LIVE-01; vòng đời phiên               | **Phiên đã kết thúc hoặc server khởi động lại.** Hệ thống phải báo phiên cũ không còn và cho tham gia mới khi còn quyền; không dựng lại nhóm/media/board từ metadata DB.           | Reconnect sau ACTIVITY hết giờ trở về trạng thái hiện tại, không reset deadline/mở lại nhóm. Restart không khôi phục frame/nét/host grant cũ; không thể dùng URL file còn trên disk để đọc lại context đã mất. |
+
+### PB-12 · DM trong Workspace
+
+**Feature:** CHAT-02. **Nguồn:** [messaging](messaging.md).
+
+**Phụ thuộc và điểm cần tính effort:** Cần PB-01/02/04; không cần LIVE. Rủi ro: tạo trùng cặp DM hoặc fanout/lịch sử bị mở cho admin/người thứ ba.
+
+| FR / UC truy vết                  | Yêu cầu chức năng                                                                                                                                                                          | Tiêu chí chấp nhận tối thiểu                                                                                                                                                                      |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| FR-12-01 · MSG-04/05 (gồm MSG-03) | **Mở và trao đổi DM 1–1.** Hai thành viên hợp lệ cùng Workspace phải mở/tìm lại một DM của cặp, gửi text/ảnh/file và xem lịch sử phân trang.                                               | Mở đồng thời/retry chỉ có một hội thoại mỗi cặp trong Workspace; cùng cặp ở Workspace khác có DM riêng. Chỉ hai bên đọc/gửi/nhận event/tải file; admin không có đặc quyền đọc; không có group DM. |
+| FR-12-02 · MSG-04/05/08           | **DM khi membership thay đổi.** Khi một bên mất membership, hệ thống phải chặn truy cập DM liên quan; khi rejoin và cả hai membership hợp lệ, cho mở lại lịch sử còn lưu của chính cặp đó. | UserId cũ khi membership chưa hợp lệ không đủ quyền. Không tạo DM mới chỉ do rejoin, không hồi dữ liệu đã purge; rời LIVE không đóng lịch sử DM và rejoin không khôi phục PRIVATE cũ.             |
+
+### PB-13 · Thread trong kênh TEXT
+
+**Feature:** CHAT-03. **Nguồn:** [messaging](messaging.md).
+
+**Phụ thuộc và điểm cần tính effort:** Cần PB-03/04. Rủi ro: reply xuất hiện cả dòng chính, đếm trùng khi retry hoặc root trỏ kênh khác. Không estimate lại toàn nền chat/file.
+
+| FR / UC truy vết               | Yêu cầu chức năng                                                                                                                                    | Tiêu chí chấp nhận tối thiểu                                                                                                                               |
+| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| FR-13-01 · MSG-06 (gồm MSG-07) | **Đọc và trả lời thread một cấp.** Người có quyền TEXT phải mở panel từ tin gốc, xem gốc/số trả lời/lịch sử và gửi reply text/ảnh/file.              | Reply chỉ thuộc thread, không lặp vào dòng chính; có phân trang. Không thread lồng reply, DM hoặc meeting; root phải tồn tại là tin gốc cùng kênh.         |
+| FR-13-02 · MSG-06/08           | **Nhất quán và quyền thread.** Thread phải kế thừa ACL kênh cho tin, số reply, event và attachment; số trả lời phải phản ánh reply được lưu một lần. | Người mất quyền kênh không đọc/tải/nhận thread. Retry không tăng count hai lần; root/attachment khác conversation bị từ chối và không để reply hợp lệ giả. |
+
+### PB-14 · Thời lượng ACTIVITY
+
+**Feature:** TIMER-01. **Nguồn:** [group-modes](group-modes.md).
+
+**Phụ thuộc và điểm cần tính effort:** Cần PB-07/11, kết quả về MAIN dùng PB-10. Rủi ro: thời gian client lệch, timeout lặp, host rớt mạng hoặc partial start; không tính cả kết thúc lượt ở nhiều task.
+
+| FR / UC truy vết                     | Yêu cầu chức năng                                                                                                                                                                               | Tiêu chí chấp nhận tối thiểu                                                                                                                                                                                                               |
+| ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| FR-14-01 · GRP-11/06                 | **Đặt và hiển thị thời lượng chung.** Host phải đặt một thời lượng nguyên 1–120 phút trước bắt đầu lượt ACTIVITY; khi bắt đầu thành công hệ thống xác lập deadline chung và hiển thị countdown. | Member theo dõi nhưng không sửa; các nhóm cùng lượt dùng một deadline. Không tạm dừng/gia hạn/đổi giờ đang chạy; không tự áp timer cho DISCUSSION. Reconnect không bắt đầu lại countdown.                                                  |
+| FR-14-02 · GRP-06/11 (luồng tự động) | **Tự kết thúc đúng lượt khi hết giờ.** Đến deadline server, hệ thống phải chặn scope ACTIVITY cũ, kết thúc các nhóm của đúng lượt và đưa người còn quyền về MAIN theo FR-10-01.                 | Không chờ host, kể cả host mất kết nối; callback lặp/trễ không đóng lượt mới. Thu share/help/chat/board, cleanup xong mới nhận DISCUSSION lại. Không có nút host kết thúc riêng ACTIVITY hoặc kết thúc lượt thủ công trong scope hiện tại. |
+
+## Kiểm độ phủ và tránh tính trùng
+
+Bản này có **53 FR**, phủ 14 nhóm PB. Đây là số lát cắt yêu cầu để review, không là 53 ticket bắt buộc. Mọi UC còn giữ trong catalog có FR tương ứng; các mã gộp chỉ truy vết hành vi, không sinh task riêng.
+
+| Miền UC                  | Nơi đặc tả FR                                                  |
+| ------------------------ | -------------------------------------------------------------- |
+| ACC-01/02/03             | PB-01                                                          |
+| WS-01–11                 | PB-02; WS-07 còn dùng quy tắc PRIVATE tại PB-03                |
+| WS-12–15                 | PB-03                                                          |
+| MSG-01/02/08             | PB-04; tải file tái sử dụng trong PB-12/13                     |
+| MSG-04/05                | PB-12; MSG-03 đã gộp                                           |
+| MSG-06                   | PB-13; MSG-07 đã gộp                                           |
+| LIVE-01/02/04/05         | PB-05; LIVE-03/06/07 là hành vi đã gộp, audio chi tiết ở PB-08 |
+| LIVE-08/09, GRP-12       | PB-09                                                          |
+| LIVE-10, GRP-01          | PB-07; thu tài nguyên/reconnect dùng PB-11                     |
+| GRP-02/03/04/05/06/07/09 | PB-07; GRP-10 đã gộp vào GRP-09                                |
+| GRP-08                   | PB-10; kết thúc do deadline dùng PB-14                         |
+| GRP-11                   | PB-14; không là timer mới trong PB-07/10                       |
+| GRP-13                   | PB-08; quyền audience vẫn theo policy nhóm                     |
+| BOARD-01/02/05           | PB-06; BOARD-03/04 undo/clear đã gộp                           |
+
+FR-04-02 và FR-11-02 cùng yêu cầu retry nhất quán: PB-04 sở hữu hành vi chat, PB-11 mô tả điều kiện phục hồi. Tương tự, PB-07 mở/đóng nhóm, PB-14 điều khiển deadline, PB-10 nghiệm thu kết quả về MAIN; chia task theo trách nhiệm và test chung, không xây ba cơ chế đóng nhóm khác nhau.
+
+## Điều kiện chất lượng và công việc mở đường đi kèm
+
+Không biến yêu cầu hiệu năng/vận hành thành chức năng người dùng mới. Task liên quan phải dẫn các nguồn sau:
+
+| Nội dung                            | Nguồn và cổng kiểm                                                                                                                                                  |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Quyền/phạm vi/cleanup               | [Policy](groups-media-policy.md), T-01/T-04/T-05/T-07/T-08 theo [test matrix](../technical-plan.md); kiểm server, event, file và media cùng quyền hiện hành         |
+| Dữ liệu/transaction/index/retention | [Integrity](../database/integrity-and-migrations.md), [lifecycle](../database/lifecycle.md); DB-01–12 là ca phải chạy khi code, không gọi thiết kế DB đã nghiệm thu |
+| Độ trễ, độ bền và reconnect         | Q-01–06 và T-01–14 tại [plan](../technical-plan.md); ngưỡng/workload dùng nguồn, không tự thêm SLA từ FR                                                            |
+| Media và capacity                   | [Capacity](../capacity.md): PoC thật 5 người, hai mạng/forced TURN; thử 25 rồi 50 khi đạt, chưa hứa mức phát hành hoặc 100 người                                    |
+| UI/khả dụng và luồng                | [Figma brief](../ui/figma-make-brief.md), [HS trọng tâm](use-cases/README.md); prototype không là bằng chứng API/ACL/WebRTC thật                                    |
+| Contract, nền dữ liệu, staging      | EN-01–04 ở [backlog](backlog-draft.md); task kỹ thuật vẫn cần nhưng không tạo UC “quản lý worker/index” chỉ để đưa vào FR                                           |
+
+## Những phần chưa đủ để estimate chắc chắn
+
+| Điểm                                                           | FR bị ảnh hưởng          | Cách xử lý trước cam kết task phụ thuộc                                                                                                      |
+| -------------------------------------------------------------- | ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| Host không có ứng viên hoặc host tạm cũng mất mạng             | FR-07-09, FR-11-01       | Chốt nhánh policy tương ứng tại live-session; phần đường chính vẫn có thể phân tích/PoC, không tự chọn fallback                              |
+| Thời gian/fade và cách chọn nét tự biến mất                    | FR-06-01                 | Team chốt khi review UI/contract board; chưa điền số giây, không áp lên nét thường                                                           |
+| Input limits auth còn thiếu, hash implementation/cấu hình auth | FR-01-01/02              | Thiết kế trong task auth; không tự thêm email verification/reset password/OAuth                                                              |
+| Cấu hình media/TURN và ngân sách tài nguyên                    | FR-05-03/04, PB-07/08/11 | PoC có evidence trước đánh giá tích hợp media; config/quota theo nguồn capacity, không mặc định đã chịu 25/50                                |
+| Giờ làm/người, ngày kickoff/nộp và budget hạ tầng              | Toàn bộ delivery         | Người nhận ước lượng dựa giờ thực; lead tổng hợp cả tích hợp/review/bug/deploy. Chưa gán A–E cho người thật hoặc cam kết sprint bằng bảng FR |
+
+Chi tiết schema/index đã có thiết kế tại nguồn DB, không quay lại đánh dấu toàn bộ là “chưa chốt”. Các góc hiếm chưa quyết định giữ tại nguồn; không mở thêm hàng loạt FR để xử lý mọi tình huống giả định.
+
+## Cách chuyển sang task và estimate
+
+Bước gom phạm vi để team review ở [5 miền phụ trách](delivery-domains.md); đây chưa là phân công người hoặc task đã giao.
+
+1. Team review từng cụm FR cùng flow UI: kết quả, quyền, lỗi chính và ngoài phạm vi đã hiểu giống nhau chưa.
+2. Người phụ trách cụm chuẩn bị proposal ngắn gồm cách xử lý, contract/API dự kiến, task sơ bộ và estimate với giả định; không chọn kiến trúc khác baseline nếu chưa có quyết định. Các bên gửi/nhận review phần giao nhau theo [đầu ra contract](delivery-domains.md#đầu-ra-review-mỗi-điểm-giao); không chờ thiết kế toàn dự án hoàn hảo mới phân tích task.
+3. Hoàn thiện task/estimate sau review, rồi chia Issue có đầu ra vừa phải; dẫn đúng `PB + FR + UC/feature` và AC mình bao phủ. Có task kỹ thuật/PoC cần thiết dù không sinh một FR người dùng riêng.
+4. Người thực hiện ước lượng effort với giả định, độ bất định và phần review/test/tích hợp. Lead tổng hợp critical dependencies, dự phòng và mốc demo, rồi cùng nhóm chốt scope/milestone/sprint; không chỉ chia đều số dòng FR.
+5. Dùng [task template](../ai/task-template.md), Issues/Projects cho owner/trạng thái, PR cho review/bằng chứng. File này không theo dõi tiến độ hoặc trở thành bảng công việc song song.
+
+**Ví dụ phân rã để thảo luận, chưa là Issue đã tạo:** FR-07-04 có thể cần contract duyệt/join, handler có ACL, UI pending/approved/Vào nhóm và ca tích hợp “duyệt chưa được đọc private; bấm vào mới cấp quyền”. Các phần phải dùng cùng contract và được demo cùng nhau; “vẽ xong nút Vào nhóm” chưa hoàn tất FR.

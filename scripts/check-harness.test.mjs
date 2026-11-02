@@ -69,6 +69,8 @@ for (const source of [
   'docs/product/group-modes.md',
   'docs/product/use-case-outline.md',
   'docs/product/use-case-catalog.md',
+  'docs/product/functional-requirements.md',
+  'docs/product/delivery-domains.md',
   'docs/product/use-cases/README.md',
   'docs/product/diagrams/README.md',
   'docs/product/diagrams/plan.md',
