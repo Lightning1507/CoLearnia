@@ -1,5 +1,7 @@
 # Review tài liệu và database trước push — 01/11/2026
 
+> Review lịch sử trước kickoff 02/11; không là baseline cho DISCUSSION auto-create, random ACTIVITY hoặc recording mới. Nguồn hiện hành ở group modes/recording và decision-status.
+
 ## Kết luận
 
 Bộ tài liệu đủ làm baseline thiết kế để chia task triển khai; **chưa là database hoặc hệ thống LIVE đã nghiệm thu**. Không thấy lý do bỏ collection hoặc bổ sung UC CRUD chỉ để hợp thức hóa dữ liệu hiện tại. Sau xác nhận gộp GRP-10 vào GRP-09, giữ 46 UC, 13 collection và 34 index đích; 19 index query vẫn cần explain, không xem mọi index đã được tối ưu.

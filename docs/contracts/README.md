@@ -27,11 +27,11 @@ Nguồn nghiệp vụ: [messaging](../product/messaging.md); nguồn scope: CHAT
 
 ## Contracts group modes và countdown v2.3
 
-Nguồn: [group modes](../product/group-modes.md). Command request cần tên/mục đích/member IDs; approve/reject lấy host từ auth và kiểm lại session/members. Payload không tự cấp ACTIVITY, group membership hay share. Command group.leave chỉ chuyển actor; không dùng như quyền assign người khác.
+Nguồn: [group modes](../product/group-modes.md). Create cần tên/mục đích/member IDs và kiểm quyền/phase/roster rồi tạo ngay; không host approve/reject. Payload không tự cấp ACTIVITY, membership hoặc share. group.leave chỉ chuyển actor, không assign người khác.
 
 Source/lease/board payload cần scopeId, source ID/generation/revision đúng nguồn; MAIN exclusivity không dùng làm cap cả session; mỗi ACTIVITY có một nguồn riêng độc lập. DISCUSSION publish SCREEN/SCREEN_AUDIO luôn deny; mọi member ACTIVITY được share không host approval, acquire chỉ là giữ chỗ tự động; nguồn bận không được giành. Board dùng nguồn screen duy nhất của nhóm. Snapshot chỉ có nguồn/board/file đúng audience, không gửi MAIN media metadata cho ACTIVITY để client tự giấu.
 
-Countdown dùng roundId, deadline và server time; host đặt thời lượng khi tổ chức, lượt bắt đầu thành công phải có deadline. Đến hạn server tự kết thúc đúng lượt ACTIVITY: deny scope cũ, đóng share/media/help/chat/board nhóm, đưa người còn quyền về MAIN và pause mic; hoàn tất cleanup mới về GUIDANCE. Event expired không chỉ là thông báo UI hoặc lệnh client tự đóng nhóm. Mutation kiểm round/epoch/deadline, idempotent với callback lặp/trễ; reconnect sau deadline không cấp lại scope cũ. Không giữ command host đóng riêng ACTIVITY/kết thúc lượt thủ công; đóng DISCUSSION vẫn theo quyền host. Thêm group.join cho người trong danh sách đã duyệt, chỉ cấp membership sau thao tác Vào nhóm; join/approval/request phải kiểm phase GUIDANCE. Tên command/state chi tiết cần thiết kế theo task; duration 1–120 phút và không edit/pause/extend khi chạy đã chốt ngày 01/11, chưa là schema đã triển khai.
+Countdown dùng roundId, deadline và server time; host đặt thời lượng khi tổ chức, lượt bắt đầu thành công phải có deadline. Đến hạn server tự kết thúc đúng lượt ACTIVITY: deny scope cũ, đóng share/media/help/chat/board nhóm, đưa người còn quyền về MAIN và pause mic; hoàn tất cleanup mới về GUIDANCE. Event expired không chỉ là thông báo UI hoặc lệnh client tự đóng nhóm. Mutation kiểm round/epoch/deadline, idempotent với callback lặp/trễ; reconnect sau deadline không cấp lại scope cũ. Không giữ command host đóng riêng ACTIVITY/kết thúc lượt thủ công; đóng DISCUSSION vẫn theo quyền host. Thêm group.join cho người trong danh sách hợp lệ, chỉ cấp membership sau thao tác Vào nhóm; create/join phải kiểm phase GUIDANCE. Tên command/state chi tiết cần thiết kế theo task; duration 1–120 phút và không edit/pause/extend khi chạy đã chốt ngày 01/11, chưa là schema đã triển khai.
 
 ## Host và MAIN share — xác nhận 27/10/2026
 
@@ -47,9 +47,9 @@ Theo [policy hỗ trợ](../product/groups-media-policy.md#81-host-group-và-h�
 
 ## Quyết định Workspace/nhóm ngày 01/11/2026
 
-Contract đích dùng WORKSPACE/PRIVATE độc lập TEXT/LIVE, thay tên RESTRICTED cũ. Quản lý danh sách PRIVATE chỉ owner/admin; ACL đọc/gửi/event/file/LIVE cần danh sách và membership, không dùng role thay quyền nội dung. Thêm/re-add thấy lịch sử kênh còn lưu; DM mở lịch sử lại khi cả hai membership hợp lệ. Riêng quyền PRIVATE cũ phải vô hiệu khi loại khỏi Workspace; rejoin không phục hồi, owner/admin cần thêm lại. Cần contract quản lý danh sách và hủy request pending, nhưng endpoint/event/payload cụ thể phải thiết kế trong task implementation; chưa có schema chỉ vì đã ghi ở đây.
+Contract đích dùng WORKSPACE/PRIVATE độc lập TEXT/LIVE, thay tên RESTRICTED cũ. Quản lý danh sách PRIVATE chỉ owner/admin; ACL đọc/gửi/event/file/LIVE cần danh sách và membership, không dùng role thay quyền nội dung. Thêm/re-add thấy lịch sử kênh còn lưu; DM mở lịch sử lại khi cả hai membership hợp lệ. Riêng quyền PRIVATE cũ phải vô hiệu khi loại khỏi Workspace; rejoin không phục hồi, owner/admin cần thêm lại. Cần contract quản lý danh sách PRIVATE, nhưng endpoint/event/payload cụ thể phải thiết kế trong task implementation; chưa có schema chỉ vì đã ghi ở đây.
 
-DISCUSSION: tên ≤80, mục đích ≤500, roster không trùng/cùng phiên, chỉ người gửi hủy pending; không sửa đã gửi/TTL phút. Pending mất hiệu lực khi ACTIVITY bắt đầu/phiên kết thúc; race hủy/duyệt trả một kết quả hiện hành. ACTIVITY duration số nguyên 1–120 phút trước start, không edit/pause/extend khi chạy. Nguồn: [messaging](../product/messaging.md), [group modes](../product/group-modes.md).
+DISCUSSION: tên ≤80, mục đích ≤500, roster hợp lệ không trùng/cùng phiên; create hợp lệ tạo ngay, không approve/reject/cancel-pending nghiệp vụ. Retry không nhân nhóm; create/join kiểm phase hiện hành. ACTIVITY random preview không cấp scope, host được chỉnh trước start; start kiểm lại roster, không random trong lượt. Duration số nguyên 1–120 phút. Nguồn: [group modes](../product/group-modes.md).
 
 ## Đầu vào thiết kế DB bước 4 — 01/11/2026
 
@@ -66,3 +66,16 @@ Thống nhất cách đếm code point cho giới hạn text/tên giữa contrac
 ## Board: thay đổi nghiệp vụ 02/11/2026
 
 Theo [board](../product/board-collaboration.md), MAIN chỉ overlay LIVE do host hiện hành ở MAIN/hướng dẫn vẽ; deny freeze/resume và file FRAME MAIN cho mọi actor. Nhóm giữ freeze/vẽ/resume theo nguồn riêng. Contract nét phải phân biệt nét thường và nét tự biến mất tại MAIN, gắn author/context/source revision; thời gian/fade chưa chốt. Đổi/dừng nguồn MAIN dọn overlay, đổi host thu quyền cũ và kiểm lại mọi mutation đang chờ. Đây là yêu cầu cho task contract, chưa có schema board đã triển khai.
+
+## Ràng buộc nhóm cập nhật ngày 02/11/2026
+
+- `host.help.enter` chỉ nhận đích ACTIVITY còn mở trong lượt hiệu lực; từ chối DISCUSSION ngay cả khi actor là host hoặc có ảnh gửi riêng. DISCUSSION chỉ hỏi/trả lời qua HOST_PRIVATE, không cấp board/media nhóm cho host.
+- DISCUSSION phân biệt roster hợp lệ, số người hiện trong nhóm và việc nhóm đã từng có người tham gia. Đây là thông tin thiết kế runtime/projection, chưa chọn field hoặc enum executable mới.
+- `group.leave`/rời LIVE chủ động của người cuối cùng trong DISCUSSION đã có người phải kết thúc nhóm trong cùng điều phối vòng đời; sau đó chặn join/intent chậm, thu private scope và bỏ quyền vào từ roster cũ. Nếu còn người thì actor trong roster có thể chủ động join lại sau kiểm quyền/phase/nhóm hiện hành.
+- Nhóm tạo hợp lệ chưa ai vào vẫn chờ. Mất mạng không tự là lệnh rời; ACTIVITY vẫn theo deadline. Contract consumers phải phân biệt các nhánh này theo [nguồn nghiệp vụ](../product/group-modes.md), không thêm timeout hoặc tự mở lại nhóm đã đóng.
+
+## Bổ sung recording MAIN sau kickoff 02/11
+
+RECORD-01 theo [nguồn nghiệp vụ](../product/recording.md): host điều khiển ghi màn hình/camera/âm thanh MAIN; lưu theo phiên để thành viên còn quyền kênh xem. Không ghi nhóm riêng hoặc chuyển recorder theo host hỗ trợ. Chưa có implementation hoặc benchmark. Proposal M3 chủ trì, M4 cung cấp host/scope/lifecycle, M2 lưu/phục vụ byte/ACL, M1 quyền kênh.
+
+Cần chọn capture/composition/encode, bố cục/số camera/codec và cách phát, trạng thái xử lý, idempotency, cleanup khi stop/end/error/restart, quota/retention/quyền xóa. Chưa chốt thư viện, topology recorder, collection hoặc schema executable. Không coi recorder là participant được nghe mọi scope. Không giữ queue/mutex phiên khi chờ encode/lưu file; task phải thiết kế gate tài nguyên và giao diện cleanup. Đo CPU/RAM/disk/network cùng media/chat/board/TURN trước khi chốt capacity; PoC clip vài phút không là giới hạn thời lượng sản phẩm. REC-01 vẫn là reconnect, không dùng mã đó cho recording.

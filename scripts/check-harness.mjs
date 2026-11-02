@@ -22,6 +22,7 @@ export const sources = [
   'docs/product/live-session.md',
   'docs/product/groups-media-policy.md',
   'docs/product/group-modes.md',
+  'docs/product/recording.md',
   'docs/product/board-collaboration.md',
   'docs/product/use-case-outline.md',
   'docs/product/use-case-catalog.md',

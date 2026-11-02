@@ -67,6 +67,7 @@ test('broken local link fails', async (t) => {
 for (const source of [
   'docs/product/messaging.md',
   'docs/product/group-modes.md',
+  'docs/product/recording.md',
   'docs/product/use-case-outline.md',
   'docs/product/use-case-catalog.md',
   'docs/product/functional-requirements.md',

@@ -1,5 +1,7 @@
 # CoLearnia — Technical plan
 
+> **Sau kickoff 02/11:** DISCUSSION tạo ngay khi hợp lệ; ACTIVITY thêm random preview; RECORD-01 ghi/lưu/xem video MAIN đã vào scope. Xem [group modes](product/group-modes.md) và [recording](product/recording.md). Khung delivery hiện là 6–7 tuần, phải estimate lại sau proposal/PoC recording; bảng 4 tuần/A–E bên dưới là kế hoạch tham khảo trước mở rộng, chưa phải phân công/sprint hoặc cam kết mới.
+
 **Phiên bản:** 2.3 · cập nhật 27/10/2026, trên nền v2.2 cùng ngày\
 **Đề tài:** Nền tảng học nhóm trực tuyến tích hợp chia sẻ màn hình và tương tác thời gian thực.  
 **Nhóm:** 5 thành viên; A–E là phương án phân vai tham khảo, phân công thật sẽ thống nhất sau.\
@@ -8,7 +10,7 @@
 
 Tài liệu là cơ sở chung để tạo backlog, viết contracts, triển khai và nghiệm thu. Các quy tắc nghiệp vụ dưới đây là thiết kế của CoLearnia; không phải API có sẵn của thư viện. Thông số ghi “khởi đầu” hoặc “mục tiêu thử” phải được kiểm chứng, không dùng làm cam kết hiệu năng.
 
-**Cập nhật v2.3:** phân biệt MAIN, DISCUSSION thành viên xin host duyệt và ACTIVITY host tổ chức độc lập. MAIN một người share; DISCUSSION kế thừa bài giảng và cấm share riêng; ACTIVITY mỗi nhóm một share độc lập; mọi member tự bấm không xin host, board theo nguồn đó. Host duyệt DISCUSSION rồi người được chọn bấm Vào nhóm; kết thúc DISCUSSION trước ACTIVITY và không nhận request DISCUSSION trong lượt hoạt động. Theo cập nhật TIMER-01 ngày 29/10/2026, thêm tự về MAIN và countdown chung cho lượt hoạt động, hết giờ tự kết thúc ACTIVITY và đưa người còn quyền về MAIN, không chờ host. Xem [group modes](product/group-modes.md) là nguồn chi tiết; các quy tắc này thay mô hình mọi nhóm cùng nhận MAIN của v2.2. Chưa thay code nghiệp vụ hoặc chứng minh PoC đạt.
+**Cập nhật v2.3:** phân biệt MAIN, DISCUSSION thành viên tự tạo khi hợp lệ và ACTIVITY host tổ chức độc lập. MAIN một người share; DISCUSSION kế thừa bài giảng và cấm share riêng; ACTIVITY mỗi nhóm một share độc lập; mọi member tự bấm không xin host, board theo nguồn đó. Hệ thống tạo DISCUSSION hợp lệ rồi người được chọn bấm Vào nhóm; kết thúc DISCUSSION trước ACTIVITY và không nhận request DISCUSSION trong lượt hoạt động. Theo cập nhật TIMER-01 ngày 29/10/2026, thêm tự về MAIN và countdown chung cho lượt hoạt động, hết giờ tự kết thúc ACTIVITY và đưa người còn quyền về MAIN, không chờ host. Xem [group modes](product/group-modes.md) là nguồn chi tiết; các quy tắc này thay mô hình mọi nhóm cùng nhận MAIN của v2.2. Chưa thay code nghiệp vụ hoặc chứng minh PoC đạt.
 
 **Lịch sử cập nhật v2.2 theo team 27/10/2026:** HELP-01 là chat text/ảnh chọn Everyone theo scope hiện tại hoặc Host riêng, kèm host vào nhóm hỗ trợ. Kết thúc chia nhóm đưa tất cả về MAIN để tự bật mic; bỏ FLOOR-01/PRESENT-01 và cơ chế floor/consent/projection. GRP-01 bao gồm thao tác về phòng chung; không tạo feature ID thay thế. Các quy tắc chi tiết, contracts đích, dữ liệu, test và backlog đã được đồng bộ; tài liệu lịch sử ngày 26/10 không ghi đè quyết định này. Đây là thay đổi thiết kế, chưa là code đã chạy.
 
@@ -203,7 +205,7 @@ Upload đi HTTP, không truyền Base64 file/video qua Socket.IO. Chat socket/RE
 
 ### 10.3. Lệnh realtime
 
-| Nhóm | Command | Kiểm chính |
+| Nhóm | DISCUSSION create/join; ACTIVITY prepare/assign/random preview/start; group.leave; discussion close/closeAll (tên schema chốt trong proposal) | DISCUSSION tạo tự động khi hợp lệ; người trong roster tự join; phase ACTIVITY chặn create/join; random preview được chỉnh trước start, không xáo khi đang chạy; lỗi start về MAIN không khôi phục DISCUSSION; ACTIVITY hết deadline tự kết thúc |
 |---|---|---|
 | Phiên | session.join/leave/resync | Ticket/auth/epoch/generation; projection |
 | Call ownership | call.takeover | Thao tác xác nhận user; thu call cũ trước |
@@ -212,7 +214,7 @@ Upload đi HTTP, không truyền Base64 file/video qua Socket.IO. Chat socket/RE
 | Publish | media.producer.create/pause/resume/close | canPublish + owner + source/kind + quota |
 | Receive | media.consumer.create/ready/close | canConsume ở create và ready; dedupe |
 | Share | screen.acquire/release | Actor/group mode/scope, lease/source generation; MAIN mọi participant tự share không xin host, một nguồn, DISCUSSION deny, ACTIVITY một nguồn/group, member tự share không host approval |
-| Nhóm | group.request.create/approve/reject; hủy pending (tên event chốt theo contracts); group.join/create/assign/leave; discussion close/closeAll; activity.start | Request có tên/mục đích/thành viên; host duyệt DISCUSSION rồi actor trong roster chủ động join; ACTIVITY chặn request/approve/join DISCUSSION, start đóng DISCUSSION trước; lỗi chuyển một phần thì hủy lượt về MAIN, không khôi phục DISCUSSION cũ; leave chỉ actor; host close/closeAll chỉ DISCUSSION; ACTIVITY tự kết thúc theo deadline |
+| Nhóm | DISCUSSION create/join; ACTIVITY prepare/assign/random preview/start; group.leave; discussion close/closeAll (tên schema chốt trong proposal) | DISCUSSION tạo tự động khi hợp lệ; người trong roster tự join; phase ACTIVITY chặn create/join; random preview được chỉnh trước start, không xáo khi đang chạy; lỗi start về MAIN không khôi phục DISCUSSION; ACTIVITY hết deadline tự kết thúc |
 | Hỗ trợ | host.help.enter/leave | Host, nhóm hiện hành; chủ động leave về MAIN giữ trạng thái mic, không hỏi xác nhận mic riêng; cleanup/sự cố không tự phát chung |
 | Chat | message.send | Conversation ACL + clientMessageId; cuộc họp text/ảnh, Everyone theo scope hoặc Host đích hiện tại; stale thì từ chối |
 | Freeze | board.freeze.begin/commit; board.resume | Intent, version, source/generation |
@@ -240,7 +242,7 @@ Nguồn chi tiết: [control lease, resume và cleanup tài nguyên](product/liv
 
 ### 12.1. Màn hình
 
-Auth; Workspace list/join invitation; Workspace shell; TEXT channel; lobby; RoomPage một kiểu cuộc họp có host; group panel; host controls; request nhóm tên/mục đích/thành viên và duyệt; chat Everyone/Host, countdown lượt ACTIVITY, Về phòng chung sớm, ACTIVITY hết giờ tự về MAIN; host đóng DISCUSSION; quản lý thành viên/kênh.
+Auth; Workspace list/join invitation; Workspace shell; TEXT channel; lobby; RoomPage một kiểu cuộc họp có host; group panel; host controls; tạo nhóm tên/mục đích/thành viên tự động khi hợp lệ; chat Everyone/Host, countdown lượt ACTIVITY, Về phòng chung sớm, ACTIVITY hết giờ tự về MAIN; host đóng DISCUSSION; quản lý thành viên/kênh.
 
 Workspace shell có general/kênh, danh sách DM của chính mình và panel thread trong TEXT.
 
@@ -348,7 +350,7 @@ Thu ít nhất 20 mẫu cho thao tác lặp Q-01/Q-03/Q-04/Q-06, báo p50/p95 v�
 | T-02 | DB concurrency | Invitation maxUses, join channel, rollback Workspace/general, DM đồng thời, message/reply dedupe và reply count | A/E |
 | T-03 | Camera/mic/share | Hai mạng, device denied, MAIN tranh lease/browser Stop; DISCUSSION deny screen; ACTIVITY member tự share, cùng nhóm chỉ một nguồn, hai nhóm độc lập, nguồn bận không giành | B/D |
 | T-04 | Publish/consume | Giả nguồn/owner/transport/grant; Consumer ready sau revoke; duplicate receive | B/C |
-| T-05 | Group modes/isolation | Request chưa duyệt không cấp quyền; DISCUSSION duyệt rồi bấm vào; phase ACTIVITY chặn DISCUSSION; ACTIVITY không nhận MAIN; host help, move/kick/leave đúng scope; không metadata leak | C/B |
+| T-05 | Group modes/isolation | Create hợp lệ tạo DISCUSSION tự động, roster chưa cấp private tới khi join; phase ACTIVITY chặn create/join; random preview không cấp scope; ACTIVITY không nhận MAIN; host help chỉ ACTIVITY; leave/revoke không lộ nội dung | C/B |
 | T-06 | Board | MAIN chỉ host vẽ LIVE, nét thường/tự biến mất, đổi/dừng nguồn xóa overlay, member và host cũ bị deny; MAIN từ chối freeze/resume; nhóm cùng frame, resize/letterbox, undo đúng author, quota, hai freeze, resume trước upload xong | D/C |
 | T-07 | Về MAIN/countdown | Leave chỉ actor; deadline chung hết hạn tự đóng ACTIVITY/thu share/help/chat/board, về MAIN/pause mic; reconnect/callback trễ không phục hồi nhóm cũ; host đóng DISCUSSION | C/D |
 | T-08 | Board source/hình/tiếng | Freeze đúng nguồn theo mode, source revision theo scope; audio liên tục, resume đúng nguồn; không trộn nét/group/MAIN khi đổi nguồn hoặc về MAIN | D/B |
@@ -441,15 +443,15 @@ Tuần tính từ kickoff, chưa gắn ngày khi chưa có lịch bắt đầu. 
 
 ### Gate G1 — hết ngày 3
 
-Có 5 participant; PoC hai group DISCUSSION kế thừa bài giảng/cấm publish screen và hai ACTIVITY độc lập với MAIN/các group khác, mỗi nhóm một nguồn share độc lập, member không xin host, board theo nguồn đó. Move/leave/revoke thật, frame freeze theo nguồn hợp lệ có audio và forced TURN. Kiểm host duyệt chưa tự chuyển người, người được chọn bấm vào mới có quyền và hai loại nhóm không active đồng thời; cấu hình bitrate/codec vẫn phải đo. UI có thể thô. Lưu commit, cấu hình và bằng chứng. Đạt thì ADR-001 Accepted; chưa đạt thì báo nguyên nhân và timebox xử lý/đổi hướng ngay, không tiếp tục xây nhiều UI phụ thuộc chưa chắc.
+Có 5 participant; PoC hai group DISCUSSION kế thừa bài giảng/cấm publish screen và hai ACTIVITY độc lập với MAIN/các group khác, mỗi nhóm một nguồn share độc lập, member không xin host, board theo nguồn đó. Move/leave/revoke thật, frame freeze theo nguồn hợp lệ có audio và forced TURN. Kiểm host tạo nhóm chưa tự chuyển người, người được chọn bấm vào mới có quyền và hai loại nhóm không active đồng thời; cấu hình bitrate/codec vẫn phải đo. UI có thể thô. Lưu commit, cấu hình và bằng chứng. Đạt thì ADR-001 Accepted; chưa đạt thì báo nguyên nhân và timebox xử lý/đổi hướng ngay, không tiếp tục xây nhiều UI phụ thuộc chưa chắc.
 
 ### Gate G2 — cuối tuần 2
 
-Người mới đăng nhập → Workspace có general → kênh → chat/tệp → LIVE mic/camera/share MAIN, xin/duyệt DISCUSSION và chia ACTIVITY theo policy đã chốt. Đây là lát cắt kênh/tệp của UC-01; DM/thread tích hợp tuần 3 trước G3, không gọi toàn UC-01 hoàn thành ở G2. Freeze/vẽ/audio ở mức tích hợp; group isolation không có blocker. Nếu chưa đạt, dừng chỉnh giao diện trang trí và tập trung dependency/bottleneck. Không bỏ chức năng lõi mà không cập nhật phạm vi với nhóm.
+Người mới đăng nhập → Workspace có general → kênh → chat/tệp → LIVE mic/camera/share MAIN, tạo/vào DISCUSSION và chia ACTIVITY theo policy đã chốt. Đây là lát cắt kênh/tệp của UC-01; DM/thread tích hợp tuần 3 trước G3, không gọi toàn UC-01 hoàn thành ở G2. Freeze/vẽ/audio ở mức tích hợp; group isolation không có blocker. Nếu chưa đạt, dừng chỉnh giao diện trang trí và tập trung dependency/bottleneck. Không bỏ chức năng lõi mà không cập nhật phạm vi với nhóm.
 
 ### Gate G3 — cuối tuần 3
 
-UC-01/02/03 đi hết, có general/DM/thread, cả hai group mode, request/approval, chat Everyone/Host, help, tự về MAIN sớm/hết thời lượng ACTIVITY, đóng DISCUSSION, countdown và volume/reconnect; không cần thao tác DB. Đóng băng tính năng. Lỗi còn lại có owner và bước tái hiện. Không đưa quiz/library hoặc đồng hồ ngoài TIMER-01 vào vì còn tuần dự phòng.
+UC-01/02/03 đi hết, có general/DM/thread, cả hai group mode, create/join, chat Everyone/Host, help, tự về MAIN sớm/hết thời lượng ACTIVITY, đóng DISCUSSION, countdown và volume/reconnect; không cần thao tác DB. Đóng băng tính năng. Lỗi còn lại có owner và bước tái hiện. Không đưa quiz/library hoặc đồng hồ ngoài TIMER-01 vào vì còn tuần dự phòng.
 
 ### Gate G4 — cuối tuần 4
 
@@ -588,3 +590,13 @@ Các dòng dưới ghi quyết định tại thời điểm v2.0–v2.1; phần 
 - Làm rõ freeze queue không chờ I/O, share picker activation, nguồn snapshot do client cung cấp và giới hạn thu hồi dữ liệu.
 - Bổ sung profile 5 người có camera, quality targets chưa đo, test IDs/owner, worker/port topology và công thức budget không nhân trùng.
 - Giữ các mục chưa biết là giả định cần xác nhận; ADR media chỉ Accepted sau PoC có evidence, không khẳng định feasibility/hiệu năng khi chưa chạy.
+
+## Làm rõ nhóm và hỗ trợ ngày 02/11/2026
+
+Quyết định này thay cách hiểu host có thể vào hỗ trợ mọi loại nhóm trong các mô tả trước: host chỉ vào hỗ trợ ACTIVITY; DISCUSSION hỏi/trả lời qua chat riêng khi host tiếp tục ở MAIN. DISCUSSION tạo hợp lệ chưa ai vào vẫn chờ, còn người thì roster hợp lệ được chủ động vào lại; người cuối cùng chủ động rời nhóm đã có người làm nhóm tự kết thúc và thu private scope. Không áp quy tắc này cho ACTIVITY hoặc coi mất mạng là chủ động rời. Chi tiết ở [group modes](product/group-modes.md), [policy](product/groups-media-policy.md), [HS-02](product/use-cases/02-discussion.md) và [HS-06](product/use-cases/06-private-help.md); không thêm feature/UC/collection hoặc chứng minh runtime đã chạy.
+
+## Bổ sung recording MAIN sau kickoff 02/11
+
+RECORD-01 theo [nguồn nghiệp vụ](product/recording.md): host điều khiển ghi màn hình/camera/âm thanh MAIN; lưu theo phiên để thành viên còn quyền kênh xem. Không ghi nhóm riêng hoặc chuyển recorder theo host hỗ trợ. Chưa có implementation hoặc benchmark. Proposal M3 chủ trì, M4 cung cấp host/scope/lifecycle, M2 lưu/phục vụ byte/ACL, M1 quyền kênh.
+
+Cần chọn capture/composition/encode, bố cục/số camera/codec và cách phát, trạng thái xử lý, idempotency, cleanup khi stop/end/error/restart, quota/retention/quyền xóa. Chưa chốt thư viện, topology recorder, collection hoặc schema executable. Không coi recorder là participant được nghe mọi scope. Không giữ queue/mutex phiên khi chờ encode/lưu file; task phải thiết kế gate tài nguyên và giao diện cleanup. Đo CPU/RAM/disk/network cùng media/chat/board/TURN trước khi chốt capacity; PoC clip vài phút không là giới hạn thời lượng sản phẩm. REC-01 vẫn là reconnect, không dùng mã đó cho recording.

@@ -80,7 +80,7 @@ Session manager serialize mutation quyền, không serialize mọi điểm vẽ.
 
 ### Group policy và source registry v2.3
 
-Theo [group modes](product/group-modes.md), GroupRuntime có mode DISCUSSION/ACTIVITY, membership và context riêng; request lưu tên/mục đích/requester/danh sách đề xuất để host duyệt. Không dùng một cờ breakoutEnabled để cấp cùng nguồn cho mọi nhóm. Pending request không tạo quyền nghe/vẽ/share. Approval tạo danh sách đủ điều kiện; người được chọn bấm Vào nhóm mới cấp membership. Phase GUIDANCE cho DISCUSSION; host đóng DISCUSSION trước ACTIVITY, hết lượt về MAIN/GUIDANCE. Vòng đời hủy pending/mất hiệu lực, tên ≤80/mục đích ≤500 đã chốt tại group modes; không có TTL phút hoặc sửa yêu cầu đã gửi, không tự thêm chuyển mode tại chỗ.
+Theo [group modes](product/group-modes.md), GroupRuntime phân biệt DISCUSSION/ACTIVITY. DISCUSSION create kiểm tên/mục đích/roster/quyền/phase rồi tạo ngay; không host approve/reject hoặc hàng chờ xét. Roster chỉ là điều kiện để chủ động join, chưa cấp membership/private. Serialize create/join với phase/start/close; retry không nhân nhóm. ACTIVITY có cấu hình thủ công hoặc random preview được host kiểm/chỉnh trước start; start kiểm lại roster hiện hành.
 
 Media registry định danh nguồn bằng scope + source ID/generation/revision, không dùng một screenSourceRevision toàn phiên để invalidate screen của nhóm độc lập. MAIN có lease độc quyền; mỗi ACTIVITY cũng có lease độc quyền riêng; member tự bấm share, không host duyệt. Hai group có thể share độc lập; trong một group chỉ một nguồn active/reserved thắng. Board intent gắn cả board scope và source scope; nhóm DISCUSSION đọc MAIN source nhưng giữ board riêng. Countdown là activity round runtime có deadline; lượt bắt đầu thành công phải có deadline. Khi đến hạn, session manager serialize kết thúc đúng round/epoch, dựng deny barrier, thu ACTIVITY/help/share/chat/board, chuyển người còn quyền về MAIN và pause mic; hoàn tất cleanup mới về GUIDANCE. Reconnect phải reconcile deadline trước khi cấp scope; callback trễ/lặp không đóng lượt mới, cleanup idempotent. Không chờ host hoặc thêm lệnh host kết thúc ACTIVITY thủ công.
 
@@ -105,3 +105,15 @@ Theo [integrity](database/integrity-and-migrations.md#41-cơ-chế-chung), giữ
 ## Board theo quyết định 02/11/2026
 
 [Board service](product/board-collaboration.md) phân biệt MAIN overlay LIVE (host hiện hành ở MAIN/hướng dẫn) với board nhóm có freeze intent/frame. Share ownership không cấp quyền vẽ MAIN. MAIN không reserve/upload frame freeze; đổi/dừng nguồn MAIN xóa overlay đúng revision, đổi host thu quyền mutation cũ. Nhóm không mất frame FROZEN hợp lệ chỉ vì nguồn live đổi. Nét thường MAIN tồn tại tới clear/context nguồn kết thúc, nét tự biến mất có lifecycle riêng; chưa chốt thời gian/fade. Không thêm collection hoặc ghi Mongo theo điểm vẽ.
+
+### Vòng đời DISCUSSION và giới hạn help — cập nhật 02/11/2026
+
+Theo [group modes](product/group-modes.md), Session manager phân biệt nhóm đã tạo hợp lệ chưa ai vào với nhóm đã có người, không đếm roster thành membership. Join lại chỉ thành công khi DISCUSSION còn mở/còn người, actor thuộc roster và phase/quyền còn hợp lệ. Người cuối cùng chủ động về MAIN hoặc rời LIVE làm nhóm tự kết thúc; serialize leave với join/close, chặn cấp quyền mới và thu private scope, intent, frame/nét trước khi báo đóng. Không tái tạo nhóm từ roster cũ. Nhóm tạo hợp lệ chưa ai vào vẫn chờ; disconnect đi qua reconnect/grace, không tự áp nhánh leave chủ động. Chưa chọn field/enum mới hoặc cách xử lý nhóm rỗng do sự cố sau grace.
+
+Help chỉ nhắm ACTIVITY còn mở trong lượt hiệu lực; policy từ chối vào hỗ trợ DISCUSSION. Host ở MAIN trả lời HOST_PRIVATE cho DISCUSSION, không được nhận board/chat/media nhóm chỉ vì role host. ACTIVITY không tự kết thúc theo số người; deadline/cleanup hiện hành vẫn áp dụng.
+
+## Bổ sung recording MAIN sau kickoff 02/11
+
+RECORD-01 theo [nguồn nghiệp vụ](product/recording.md): host điều khiển ghi màn hình/camera/âm thanh MAIN; lưu theo phiên để thành viên còn quyền kênh xem. Không ghi nhóm riêng hoặc chuyển recorder theo host hỗ trợ. Chưa có implementation hoặc benchmark. Proposal M3 chủ trì, M4 cung cấp host/scope/lifecycle, M2 lưu/phục vụ byte/ACL, M1 quyền kênh.
+
+Cần chọn capture/composition/encode, bố cục/số camera/codec và cách phát, trạng thái xử lý, idempotency, cleanup khi stop/end/error/restart, quota/retention/quyền xóa. Chưa chốt thư viện, topology recorder, collection hoặc schema executable. Không coi recorder là participant được nghe mọi scope. Không giữ queue/mutex phiên khi chờ encode/lưu file; task phải thiết kế gate tài nguyên và giao diện cleanup. Đo CPU/RAM/disk/network cùng media/chat/board/TURN trước khi chốt capacity; PoC clip vài phút không là giới hạn thời lượng sản phẩm. REC-01 vẫn là reconnect, không dùng mã đó cho recording.
