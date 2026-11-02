@@ -139,13 +139,13 @@ sequenceDiagram
   participant D as HoldPolicy + gateway
   participant N as notification-service
   C-)L: BookReturned(book_id)
-  L->>D: Chuyển lượt đặt chỗ tiếp theo của đầu sách sang sẵn sàng
+  L->>D: promote next hold for book
   D->>D: UPDATE … SET status=ready WHERE id=? AND status=waiting
-  alt Có dòng được thay đổi
-    D-->>L: Đã chuyển sang sẵn sàng
+  alt row changed
+    D-->>L: promoted
     L-)N: NotifyHoldReady(member_id, book_id)
-  else Đã chuyển trước đó (event trùng lặp)
-    D-->>L: Không cần xử lý
+  else already promoted (duplicate event)
+    D-->>L: nothing to do
   end
 ```
 
