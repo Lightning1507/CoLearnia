@@ -82,11 +82,11 @@ LIVE-03 xem người tham gia và LIVE-07 âm lượng thuộc LIVE-01/04; LIVE-
 
 Nguồn: [HS-02](../product/use-cases/02-discussion.md), [HS-03](../product/use-cases/03-activity.md), [group modes](../product/group-modes.md).
 
-| UC                                    | Actor               | Đọc / kiểm                      | Tạo hoặc thay đổi                                                                          | Kết quả và ranh giới                                               |
-| ------------------------------------- | ------------------- | ------------------------------- | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------ |
-| UC-GRP-02 · Yêu cầu tạo nhóm trao đổi | Người đang tham gia | E09–E10, phase, người dự kiến   | E11: người đề nghị, tên ≤80, mục đích ≤500, danh sách; hủy pending/mất hiệu lực theo phase | Chờ xét, chưa có tư cách tham gia nhóm                             |
-| UC-GRP-04 · Vào nhóm được duyệt       | Người trong roster  | E09–E12, kết quả duyệt, phase   | Quan hệ hiện diện E10–E12; cấp scope sau kiểm quyền                                        | Roster được duyệt khác người đã vào; không cấp quyền trước khi bấm |
-| UC-GRP-08 · Trở về phòng chung        | Người đang ở nhóm   | E09–E10, E12 và tài nguyên mình | Bỏ hiện diện nhóm, chuyển MAIN, thu nguồn/quyền và pause mic                               | Chỉ chuyển bản thân, không kết thúc lượt/nhóm của người khác       |
+| UC                                   | Actor              | Đọc / kiểm                      | Tạo hoặc thay đổi                                            | Kết quả và ranh giới                                           |
+| ------------------------------------ | ------------------ | ------------------------------- | ------------------------------------------------------------ | -------------------------------------------------------------- |
+| UC-GRP-02 · Tạo nhóm trao đổi        | Participant hợp lệ | E09/E10, phase, roster          | Kiểm create rồi tạo E12/roster trong runtime; dedupe retry   | Không hàng chờ host; roster chưa là membership                 |
+| UC-GRP-04 · Vào nhóm được tạo hợp lệ | Người trong roster | E09–E12, roster hợp lệ, phase   | Quan hệ hiện diện E10–E12; cấp scope sau kiểm quyền          | Roster hợp lệ khác người đã vào; không cấp quyền trước khi bấm |
+| UC-GRP-08 · Trở về phòng chung       | Người đang ở nhóm  | E09–E10, E12 và tài nguyên mình | Bỏ hiện diện nhóm, chuyển MAIN, thu nguồn/quyền và pause mic | Chỉ chuyển bản thân, không kết thúc lượt/nhóm của người khác   |
 
 ## TQ-07 — Điều hành nhóm, 8 UC
 
@@ -94,13 +94,13 @@ Nguồn: [group modes](../product/group-modes.md), [policy](../product/groups-me
 
 | UC                                    | Actor                               | Đọc / kiểm                                            | Tạo hoặc thay đổi                                                                     | Kết quả và ranh giới                                                                 |
 | ------------------------------------- | ----------------------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| UC-GRP-03 · Xét duyệt yêu cầu         | Host                                | E09–E11, danh sách và phase hiện tại                  | Kết quả E11; E12 DISCUSSION và roster nếu duyệt                                       | Từ chối không tạo nhóm; không tự thay người hoặc chuyển vào nhóm                     |
+| UC-GRP-03 (cũ)                        | —                                   | Ngừng áp dụng                                         | Kiểm tạo hợp lệ chuyển vào GRP-02                                                     | Không còn quyết định phê duyệt hoặc quyền host xét                                   |
 | UC-GRP-05 · Chuẩn bị nhóm hoạt động   | Host                                | E09–E10                                               | Cấu hình E13, E12 ACTIVITY và quan hệ phân công dự kiến                               | Chưa đổi hiện diện, chưa cấp private scope                                           |
 | UC-GRP-06 · Bắt đầu lượt hoạt động    | Host; người được phân phối hợp      | E09–E10, E12–E13, phân công/thời lượng                | Đóng DISCUSSION; kích hoạt lượt/nhóm, chuyển hiện diện, xác lập deadline              | Lỗi một phần: hủy lượt, về MAIN, không khôi phục DISCUSSION                          |
 | UC-GRP-07 · Điều chuyển giữa phòng    | Host; người đích phối hợp           | E09–E13, phòng đích, phase và quyền                   | Quan hệ hiện diện E10–E12, thu nguồn/quyền cũ                                         | Không nhập chat/board cũ sang nơi mới hoặc reset deadline                            |
 | UC-GRP-09 · Kết thúc nhóm trao đổi    | Host; thành viên nhóm đích phối hợp | E09, các E12 DISCUSSION được chọn và người trong nhóm | Đóng một hoặc tất cả DISCUSSION, khóa chat/board/help, chuyển người còn quyền về MAIN | Không dùng cho ACTIVITY; nhóm không chọn tiếp tục; GRP-10 đã gộp                     |
 | UC-GRP-11 · Đặt thời lượng lượt       | Host; thành viên theo dõi           | E09, cấu hình E13                                     | Thời lượng dự kiến; deadline E13 khi bắt đầu thành công                               | Một thời lượng chung; hết giờ hệ thống kết thúc đúng lượt, không tạo “timer” độc lập |
-| UC-GRP-12 · Hỗ trợ riêng nhóm         | Host; nhóm đích                     | E09–E10, E12, E06, E14 và tài nguyên được phép        | Quan hệ hỗ trợ hiện hành host–nhóm, audience nghe/phát và quyền tạm                   | Vào/rời/sang nhóm khác thu scope cũ; không tự tạo ticket hoặc lịch sử hỗ trợ         |
+| UC-GRP-12 · Hỗ trợ riêng nhóm         | Host; nhóm đích                     | E09–E10, E12, E06, E14 và tài nguyên được phép        | Quan hệ hỗ trợ hiện hành host–ACTIVITY, audience nghe/phát và quyền tạm               | Vào/rời/sang nhóm khác thu scope cũ; không tự tạo ticket hoặc lịch sử hỗ trợ         |
 | UC-GRP-13 · Thông báo hướng dẫn chung | Host                                | E09–E10, vị trí và trạng thái hỗ trợ                  | Trạng thái phát hướng dẫn đúng audience                                               | MAIN/DISCUSSION, không ACTIVITY; không suy thành kho thông báo bền vững              |
 
 ## Dữ liệu hỗ trợ không cần UC CRUD riêng
@@ -116,7 +116,7 @@ Nguồn: [group modes](../product/group-modes.md), [policy](../product/groups-me
 
 - **Chiều UC → dữ liệu:** 3 + 15 + 6 + 11 + 3 + 8 = 46 UC được giữ đã có dòng truy vết. Các UC chỉ đọc không bị ép có thao tác ghi.
 - **Chiều dữ liệu → UC:** E01–E16 có nguồn tạo/thay đổi ở bảng trên; thread, host, roster, phân công và hiện diện là vai trò/quan hệ, không tự tạo collection độc lập. Phiên truy cập/audit là hỗ trợ baseline, không đòi UC quản lý mới.
-- **Không thêm:** danh mục kỹ năng, quiz, bình chọn, thư viện bài làm, ghi âm/ghi hình, lịch sử board lâu dài, thông báo lưu trữ, read receipt hoặc CRUD tin nhắn. Không có UC tương ứng đã chốt.
+- **Không thêm:** danh mục kỹ năng, quiz, bình chọn, thư viện bài làm, lịch sử board lâu dài hoặc read receipt. Recording MAIN đã bổ sung sau kickoff; xem [recording](../product/recording.md), không coi là thư viện board.
 - **Còn cần làm rõ:** không có ứng viên thay host/host tạm mất mạng; implementation/kiểm chứng schema/index và cách xử lý runtime ở các điểm mở đó. DM rejoin, vòng đời request, duration và PRIVATE đã chốt tại nguồn, không còn là điểm mở. Xem [trạng thái quyết định](../decision-status.md).
 - **Quyền kênh đã bổ sung:** UC-WS-15 bao phủ quản lý danh sách PRIVATE sau tạo theo [messaging](../product/messaging.md); E05 giữ quan hệ truy cập, không mặc định thêm collection riêng.
 - **Không suy CRUD từ vòng đời:** xóa tài khoản, member chủ động rời Workspace, mở lại nhóm đã đóng và phục hồi Workspace chưa có UC độc lập được giữ. Chỗ nguồn đề cập owner muốn rời phải transfer/xóa không đủ để tự thêm một UC rời Workspace cho mọi member.
@@ -136,3 +136,16 @@ Người review lần theo một UC để tìm dữ liệu đọc/ghi, rồi l�
 ## Điều chỉnh BOARD ngày 02/11/2026
 
 BOARD-01/05 chỉ nhóm DISCUSSION/ACTIVITY, tạo/thu E15 qua E08; MAIN không FrozenFrame. BOARD-02 tại MAIN: A-07 ở MAIN/hướng dẫn ghi E14/E16 runtime (nét thường/tự biến mất), A-03 xem; tại nhóm A-03 đủ quyền vẽ như cũ. BOARD-03/04 gộp vẫn giữ undo nét mình/clear đúng scope. Không thêm UC hoặc collection; xem [HS-05](../product/use-cases/05-board-collaboration.md).
+
+## Delta thiết kế sau kickoff 02/11
+
+RECORD-01 / UC-LIVE-11–12 / FR-15-01–03 bổ sung metadata bản ghi gắn LiveSession/kênh, trạng thái ghi/xử lý/sẵn sàng/lỗi ở mức hành vi, tham chiếu video byte và cleanup. Video thuộc kho tệp; không nhúng byte vào MongoDB hoặc tái dùng FRAME/attachment để vượt ACL. Xem [recording](../product/recording.md) và [model](model.md). 13 collection/16 khái niệm cũ mô tả phạm vi trước recording, chưa là thiết kế recording hoàn tất; chưa chốt field/index/migration mới.
+
+Quyền xem kiểm membership và channel access hiện tại, kể cả PRIVATE, không dựa vào participant cũ; xóa kênh/Workspace và thu quyền phải được tính trong lifecycle. Stop/end hoàn tất hoặc báo lỗi, dọn tài nguyên/tệp dở dang; quota/retention/quyền xóa và xử lý restart còn chờ proposal. DISCUSSION tạo hợp lệ ngay, không trạng thái host xét/hủy pending; random preview chỉ là cấu hình ACTIVITY, không tự chuyển người.
+
+### UC recording ↔ dữ liệu mới
+
+| UC                             | Actor                     | Đọc                                                   | Ghi / kết quả                                                                          | Quyền và vòng đời                                                                |
+| ------------------------------ | ------------------------- | ----------------------------------------------------- | -------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| UC-LIVE-11 · Ghi hình cuộc họp | Host hiện hành            | Phiên, host/scope, nguồn MAIN                         | Metadata bản ghi theo phiên/kênh; trạng thái xử lý và tham chiếu video; byte ở kho tệp | Không nhóm riêng; stop/end/error cleanup; schema/index/quota/retention chưa chốt |
+| UC-LIVE-12 · Xem lại bản ghi   | Thành viên còn quyền kênh | Metadata sẵn sàng, membership/channel access hiện tại | Phát video đúng quyền; không cần tạo lịch sử người xem                                 | PRIVATE cần access hiện hành; biết URL hoặc tham gia phiên cũ không đủ quyền     |

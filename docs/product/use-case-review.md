@@ -1,5 +1,7 @@
 # Review Use Case theo mục tiêu người dùng
 
+> Review lịch sử trước kickoff 02/11; không là baseline cho DISCUSSION auto-create, random ACTIVITY hoặc recording mới. Nguồn hiện hành ở group modes/recording và decision-status.
+
 **Trạng thái: kết quả review và chỉnh sửa mô hình đã được người dùng đồng ý ngày 27/10/2026.** Nghiệp vụ lấy từ baseline; quyết định giữ/gộp dưới đây điều chỉnh cách đặc tả và vẽ, không cắt feature. Áp dụng vào [danh mục](use-case-catalog.md) và [tổng quan](use-case-outline.md).
 
 ## 1. Cơ sở nghiên cứu và tiêu chí

@@ -76,3 +76,9 @@ Một VPS/một app process là topology thử ban đầu. DB/media/TURN/file ch
 Chấp nhận giới hạn bản đầu: app/worker restart làm kết thúc LIVE, không phục hồi nhóm/board/media từ DB; deploy khi đã drain/không có phiên sống. Health/readiness phản ánh lỗi thật. Chưa có zero-downtime/HA; muốn thêm app replicas hoặc giữ phiên qua crash cần quyết định kiến trúc riêng. Không mua/chốt VPS theo profile 2 vCPU/4 GiB chỉ vì có trong plan; đó là máy thử, chưa chứng minh C-25/C-50.
 
 Xem [local runbook](runbooks/local-development.md) để khởi động MongoDB và [plan vận hành](technical-plan.md#17-triển-khai-và-vận-hành) về staging/TLS/auth/backup/restore. Đợt tài liệu này không start/stop Docker, sửa Compose, chạy migration hoặc đổi dependency.
+
+## Bổ sung recording MAIN sau kickoff 02/11
+
+RECORD-01 theo [nguồn nghiệp vụ](product/recording.md): host điều khiển ghi màn hình/camera/âm thanh MAIN; lưu theo phiên để thành viên còn quyền kênh xem. Không ghi nhóm riêng hoặc chuyển recorder theo host hỗ trợ. Chưa có implementation hoặc benchmark. Proposal M3 chủ trì, M4 cung cấp host/scope/lifecycle, M2 lưu/phục vụ byte/ACL, M1 quyền kênh.
+
+Cần chọn capture/composition/encode, bố cục/số camera/codec và cách phát, trạng thái xử lý, idempotency, cleanup khi stop/end/error/restart, quota/retention/quyền xóa. Chưa chốt thư viện, topology recorder, collection hoặc schema executable. Không coi recorder là participant được nghe mọi scope. Không giữ queue/mutex phiên khi chờ encode/lưu file; task phải thiết kế gate tài nguyên và giao diện cleanup. Đo CPU/RAM/disk/network cùng media/chat/board/TURN trước khi chốt capacity; PoC clip vài phút không là giới hạn thời lượng sản phẩm. REC-01 vẫn là reconnect, không dùng mã đó cho recording.

@@ -105,4 +105,12 @@ Resource generation giúp late `transportclose/producerclose/disconnect` không 
 
 ### 11.3. Leave nhóm và countdown
 
-`group.leave` chuyển chính actor về MAIN theo [group modes](group-modes.md); không phải session.leave hoặc quyền chuyển người khác. Thu nguồn/Consumer nhóm cũ, đóng share nhóm của người rời, pause mic trước khi cấp MAIN. Reconnect dùng group mode/membership/source hiện tại; không phục hồi quyền share từ client cache. Countdown ACTIVITY lấy deadline/round hiện tại, không reset; đến hạn server tự kết thúc đúng lượt và đưa người còn quyền về MAIN, thu scope nhóm/pause mic. Reconnect sau deadline không mở lại nhóm cũ; callback cũ không tác động lượt mới. Test cùng nhóm chỉ một share thắng, hai nhóm share đồng thời, không có bước host duyệt; reconnect không tự resume share hoặc join DISCUSSION khi đang phase ACTIVITY.
+`group.leave` chuyển chính actor về MAIN theo [group modes](group-modes.md); không phải session.leave hoặc quyền chuyển người khác. Thu nguồn/Consumer nhóm cũ, đóng share nhóm của người rời, pause mic trước khi cấp MAIN. Reconnect dùng group mode/membership/source hiện tại; không phục hồi quyền share từ client cache. Countdown ACTIVITY lấy deadline/round hiện tại, không reset; đến hạn server tự kết thúc đúng lượt và đưa người còn quyền về MAIN, thu scope nhóm/pause mic. Reconnect sau deadline không mở lại nhóm cũ; callback cũ không tác động lượt mới. Test cùng nhóm chỉ một share thắng, hai nhóm share đồng thời, không có bước hệ thống tạo khi hợp lệ; reconnect không tự resume share hoặc join DISCUSSION khi đang phase ACTIVITY.
+
+## Giới hạn hỗ trợ nhóm — quyết định 02/11/2026
+
+Host chỉ vào hỗ trợ ACTIVITY; DISCUSSION hỏi/trả lời qua chat riêng khi host ở MAIN. Người cuối cùng chủ động về MAIN hoặc rời LIVE làm DISCUSSION đã có người tự kết thúc theo [group modes](group-modes.md); nhóm tạo hợp lệ chưa ai vào vẫn chờ, nhóm còn người cho roster hợp lệ chủ động vào lại. Mất signaling/đóng tab/crash không tự được coi là lệnh rời chủ động; giữ nhánh reconnect/grace hiện hành. Quyết định này không tự chốt cách đóng nhóm rỗng do sự cố sau grace, không thêm timeout và không thay deadline ACTIVITY.
+
+## Recording MAIN — sau kickoff
+
+Theo [RECORD-01](recording.md), chỉ host hiện hành ghi/dừng, recorder nhận màn hình/camera/âm thanh MAIN; không nhận nhóm riêng hoặc đi theo host vào hỗ trợ. Video theo phiên/kênh, người xem cần quyền hiện hành. Chưa chọn pipeline, quota/retention hoặc chứng minh record chạy thật.

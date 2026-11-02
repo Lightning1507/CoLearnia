@@ -22,7 +22,7 @@ MAIN: chỉ host ở phạm vi MAIN/hướng dẫn vẽ trực tiếp, không fr
 | DISCUSSION  | Nguồn MAIN được kế thừa           | Chỉ nhóm DISCUSSION đó; không làm dừng bài giảng hoặc board nhóm khác     |
 | ACTIVITY    | Nguồn đang share trong chính nhóm | Chỉ ACTIVITY đó; không dùng MAIN hoặc screen nhóm khác                    |
 
-Host chỉ đọc/vẽ/clear khi có quyền context hiện tại; vai trò host không mở mọi board nhóm. MAIN screen có thể đến DISCUSSION, nhưng board MAIN không tự hợp nhất với board DISCUSSION.
+Host chỉ đọc/vẽ/clear khi có quyền context hiện tại; vai trò host không mở mọi board nhóm. Theo quyết định 02/11/2026, host chỉ vào hỗ trợ/nhận quyền board ACTIVITY; DISCUSSION hỏi/trả lời qua chat riêng, không cấp quyền toàn bộ board cho host. MAIN screen có thể đến DISCUSSION, nhưng board MAIN không tự hợp nhất với board DISCUSSION.
 
 ## Điều kiện và kết quả riêng từng UC
 

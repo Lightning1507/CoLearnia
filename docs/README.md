@@ -12,35 +12,35 @@
 
 ## Chọn nguồn theo việc
 
-| Công việc                                           | Nguồn chính                                                                                                                                                |
-| --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Dựng draft UI bằng Figma Make                       | [Brief và prompt theo lượt](ui/figma-make-brief.md) — Workspace/chat, phòng họp và nhóm; chưa là UI đã duyệt                                               |
-| Phạm vi / use case / điều chưa xác nhận             | [Scope](product/scope.md), plan mục 15–18                                                                                                                  |
-| Đặc tả luồng UC trọng tâm trước khi vẽ Astah        | [6 hồ sơ đặc tả](product/use-cases/README.md) — HS-01/02 bản 3, HS-03 bản 4 theo quyết định 01/11; HS-04/06 bản 2, HS-05 bản 3 theo quyết định board 02/11 |
-| Tài khoản, Workspace, kênh, chat, tệp               | [Bản đồ nghiệp vụ](product/workspace-channels.md)                                                                                                          |
-| General, DM 1–1, thread trong kênh                  | [Messaging](product/messaging.md)                                                                                                                          |
-| Call, thiết bị, share, host, volume, reconnect      | [Live session](product/live-session.md)                                                                                                                    |
-| Quyền, chat Everyone/Host, hỗ trợ, về phòng chung   | [Groups/media policy](product/groups-media-policy.md)                                                                                                      |
-| MAIN, DISCUSSION, ACTIVITY; request/leave/countdown | [Group modes v2.3](product/group-modes.md)                                                                                                                 |
-| Frame, freeze/resume và nét vẽ                      | [Board collaboration](product/board-collaboration.md)                                                                                                      |
-| Module, state owner, thứ tự mutation                | [Architecture](architecture.md)                                                                                                                            |
-| Collections / index / DB so với RAM                 | [Database model](database/model.md)                                                                                                                        |
-| Transaction / retention / file cleanup              | [Database lifecycle](database/lifecycle.md)                                                                                                                |
-| REST/socket schema và quy ước                       | [Contracts](contracts/README.md), plan mục 10                                                                                                              |
-| Capacity 25/50, workload / giới hạn vận hành        | [Capacity hiện hành](capacity.md) — mục tiêu thử, chưa phải mức đã đạt                                                                                     |
-| Local / runtime / Mongo / media smoke               | [Local development](runbooks/local-development.md)                                                                                                         |
-| Checks / hooks / review / giới hạn CI               | [Code quality](code-quality.md), [CONTRIBUTING](../CONTRIBUTING.md)                                                                                        |
-| Giao việc / Codex onboarding / bàn giao             | [AI workflow](ai/workflow.md), [task template](ai/task-template.md)                                                                                        |
-| PoC mediasoup và điều kiện Accepted                 | [ADR-001](adr/001-media-foundation.md)                                                                                                                     |
+| Công việc                                           | Nguồn chính                                                                                                                                                          |
+| --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Dựng draft UI bằng Figma Make                       | [Brief và prompt theo lượt](ui/figma-make-brief.md) — Workspace/chat, phòng họp và nhóm; chưa là UI đã duyệt                                                         |
+| Phạm vi / use case / điều chưa xác nhận             | [Scope](product/scope.md), plan mục 15–18                                                                                                                            |
+| Đặc tả luồng UC trọng tâm trước khi vẽ Astah        | [6 hồ sơ đặc tả](product/use-cases/README.md) — HS-01 bản 3, HS-03 bản 4, HS-04 bản 2, HS-05 bản 3; HS-02 bản 5 và HS-06 bản 3 theo quyết định DISCUSSION ngày 02/11 |
+| Tài khoản, Workspace, kênh, chat, tệp               | [Bản đồ nghiệp vụ](product/workspace-channels.md)                                                                                                                    |
+| General, DM 1–1, thread trong kênh                  | [Messaging](product/messaging.md)                                                                                                                                    |
+| Call, thiết bị, share, host, volume, reconnect      | [Live session](product/live-session.md)                                                                                                                              |
+| Quyền, chat Everyone/Host, hỗ trợ, về phòng chung   | [Groups/media policy](product/groups-media-policy.md)                                                                                                                |
+| MAIN, DISCUSSION, ACTIVITY; request/leave/countdown | [Group modes v2.3](product/group-modes.md)                                                                                                                           |
+| Frame, freeze/resume và nét vẽ                      | [Board collaboration](product/board-collaboration.md)                                                                                                                |
+| Module, state owner, thứ tự mutation                | [Architecture](architecture.md)                                                                                                                                      |
+| Collections / index / DB so với RAM                 | [Database model](database/model.md)                                                                                                                                  |
+| Transaction / retention / file cleanup              | [Database lifecycle](database/lifecycle.md)                                                                                                                          |
+| REST/socket schema và quy ước                       | [Contracts](contracts/README.md), plan mục 10                                                                                                                        |
+| Capacity 25/50, workload / giới hạn vận hành        | [Capacity hiện hành](capacity.md) — mục tiêu thử, chưa phải mức đã đạt                                                                                               |
+| Local / runtime / Mongo / media smoke               | [Local development](runbooks/local-development.md)                                                                                                                   |
+| Checks / hooks / review / giới hạn CI               | [Code quality](code-quality.md), [CONTRIBUTING](../CONTRIBUTING.md)                                                                                                  |
+| Giao việc / Codex onboarding / bàn giao             | [AI workflow](ai/workflow.md), [task template](ai/task-template.md)                                                                                                  |
+| PoC mediasoup và điều kiện Accepted                 | [ADR-001](adr/001-media-foundation.md)                                                                                                                               |
 
 ## Phân tích Use Case hiện hành
 
 - [Gom FR thành 5 miền phụ trách](product/delivery-domains.md): phạm vi FE/BE/dữ liệu, phần dùng chung và điểm giao nhau; đề xuất để team review cùng Figma, chưa gán người hoặc estimate.
 
-- [Functional Requirements MVP](product/functional-requirements.md): 53 FR theo 14 PB, có truy vết UC, tiêu chí chấp nhận, phụ thuộc/rủi ro và điểm chưa chốt; cơ sở chia Issue/estimate, chưa là lịch hoặc việc đã giao.
+- [Functional Requirements MVP](product/functional-requirements.md): 56 FR theo 15 PB, có truy vết UC, tiêu chí chấp nhận, phụ thuộc/rủi ro và điểm chưa chốt; cơ sở chia Issue/estimate, chưa là lịch hoặc việc đã giao.
 
 - [Định hình Use Case](product/use-case-outline.md): 5 actor, 8 oval tổng quan và ranh giới các miền đã thống nhất; không thay nguồn quyền nghiệp vụ.
-- [Danh mục Use Case chi tiết](product/use-case-catalog.md): 43 UC nghiệp vụ và 3 UC truy cập chung; giữ mã truy vết cho các mục gộp.
+- [Danh mục Use Case chi tiết](product/use-case-catalog.md): 44 UC nghiệp vụ và 3 UC truy cập chung; giữ mã truy vết cho các mục gộp.
 - [6 hồ sơ đặc tả](product/use-cases/README.md): luồng trọng tâm, điều kiện, nhánh lỗi và điểm mở; không đặc tả mọi UC trong danh mục.
 - [Sơ đồ Astah và trạng thái ảnh xuất](product/diagrams/README.md): có tổng quan, 5 sơ đồ phân rã và Activity; file Astah và ảnh UC đã được người phụ trách xác nhận là bản mới nhất; xem mục lục bản vẽ để mở nguồn.
 
@@ -48,7 +48,7 @@
 
 ## Thiết kế dữ liệu từ Use Case
 
-- [Bước 1 — UC ↔ dữ liệu](database/uc-data-map.md): truy vết 46 UC được giữ tới dữ liệu đọc/ghi, tác nhân và các khoảng trống cần làm rõ.
+- [Bước 1 — UC ↔ dữ liệu](database/uc-data-map.md): truy vết UC tới dữ liệu đọc/ghi (bản trước recording có 46 UC, delta LIVE-11/12 và GRP-03 ở cuối tài liệu), tác nhân và các khoảng trống cần làm rõ.
 - [Bước 2 — mô hình nghiệp vụ](database/conceptual-model.md): 16 khái niệm, quan hệ/số lượng và quy tắc; bản để review, chưa là 16 collection hoặc schema MongoDB. Khung và nguồn chi tiết ở [model](database/model.md).
 - [Bước 3 — nơi lưu và vòng đời](database/lifecycle.md): ma trận đủ E01–E16 theo MongoDB/RAM/kho tệp/client, trạng thái, thu quyền, restart và cleanup.
 - [Bước 4 — collection/document](database/collection-design.md): 13 collection, field/type/null, nhúng/tham chiếu và truy vấn chính; PRIVATE grant gắn lần gia nhập Workspace. Chưa tạo Mongoose schema/index/migration.
@@ -79,3 +79,7 @@
 ## Duy trì nguồn
 
 Thay quy tắc/contract phải cập nhật nguồn chính và bên dùng liên quan trong cùng PR. Giữ đề xuất, quyết định và bằng chứng tách bạch. GitHub Issues giữ task/trạng thái; Projects sẽ cấu hình sau để quản lý chung. Không tạo sổ backlog khác trong repo. `pnpm check:harness` kiểm nguồn/links/runtime, không kiểm ngữ nghĩa hoặc cấp quyền cho agent.
+
+## Thay đổi sau kickoff 02/11
+
+[Recording MAIN](product/recording.md) là nguồn RECORD-01 / PB-15 / FR-15-01–03 / UC-LIVE-11–12. DISCUSSION tạo tự động theo [group modes](product/group-modes.md); UC-GRP-03 xét duyệt ngừng áp dụng. Tổng hiện hành 56 FR/15 PB; HS-02 bản 5, HS-03 thêm random preview. Thiết kế DB recording/pipeline còn chờ proposal, chưa thay code/schema. Astah/PNG/Figma cần áp delta mới, không ghi đè file hoặc coi đã sửa hình trong lượt tài liệu này.

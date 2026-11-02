@@ -4,7 +4,7 @@
 
 ## Cơ sở và nguyên tắc
 
-Dựa trên [53 FR](functional-requirements.md), [backlog](backlog-draft.md) và [ranh giới trạng thái trong kiến trúc](../architecture.md). Một người dự kiến phụ trách một miền xuyên FE–BE–dữ liệu/kiểm thử, tự chuẩn bị proposal, API/contract dự kiến, task sơ bộ và estimate. Người phụ trách chính chịu trách nhiệm đầu ra của miền, không có nghĩa tự làm mọi phần tích hợp mà không cần bên khác.
+Dựa trên [56 FR](functional-requirements.md), [backlog](backlog-draft.md) và [ranh giới trạng thái trong kiến trúc](../architecture.md). Một người dự kiến phụ trách một miền xuyên FE–BE–dữ liệu/kiểm thử, tự chuẩn bị proposal, API/contract dự kiến, task sơ bộ và estimate. Người phụ trách chính chịu trách nhiệm đầu ra của miền, không có nghĩa tự làm mọi phần tích hợp mà không cần bên khác.
 
 Các miền là phân chia công việc trong cùng ứng dụng/monorepo, không phải 5 microservice, 5 database hoặc 5 kiến trúc tự chọn. Dùng chung technical plan, contracts, MongoDB và quy tắc quyền. Test/review do từng miền chịu; không có một người chỉ làm tester hoặc ghép toàn bộ dự án vào cuối kỳ.
 
@@ -12,15 +12,15 @@ Khung thời gian người dùng hiện đề nghị là **6–7 tuần**, phầ
 
 ## Đề xuất 5 miền
 
-| Miền                                          | Kết quả chịu trách nhiệm chính                                                                   | FR chính                                                  | Số FR |
-| --------------------------------------------- | ------------------------------------------------------------------------------------------------ | --------------------------------------------------------- | ----- |
-| **M1 · Tài khoản, Workspace và quyền kênh**   | Người dùng đăng nhập, tạo/vào Workspace, quản lý thành viên và kênh đúng quyền                   | FR-01-01–03; FR-02-01–08; FR-03-01–04                     | 15    |
-| **M2 · Hội thoại, tin nhắn và tệp**           | Chat TEXT, DM, thread, chat họp và file dùng chung nhưng đúng audience                           | FR-04-01–04; FR-09-01–02; FR-12-01–02; FR-13-01–02        | 10    |
-| **M3 · Trải nghiệm cuộc gọi, media và audio** | Lobby/call UI, mic/camera/share thật, nguồn nhận đúng scope và âm lượng nghe                     | FR-05-01–05; FR-08-01–02                                  | 7     |
-| **M4 · Vòng đời phiên, host và nhóm**         | Session/host, DISCUSSION/ACTIVITY, hỗ trợ, deadline, chuyển phòng và đồng bộ quyền khi reconnect | FR-07-01–09; FR-09-03; FR-10-01; FR-11-01–03; FR-14-01–02 | 16    |
-| **M5 · Board, freeze và vẽ**                  | Host vẽ LIVE tại MAIN; nhóm cùng freeze/vẽ/resume đúng nguồn và context                          | FR-06-01–05                                               | 5     |
+| Miền                                          | Kết quả chịu trách nhiệm chính                                                                   | FR chính                                                     | Số FR |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------------ | ------------------------------------------------------------ | ----- |
+| **M1 · Tài khoản, Workspace và quyền kênh**   | Người dùng đăng nhập, tạo/vào Workspace, quản lý thành viên và kênh đúng quyền                   | FR-01-01–03; FR-02-01–08; FR-03-01–04                        | 15    |
+| **M2 · Hội thoại, tin nhắn và tệp**           | Chat TEXT/DM/thread/cuộc họp, file và xem lại video đúng quyền                                   | FR-04-01–04; FR-09-01–02; FR-12-01–02; FR-13-01–02; FR-15-03 | 11    |
+| **M3 · Trải nghiệm cuộc gọi, media và audio** | Lobby/call/mic/camera/share/audio và pipeline recording MAIN                                     | FR-05-01–05; FR-08-01–02; FR-15-01–02                        | 9     |
+| **M4 · Vòng đời phiên, host và nhóm**         | Session/host, DISCUSSION/ACTIVITY, hỗ trợ, deadline, chuyển phòng và đồng bộ quyền khi reconnect | FR-07-01–09; FR-09-03; FR-10-01; FR-11-01–03; FR-14-01–02    | 16    |
+| **M5 · Board, freeze và vẽ**                  | Host vẽ LIVE tại MAIN; nhóm cùng freeze/vẽ/resume đúng nguồn và context                          | FR-06-01–05                                                  | 5     |
 
-**53/53 FR có một miền phụ trách chính.** Các phần tích hợp có người phối hợp bên dưới, không đếm lại thành FR mới. Số FR chỉ kiểm độ phủ, không dùng để chia đều effort. Các miền hiện là phương án để thảo luận, chưa thể nói 5 người đã cân tải.
+**56/56 FR có một miền phụ trách chính.** Các phần tích hợp có người phối hợp bên dưới, không đếm lại thành FR mới. Số FR chỉ kiểm độ phủ, không dùng để chia đều effort. Các miền hiện là phương án để thảo luận, chưa thể nói 5 người đã cân tải.
 
 ### M1 · Tài khoản, Workspace và quyền kênh
 
@@ -51,12 +51,12 @@ Khung thời gian người dùng hiện đề nghị là **6–7 tuần**, phầ
 
 ### M4 · Vòng đời phiên, host và nhóm
 
-- **Phần sản phẩm:** UI/request/duyệt/Vào nhóm, host chuyển quyền/kết thúc cuộc họp, chuẩn bị/phân ACTIVITY, countdown, điều chuyển/về MAIN, đóng DISCUSSION, host vào/rời hỗ trợ và thao tác hướng dẫn chung. Các control nằm trong shell M3, không triển khai lại thiết bị/media.
+- **Phần sản phẩm:** UI/tạo/Vào nhóm, host chuyển quyền/kết thúc cuộc họp, chuẩn bị/phân ACTIVITY, countdown, điều chuyển/về MAIN, đóng DISCUSSION, host vào/rời hỗ trợ ACTIVITY và thao tác hướng dẫn chung; DISCUSSION chỉ hỏi/trả lời riêng khi host ở MAIN. Các control nằm trong shell M3, không triển khai lại thiết bị/media.
 - **Trạng thái/dữ liệu:** SessionRuntime, participant/call generation/epoch, host và host tạm, group/round/deadline/phase, session mutation queue, runtime policy và projection. Sở hữu điều phối chuyển scope/cleanup; session/participant metadata bền theo nguồn DB, không phục hồi grant từ metadata. M4 quyết định khi nào cần tạo/đóng hội thoại phiên/nhóm và gọi chức năng M2; schema, truy vấn và thao tác conversation/message/file do M2 sở hữu, không có repository conversation thứ hai trong M4.
 - **Cần cung cấp:** contract vào/rời/resync/kết thúc phiên, policy/projection hiện hành, hành vi chuyển scope/host/deadline; cách yêu cầu M2/M3/M5 thu tài nguyên trước khi cấp quyền mới.
 - **Cần nhận:** auth/channel access và revoke từ M1; lifecycle thực của media từ M3, chat/file từ M2 và board từ M5. Queue không chờ người dùng chọn màn hình/upload/client ack lâu.
-- **Proposal cần tập trung:** một nguồn state/quyền, thứ tự mutation, approved roster khác membership, rollback partial ACTIVITY, deadline và reconnect không phục hồi nhóm cũ. FR-11 là trách nhiệm điều phối kết quả phục hồi, không có nghĩa tự code lại mọi retry của chat/board/media.
-- **Demo miền:** duyệt chưa cấp private trước join; DISCUSSION và ACTIVITY không cùng active; host hỗ trợ đúng nhóm; hết giờ tự về MAIN/pause mic. Kiểm cùng M3/M2/M5, không dùng mock media để kết luận isolation đạt.
+- **Proposal cần tập trung:** một nguồn state/quyền, thứ tự mutation, eligible roster khác membership, rollback partial ACTIVITY, deadline và reconnect không phục hồi nhóm cũ. FR-11 là trách nhiệm điều phối kết quả phục hồi, không có nghĩa tự code lại mọi retry của chat/board/media.
+- **Demo miền:** tạo nhóm chưa cấp private trước join; DISCUSSION và ACTIVITY không cùng active; host chỉ vào hỗ trợ ACTIVITY, từ chối DISCUSSION; DISCUSSION còn người cho vào lại, người cuối cùng chủ động rời thì tự đóng; hết giờ tự về MAIN/pause mic. Kiểm cùng M3/M2/M5, không dùng mock media để kết luận isolation đạt.
 
 ### M5 · Board, freeze và vẽ
 
@@ -133,17 +133,17 @@ Chia miền vẫn phải bao phủ EN-01–04 trong [backlog](backlog-draft.md).
 
 Dùng [brief UI và file Figma Make hiện có](../ui/figma-make-brief.md), demo theo một hành trình: đăng nhập/chọn Workspace → chat TEXT/DM/thread → vào LIVE → share → DISCUSSION → ACTIVITY → hỗ trợ/về MAIN. Màn chưa có chỉ dẫn FR/UC và ghi rõ thiếu draft, không dựng thêm trong bước gom miền.
 
-| Khu vực khi demo                                                       | Người chuẩn bị proposal cho miền nào |
-| ---------------------------------------------------------------------- | ------------------------------------ |
-| Auth, sidebar, Workspace, thành viên, kênh/PRIVATE                     | M1                                   |
-| Nội dung chat, composer/ảnh/file, DM, thread, chat họp                 | M2                                   |
-| Lobby, share stage/camera/control bar, audio và mở/đóng panel          | M3                                   |
-| Chuyển host, request/duyệt nhóm, phân nhóm, countdown, hỗ trợ, về MAIN | M4                                   |
-| Annotation MAIN, freeze/vẽ/resume nhóm                                 | M5                                   |
+| Khu vực khi demo                                                  | Người chuẩn bị proposal cho miền nào |
+| ----------------------------------------------------------------- | ------------------------------------ |
+| Auth, sidebar, Workspace, thành viên, kênh/PRIVATE                | M1                                   |
+| Nội dung chat, composer/ảnh/file, DM, thread, chat họp            | M2                                   |
+| Lobby, share stage/camera/control bar, audio và mở/đóng panel     | M3                                   |
+| Chuyển host, tạo/đóng nhóm, phân nhóm, countdown, hỗ trợ, về MAIN | M4                                   |
+| Annotation MAIN, freeze/vẽ/resume nhóm                            | M5                                   |
 
 UI vẽ trên cùng một trang có thể do nhiều miền cung cấp component; không đồng nghĩa chia người theo từng trang hoặc mỗi miền làm lại layout. Cần chốt interface cho panel/stage trước khi cùng sửa shell.
 
-**Lưu ý bản mẫu:** lượt tài liệu trước đã đổi MAIN sang chỉ host vẽ LIVE, không freeze/resume; chưa xác nhận Figma/Astah/PNG đã được sửa theo quyết định này. Nếu demo vẫn có “Tạm dừng hình của phòng” tại MAIN thì chỉ rõ đó là phần draft cũ, dùng FR hiện hành để thảo luận. Không lấy prototype cũ làm chuẩn ghi đè nghiệp vụ hoặc kết luận media thật đã chạy.
+**Lưu ý bản mẫu:** Figma/ảnh/Astah minh họa cần áp ba thay đổi sau kickoff (DISCUSSION tự tạo, ACTIVITY random, recording MAIN). Không dùng bước duyệt cũ trên prototype để ghi đè nghiệp vụ hoặc kết luận media thật đã chạy.
 
 ## Review khả năng giao việc
 
@@ -161,3 +161,13 @@ Giữ 5 miền là phương án ban đầu; sau khi người thật review propo
 2. Chọn người phụ trách/reviewer, giờ làm thực tế và đầu mối CI/staging. Không suy người A–E trong technical plan đã là phân công mới.
 3. Mỗi người chuẩn bị **proposal + API/contract dự kiến + task sơ bộ + estimate**, rồi các bên review contract và hoàn thiện task/estimate. Không đợi proposal hoàn hảo mới được ghi đầu việc hoặc ước lượng sơ bộ.
 4. Sau review mới tổng hợp mốc demo/milestone/sprint và tạo Issues/Projects. Tài liệu này chỉ mô tả phạm vi trách nhiệm, không giữ tên người, trạng thái hoặc bảng tiến độ cạnh tranh GitHub.
+
+## Điều chỉnh sau kickoff — recording và nhóm
+
+- M4 cập nhật FR-07-03/04: DISCUSSION tự tạo khi hợp lệ, không host xét/hủy pending; FR-07-05 thêm random preview/chỉnh trước start.
+- M3 chủ trì recording MAIN, sở hữu FR-15-01/02: capture/compose/encode, trạng thái và hoàn tất bản ghi; phối hợp M4 về quyền host/scope và kết thúc phiên.
+- M2 sở hữu FR-15-03: danh sách/xem lại theo phiên/kênh, lưu/phục vụ byte đúng ACL; M1 cung cấp quyền hiện hành. M2–M3 thống nhất một owner metadata/schema, file lifecycle và lỗi/quota; không tách thành hai hệ lưu trữ.
+- Tổng 56 FR: M1 15, M2 11, M3 9, M4 16, M5 5. Recording tăng tải M3/M2/M4; cần estimate lại và PoC sớm. Chưa gán tên người hoặc cam kết cân tải.
+- Điểm giao recording cần ghi trong proposal: tập nguồn MAIN hiện hành, host hỗ trợ nhóm không bị ghi, control theo host hiện tại, chuyển trạng thái, quyền xem, lỗi storage/encode, cleanup và tải kết hợp. Demo clip vài phút; chưa chốt pipeline/quota/retention/quyền xóa.
+
+Nguồn [recording](recording.md); không tự chọn thư viện hay thêm Redis/worker pool từ task tài liệu.

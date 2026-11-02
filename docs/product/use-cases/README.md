@@ -1,6 +1,6 @@
 # Đặc tả 6 luồng Use Case trọng tâm
 
-**HS-01 bản 3 (host); HS-02 bản 3 (vòng đời/giới hạn request); HS-03 bản 4 (giới hạn duration), cập nhật 01/11/2026. HS-04/06 giữ bản 2; HS-05 bản 3 cập nhật board ngày 02/11/2026.** Phạm vi 6 hồ sơ đã được người dùng đồng ý; các luồng chi tiết dưới đây là bản triển khai từ nghiệp vụ hiện hành để review, chưa là bằng chứng tính năng chạy hoặc sơ đồ Astah đã hoàn thành.
+**HS-01 bản 3, HS-03 bản 4 (quyết định 01/11); HS-04 bản 2, HS-05 bản 3 (board 02/11); HS-02 bản 5 và HS-06 bản 3 (vòng đời DISCUSSION và hỗ trợ ngày 02/11).** Phạm vi 6 hồ sơ đã được người dùng đồng ý; các luồng chi tiết dưới đây là bản triển khai từ nghiệp vụ hiện hành để review, chưa là bằng chứng tính năng chạy hoặc sơ đồ Astah đã hoàn thành.
 
 [Báo cáo review bản 1 và kết quả xử lý](review-2026-10-29.md): F-01…F-05 và R-01/R-02 đã được xử lý trong bản 2; quyết định ACTIVITY lỗi và host chủ động rời hỗ trợ đã được người dùng làm rõ, không còn chờ chọn.
 
@@ -11,7 +11,7 @@ Chỉ đặc tả 6 luồng quan trọng, không viết đặc tả riêng toàn
 | Hồ sơ                              | Nội dung                                     | UC được đặc tả trong hồ sơ                                                                  | Feature / backlog                         |
 | ---------------------------------- | -------------------------------------------- | ------------------------------------------------------------------------------------------- | ----------------------------------------- |
 | [HS-01](01-join-meeting.md)        | Vào cuộc họp; nhánh xác lập và phục hồi host | UC-LIVE-01; nhánh phục hồi host liên quan UC-GRP-01, không thay đặc tả chuyển host chủ động | LIVE-01/02, HOST-01, REC-01 / PB-05/07/11 |
-| [HS-02](02-discussion.md)          | Yêu cầu, duyệt và chủ động vào DISCUSSION    | UC-GRP-02/03/04; tự về MAIN tham chiếu UC-GRP-08                                            | GRP-01/02 / PB-07                         |
+| [HS-02](02-discussion.md)          | Tạo và chủ động vào DISCUSSION               | UC-GRP-02/04; GRP-03 ngừng áp dụng; tự về MAIN tham chiếu UC-GRP-08                         | GRP-01/02 / PB-07                         |
 | [HS-03](03-activity.md)            | Tổ chức và kết thúc lượt ACTIVITY            | UC-GRP-05/06/11; nhánh UC-GRP-07/08; kết thúc tự động theo deadline                         | GRP-01/02, TIMER-01 / PB-07/10/14         |
 | [HS-04](04-screen-sharing.md)      | Chia sẻ và dừng nguồn màn hình theo scope    | UC-LIVE-05, bao gồm thao tác dừng đã gộp vào luồng                                          | LIVE-03 / PB-05                           |
 | [HS-05](05-board-collaboration.md) | Freeze, vẽ chung và resume                   | UC-BOARD-01/02/05; undo/clear là nhánh trong UC-BOARD-02                                    | BOARD-01, FREEZE-01 / PB-06               |
@@ -26,7 +26,7 @@ Ngoại trừ thao tác vào cuộc họp ở HS-01, các UC thao tác trong cu�
 - Mỗi hồ sơ có mục tiêu, actor, trigger, tiền điều kiện, luồng chính, nhánh thay thế/lỗi, hậu điều kiện, quy tắc và ca review.
 - Tiền điều kiện xác định ngữ cảnh bắt đầu. Kiểm tra lại khi hành động thực thi vẫn bắt buộc vì quyền/nhóm/host có thể đổi trong lúc người dùng thao tác.
 - Bước luồng mô tả actor làm gì và hệ thống phản hồi ra sao; không khóa thiết kế vào endpoint, schema, màu nút hoặc giải pháp transaction cụ thể.
-- Giai đoạn có thể kết thúc ở trạng thái chờ, không bắt host hoặc người được duyệt phản hồi ngay trong cùng lượt thao tác.
+- Giai đoạn có thể kết thúc ở trạng thái chờ, không bắt host hoặc người trong danh sách hợp lệ phản hồi ngay trong cùng lượt thao tác.
 - Ca review là tiêu chí cần nghiệm thu sau này; chưa phải test đã viết/chạy. Không suy checker Markdown hoặc worker smoke chứng minh đúng các luồng này.
 - Nguồn sở hữu quy tắc vẫn là [group modes](../group-modes.md), [live session](../live-session.md), [policy](../groups-media-policy.md), [board](../board-collaboration.md) và [scope](../scope.md). Chỗ chưa chốt ghi rõ ở hồ sơ, không đặt mặc định mới hoặc thay nguồn bằng suy diễn.
 
@@ -41,8 +41,16 @@ Ngoại trừ thao tác vào cuộc họp ở HS-01, các UC thao tác trong cu�
 ## Điểm còn mở và quy tắc vừa được chốt
 
 1. **Host:** còn mở khi không có ứng viên thay hoặc host tạm cũng mất mạng. Gán host trực tiếp không cần chấp nhận, host còn quyền chủ động rời kết thúc phiên, bàn giao chính thức không tự hoàn quyền đã chốt ngày 01/11; xem HS-01 và nguồn live session.
-2. **DISCUSSION đã chốt 01/11:** hủy pending, không sửa; mất hiệu lực theo phase/phiên, không TTL phút; tên ≤80, mục đích ≤500, danh sách hợp lệ không trùng và không cap riêng ngoài capacity. Không tự thêm mời người ngoài roster hoặc khả năng đổi loại nhóm tại chỗ.
+2. **DISCUSSION sau kickoff 02/11:** create hợp lệ tạo ngay, không host xét/hủy pending; tên ≤80, mục đích ≤500, roster cùng phiên không trùng; chủ động join và kiểm phase/quyền hiện tại.
 3. **ACTIVITY/countdown đã chốt 01/11:** số nguyên 1–120 phút trước bắt đầu, không sửa/gia hạn/tạm dừng khi chạy; schema cấu hình nhóm chi tiết hoàn thiện theo task. Không tự thêm các controls mở rộng. Hết thời lượng tự đóng ACTIVITY/về MAIN đã được chốt ngày 29/10; không còn là điểm mở.
 4. **Media/board:** profile/capacity và giới hạn payload phải được kiểm chứng; không coi ví dụ lớp 40–50 người là tải nghiệm thu đã chốt. Các trường hợp nguồn/frame/quyền đổi đã có quy tắc tại nguồn.
 
 Đã có các sơ đồ UC và một Activity; [trạng thái bản vẽ](../diagrams/README.md) ghi chênh lệch còn lại. Tiếp tục giải quyết nhánh mở trong task phụ thuộc và kiểm luồng cùng implementation. Không tạo thêm hồ sơ chi tiết cho tài khoản/CRUD/DM/thread ở đợt này. Thay đổi quy tắc thực sự phải cập nhật nguồn sở hữu cùng lúc, không chỉ chỉnh luồng tại đây.
+
+## Cập nhật DISCUSSION ngày 02/11/2026
+
+[HS-02 bản 5](02-discussion.md) làm rõ nhóm chờ, vào lại khi còn người và tự đóng khi người cuối cùng chủ động rời; [HS-06 bản 3](06-private-help.md) chỉ cho host vào hỗ trợ ACTIVITY. DISCUSSION hỏi/trả lời riêng với host ở MAIN. Giữ 6 hồ sơ và mã UC hiện có; không thêm UC cleanup hoặc bỏ hỗ trợ chat.
+
+## Sau kickoff 02/11
+
+HS-02 bản 5 thay host xét/hủy pending bằng create hợp lệ tự động rồi chủ động join. HS-03 bổ sung random trong bước chuẩn bị. Recording có UC-LIVE-11/12 và FR-15-01–03 tại [nguồn recording](../recording.md), chưa viết thêm hồ sơ chi tiết hoặc sửa Astah trong lượt này.
