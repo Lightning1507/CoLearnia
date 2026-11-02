@@ -29,7 +29,7 @@ UC-GRP-07 điều chuyển người và UC-GRP-08 tự về MAIN là các luồn
 1. Host tạo các nhóm ACTIVITY, phân người đang tham gia và đặt một thời lượng chung cho lượt. Không có đồng hồ riêng từng nhóm.
 2. Hệ thống kiểm host, nhóm/phân công và thời lượng, hiển thị cấu hình dự kiến; chưa thay scope. Host có thể dừng ở bước chuẩn bị để tiếp tục bài giảng.
 3. Host chọn bắt đầu lượt ACTIVITY.
-4. Hệ thống kiểm lại cấu hình, quyền và phase; chặn request/approval/join DISCUSSION khi chuyển sang lượt hoạt động. Thiếu thời lượng hợp lệ thì chưa bắt đầu.
+4. Hệ thống kiểm lại cấu hình, quyền và phase; chặn create/join DISCUSSION khi chuyển sang lượt hoạt động. Thiếu thời lượng hợp lệ thì chưa bắt đầu.
 5. Hệ thống đóng các DISCUSSION đang mở, thu private scope và hủy thao tác pending trước khi cấp ACTIVITY. Không sao chép chat/board nhóm cũ.
 6. Hệ thống kích hoạt các ACTIVITY, chuyển người được phân tới nhóm theo policy; người chưa phân ở MAIN. Lượt bắt đầu thành công có roundId/deadline chung ở server. Không tự bật thiết bị hoặc phát tiếng scope cũ sang audience mới.
 7. Các nhóm làm việc với mic/camera/chat/board và nguồn share riêng. Share/freeze/vẽ theo HS-04/05; không bắt buộc nhóm phải share hoặc vẽ mới coi là tham gia.
@@ -82,7 +82,7 @@ Tham chiếu [quality scenarios](../../technical-plan.md#142-quality-scenarios):
 
 ## Ca review / nghiệm thu
 
-1. Thiếu/sai thời lượng không bắt đầu; chuẩn bị chưa chuyển người; bắt đầu đóng DISCUSSION trước và chặn request/approval/join cũ.
+1. Thiếu/sai thời lượng không bắt đầu; chuẩn bị chưa chuyển người; bắt đầu đóng DISCUSSION trước và chặn create/join cũ.
 2. Hai ACTIVITY share độc lập, không nhận MAIN/nhóm khác; người chưa phân vẫn ở MAIN.
 3. Một người về sớm: pause mic/thu scope/share của mình, người khác tiếp tục countdown cũ.
 4. Hết giờ tự kết thúc mọi ACTIVITY đúng lượt, kể cả host mất mạng; về MAIN/pause mic, thu help/share/chat/board, không công khai nội dung hoặc tiếng hỗ trợ.
@@ -92,3 +92,7 @@ Tham chiếu [quality scenarios](../../technical-plan.md#142-quality-scenarios):
 ## Vị trí trên sơ đồ
 
 UC-GRP-05/06/11 và UC-GRP-07 thuộc điều hành; UC-GRP-08 tự về MAIN thuộc tham gia nhóm. Luồng tự kết thúc khi hết giờ không tạo oval/actor mới. UC-GRP-09 chỉ dành cho DISCUSSION theo [danh mục](../use-case-catalog.md). Trạng thái kiểm bản Astah/PNG ghi tại [trạng thái bản vẽ](../diagrams/README.md).
+
+## Chuẩn bị bằng random — cập nhật sau kickoff
+
+Trong bước chuẩn bị UC-GRP-05, host có thể chọn tập participant và số nhóm để phân ngẫu nhiên; số người chênh tối đa một trước chỉnh. Host xem trước, sửa thủ công rồi mới start. Preview không cấp scope, start phải kiểm lại quyền/roster; sai hoặc stale thì báo để xem lại, không âm thầm thay roster. Không random trong lượt chạy. Đây là phương án thay thế chia thủ công, không UC riêng. [Group modes](../group-modes.md).

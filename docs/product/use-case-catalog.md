@@ -4,7 +4,7 @@
 
 ## Kết quả review mức mục tiêu
 
-Bản đầu có 53 mục ứng viên; ngày 01/11 bổ sung UC-WS-15 theo quyết định quyền kênh PRIVATE, thành 54 mục được truy vết. Sau [review mức mục tiêu](use-case-review.md), người dùng đã đồng ý **43 UC nghiệp vụ độc lập, 3 UC truy cập chung và 8 mục đưa vào luồng của UC khác**. Không cắt chức năng và không biến mọi mục truy vết thành oval. Bảng dưới giữ mã cũ của cả mục được gộp để truy vết; chỉ các dòng “Giữ” và “Truy cập chung” là ứng viên oval. Các mục được gộp không còn là UC độc lập; mã không tái sử dụng.
+Bản đầu có 53 mục ứng viên, sau đó thêm WS-15. Hiện hành sau kickoff: **44 UC nghiệp vụ + 3 truy cập chung**, 8 mã gộp và UC-GRP-03 ngừng áp dụng (56 mã truy vết). Bỏ xét duyệt DISCUSSION, thêm LIVE-11/12 recording; không tái dùng mã cũ. Các dòng Giữ/Truy cập chung là UC hiện hành, các dòng gộp/ngừng không là oval độc lập.
 
 ## Quy ước
 
@@ -83,27 +83,27 @@ Nguồn: [Live session](live-session.md), [policy](groups-media-policy.md), [gro
 
 Nguồn: [Group modes](group-modes.md), [host và hỗ trợ](groups-media-policy.md), [chuyển/khôi phục host](live-session.md#83-chuyển-host-và-host-mất-mạng).
 
-| Mã        | UC đề xuất                      | Actor | Điều kiện chính                                       | Kết quả người dùng                                                                        | Quyết định review |
-| --------- | ------------------------------- | ----- | ----------------------------------------------------- | ----------------------------------------------------------------------------------------- | ----------------- |
-| UC-GRP-02 | Yêu cầu tạo nhóm trao đổi       | A-03  | Ở phase giảng, có quyền tham gia LIVE                 | Gửi tên, mục đích và danh sách đề xuất để host xét; chưa cấp quyền nhóm                   | Giữ UC độc lập    |
-| UC-GRP-04 | Vào nhóm trao đổi đã được duyệt | A-03  | Có trong roster được duyệt; phase và quyền còn hợp lệ | Chủ động vào DISCUSSION, nhận bài giảng MAIN và không gian riêng                          | Giữ UC độc lập    |
-| UC-GRP-08 | Trở về phòng chung              | A-03  | Đang ở một nhóm                                       | Chỉ mình về MAIN, còn trong LIVE; mic pause để tự bật lại, không đóng nhóm cho người khác | Giữ UC độc lập    |
+| Mã        | UC đề xuất                           | Actor | Điều kiện chính                                   | Kết quả người dùng                                                                                                                                           | Quyết định review |
+| --------- | ------------------------------------ | ----- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------- |
+| UC-GRP-02 | Tạo nhóm trao đổi                    | A-03  | Đang tham gia LIVE, phase giảng, dữ liệu hợp lệ   | Hệ thống tạo nhóm/roster ngay, không chờ host; chưa chuyển người hoặc cấp membership                                                                         | Giữ UC độc lập    |
+| UC-GRP-04 | Vào nhóm trao đổi đã được tạo hợp lệ | A-03  | Có trong roster hợp lệ; phase và quyền còn hợp lệ | Chủ động vào/vào lại DISCUSSION còn mở theo roster hợp lệ, nhận bài giảng MAIN và không gian riêng                                                           | Giữ UC độc lập    |
+| UC-GRP-08 | Trở về phòng chung                   | A-03  | Đang ở một nhóm                                   | Chỉ mình về MAIN, còn trong LIVE; mic pause để tự bật lại, nhóm còn người tiếp tục; người cuối cùng chủ động rời thì tự đóng DISCUSSION đã có người tham gia | Giữ UC độc lập    |
 
 ## TQ-07 · Điều hành hoạt động nhóm
 
 Host có trách nhiệm điều hành riêng; thành viên có thể phối hợp nhưng không có quyền điều hành. Host vẫn kế thừa các tương tác TQ-05 khi đủ điều kiện. UC-GRP-01 chuyển host và UC-LIVE-10 kết thúc cuộc họp đặt trong phân rã TQ-04; giữ mã UC-GRP-01 để truy vết, không đổi mã theo chỗ hiển thị. Hướng dẫn chung tại đây theo policy MAIN/DISCUSSION.
 
-| Mã        | UC đề xuất                            | Actor                          | Điều kiện chính                                                                | Kết quả người dùng                                                                                                                                | Quyết định review                     |
-| --------- | ------------------------------------- | ------------------------------ | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
-| UC-GRP-03 | Xét duyệt yêu cầu nhóm trao đổi       | A-07                           | Yêu cầu còn hợp lệ, ở phase giảng                                              | Duyệt roster hoặc từ chối; duyệt không tự chuyển người vào nhóm                                                                                   | Giữ UC độc lập                        |
-| UC-GRP-05 | Chuẩn bị nhóm hoạt động               | A-07                           | Đang giữ host hợp lệ                                                           | Tạo các ACTIVITY và phân thành viên để sẵn sàng bắt đầu; chuẩn bị chưa chuyển người                                                               | Giữ UC độc lập                        |
-| UC-GRP-06 | Bắt đầu lượt hoạt động nhóm           | A-07; A-03 được phân phối hợp  | Nhóm/phân công/thời lượng hợp lệ                                               | Kết thúc DISCUSSION trước, đưa người được phân vào ACTIVITY độc lập; chặn DISCUSSION trong lượt                                                   | Giữ UC độc lập                        |
-| UC-GRP-07 | Điều chuyển thành viên giữa các phòng | A-07                           | Host và đích hợp lệ; phạm vi đích phù hợp phase/mode                           | Thu scope cũ trước khi cấp scope mới; không nhập chat/board cũ                                                                                    | Giữ UC độc lập                        |
-| UC-GRP-09 | Kết thúc nhóm trao đổi                | A-07; A-03 trong nhóm phối hợp | DISCUSSION đang mở, ở giai đoạn giảng                                          | Host chọn đóng một nhóm hoặc tất cả DISCUSSION; thu private scope, đưa người liên quan về MAIN; nhóm không chọn tiếp tục                          | Giữ UC độc lập; chỉ DISCUSSION        |
-| UC-GRP-10 | Kết thúc các nhóm trao đổi            | A-07                           | Theo UC-GRP-09                                                                 | Nhánh chọn tất cả DISCUSSION của cùng mục tiêu kết thúc nhóm                                                                                      | Gộp vào UC-GRP-09; mã chỉ để truy vết |
-| UC-GRP-11 | Đặt thời lượng lượt hoạt động         | A-07; A-03 theo dõi            | Host tổ chức lượt, thời lượng hợp lệ trước khi bắt đầu                         | Có deadline chung khi bắt đầu; hết giờ hệ thống tự kết thúc ACTIVITY và đưa người còn quyền về MAIN/pause mic                                     | Giữ UC độc lập                        |
-| UC-GRP-12 | Hỗ trợ riêng một nhóm                 | A-07; A-03 nhóm đích phối hợp  | Nhóm còn mở; host được vào theo thao tác hỗ trợ                                | Vào có thông báo, trao đổi trong nhóm đích rồi rời hỗ trợ; không nghe mọi nhóm; chủ động rời về MAIN giữ trạng thái mic, không xác nhận mic riêng | Giữ UC độc lập                        |
-| UC-GRP-13 | Thông báo hướng dẫn chung             | A-07; A-03 nhận đúng audience  | Host ở scope hướng dẫn hợp lệ; kết thúc help về MAIN trước khi thông báo chung | Thông báo tới MAIN/DISCUSSION theo policy; không tự phát sang ACTIVITY                                                                            | Giữ UC độc lập                        |
+| Mã        | UC đề xuất                            | Actor                          | Điều kiện chính                                                                | Kết quả người dùng                                                                                                                                | Quyết định review                            |
+| --------- | ------------------------------------- | ------------------------------ | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
+| UC-GRP-03 | Xét duyệt yêu cầu (cũ)                | —                              | Ngừng áp dụng sau kickoff 02/11                                                | Kiểm hợp lệ tự động nằm trong UC-GRP-02; không host duyệt/từ chối                                                                                 | Ngừng áp dụng, không oval, không tái dùng mã |
+| UC-GRP-05 | Chuẩn bị nhóm hoạt động               | A-07                           | Đang giữ host hợp lệ                                                           | Tạo ACTIVITY, phân thủ công hoặc random có preview/chỉnh trước start; chuẩn bị chưa chuyển người                                                  | Giữ UC độc lập                               |
+| UC-GRP-06 | Bắt đầu lượt hoạt động nhóm           | A-07; A-03 được phân phối hợp  | Nhóm/phân công/thời lượng hợp lệ                                               | Kết thúc DISCUSSION trước, đưa người được phân vào ACTIVITY độc lập; chặn DISCUSSION trong lượt                                                   | Giữ UC độc lập                               |
+| UC-GRP-07 | Điều chuyển thành viên giữa các phòng | A-07                           | Host và đích hợp lệ; phạm vi đích phù hợp phase/mode                           | Thu scope cũ trước khi cấp scope mới; không nhập chat/board cũ                                                                                    | Giữ UC độc lập                               |
+| UC-GRP-09 | Kết thúc nhóm trao đổi                | A-07; A-03 trong nhóm phối hợp | DISCUSSION đang mở, ở giai đoạn giảng                                          | Host chọn đóng một nhóm hoặc tất cả DISCUSSION; thu private scope, đưa người liên quan về MAIN; nhóm không chọn tiếp tục                          | Giữ UC độc lập; chỉ DISCUSSION               |
+| UC-GRP-10 | Kết thúc các nhóm trao đổi            | A-07                           | Theo UC-GRP-09                                                                 | Nhánh chọn tất cả DISCUSSION của cùng mục tiêu kết thúc nhóm                                                                                      | Gộp vào UC-GRP-09; mã chỉ để truy vết        |
+| UC-GRP-11 | Đặt thời lượng lượt hoạt động         | A-07; A-03 theo dõi            | Host tổ chức lượt, thời lượng hợp lệ trước khi bắt đầu                         | Có deadline chung khi bắt đầu; hết giờ hệ thống tự kết thúc ACTIVITY và đưa người còn quyền về MAIN/pause mic                                     | Giữ UC độc lập                               |
+| UC-GRP-12 | Hỗ trợ riêng một nhóm                 | A-07; A-03 nhóm đích phối hợp  | ACTIVITY còn mở trong lượt hiệu lực; host được vào theo thao tác hỗ trợ        | Vào có thông báo, trao đổi trong nhóm đích rồi rời hỗ trợ; không nghe mọi nhóm; chủ động rời về MAIN giữ trạng thái mic, không xác nhận mic riêng | Giữ UC độc lập                               |
+| UC-GRP-13 | Thông báo hướng dẫn chung             | A-07; A-03 nhận đúng audience  | Host ở scope hướng dẫn hợp lệ; kết thúc help về MAIN trước khi thông báo chung | Thông báo tới MAIN/DISCUSSION theo policy; không tự phát sang ACTIVITY                                                                            | Giữ UC độc lập                               |
 
 ## TQ-04 (tiếp) · Cộng tác trên khung hình chia sẻ
 
@@ -140,7 +140,7 @@ Người nhận tin/tham gia nhóm được ghi là actor phối hợp khi cần
 
 - TQ là sơ đồ tổng quan; danh mục chi tiết là các góc nhìn dưới miền. Không nối include từ TQ tới mọi UC trong miền.
 - Chưa gán include/extend/generalization trong danh mục. Cần đọc luồng chính và nhánh trước, không dùng extend để diễn đạt thứ tự hoặc phân quyền.
-- Duyệt DISCUSSION và vào DISCUSSION là hai mục tiêu ở thời điểm khác nhau: đã duyệt là tiền điều kiện vào, không bắt UC vào thực thi lại UC duyệt.
+- Tạo DISCUSSION và vào DISCUSSION là hai mục tiêu riêng. Kiểm hợp lệ tự động nằm trong luồng tạo, không là UC xét duyệt hoặc include khi join.
 - Nhắn Host không include hỗ trợ nhóm: tin nhắn không tự đưa host vào nhóm. Hỗ trợ cũng không bắt buộc phải có tin nhắn trước nếu nguồn không yêu cầu.
 - Vẽ không bắt buộc include dừng hình vì MAIN host vẽ LIVE (nét thường hoặc tự biến mất), nhóm LIVE có chỉ dẫn tạm; dừng hình không bắt buộc người dùng phải vẽ. Resume không include bắt đầu share.
 - Kế hoạch hiện hành có 5 sơ đồ phân rã tương ứng TQ-02/03/04/05/07. TQ-04 giữ board trong cùng hình cuộc họp; TQ-02 giữ Workspace, thành viên/lời mời và kênh trên cùng hình. Các phương án tách góc nhìn trước đó đã được thay bằng [kế hoạch đã xác nhận](diagrams/plan.md), không thay đổi mục tiêu hoặc quyền.
@@ -158,6 +158,19 @@ Chỉ có [6 hồ sơ đặc tả trọng tâm](use-cases/README.md), mỗi hồ
 
 GRP-09 chỉ đóng DISCUSSION, không kết thúc ACTIVITY thủ công; GRP-08 áp dụng cả hai mode. Trên hình GRP-11 đặt thời lượng, GRP-13 thông báo, GRP-01 chuyển host và LIVE-10 kết thúc phiên chỉ cần nối host; thành viên trực tiếp trao đổi nên nối GRP-12. Association không thay ACL hoặc tự cấp quyền điều hành. Host kế thừa hành vi thông thường của thành viên; không nối lặp chỉ để cho thấy host cũng tham gia.
 
+## Làm rõ hỗ trợ và nhóm trống — xác nhận 02/11/2026
+
+UC-GRP-12 chỉ hỗ trợ trực tiếp ACTIVITY; DISCUSSION hỏi/trả lời qua UC-LIVE-09 khi host ở MAIN. UC-GRP-08 có nhánh người cuối cùng chủ động rời DISCUSSION đã có người làm nhóm tự kết thúc, dùng cleanup nhóm hiện hành; không tạo oval hay UC mới. UC-GRP-09 vẫn là mục tiêu host chủ động đóng một/tất cả DISCUSSION. Nhóm tạo hợp lệ nhưng chưa ai vào được giữ chờ; nhóm còn người cho roster hợp lệ vào lại; nhóm đã đóng không mở lại từ roster cũ. Chi tiết và ca kiểm ở [HS-02](use-cases/02-discussion.md).
+
 ## Gộp UC kết thúc DISCUSSION — xác nhận 01/11/2026
 
-UC-GRP-09 “Kết thúc nhóm trao đổi” có hai nhánh chọn một nhóm hoặc tất cả DISCUSSION. UC-GRP-10 được gộp vào GRP-09, không còn oval độc lập và không tái sử dụng mã. Danh mục vẫn truy vết 54 mục: 43 UC nghiệp vụ + 3 truy cập chung + 8 mục gộp. Số UC đang giữ là 46; không bỏ hành vi đóng tất cả nhóm, không đổi TIMER-01 hoặc thêm đặc tả thứ bảy.
+UC-GRP-09 có hai nhánh một/tất cả DISCUSSION; GRP-10 đã gộp, không tái dùng mã. Tổng hiện hành theo mục đầu trang; không thêm hồ sơ đặc tả recording chi tiết trong lượt này.
+
+## UC recording bổ sung sau kickoff
+
+| Mã         | UC                       | Actor | Điều kiện / kết quả                                                          | Quyết định                                    |
+| ---------- | ------------------------ | ----- | ---------------------------------------------------------------------------- | --------------------------------------------- |
+| UC-LIVE-11 | Ghi hình cuộc họp        | A-07  | Host hiện hành bắt đầu/dừng ghi MAIN và theo dõi xử lý; không ghi nhóm riêng | Giữ UC độc lập, bắt đầu/dừng là cùng mục tiêu |
+| UC-LIVE-12 | Xem lại bản ghi cuộc họp | A-03  | Video sẵn sàng, còn membership/quyền kênh LIVE gốc                           | Giữ UC độc lập                                |
+
+Random là phương án của UC-GRP-05 chuẩn bị ACTIVITY, không thêm UC random độc lập. UC-GRP-03 ngừng áp dụng, không tái dùng mã; tổng hiện hành 44 UC nghiệp vụ + 3 truy cập chung (bỏ một UC xét duyệt, thêm hai recording), 8 mục gộp và một mã ngừng áp dụng. Nguồn: [recording](recording.md), [group modes](group-modes.md).

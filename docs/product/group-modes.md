@@ -4,27 +4,36 @@
 
 ## Ba bối cảnh
 
-| Bối cảnh                   | Ai khởi tạo / tham gia                                                                | Nguồn hình và tiếng                                                                                              | Quyền share                                                                                                                          |
-| -------------------------- | ------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| MAIN · Phòng chung         | Participant có quyền phiên và đang ở MAIN                                             | Mic/camera/chat phòng chung; chỉ host vẽ LIVE, không freeze                                                      | Tối đa một người share tại MAIN. Mọi participant ở MAIN tự share khi nguồn trống, không xin host; nguồn bận thì chờ, không giành     |
-| DISCUSSION · Nhóm trao đổi | Thành viên xin tạo, host duyệt; yêu cầu có tên, mục đích và danh sách người được chọn | Kế thừa screen/screen audio và tiếng giảng host từ MAIN; mic/camera/chat/board của thành viên riêng trong nhóm   | Thành viên không được publish screen/screen audio riêng. UI ẩn nút share và server từ chối cả request tự tạo                         |
-| ACTIVITY · Nhóm hoạt động  | Host tạo/phân người để tổ chức hoạt động nhóm                                         | Mic/camera/chat/board và screen nhóm hoạt động độc lập với MAIN và nhóm khác; không mặc định nhận bài giảng MAIN | Mọi thành viên nhóm được tự bấm share, không cần host duyệt; mỗi nhóm một nguồn đang share, người khác chờ dừng. Board dùng nguồn đó |
+| Bối cảnh                   | Ai khởi tạo / tham gia                                                                   | Nguồn hình và tiếng                                                                                              | Quyền share                                                                                                                                       |
+| -------------------------- | ---------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| MAIN · Phòng chung         | Participant có quyền phiên và đang ở MAIN                                                | Mic/camera/chat phòng chung; chỉ host vẽ LIVE, không freeze                                                      | Tối đa một người share tại MAIN. Mọi participant ở MAIN tự share khi nguồn trống, không xin host; nguồn bận thì chờ, không giành                  |
+| DISCUSSION · Nhóm trao đổi | Thành viên tạo với tên/mục đích/roster; hệ thống kiểm hợp lệ và tạo ngay, không chờ host | Kế thừa bài giảng MAIN; mic/camera/chat/board riêng                                                              | Không được publish screen/screen audio riêng; server kiểm cả request ngoài UI                                                                     |
+| ACTIVITY · Nhóm hoạt động  | Host tạo/phân người để tổ chức hoạt động nhóm                                            | Mic/camera/chat/board và screen nhóm hoạt động độc lập với MAIN và nhóm khác; không mặc định nhận bài giảng MAIN | Mọi thành viên nhóm được tự bấm share, không cần hệ thống tạo khi hợp lệ; mỗi nhóm một nguồn đang share, người khác chờ dừng. Board dùng nguồn đó |
 
 MAIN và mỗi ACTIVITY có một nguồn share đang hoạt động riêng, không phải một khóa share toàn LiveSession. Đây là hai quy tắc đã được người dùng xác nhận độc lập. Screen nhóm hoạt động chỉ tới audience nhóm đó/host đang hỗ trợ có quyền, không tự đưa ra MAIN. Một Router/LiveSession vẫn là hướng PoC; isolation phải do policy kiểm, không cần biến mỗi nhóm thành một Workspace/channel hoặc ứng dụng riêng.
 
 ## Yêu cầu tạo nhóm trao đổi — GRP-01
 
-1. Participant đang có quyền LIVE gửi yêu cầu gồm **tên nhóm, mục đích, các thành viên muốn tham gia**. Người gửi không tự chọn ACTIVITY hoặc cấp quyền share bằng payload/mục đích.
-2. Host xem, duyệt hoặc từ chối; server kiểm lại host, phiên và danh sách người hiện còn hợp lệ tại thời điểm xử lý. Chưa được duyệt thì chưa có membership/fanout riêng hoặc quyền đọc board nhóm.
-3. Sau host duyệt, những người trong danh sách được chấp thuận thấy nút **Vào nhóm**; mỗi người chủ động bấm. Không tự chuyển người được chọn. Người ngoài danh sách không tự vào. Danh sách được duyệt chỉ là điều kiện vào, chưa cấp quyền nghe/đọc private cho người chưa bấm vào; server xác lập membership khi join hợp lệ.
-4. Nhóm nhận bài giảng MAIN nhưng có board riêng để cùng freeze/vẽ. Âm lượng tiếng giảng và trao đổi được chỉnh cục bộ; không mute/duck để giả việc thu quyền.
+1. Participant đang có quyền LIVE chọn **Tạo nhóm trao đổi**, nhập tên, mục đích và danh sách thành viên dự kiến.
+2. Server kiểm phiên, phase giảng, quyền và roster tại thời điểm xử lý; hợp lệ thì tạo DISCUSSION ngay. Không có host duyệt/từ chối, hàng chờ xét hoặc thao tác hủy pending nghiệp vụ. Request đang truyền không phải nhóm đã tạo; retry không được nhân nhóm.
+3. Những người trong roster hợp lệ thấy **Vào nhóm** và chủ động bấm. Chưa bấm hoặc ngoài roster không nhận nội dung riêng; server kiểm lại quyền khi join. Không tự chuyển người được chọn.
+4. Nhóm kế thừa bài giảng MAIN và có board riêng để freeze/vẽ. Âm lượng điều chỉnh cục bộ; không dùng gain=0 để thay thu quyền.
 
-**Vòng đời và giới hạn đã chốt ngày 01/11:** người gửi được hủy yêu cầu còn chờ; không sửa yêu cầu đã gửi, muốn đổi thì hủy rồi gửi lại. Yêu cầu chờ mất hiệu lực khi bắt đầu ACTIVITY hoặc kết thúc phiên; không có TTL theo phút. Sau duyệt không dùng thao tác hủy pending để đóng nhóm. Tên tối đa 80 ký tự, mục đích tối đa 500 ký tự; danh sách không trùng người và chỉ gồm participant hợp lệ đang trong cùng phiên. Không thêm cap số người riêng ngoài capacity phiên. Hủy và duyệt đồng thời phải có một kết quả cuối cùng, không tạo nhóm từ yêu cầu đã hủy. Không thêm cơ chế người ngoài danh sách xin gia nhập, chuyển mode tại chỗ hoặc chuỗi lời mời riêng nếu chưa được yêu cầu. Luồng vào bằng nút và việc hai mode không hoạt động đồng thời đã chốt; không hỏi lại chúng như điểm mở.
+**Validation giữ nguyên:** tên tối đa 80 ký tự, mục đích tối đa 500; roster không trùng, chỉ participant hợp lệ cùng phiên; không thêm cap nhóm ngoài capacity phiên. Trong ACTIVITY hoặc phiên kết thúc, create/join bị từ chối kể cả lệnh đến trễ. Tạo nhóm và bắt đầu ACTIVITY phải có kết quả nhất quán, không tạo DISCUSSION vượt phase. Không thêm sửa roster, người ngoài xin vào hoặc chuyển mode tại chỗ. Quyết định sau kickoff thay cơ chế host xét và hủy yêu cầu chờ ngày 01/11.
+
+### DISCUSSION: hỗ trợ và vòng đời — chốt ngày 02/11/2026
+
+- Host ở MAIN tiếp tục hướng dẫn, nhận và trả lời câu hỏi qua chat riêng text/ảnh. Không có thao tác host vào hỗ trợ DISCUSSION; quyền host hoặc tin nhắn riêng không mở chat/board/media riêng của nhóm. Host vẫn được đóng một hoặc tất cả DISCUSSION.
+- Nhóm vừa được tạo hợp lệ nhưng chưa có ai vào được giữ để chờ tham gia. Danh sách hợp lệ khác với số người thực sự đang trong nhóm.
+- Khi nhóm còn người, người thuộc danh sách hợp lệ có thể chủ động vào lại sau khi về MAIN, nếu nhóm còn mở, phase và quyền hiện tại còn hợp lệ. Không tự chuyển người trở lại.
+- Sau khi nhóm đã có người tham gia, người cuối cùng **chủ động** về MAIN hoặc rời cuộc họp thì hệ thống tự kết thúc DISCUSSION. Thu quyền chat/board/media, hủy intent và dọn frame/nét theo luồng đóng nhóm; bỏ nút Vào nhóm của toàn bộ roster, kể cả người chưa từng vào. Muốn trao đổi tiếp cần yêu cầu mới và được hệ thống tạo khi hợp lệ; không mở lại bằng ID/roster cũ.
+- Mất mạng không được coi ngay là chủ động rời. Giữ phân biệt reconnect/grace theo [live session](live-session.md); quyết định này không tự đặt timeout hay chốt cách xử lý nhóm rỗng do sự cố sau grace.
+- UI ghi số người đang trong nhóm; nếu hiển thị roster thì ghi riêng số người trong danh sách hợp lệ. Quy tắc tự đóng khi người cuối cùng chủ động rời chỉ áp DISCUSSION, không kết thúc ACTIVITY hoặc hủy deadline của lượt.
 
 ## Nhóm hoạt động do host tổ chức — GRP-01/02
 
 - Host tạo nhóm ACTIVITY và phân thành viên; người chưa phân vẫn ở MAIN. A và B làm việc độc lập. Mọi thành viên đang ở nhóm có thể bấm **Chia sẻ màn hình** ngay, không gửi yêu cầu cho host và không cần host cấp share grant riêng.
-- Host không tự nghe/xem mọi nhóm. Host vào hỗ trợ một nhóm có thông báo và chỉ được đọc/nhận nội dung nhóm đang hỗ trợ. Khi sang nhóm khác, thu quyền nhóm cũ trước.
+- Host không tự nghe/xem mọi nhóm. Host chỉ vào hỗ trợ nhóm ACTIVITY có thông báo và chỉ được đọc/nhận nội dung nhóm đang hỗ trợ. Khi sang nhóm khác, thu quyền nhóm cũ trước.
 - Người ở ACTIVITY không tự nhận screen, mic/camera host hoặc announcement audio từ MAIN. Host trong nhóm hỗ trợ được xem/nghe trong scope hỗ trợ; không dùng role host để cấp đường nhận xuyên scope thường trực.
 - Mỗi ACTIVITY có tối đa một người/nguồn screen đang hoạt động; screen audio nếu hỗ trợ đi kèm nguồn đó. Người khác phải chờ nguồn hiện tại dừng, không giành/tắt share của bạn chỉ bằng bấm share. Hai nhóm A/B có thể share đồng thời độc lập.
 - Server giữ chỗ nguồn theo group một cách nguyên tử để xử lý hai cú bấm cùng lúc. Đây là kiểm tra tài nguyên/ACL tự động, **không phải xin host duyệt**. Khi nguồn bận, UI báo người đang share; nếu request tự tạo vẫn phải bị chặn.
@@ -32,10 +41,10 @@ MAIN và mỗi ACTIVITY có một nguồn share đang hoạt động riêng, kh�
 
 ## Hai giai đoạn không chồng nhau
 
-- **Giai đoạn giảng:** có MAIN và có thể mở DISCUSSION đã được host duyệt. Chưa có ACTIVITY đang hoạt động; host có thể chuẩn bị danh sách nhóm hoạt động mà chưa chuyển người.
+- **Giai đoạn giảng:** có MAIN và có thể mở DISCUSSION đã được hệ thống tạo hợp lệ. Chưa có ACTIVITY đang hoạt động; host có thể chuẩn bị danh sách nhóm hoạt động mà chưa chuyển người.
 - **Bắt đầu lượt hoạt động:** host kết thúc các DISCUSSION trước, thu quyền/media/board/chat cũ rồi đưa người vào các ACTIVITY đã phân. Không biến DISCUSSION cũ thành ACTIVITY và không nhập board/chat cũ sang nhóm mới.
 - **Bắt đầu lượt lỗi sau khi đã chuyển một phần:** hủy lượt chưa hoàn tất, thu quyền/media/chat/board của các ACTIVITY vừa mở, hủy countdown đã gắn với lượt và đưa người còn quyền về MAIN; mic người từ nhóm về được pause theo policy. Không khôi phục DISCUSSION đã đóng. Hiển thị đang hủy cho tới khi cleanup hoàn tất; khi đã hủy thì về phase giảng, host có thể xem lại cấu hình còn hợp lệ và chủ động bắt đầu lượt mới. Không tự retry hoặc giữ một phần ACTIVITY chạy tiếp như lượt thành công.
-- **Trong lượt ACTIVITY:** chưa nhận request DISCUSSION mới; approval/join từ request cũ cũng phải bị chặn theo phase hiện tại. Người xong sớm về MAIN không được mở DISCUSSION mới khi lượt hoạt động còn đang diễn ra.
+- **Trong lượt ACTIVITY:** chưa nhận request DISCUSSION mới; create/join từ yêu cầu cũ cũng phải bị chặn theo phase hiện tại. Người xong sớm về MAIN không được mở DISCUSSION mới khi lượt hoạt động còn đang diễn ra.
 - **Kết thúc lượt:** khi deadline server đến hạn, hệ thống tự kết thúc lượt, đóng mọi ACTIVITY của lượt, đưa người còn quyền về MAIN và trở về giai đoạn giảng sau cleanup; lúc đó mới cho xin DISCUSSION trở lại. Không chờ host quyết định hoặc xác nhận. Không giữ thao tác host kết thúc riêng một ACTIVITY hoặc kết thúc lượt thủ công trong scope hiện tại.
 - Snapshot sau reconnect phải thể hiện phase hiện tại. Bắt đầu lượt được serialize và kiểm quyền host; kết thúc tự động được serialize theo đúng round/deadline hiện hành; event/request chậm không tái tạo mode cũ.
 
@@ -43,8 +52,8 @@ MAIN và mỗi ACTIVITY có một nguồn share đang hoạt động riêng, kh�
 
 - Thành viên có nút **Về phòng chung**, chỉ chuyển chính mình về MAIN; không thoát LIVE hoặc kéo cả nhóm theo. Mic người chuyển được pause để tự bật lại; UI thông báo phạm vi camera/mic mới. Camera đang bật không bị hệ thống tự bật thêm thiết bị.
 - Thu Consumer, fanout, board/chat/file access và screen publish nhóm cũ trước khi cấp scope MAIN. Nếu chính người rời đang share trong ACTIVITY, đóng nguồn share và mọi pending operation liên quan.
-- Người rời không tiếp tục đọc lịch sử/ảnh nhóm. Được chuyển về MAIN không cấp quyền board/chat của các nhóm khác. Không tự cấp lại quyền nhóm khi reconnect; vào bằng nút phải kiểm lại danh sách được duyệt, phase và quyền hiện hành; không thêm danh sách phòng mở để tự chọn nhóm bất kỳ.
-- Host có thể đóng một hoặc tất cả **DISCUSSION** trong giai đoạn giảng; bắt đầu ACTIVITY cũng đóng các DISCUSSION trước. Với **ACTIVITY**, thành viên tự về sớm hoặc hệ thống đưa về khi hết thời lượng chung, không có thao tác host đóng riêng nhóm/kết thúc lượt thủ công. Đóng nhóm khóa private history, hủy intent/share và dọn refs; không công bố/ghép board nhóm vào MAIN, không đổi vai trò host.
+- Người rời không tiếp tục đọc lịch sử/ảnh nhóm. Được chuyển về MAIN không cấp quyền board/chat của các nhóm khác. Không tự cấp lại quyền nhóm khi reconnect; DISCUSSION còn người cho phép chủ động vào lại bằng nút, phải kiểm lại nhóm còn mở, danh sách hợp lệ, phase và quyền hiện hành; không thêm danh sách phòng mở để tự chọn nhóm bất kỳ.
+- Host có thể đóng một hoặc tất cả **DISCUSSION** trong giai đoạn giảng; bắt đầu ACTIVITY cũng đóng các DISCUSSION trước. Với **ACTIVITY**, thành viên tự về sớm hoặc hệ thống đưa về khi hết thời lượng chung, không có thao tác host đóng riêng nhóm/kết thúc lượt thủ công. Người cuối cùng chủ động rời DISCUSSION đã có người tham gia cũng tự đóng nhóm theo quy tắc trên. Đóng nhóm khóa private history, hủy intent/share và dọn refs; không công bố/ghép board nhóm vào MAIN, không đổi vai trò host.
 
 ## Thời lượng chung cho lượt hoạt động — TIMER-01
 
@@ -59,12 +68,16 @@ Quyết định cập nhật ngày 29/10/2026 thay cơ chế chỉ nhắc/chờ 
 ## Kiểm chứng và điểm cần chốt trước implementation
 
 - MAIN: hai người tranh lease, chỉ một nguồn thắng; browser Stop/rời/revoke dọn đúng nguồn.
-- DISCUSSION: request thiếu mục đích/sai thành viên hoặc chưa duyệt không cấp quyền; publish screen bị chặn dù giả client; vẫn nhận MAIN screen/tiếng giảng; nét/chat/mic không sang nhóm khác.
+- DISCUSSION: dữ liệu sai/thiếu mục đích/roster không hợp lệ không tạo nhóm; dữ liệu đúng tạo ngay, không chờ host; retry không nhân nhóm; publish screen luôn bị chặn; nhận bài giảng MAIN, không lộ nội dung riêng.
 - ACTIVITY: nhận đúng nguồn của nhóm; không nhận MAIN/các nhóm khác bằng endpoint, Consumer hay metadata. Test hai người trong cùng nhóm tranh nguồn: chỉ một thắng, không giành share; A/B share đồng thời độc lập; không cần host approval; board theo nguồn nhóm.
-- Vào nhóm: người được chọn phải bấm; chưa vào hoặc ngoài danh sách không được nhận private. Chuyển sang ACTIVITY khóa request/approval/join DISCUSSION cũ.
+- Vào nhóm: người được chọn phải bấm; chưa vào hoặc ngoài danh sách không được nhận private. Chuyển sang ACTIVITY khóa create/join DISCUSSION cũ.
 - Leave/close/reconnect: thu quyền cũ, đóng screen của người rời, không mở lại scope cũ; hết giờ tự kết thúc đúng lượt và về MAIN; kiểm callback trễ/lặp, reconnect sau deadline và host mất mạng không ngăn kết thúc tự động.
 - Profile media phải đo cả DISCUSSION kế thừa và ACTIVITY có screen riêng. Chưa có số đo cho phép khẳng định capacity sau mở rộng này; PoC/ADR vẫn Proposed tới khi có evidence.
 
 **Xác nhận sau review 27/10:** giữ chỗ/lease ở server là chi tiết kỹ thuật chống tranh nguồn; UI ACTIVITY không có bước xin host share. Các quyết định share, vào nhóm và hai phase ở trên thay toàn bộ ghi chú “chưa chốt” tương ứng trong bản v2.3 trước lượt xác nhận này.
 
 **Làm rõ sau review UC ngày 29/10/2026:** host chủ động rời hỗ trợ về MAIN giữ trạng thái bật/tắt mic, không cần xác nhận mic riêng; tiếng ở phạm vi mới theo [policy](groups-media-policy.md#81-host-group-và-hỗ-trợ). Điều này khác thành viên thường tự về MAIN được pause mic và khác cleanup do mất mạng/đóng nhóm.
+
+## Chia ngẫu nhiên ACTIVITY — bổ sung sau kickoff
+
+Host chọn tập participant hợp lệ và số nhóm; hệ thống phân ngẫu nhiên để số người giữa các nhóm chênh tối đa một. Host xem trước và chỉnh thủ công rồi mới bắt đầu lượt. Xem trước không chuyển phòng hoặc cấp quyền. Khi start phải kiểm lại roster/phase/quyền; người chưa phân ở MAIN. Không xáo lại trong lượt đang chạy; vẫn có chia thủ công. Contract, validation số nhóm và xử lý preview stale được M4 thiết kế trong proposal, không tự thêm giới hạn sản phẩm.

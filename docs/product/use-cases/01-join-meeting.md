@@ -21,7 +21,7 @@
 3. Người dùng xác nhận vào cuộc họp.
 4. Hệ thống kiểm lại phiên truy cập, membership, quyền kênh và tình trạng cuộc gọi đang dùng của tài khoản.
 5. Nếu đã có LiveSession hợp lệ tại kênh, hệ thống cho tham gia phiên đó với tư cách người tham gia; nếu chưa có, tạo một phiên và gán người bắt đầu làm host. Hai người vào cùng lúc không tạo hai phiên hoặc hai host.
-6. Hệ thống hoàn tất tham gia, hiển thị phòng chung MAIN, vai trò và danh sách/nội dung theo quyền hiện hành. Không tự phân vào ACTIVITY hoặc vào DISCUSSION chỉ vì có tên trong danh sách được duyệt; việc vào/chuyển nhóm theo HS-02/03.
+6. Hệ thống hoàn tất tham gia, hiển thị phòng chung MAIN, vai trò và danh sách/nội dung theo quyền hiện hành. Không tự phân vào ACTIVITY hoặc vào DISCUSSION chỉ vì có tên trong danh sách hợp lệ; việc vào/chuyển nhóm theo HS-02/03.
 7. Người dùng nghe/xem các nguồn MAIN được phép; mic/camera chỉ hoạt động theo lựa chọn được người dùng cho phép. Giao diện thể hiện rõ thiết bị, scope và trạng thái kết nối.
 
 ## Nhánh thay thế và lỗi khi tham gia

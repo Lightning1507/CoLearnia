@@ -21,7 +21,7 @@ Nguồn: [scope](scope.md), [backlog sơ bộ](backlog-draft.md), [quyền Works
 | A-03 | Thành viên Workspace | Có membership hiện hành trong Workspace đang xét; chỉ truy cập kênh được phép | Trao đổi trong kênh, DM cùng Workspace, thread trong TEXT, gửi/đọc/tải tệp đúng phạm vi; truy cập LIVE được phép, mic/camera, chat cuộc họp, tham gia nhóm và cộng tác hình/nét đúng scope |
 | A-04 | Admin Workspace      | Có vai trò admin trong Workspace đang xét                                     | Đổi tên Workspace; tạo/thu hồi lời mời; quản lý kênh; loại member theo quyền                                                                                                               |
 | A-05 | Owner Workspace      | Chủ sở hữu duy nhất của Workspace đang xét                                    | Các quyền quản trị tương ứng; đổi admin/member, chuyển owner, xóa Workspace                                                                                                                |
-| A-07 | Host cuộc họp        | Đang giữ vai trò host hợp lệ trong LiveSession mà mình tham gia               | Điều hành phiên, xử lý DISCUSSION, tổ chức ACTIVITY, đặt thời lượng, hỗ trợ nhóm và đóng DISCUSSION; ACTIVITY tự kết thúc theo deadline                                                    |
+| A-07 | Host cuộc họp        | Đang giữ vai trò host hợp lệ trong LiveSession mà mình tham gia               | Điều hành phiên, xử lý DISCUSSION, tổ chức ACTIVITY, đặt thời lượng, vào hỗ trợ ACTIVITY và đóng DISCUSSION; ACTIVITY tự kết thúc theo deadline                                            |
 
 ### Giới hạn và cách đọc actor
 
@@ -31,7 +31,7 @@ Nguồn: [scope](scope.md), [backlog sơ bộ](backlog-draft.md), [quyền Works
 - Owner/admin không mặc nhiên là host, không mặc nhiên được nghe nhóm riêng hoặc đọc DM. Host không được quản trị Workspace chỉ vì giữ vai trò host.
 - Người bắt đầu LiveSession trở thành host; người vào sau không tự nhận host. Không có UC bật chế độ điều hành hoặc tự nhận host. Chuyển host do host chọn và gán trực tiếp cho người tham gia hợp lệ, không chờ chấp nhận; mất mạng quá grace thì server chọn ngẫu nhiên participant hợp lệ làm host tạm và tự hoàn quyền khi host cũ quay lại hợp lệ trong cùng phiên. Đây là nhánh phục hồi của UC điều hành, không là UC tự nhận host; host chủ động rời khi còn quyền kết thúc phiên, người đã bàn giao chính thức rời như thành viên; không có ứng viên/host tạm mất mạng còn cần đặc tả. MAIN mọi participant tự share khi nguồn trống, không xin host.
 - MAIN, DISCUSSION, ACTIVITY là ngữ cảnh hoạt động; không tạo actor nhóm A/B hoặc actor riêng cho từng mode. Quyền chia sẻ và nhận nội dung thể hiện trong đặc tả.
-- Tư cách ở danh sách DISCUSSION được duyệt chưa là tư cách đã vào nhóm. Người được chọn phải chủ động vào; chưa vào không nhận dữ liệu riêng.
+- Tư cách ở danh sách DISCUSSION được tạo hợp lệ chưa là tư cách đã vào nhóm. Người được chọn phải chủ động vào; chưa vào không nhận dữ liệu riêng.
 - Chưa thêm actor quản trị viên toàn hệ thống, giáo viên, sinh viên, trưởng nhóm hoặc dịch vụ ngoài: baseline không cần những vai trò đó để mô tả quyền hiện tại. Chức danh ngoài đời không thay quyền trong ứng dụng.
 
 ## 3. UC tổng quan đã thống nhất
@@ -48,13 +48,13 @@ Nguồn: [scope](scope.md), [backlog sơ bộ](backlog-draft.md), [quyền Works
 
 Các dòng dưới là cùng mức mục tiêu tổng hợp. Cột phạm vi để giải thích và truy vết, không phải danh sách oval sẽ đặt cùng tầng trên sơ đồ tổng quan.
 
-| Mã    | Tên UC tổng quan đề xuất     | Mục tiêu/kết quả tổng hợp                                                                                          | Actor liên quan                                                 | Backlog / feature                                                                              |
-| ----- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| TQ-02 | Tổ chức không gian học tập   | Có Workspace, thành viên và kênh TEXT/LIVE với quyền phù hợp để học cùng nhau                                      | A-00, A-03, A-04, A-05; tương tác cụ thể tùy quyền              | PB-02/03 / WS-01/02/03, CH-01                                                                  |
-| TQ-03 | Trao đổi trong Workspace     | Thành viên trao đổi, chia sẻ tài liệu qua kênh, DM và thread, đọc lại đúng phạm vi                                 | A-03; admin/owner chỉ theo quyền hội thoại                      | PB-04/12/13 / CHAT-01/02/03, FILE-01                                                           |
-| TQ-04 | Tham gia cuộc họp trực tuyến | Thành viên vào/rời cuộc gọi, trao đổi mic/camera, chia sẻ/xem màn hình, chat và cộng tác khung hình đúng phạm vi   | A-03; cần quyền kênh và đã vào phiên cho hành vi trong cuộc họp | PB-05/06/08, phần chat PB-09 / LIVE-01/02/03, AUDIO-01, BOARD-01, FREEZE-01, phần chat HELP-01 |
-| TQ-05 | Tham gia hoạt động nhóm      | Thành viên xin tạo DISCUSSION, vào nhóm được duyệt/được phân và tự về phòng chung                                  | A-03; host kế thừa tương tác thành viên khi đủ điều kiện        | PB-07/10 / GRP-01/02                                                                           |
-| TQ-07 | Điều hành hoạt động nhóm     | Host duyệt DISCUSSION, tổ chức ACTIVITY, đặt thời lượng, hỗ trợ; đóng DISCUSSION, ACTIVITY tự kết thúc khi hết giờ | A-07                                                            | PB-07/09/10/14 / HOST-01, GRP-01/02, TIMER-01, HELP-01                                         |
+| Mã    | Tên UC tổng quan đề xuất     | Mục tiêu/kết quả tổng hợp                                                                                                       | Actor liên quan                                                 | Backlog / feature                                                                              |
+| ----- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| TQ-02 | Tổ chức không gian học tập   | Có Workspace, thành viên và kênh TEXT/LIVE với quyền phù hợp để học cùng nhau                                                   | A-00, A-03, A-04, A-05; tương tác cụ thể tùy quyền              | PB-02/03 / WS-01/02/03, CH-01                                                                  |
+| TQ-03 | Trao đổi trong Workspace     | Thành viên trao đổi, chia sẻ tài liệu qua kênh, DM và thread, đọc lại đúng phạm vi                                              | A-03; admin/owner chỉ theo quyền hội thoại                      | PB-04/12/13 / CHAT-01/02/03, FILE-01                                                           |
+| TQ-04 | Tham gia cuộc họp trực tuyến | Thành viên vào/rời cuộc gọi, trao đổi mic/camera, chia sẻ/xem màn hình, chat và cộng tác khung hình đúng phạm vi                | A-03; cần quyền kênh và đã vào phiên cho hành vi trong cuộc họp | PB-05/06/08, phần chat PB-09 / LIVE-01/02/03, AUDIO-01, BOARD-01, FREEZE-01, phần chat HELP-01 |
+| TQ-05 | Tham gia hoạt động nhóm      | Thành viên xin tạo DISCUSSION, vào nhóm được tạo hợp lệ/được phân và tự về phòng chung                                          | A-03; host kế thừa tương tác thành viên khi đủ điều kiện        | PB-07/10 / GRP-01/02                                                                           |
+| TQ-07 | Điều hành hoạt động nhóm     | Hệ thống tạo DISCUSSION khi hợp lệ, tổ chức ACTIVITY, đặt thời lượng, hỗ trợ; đóng DISCUSSION, ACTIVITY tự kết thúc khi hết giờ | A-07                                                            | PB-07/09/10/14 / HOST-01, GRP-01/02, TIMER-01, HELP-01                                         |
 
 ### Ranh giới giữa các mục tổng quan
 
@@ -93,3 +93,7 @@ Theo xác nhận của người dùng, TQ-05 cũ được tách thành TQ-05 · 
 ## Rà ranh giới tổng quan — cộng tác khung hình
 
 Theo xác nhận của người dùng, bỏ oval TQ-06 khỏi tổng quan. TQ-04 bao phủ trải nghiệm cuộc gọi, share, chat và cộng tác khung hình; TQ-05/TQ-07 mô tả tham gia và điều hành vòng đời nhóm, không lặp các chức năng cuộc gọi. Giữ nguyên UC-BOARD-01/02/05 và các hành vi undo/clear trong danh mục/đặc tả; không cắt feature và không tự thêm include/extend.
+
+## Cập nhật sau kickoff 02/11
+
+TQ-04 bao gồm UC-LIVE-12 xem lại recording theo quyền kênh; TQ-07 giữ vai trò điều hành nhóm, không xét duyệt DISCUSSION. UC-LIVE-11 ghi hình là quyền host trong miền cuộc họp, thể hiện ở phân rã điều hành cuộc họp. Random nằm trong UC chuẩn bị ACTIVITY. Không tự thêm actor recorder hoặc oval tổng quan riêng cho thao tác kỹ thuật. [Recording](recording.md) là nguồn; Astah/PNG chưa được sửa trong lượt tài liệu này.
