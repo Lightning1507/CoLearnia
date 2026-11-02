@@ -135,7 +135,7 @@ Table messages {
 }
 
 Table files {
-  Note: 'Chỉ metadata; byte nằm ở kho private. Scope ATTACHMENT: conversationId; FRAME: sessionId/epoch/boardId/contextVersion/groupId (nullable MAIN). Binding MESSAGE: messageId; BOARD_FRAME: intentId. authorization: memberships gồm 1–2 snapshot membershipId/incarnation/revision, channel gồm channelId/revision hoặc null cho DIRECT. Stamp chặn bind upload cũ, READY tải theo ACL hiện tại. Không TTL files.'
+  Note: 'Chỉ metadata; byte nằm ở kho private. Scope ATTACHMENT: conversationId; FRAME: sessionId/epoch/boardId/contextVersion/groupId (bắt buộc nhóm DISCUSSION/ACTIVITY; MAIN không có FRAME). Binding MESSAGE: messageId; BOARD_FRAME: intentId. authorization: memberships gồm 1–2 snapshot membershipId/incarnation/revision, channel gồm channelId/revision hoặc null cho DIRECT. Stamp chặn bind upload cũ, READY tải theo ACL hiện tại. Không TTL files.'
   _id ObjectId [pk, not null]
   workspaceId ObjectId [not null, note: 'Id → workspaces/users; Phạm vi và chủ upload do server gán']
   uploaderId ObjectId [not null, note: 'Id → workspaces/users; Phạm vi và chủ upload do server gán']

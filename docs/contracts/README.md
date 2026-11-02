@@ -62,3 +62,7 @@ Scope/binding hội thoại/file là cấu trúc theo kind/purpose, không paylo
 Theo [đặc tả DB bước 5](../database/integrity-and-migrations.md), boundary strict không nhận actor/scope authority, grant incarnation hoặc Mongo update operators từ client. pairKey là khóa server suy từ cặp user, không là quyền truy cập. Message retry cùng clientMessageId khác payload phải conflict; không áp idempotency chung cho mọi POST nếu chưa có cơ chế bền.
 
 Thống nhất cách đếm code point cho giới hạn text/tên giữa contract/service/DB; nullable/variant fields lấy tại collection-design. Error duplicate key phải map theo đúng constraint, không lộ raw DB error và không mặc định mọi E11000 là retry thành công. Chưa đổi source Zod/Mongoose trong bước tài liệu này.
+
+## Board: thay đổi nghiệp vụ 02/11/2026
+
+Theo [board](../product/board-collaboration.md), MAIN chỉ overlay LIVE do host hiện hành ở MAIN/hướng dẫn vẽ; deny freeze/resume và file FRAME MAIN cho mọi actor. Nhóm giữ freeze/vẽ/resume theo nguồn riêng. Contract nét phải phân biệt nét thường và nét tự biến mất tại MAIN, gắn author/context/source revision; thời gian/fade chưa chốt. Đổi/dừng nguồn MAIN dọn overlay, đổi host thu quyền cũ và kiểm lại mọi mutation đang chờ. Đây là yêu cầu cho task contract, chưa có schema board đã triển khai.

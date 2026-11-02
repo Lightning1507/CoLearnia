@@ -101,3 +101,7 @@ Theo xác nhận 29/10/2026 tại [policy](product/groups-media-policy.md#81-hos
 ## Ranh giới I/O và hiệu lực quyền
 
 Theo [integrity](database/integrity-and-migrations.md#41-cơ-chế-chung), giữ queue không giữ deadline đứng yên: kiểm deadline/epoch/quyền sau await và trước grant/read/fanout. Write DB đi qua deadline không cho phép phát nội dung scope đã hết hạn; reconcile kết quả commit thay rollback giả giữa DB và RAM. Download dùng registry stream để revoke/expiry hủy truyền; nhả gate trước stream byte, không trì hoãn thu quyền tới khi tải xong.
+
+## Board theo quyết định 02/11/2026
+
+[Board service](product/board-collaboration.md) phân biệt MAIN overlay LIVE (host hiện hành ở MAIN/hướng dẫn) với board nhóm có freeze intent/frame. Share ownership không cấp quyền vẽ MAIN. MAIN không reserve/upload frame freeze; đổi/dừng nguồn MAIN xóa overlay đúng revision, đổi host thu quyền mutation cũ. Nhóm không mất frame FROZEN hợp lệ chỉ vì nguồn live đổi. Nét thường MAIN tồn tại tới clear/context nguồn kết thúc, nét tự biến mất có lifecycle riêng; chưa chốt thời gian/fade. Không thêm collection hoặc ghi Mongo theo điểm vẽ.

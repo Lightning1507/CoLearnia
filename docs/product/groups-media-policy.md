@@ -21,12 +21,12 @@ Nguồn chi tiết: [MAIN / DISCUSSION / ACTIVITY](group-modes.md). Mọi cuộc
 | MIC/CAMERA          | Participant tự bật/tắt; audience theo scope                     | Thành viên trao đổi riêng trong nhóm                | Thành viên trao đổi riêng trong nhóm                                 |
 | Bắt đầu share       | Mọi participant ở MAIN tự share khi nguồn trống, không xin host | Thành viên bị từ chối; ẩn UI không thay kiểm server | Mọi member trong nhóm tự share, không host duyệt; nguồn bận phải chờ |
 | SCREEN/SCREEN_AUDIO | Một người share MAIN; audio đi kèm nguồn hợp lệ                 | Không publish nguồn riêng; kế thừa MAIN             | Một nguồn đang share/group; chỉ audience nhóm, không dùng lease MAIN |
-| Freeze/vẽ           | Board MAIN                                                      | Board nhóm trên hình bài giảng MAIN                 | Board nhóm trên nguồn screen duy nhất đang share của nhóm            |
-| Undo/clear          | Undo nét mình; clear theo quyền context                         | Cùng quy tắc, trong context nhóm                    | Cùng quy tắc, trong context nhóm                                     |
+| Freeze/vẽ           | Không freeze; chỉ host vẽ LIVE                                  | Board nhóm trên hình bài giảng MAIN                 | Board nhóm trên nguồn screen duy nhất đang share của nhóm            |
+| Undo/clear          | Chỉ host: undo nét mình, clear có xác nhận                      | Cùng quy tắc, trong context nhóm                    | Cùng quy tắc, trong context nhóm                                     |
 
 Server kiểm actor, transport ownership, group mode/scope, source/kind, quota, revision, lease/ownership. Không cho client tự khai ACTIVITY hoặc dùng quyền share MAIN để vượt lệnh cấm của DISCUSSION. MAIN và mỗi ACTIVITY độc quyền nguồn riêng theo quyết định đã chốt; reserve lease tự động không là xin host duyệt.
 
-Clear theo baseline: chủ frame còn trong scope hoặc chủ nguồn share của context LIVE; host chỉ clear khi có quyền đọc/vẽ context hiện tại. Khi quyền bị thu, đóng nguồn liên quan và Consumer server. Không chứng thực được nội dung track chỉ bằng nhãn nguồn client.
+MAIN chỉ host hiện hành có quyền vẽ/clear, người share khác host không được vẽ. Nét thường/nét tự biến mất theo [board](board-collaboration.md); MAIN không freeze/resume. Nhóm clear theo baseline: chủ frame còn trong scope hoặc chủ nguồn share của context LIVE; host chỉ clear khi có quyền đọc/vẽ context hiện tại. Khi quyền bị thu, đóng nguồn liên quan và Consumer server. Không chứng thực được nội dung track chỉ bằng nhãn nguồn client.
 
 ### 5.3. Quyền nhận và đọc
 

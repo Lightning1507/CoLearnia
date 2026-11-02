@@ -78,3 +78,7 @@ Review ranh giới tiếp theo: cộng tác khung hình là chức năng trong t
 UC-WS-15 “Quản lý quyền truy cập kênh” được người dùng đồng ý cho kênh PRIVATE. Đây là mục tiêu quản lý danh sách truy cập sau tạo, khác tạo/đổi tên/xóa kênh, không phải hành động kỹ thuật nội bộ. Thêm/gỡ nằm trong cùng UC; actor A-04/A-05 không mặc nhiên có quyền đọc nội dung. Danh mục hiện hành có 54 mục được truy vết: 43 UC nghiệp vụ, 3 truy cập chung, 8 gộp. Các nhận xét review ban đầu bên trên là lịch sử trước bổ sung này.
 
 **Xác nhận gộp ngày 01/11:** một mục tiêu “Kết thúc nhóm trao đổi” dùng GRP-09, chọn một/tất cả là hai nhánh. GRP-10 giữ mã truy vết đã gộp. Tổng hiện hành là 46 UC (43 nghiệp vụ + 3 truy cập), 8 mục gộp; không bảo vệ số lượng cũ khi đã thống nhất gộp.
+
+## Phạm vi cập nhật 02/11/2026
+
+Bảng review 27/10 giữ lý do giữ/gộp UC. Quyền board hiện hành đã thay đổi: MAIN chỉ host vẽ LIVE, không freeze/resume; BOARD-01/05 chỉ DISCUSSION/ACTIVITY. Xem [catalog](use-case-catalog.md) và [board](board-collaboration.md); không dùng mô tả cả scope ở bảng lịch sử để cấp quyền MAIN.

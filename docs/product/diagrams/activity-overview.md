@@ -26,7 +26,7 @@ ID được giữ theo cụm (01–11, 13–14, 16–21); 19 action nằm trong 
 - Workspace là điểm xuất phát đã sẵn sàng; tạo Workspace, mời thành viên, quản trị kênh và chat bền vững xem UC riêng. Hình bắt đầu từ người dùng đã đăng nhập, không bắt tạo Workspace hoặc cuộc họp mới mỗi lần tham gia phiên có sẵn.
 - DISCUSSION được host duyệt trước; người được chọn tự bấm vào. Nhóm giữ bài giảng chung và không share riêng. Từ chối yêu cầu vẫn tiếp tục ở phòng chung.
 - ACTIVITY đóng DISCUSSION trước, không nhận yêu cầu DISCUSSION mới trong lượt; các nhóm độc lập. Các bước kiểm cấu hình/kích hoạt và lỗi chuyển một phần được gộp trong action 10, xem đặc tả để triển khai.
-- Mic/camera, chat, share và freeze/vẽ nằm trong hoạt động học tại phòng chung/nhóm theo quyền, không phải một chuỗi bắt buộc. Action 11 thể hiện trao đổi riêng khi theo dõi bài giảng; action 20 thể hiện hoạt động nhóm độc lập.
+- Mic/camera, chat, share và vẽ nằm trong hoạt động học theo quyền; chỉ host vẽ LIVE tại MAIN, freeze/vẽ chung chỉ trong nhóm, không phải một chuỗi bắt buộc. Action 11 thể hiện trao đổi riêng khi theo dõi bài giảng; action 20 thể hiện hoạt động nhóm độc lập.
 - Hỗ trợ được ghi như hoạt động tùy nhu cầu trong lúc học nhóm, không ép qua một nhánh hỗ trợ rồi mới được rời nhóm hoặc xử lý deadline. Chi tiết vào/trao đổi/rời hỗ trợ và mic xem [HS-06](../use-cases/06-private-help.md). Không bỏ tính năng hỗ trợ khỏi scope khi lược luồng con trên hình tổng thể.
 - Hai nhánh học nhóm không gộp trước hoạt động học. Nhánh từ chối xét duyệt quay lại học tại phòng chung gần nơi phát sinh, không kéo xuống phần rời nhóm.
 - Tự về sớm chỉ chuyển người chọn; không kết thúc lượt của người khác. Host kết thúc DISCUSSION là action 19 ở lane Host. ACTIVITY hết giờ tự thực hiện action 14 ở lane Hệ thống, không chờ host quyết định.
@@ -43,3 +43,7 @@ Các kết quả API/control-flow dưới đây ghi tại lần dựng, chưa đ
 - Kiểm 33 control flow: 0 đoạn chéo, 0 đoạn xuyên phần trong action khác. Kiểm này không chứng minh không còn mọi giao cắt giữa các đường.
 - Kiểm ảnh PNG xuất từ file gốc đã lưu: 2120 × 2261 px; bố cục rộng hơn bản 17 action để đặt hai nhánh nhóm cạnh nhau; luồng chính, nhánh nhóm và chữ nằm trong các ô đọc được ở kích thước phù hợp.
 - Checker harness kiểm nguồn/link, không chứng minh luồng đã được triển khai trong ứng dụng. Không thay code, contract hoặc DB.
+
+## Điều chỉnh board 02/11/2026
+
+Trong action học tại MAIN chỉ host vẽ LIVE, không freeze/resume; trong action học nhóm DISCUSSION/ACTIVITY mới freeze/vẽ/resume theo nguồn tương ứng. Không cần thêm action chi tiết cho từng công cụ. Xem [trạng thái bản vẽ hiện hành](README.md); ghi chú cũ về Astah/ảnh chưa cập nhật đã được gỡ theo xác nhận của người phụ trách.

@@ -96,3 +96,7 @@ Trước implementation DB, đọc [review bước 6](../database/review-2026-11
 ## Capacity và vận hành bản đầu
 
 Đọc [capacity hiện hành](../capacity.md) khi task DB/media/file/infra: giữ PoC 5 người, hướng thử 25 rồi 50, không tự hứa 100 hoặc xem socket count là tải media đạt. Giữ một app process/worker và Mongo Docker; chưa thêm Redis/worker pool. Triển khai có bounded queues/timeouts, camera subscribe theo viewport nhưng audio/quyền nhóm giữ nguyên; đo pool/gate/query/quota/cleanup cùng media. Giữ gate/aggregate/stamp MVP cho đến khi task tối ưu có bằng chứng/review; không tự đổi field hoặc bỏ kiểm quyền vì hiệu năng. Dùng profile và config thực trong evidence; format/guard không chứng minh capacity.
+
+## Review board theo quyết định 02/11/2026
+
+Dùng [board](../product/board-collaboration.md) và [HS-05](../product/use-cases/05-board-collaboration.md). Kiểm MAIN không có freeze/resume; host ở MAIN/hướng dẫn vẽ được cả khi người khác share, member/share owner không phải host bị deny; đổi host thu quyền cũ. Kiểm nét thường, nét tự biến mất, undo nét mình, clear có xác nhận và đổi/dừng nguồn xóa overlay. Nhóm vẫn freeze/vẽ chung, audio tiếp tục, không ảnh hưởng MAIN/nhóm khác. Chưa chốt thời gian/fade nét tạm; không tự thêm giá trị sản phẩm. Astah/PNG/prototype chỉ gọi đồng bộ sau khi chỉnh và kiểm thực tế.

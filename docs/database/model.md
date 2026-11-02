@@ -53,3 +53,7 @@ Host theo [live session 8.3](../product/live-session.md#83-chuyển-host-và-hos
 - Thư viện hash, retention audit/metadata và nhánh host nhiều sự cố vẫn mở tại [trạng thái quyết định](../decision-status.md). Không thêm chức năng quản trị metadata chỉ vì dữ liệu được lưu.
 
 Nguồn liên quan: [contracts](../contracts/README.md), [Workspace](../product/workspace-channels.md), [kiến trúc](../architecture.md). Bước tài liệu này không chạy reset, seed, migration hoặc thay schema DB đang dùng.
+
+## Ảnh hưởng board ngày 02/11/2026
+
+MAIN giữ overlay/nét trong RAM, không freeze/không file FRAME; chỉ board DISCUSSION/ACTIVITY có intent và FrozenFrame. Nét thường MAIN và nét tự biến mất có lifecycle khác nhau theo [board](../product/board-collaboration.md). Giữ 13 collection, không thêm collection nét/board hoặc DB write theo điểm. FRAME yêu cầu groupId hợp lệ; xem [collection design](collection-design.md). Đây là sửa thiết kế, chưa chạy schema/migration.

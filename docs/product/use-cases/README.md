@@ -1,6 +1,6 @@
 # Đặc tả 6 luồng Use Case trọng tâm
 
-**HS-01 bản 3 (host); HS-02 bản 3 (vòng đời/giới hạn request); HS-03 bản 4 (giới hạn duration), cập nhật 01/11/2026. HS-04/05/06 giữ bản 2 sau review.** Phạm vi 6 hồ sơ đã được người dùng đồng ý; các luồng chi tiết dưới đây là bản triển khai từ nghiệp vụ hiện hành để review, chưa là bằng chứng tính năng chạy hoặc sơ đồ Astah đã hoàn thành.
+**HS-01 bản 3 (host); HS-02 bản 3 (vòng đời/giới hạn request); HS-03 bản 4 (giới hạn duration), cập nhật 01/11/2026. HS-04/06 giữ bản 2; HS-05 bản 3 cập nhật board ngày 02/11/2026.** Phạm vi 6 hồ sơ đã được người dùng đồng ý; các luồng chi tiết dưới đây là bản triển khai từ nghiệp vụ hiện hành để review, chưa là bằng chứng tính năng chạy hoặc sơ đồ Astah đã hoàn thành.
 
 [Báo cáo review bản 1 và kết quả xử lý](review-2026-10-29.md): F-01…F-05 và R-01/R-02 đã được xử lý trong bản 2; quyết định ACTIVITY lỗi và host chủ động rời hỗ trợ đã được người dùng làm rõ, không còn chờ chọn.
 
@@ -17,7 +17,7 @@ Chỉ đặc tả 6 luồng quan trọng, không viết đặc tả riêng toàn
 | [HS-05](05-board-collaboration.md) | Freeze, vẽ chung và resume                   | UC-BOARD-01/02/05; undo/clear là nhánh trong UC-BOARD-02                                    | BOARD-01, FREEZE-01 / PB-06               |
 | [HS-06](06-private-help.md)        | Chat đúng đích và host hỗ trợ riêng nhóm     | UC-LIVE-08/09, UC-GRP-12                                                                    | HELP-01 / PB-09                           |
 
-Actor dùng A-00/A-03/A-04/A-05/A-07 theo bản tổng quan đã rút gọn ngày 29/10/2026. Hành vi thành viên trong cuộc họp dùng A-03, kể cả khi đồng thời là host; hành vi điều hành dùng A-07. Đã vào phiên và quyền scope là điều kiện thực hiện. Backend, bộ đếm giờ và cơ chế phục hồi là xử lý của CoLearnia, không thêm actor hệ thống nội bộ.
+Actor dùng A-00/A-03/A-04/A-05/A-07 theo bản tổng quan đã rút gọn ngày 29/10/2026. Hành vi thành viên trong cuộc họp dùng A-03, kể cả khi đồng thời là host; hành vi điều hành và quyền vẽ MAIN chỉ dành cho host dùng A-07. Đã vào phiên và quyền scope là điều kiện thực hiện. Backend, bộ đếm giờ và cơ chế phục hồi là xử lý của CoLearnia, không thêm actor hệ thống nội bộ.
 
 Ngoại trừ thao tác vào cuộc họp ở HS-01, các UC thao tác trong cuộc họp ở HS-02…HS-06 yêu cầu actor đang tham gia chính LiveSession đang xét, còn quyền LIVE và đủ quyền ở scope tương ứng. Có membership Workspace, quyền kênh hoặc tên trong roster chưa đáp ứng điều kiện này. Các nhánh mất mạng/thu quyền kiểm lại trạng thái hiện hành, không dùng actor A-03 để suy ra quyền tham gia phiên.
 

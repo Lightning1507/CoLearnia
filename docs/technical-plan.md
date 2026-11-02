@@ -244,7 +244,7 @@ Auth; Workspace list/join invitation; Workspace shell; TEXT channel; lobby; Room
 
 Workspace shell có general/kênh, danh sách DM của chính mình và panel thread trong TEXT.
 
-RoomPage có nguồn hợp lệ theo MAIN/DISCUSSION/ACTIVITY hoặc frame đã freeze của scope hiện tại, camera tiles, danh sách người, chat, scope badge, mic/camera/share/volume/board controls. Hiển thị rõ “MIC trong nhóm / toàn phòng / đang hỗ trợ” và “hình đã dừng, tiếng vẫn trực tiếp”. Mọi chuyển phạm vi công bố phải nhìn thấy được. Chat/panel chuyển tab không unmount call controller.
+RoomPage có nguồn hợp lệ theo MAIN/DISCUSSION/ACTIVITY hoặc frame đã freeze của nhóm hiện tại (MAIN không freeze), camera tiles, danh sách người, chat, scope badge, mic/camera/share/volume/board controls. Hiển thị rõ “MIC trong nhóm / toàn phòng / đang hỗ trợ” và “hình đã dừng, tiếng vẫn trực tiếp”. Mọi chuyển phạm vi công bố phải nhìn thấy được. Chat/panel chuyển tab không unmount call controller.
 
 Không tạo màn hình quiz/library hoặc đồng hồ ngoài countdown TIMER-01, hoặc hai ứng dụng độc lập cho phòng nhóm và lớp học. Chưa yêu cầu avatar upload để hoàn thành Workspace; ảnh gửi chat/tệp vẫn thuộc scope.
 
@@ -349,7 +349,7 @@ Thu ít nhất 20 mẫu cho thao tác lặp Q-01/Q-03/Q-04/Q-06, báo p50/p95 v�
 | T-03 | Camera/mic/share | Hai mạng, device denied, MAIN tranh lease/browser Stop; DISCUSSION deny screen; ACTIVITY member tự share, cùng nhóm chỉ một nguồn, hai nhóm độc lập, nguồn bận không giành | B/D |
 | T-04 | Publish/consume | Giả nguồn/owner/transport/grant; Consumer ready sau revoke; duplicate receive | B/C |
 | T-05 | Group modes/isolation | Request chưa duyệt không cấp quyền; DISCUSSION duyệt rồi bấm vào; phase ACTIVITY chặn DISCUSSION; ACTIVITY không nhận MAIN; host help, move/kick/leave đúng scope; không metadata leak | C/B |
-| T-06 | Board | Cùng frame, resize/letterbox, undo đúng author, quota, hai freeze, resume trước upload xong | D/C |
+| T-06 | Board | MAIN chỉ host vẽ LIVE, nét thường/tự biến mất, đổi/dừng nguồn xóa overlay, member và host cũ bị deny; MAIN từ chối freeze/resume; nhóm cùng frame, resize/letterbox, undo đúng author, quota, hai freeze, resume trước upload xong | D/C |
 | T-07 | Về MAIN/countdown | Leave chỉ actor; deadline chung hết hạn tự đóng ACTIVITY/thu share/help/chat/board, về MAIN/pause mic; reconnect/callback trễ không phục hồi nhóm cũ; host đóng DISCUSSION | C/D |
 | T-08 | Board source/hình/tiếng | Freeze đúng nguồn theo mode, source revision theo scope; audio liên tục, resume đúng nguồn; không trộn nét/group/MAIN khi đổi nguồn hoặc về MAIN | D/B |
 | T-09 | Audio | Group+global cùng nguồn không echo; local mute; duck/restore; announcement host rớt | D/B |

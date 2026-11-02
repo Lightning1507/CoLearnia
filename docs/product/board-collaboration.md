@@ -1,4 +1,4 @@
-# Freeze và vẽ cơ bản
+# Vẽ chỉ dẫn tại MAIN và freeze/vẽ trong nhóm
 
 **Trạng thái:** Luồng đích; chưa có board/freeze nghiệp vụ trong scaffold.
 
@@ -8,7 +8,17 @@ Nguồn ban đầu được trích chuyển từ [technical plan v2.1](../techni
 
 ### 7.1. Board và thao tác cơ bản
 
-Mỗi scope có một board chung: MAIN ở phòng tự do/phần phòng chính, hoặc một group. Thành viên freeze/resume tác động đúng scope, UI ghi rõ “Tạm dừng hình của nhóm” và “Cho nhóm trở lại trực tiếp”. Chưa có freeze cá nhân.
+Quyết định cập nhật ngày 02/11/2026 thay quy tắc MAIN freeze chung trước đây:
+
+| Phạm vi    | Quyền và cách dùng                                                                                                                                                                                                                                       |
+| ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| MAIN       | Không freeze/resume. Chỉ host hiện hành đang ở phạm vi MAIN/hướng dẫn được vẽ trực tiếp trên nguồn MAIN, dù người share là ai; thành viên thường chỉ xem. Bút/màu, undo nét mình, clear có xác nhận; có nét giữ tới khi xóa và tùy chọn nét tự biến mất. |
+| DISCUSSION | Thành viên có quyền nhóm cùng freeze/vẽ/resume trên hình MAIN được kế thừa; chỉ nhóm đó bị tác động. Không share riêng.                                                                                                                                  |
+| ACTIVITY   | Thành viên có quyền nhóm cùng freeze/vẽ/resume trên nguồn share của chính nhóm; không dùng MAIN hoặc nguồn nhóm khác.                                                                                                                                    |
+
+MAIN vẫn cho mọi participant ở MAIN tự share khi nguồn trống; quyền share không cấp quyền vẽ. Vẽ không dừng nguồn hoặc audio. Overlay MAIN gắn nguồn/revision, xóa khi nguồn đổi hoặc dừng; không tracking vật thể khi cuộn/chuyển slide. Không áp thời hạn nét tự biến mất cho nét thường; thời gian/fade và cách chọn chế độ còn là chi tiết UI/implementation chưa chốt. Khi đổi host, server thu quyền vẽ/clear của host cũ, chỉ host mới hợp lệ được thao tác; giữ quy tắc undo chỉ nét của mình. Vai trò host không tự mở board nhóm khi chưa vào hỗ trợ đúng nhóm.
+
+Mỗi scope giữ context riêng; MAIN chỉ có overlay LIVE, không có frame/intent freeze. Nhóm có board LIVE/FREEZING/FROZEN. Thành viên freeze/resume tác động đúng nhóm, UI ghi “Tạm dừng hình của nhóm” và “Cho nhóm trở lại trực tiếp”. Chưa có freeze cá nhân. Bảng kiểu dưới là khung cho board nhóm; trạng thái MAIN phải bị giới hạn LIVE ở service/contract, không cho union kiểu tự cấp quyền freeze.
 
 ```ts
 type BoardState = {
@@ -17,7 +27,7 @@ type BoardState = {
   version: number;
   status: 'LIVE' | 'FREEZING' | 'FROZEN';
   sourceScopeId: string; // MAIN cho DISCUSSION; group scope cho ACTIVITY
-  sourceId: string | null; // nguồn cụ thể: screen duy nhất đang share trong ACTIVITY
+  sourceId: string | null; // MAIN screen cho DISCUSSION; screen nhóm cho ACTIVITY
   sourceRevision: number;
   frameId: string | null;
   strokeSequence: number;
@@ -28,7 +38,7 @@ type Stroke = {
   contextVersion: number;
   frameId: string | null;
   sourceScopeId: string; // MAIN cho DISCUSSION; group scope cho ACTIVITY
-  sourceId: string | null; // nguồn cụ thể: screen duy nhất đang share trong ACTIVITY
+  sourceId: string | null; // MAIN screen cho DISCUSSION; screen nhóm cho ACTIVITY
   sourceRevision: number;
   authorParticipantId: string; // server gán
   points: Array<{ x: number; y: number }>; // 0..1
@@ -38,13 +48,15 @@ type Stroke = {
 ```
 
 - Bút, palette màu, con trỏ, undo nét gần nhất của mình; clear toàn context theo quyền ở mục 5 và xác nhận.
-- FROZEN cho nét bền trong context hiện tại; LIVE dùng con trỏ/nét chỉ ngắn tự hết hạn, chưa có tracking vật thể/trang.
+- Nhóm: FROZEN giữ nét trong context hiện tại; LIVE dùng con trỏ/nét chỉ ngắn tự hết hạn. MAIN: host chọn nét thường giữ tới khi xóa/context nguồn kết thúc hoặc nét tự biến mất. Cả hai không tracking vật thể/trang.
 - Tọa độ tính trên vùng hình thật, loại letterbox; resize và device pixel ratio không làm trôi nét.
 - Preview/cursor batch tối đa 20 lần/giây, cho phép mất; stroke commit có UUID, ack, sequence và version. Mất sequence lấy board snapshot đã lọc quyền.
 - Server gán author, kiểm membership/context hiện tại, màu/width/points/bytes. Undo là tombstone nét của mình, không cho xóa nét người khác bằng sửa ID.
 - Không dùng DB write cho từng điểm; runtime có stroke log/snapshot đủ khôi phục khi socket rớt ngắn trong cùng đời server.
 
 ### 7.2. Freeze và resume
+
+Chỉ áp dụng DISCUSSION/ACTIVITY. Server từ chối freeze.begin/commit/resume tại MAIN, kể cả actor là host; không tạo file frame MAIN.
 
 ```mermaid
 sequenceDiagram
@@ -74,7 +86,7 @@ Resume hủy intent pending nếu có, tăng boardVersion, đóng context cũ, b
 
 ### 7.3. Board khi kết thúc chia nhóm
 
-Khi host đưa tất cả về MAIN, board nhóm không được công bố hoặc chuyển thành board MAIN. Thu quyền đọc/vẽ context nhóm, hủy intent còn chờ và dọn frame/nét hết tham chiếu theo lifecycle. MAIN dùng board của chính MAIN; không tự nhập nét hoặc ảnh nhóm vào đó.
+Khi thành viên trở về MAIN do rời nhóm, host đóng DISCUSSION hoặc hết lượt ACTIVITY, board nhóm không được công bố hoặc chuyển thành board MAIN. Nếu chỉ một thành viên rời, thu quyền đọc/vẽ và hủy intent còn chờ của người đó; không xóa frame/nét chung còn được nhóm sử dụng. Khi nhóm đóng, kết thúc context nhóm, hủy intent còn chờ và dọn frame/nét hết tham chiếu theo lifecycle. MAIN dùng overlay LIVE riêng, chỉ host được vẽ; không tự nhập nét hoặc ảnh nhóm vào đó.
 
 Theo quyết định team 27/10/2026, bản này không có projection công bố hình+nét, endpoint frame presentation hoặc thư viện/export bài làm. Phát biểu sau thảo luận dùng mic thông thường tại MAIN; xem [quy tắc về phòng chung](groups-media-policy.md#82-kết-thúc-chia-nhóm-và-về-phòng-chung).
 
@@ -82,4 +94,4 @@ Theo quyết định team 27/10/2026, bản này không có projection công b�
 
 Theo [group modes](group-modes.md), board DISCUSSION dùng MAIN screen, không cho nhóm share riêng. ACTIVITY dùng nguồn thuộc nhóm, không tự nhận/fallback MAIN. Intent/stroke/snapshot gắn sourceScopeId, sourceId và revision ngoài board scope/version để không áp nét hoặc request cũ lên nguồn khác. ACTIVITY dùng screen duy nhất đang share của nhóm theo quyết định đã chốt; đổi người share tăng source revision, invalidate intent/live overlay cũ, không gắn nét sai nguồn. Không có nguồn hợp lệ thì báo rõ thay vì giả live.
 
-Đóng nhóm/rời nhóm hủy pending intent và thu quyền frame/overlay. Quy tắc giữ frame FROZEN khi nguồn dừng vẫn áp trong context hợp lệ; không biến frame nhóm thành dữ liệu MAIN.
+Đóng nhóm hủy pending intent và thu quyền frame/overlay của cả nhóm; một người rời chỉ thu quyền và hủy pending intent của người đó, không kết thúc context chung còn hợp lệ. Quy tắc giữ frame FROZEN khi nguồn dừng vẫn áp trong context hợp lệ; không biến frame nhóm thành dữ liệu MAIN.

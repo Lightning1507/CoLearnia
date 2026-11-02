@@ -57,3 +57,7 @@ Chi tiết implementation thông thường được chọn/review trong task đ�
 [AGENTS](../AGENTS.md), [workflow](ai/workflow.md), [task brief](ai/task-template.md) và guard là quy ước làm việc đã được đồng ý, không là feature sản phẩm hoặc yêu cầu môn học mới. CI xanh không xác nhận ngữ nghĩa/UML/ACL hoặc cấu hình sandbox.
 
 Các quyết định cũ “FREE/MODERATED”, “chuyển host cần chấp nhận”, “timer chỉ nhắc/chờ host” và “rejoin tự hồi PRIVATE” không là baseline hiện hành. Research/review/evidence cũ giữ giá trị tại thời điểm ghi; đọc nguồn hiện hành ở trên trước implementation.
+
+## Cập nhật board ngày 02/11/2026
+
+Đã chốt: MAIN không freeze/resume, chỉ host vẽ LIVE với nét thường hoặc tùy chọn tự biến mất; share vẫn mở cho participant khi trống. DISCUSSION/ACTIVITY giữ freeze/vẽ chung theo nguồn tương ứng. Nguồn: [board](product/board-collaboration.md). Thời gian/fade nét tạm chưa chốt. Đây là thiết kế đích, chưa là code hoặc prototype đã kiểm chứng; trạng thái Astah ở [mục lục bản vẽ](product/diagrams/README.md).

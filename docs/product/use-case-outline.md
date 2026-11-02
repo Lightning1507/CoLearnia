@@ -61,7 +61,7 @@ Các dòng dưới là cùng mức mục tiêu tổng hợp. Cột phạm vi đ�
 - TQ-02 sở hữu cấu trúc Workspace/thành viên/kênh; TQ-03 sở hữu trao đổi và tài liệu. Tạo general là kết quả tạo Workspace, không là một UC thủ công cho người dùng.
 - TQ-04 sở hữu hành vi cuộc gọi dùng chung cho MAIN và nhóm. TQ-05 sở hữu mục tiêu tham gia; TQ-07 sở hữu tổ chức và vòng đời nhóm; không lặp lại UC bật camera hay share cho từng loại nhóm.
 - Chat Everyone/Host thuộc TQ-04; host vào/rời nhóm hỗ trợ thuộc TQ-07. Tin nhắn không tự đưa host vào nhóm hoặc chuyển mic.
-- Cộng tác khung hình (freeze/vẽ/resume) thuộc chi tiết TQ-04, không là oval riêng ở tổng quan; mã TQ-06 cũ ngừng dùng ở tầng tổng quan, không tái sử dụng. Nhóm ACTIVITY dùng nguồn đang share của nhóm; DISCUSSION dùng bài giảng MAIN.
+- Cộng tác khung hình (freeze/vẽ/resume) thuộc chi tiết TQ-04, không là oval riêng ở tổng quan; mã TQ-06 cũ ngừng dùng ở tầng tổng quan, không tái sử dụng. Nhóm ACTIVITY dùng nguồn đang share của nhóm; DISCUSSION dùng bài giảng MAIN. Theo quyết định 02/11/2026, MAIN không freeze/resume, chỉ host vẽ LIVE; BOARD-01/05 chỉ trong nhóm, BOARD-02 thêm quyền riêng A-07 tại MAIN. Không thêm oval tổng quan.
 - TQ-05 thể hiện mục tiêu tham gia của thành viên; TQ-07 thể hiện trách nhiệm điều hành riêng của host. Host kế thừa Thành viên Workspace, nên không nối lại Host → TQ-05; đường riêng Host → TQ-07 không trao quyền điều hành cho thành viên.
 - REC-01/PB-11 là yêu cầu xuyên suốt: ghi ở nhánh mất kết nối/khôi phục của UC liên quan và tiêu chí nghiệm thu; chưa ép thành một UC tổng quan ngang với các miền nghiệp vụ.
 - FILE-01 được truy vết chính ở TQ-03, đồng thời hỗ trợ ảnh chat cuộc họp trong TQ-04. Chat cuộc họp chỉ text/ảnh; không suy từ đây ra quyền gửi file bất kỳ.

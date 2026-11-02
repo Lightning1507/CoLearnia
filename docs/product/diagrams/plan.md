@@ -30,7 +30,7 @@ Mã trong bảng lược tiền tố `UC-`; tên sơ đồ bắt đầu bằng �
 
 ## Nội dung đợt 2 đã xác nhận
 
-- TQ-04 có 11 UC trên cùng một hình, gồm cuộc gọi, share, board, chat, chuyển host và kết thúc phiên. A-03 nối 9 UC thông thường. A-07 nối riêng LIVE-09 (nhận/trả lời), GRP-01 (gán host trực tiếp), LIVE-10 (kết thúc phiên); không nối lặp 9 hành vi thành viên đã kế thừa. Đích là 12 association; ảnh xuất kiểm ngày 01/11 đã bỏ đường nối thành viên với chuyển host.
+- TQ-04 có 11 UC trên cùng một hình, gồm cuộc gọi, share, board, chat, chuyển host và kết thúc phiên. A-03 nối 9 UC thông thường, BOARD-01/05 chỉ khi ở nhóm. Theo quyết định 02/11, A-07 cần thêm association BOARD-02 riêng cho vẽ MAIN host-only. A-07 nối riêng LIVE-09 (nhận/trả lời), GRP-01 (gán host trực tiếp), LIVE-10 (kết thúc phiên); không nối lặp 9 hành vi thành viên đã kế thừa. Đích mới là 13 association; ảnh xuất kiểm ngày 01/11 đã bỏ đường nối thành viên với chuyển host.
 - TQ-03 có 6 UC gửi/xem kênh, gửi/xem DM, thảo luận thread và tải attachment; chỉ dùng A-03, tổng 6 association. Owner/admin kế thừa nhưng không vượt ACL hội thoại. Chọn người/mở DM, upload, phân trang và thử lại nằm trong luồng. Thread một cấp chỉ trong TEXT; chat cuộc họp chỉ text/ảnh.
 - Không include vào cuộc họp với đăng nhập, vẽ với freeze hoặc gửi tin với tải tệp. Nguồn/quyền/scope là điều kiện; xử lý phục hồi host mất mạng nằm trong nhánh, không thêm actor hoặc UC tự nhận host.
 

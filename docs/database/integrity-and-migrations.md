@@ -235,3 +235,7 @@ Bước 5 đã có đặc tả index/options, validator theo collection, thứ t
 Còn mở đúng nguồn: thư viện/tham số hash, contract limits chưa có như displayName, retention audit/metadata, host không có ứng viên/host tạm cũng mất mạng và media capacity. Không chọn mặc định các điểm đó để bảng schema trông hoàn chỉnh.
 
 **Bước 6 đã review tài liệu:** xem [kết quả review chéo](review-2026-11-01.md), gồm điều chỉnh owner, upload authorization/expiry, thread cleanup và audit unknown commit. Bộ đích còn 34 index tùy biến (15 unique/TTL và 19 query), ngoài _id mặc định. Chưa chạy các ca DB; không tự chuyển sang schema/migration hoặc GitHub Projects từ task review.
+
+## Bổ sung kiểm board ngày 02/11/2026
+
+FRAME chỉ chấp nhận groupId DISCUSSION/ACTIVITY đang có quyền và intent hợp lệ; null/MAIN bị từ chối trước reserve/upload/bind. MAIN overlay không tạo file FRAME. Bổ sung DB-09: deny MAIN freeze dù host, thu quyền mutation host cũ và stale source revision; nhóm giữ FROZEN hợp lệ khi nguồn live dừng. Nét thường/tự biến mất tại MAIN vẫn ở RAM, không thêm collection/index; xem [board](../product/board-collaboration.md). Chưa chạy kiểm chứng DB.
