@@ -20,7 +20,7 @@ Trong lớp học trực tuyến, ba bạn có thể chưa hiểu một phần t
 
 **Host** là người điều hành phiên họp. CoLearnia hỗ trợ hai nhu cầu đó:
 
-- **DISCUSSION — nhóm trao đổi:** thành viên xin host duyệt, vẫn theo dõi bài giảng chung nhưng trao đổi/vẽ riêng.
+- **DISCUSSION — nhóm trao đổi:** thành viên tạo nhóm khi hợp lệ, không chờ host, vẫn theo dõi bài giảng chung nhưng trao đổi/vẽ riêng.
 - **ACTIVITY — nhóm hoạt động:** host tổ chức một lượt làm việc độc lập có thời lượng chung, mỗi nhóm được chia sẻ màn hình riêng.
 
 Người bắt đầu phiên là host và có thể chuyển quyền trực tiếp cho người khác. Nhóm bạn cũng có thể gọi bình thường, chỉ dùng công cụ điều hành khi cần; không phải bật một “chế độ lớp học” riêng.
@@ -59,11 +59,13 @@ _Đây là sơ đồ giải thích luồng chính. Sơ đồ hoạt động (Act
 
 **Ba điều cần nhớ trong luồng này:**
 
-- Host duyệt DISCUSSION **chưa tự đưa người vào**: từng người được chọn chủ động bấm “Vào nhóm”; người ngoài danh sách không tự vào.
+- Hệ thống tạo DISCUSSION khi hợp lệ **chưa tự đưa người vào**: từng người được chọn chủ động bấm “Vào nhóm”; người ngoài danh sách không tự vào.
 - Trước khi bắt đầu ACTIVITY phải kết thúc DISCUSSION. Trong lượt ACTIVITY không nhận DISCUSSION mới. Hết giờ tự kết thúc lượt, không chờ host; người trở về được tạm tắt mic để tự bật lại. Một người về sớm không kết thúc hoạt động của người khác.
-- Trong nhóm có chat riêng và có thể nhắn host; host vào hỗ trợ có thông báo, tiếng hỗ trợ chỉ tới nhóm đích. Chat/board nhóm không tự công khai khi về MAIN.
+- Trong nhóm có chat riêng và có thể nhắn host. Với DISCUSSION, host trả lời qua chat riêng và tiếp tục hướng dẫn ở phòng chung; với ACTIVITY, host có thể vào hỗ trợ có thông báo, tiếng hỗ trợ chỉ tới nhóm đích. Chat/board nhóm không tự công khai khi về MAIN.
 
 Sau khi trở về có thể tiếp tục học hoặc xin DISCUSSION tiếp. Host chủ động rời khi còn giữ quyền thì kết thúc cuộc họp cho mọi người; muốn cuộc họp tiếp tục, chuyển host trước rồi rời như thành viên.
+
+DISCUSSION được tạo hợp lệ nhưng chưa ai vào vẫn chờ tham gia. Khi còn người trong nhóm, người trong danh sách hợp lệ có thể chủ động vào lại; khi người cuối cùng chủ động rời thì nhóm kết thúc, muốn tạo lại phải tạo nhóm hợp lệ mới. Mất mạng không được coi ngay là chủ động rời. ACTIVITY vẫn kết thúc theo thời lượng chung.
 
 Chi tiết: [group modes](product/group-modes.md), [phiên họp và host](product/live-session.md), [chat/hỗ trợ nhóm](product/groups-media-policy.md).
 
@@ -86,7 +88,7 @@ Ví dụ trên dùng nguồn MAIN vì nhóm là DISCUSSION. Với ACTIVITY, thao
 | Owner Workspace   | Sở hữu Workspace, quản lý thành viên/kênh, cấp hoặc thu vai trò admin; có thể chuyển owner và xóa Workspace. |
 | Admin Workspace   | Hỗ trợ quản lý thành viên/kênh trong quyền được phép; không có toàn bộ quyền owner.                          |
 | Member Workspace  | Chat, tham gia LIVE, share đúng phòng khi trống, xin DISCUSSION.                                             |
-| Host phiên họp    | Điều hành phiên: duyệt DISCUSSION, tổ chức ACTIVITY, hỗ trợ, chuyển host/kết thúc phiên.                     |
+| Host phiên họp    | Điều hành phiên: đóng DISCUSSION, tổ chức ACTIVITY, hỗ trợ, chuyển host/kết thúc phiên.                      |
 
 Một member có thể đồng thời là host; giáo viên phải bắt đầu phiên hoặc được chuyển quyền, hệ thống không tự nhận diện giáo viên. Owner/admin không mặc nhiên được nghe các nhóm hay đọc DM. Host mất mạng quá thời gian chờ có cơ chế thay tạm và hoàn quyền, khác thao tác chủ động kết thúc; xem [nguồn host](product/live-session.md#83-chuyển-host-và-host-mất-mạng).
 
@@ -94,7 +96,7 @@ Một member có thể đồng thời là host; giáo viên phải bắt đầu 
 
 ### Những phần thuộc và ngoài phạm vi
 
-**Phạm vi hiện tại:** tài khoản; Workspace, kênh và thành viên; chat/DM/thread/tệp; mic/camera/chia sẻ màn hình; nhóm, hỗ trợ, vẽ/freeze và kết nối lại. **Ngoài phạm vi:** quiz/bình chọn, ghi hình, thư viện hoặc xuất bài làm lâu dài, công cụ vẽ nâng cao, freeze cá nhân, đồng hồ riêng từng nhóm. Thời lượng chung ACTIVITY vẫn thuộc phạm vi. Xem [scope](product/scope.md).
+**Phạm vi hiện tại:** tài khoản; Workspace, kênh và thành viên; chat/DM/thread/tệp; mic/camera/chia sẻ màn hình; nhóm, hỗ trợ, vẽ/freeze và kết nối lại. **Ngoài phạm vi:** quiz/bình chọn, thư viện hoặc xuất bài làm lâu dài, công cụ vẽ nâng cao, freeze cá nhân, đồng hồ riêng từng nhóm. Thời lượng chung ACTIVITY vẫn thuộc phạm vi. Xem [scope](product/scope.md).
 
 ## 5. Từ hiểu sản phẩm tới nhận việc
 
@@ -132,7 +134,7 @@ Một miền có nhiều FR; một UC có thể liên quan nhiều FR. Khi chia 
 
 1. **Trước buổi giới thiệu:** đọc mục 1–4 và các sơ đồ trong trang này. Mục tiêu: kể lại luồng học, phân biệt hai loại nhóm và ghi câu hỏi nghiệp vụ. Chưa cần xem Figma hoặc đọc toàn bộ tài liệu kỹ thuật.
 2. **Khi team chọn người phụ trách:** đọc bảng tổng hợp rồi phần chi tiết miền mình quan tâm trong [5 miền](product/delivery-domains.md). Mục tiêu: hiểu đầu ra/điểm giao, trao đổi kỹ năng và giờ làm trước khi nhận.
-3. **Đã nhận miền, chuẩn bị proposal:** lấy mã FR từ bảng M1–M5, tìm đúng dòng ở [FR/AC](product/functional-requirements.md), theo link UC/product của dòng đó. Mục tiêu: biết phạm vi, AC phải đạt, câu hỏi và người cần phối hợp; chưa cần đọc hết 53 FR.
+3. **Đã nhận miền, chuẩn bị proposal:** lấy mã FR từ bảng M1–M5, tìm đúng dòng ở [FR/AC](product/functional-requirements.md), theo link UC/product của dòng đó. Mục tiêu: biết phạm vi, AC phải đạt, câu hỏi và người cần phối hợp; chưa cần đọc hết 56 FR.
 4. **Đề xuất thiết kế và estimate:** đọc [technical plan](technical-plan.md), [architecture](architecture.md), [decision status](decision-status.md); tra [DB](database/model.md) và [contracts](contracts/README.md) theo phần liên quan. Mục tiêu: proposal và task sơ bộ phù hợp nền chung, đủ để review điểm giao trước code phụ thuộc.
 5. **Task đã rõ, bắt đầu code:** theo [hướng dẫn chạy local](runbooks/local-development.md), [quy ước đóng góp](../CONTRIBUTING.md), [cách làm việc với AI](ai/workflow.md) và [mẫu mô tả task](ai/task-template.md); agent đọc [AGENTS.md](../AGENTS.md). Mục tiêu: chạy môi trường, triển khai đúng task, kiểm AC và mở PR có kết quả kiểm tra thực tế.
 
@@ -170,7 +172,7 @@ Thiết kế và bộ khung hiện có **chưa chứng minh các luồng sản p
 
 Trước buổi giới thiệu, thử tự trả lời:
 
-1. DISCUSSION và ACTIVITY phục vụ hai nhu cầu gì? Ai tạo/duyệt, có được share riêng không?
+1. DISCUSSION và ACTIVITY phục vụ hai nhu cầu gì? Ai tạo/đóng nhóm, có được share riêng không?
 2. Nhóm giữ slide 5 trong khi lớp tới slide 6 thì chuyện gì xảy ra? Resume xem gì?
 3. Owner/admin khác host thế nào? Ai có quyền tạo kênh và vẽ tại MAIN?
 4. ACTIVITY hết giờ ai đưa người về MAIN? Một người về sớm có kết thúc nhóm không?
@@ -191,3 +193,9 @@ Khi các luồng được hoàn thiện và review, phần này sẽ bổ sung h
 ### Cơ sở biên soạn
 
 Cách tổ chức trang này tham khảo [Diátaxis](https://diataxis.fr/start-here/) về phân biệt giải thích và tra cứu; [Google](https://developers.google.com/style/images) về dùng hình đúng mục đích; [GitLab](https://about.gitlab.com/blog/quickly-onboarding-engineers-successfully/) về hỗ trợ thành viên bắt đầu đóng góp; [Atlassian Engineering Handbook](https://www.atlassian.com/blog/how-we-build/handbook) về giải thích quy trình, lý do và cách áp dụng. Đây là nguồn tham khảo cho cách viết, không phải quy định bắt buộc hoặc nguồn nghiệp vụ của CoLearnia.
+
+## Cập nhật sau kickoff 02/11
+
+DISCUSSION không chờ host: thành viên chọn Tạo nhóm trao đổi, hệ thống kiểm hợp lệ rồi cho người trong danh sách chủ động vào. Host vẫn đóng được nhóm. ACTIVITY thêm chia ngẫu nhiên, host xem/chỉnh trước khi bắt đầu; thời lượng và isolation giữ nguyên.
+
+Host có ghi hình MAIN gồm màn hình, camera và âm thanh; mọi người biết đang ghi. Video theo phiên để thành viên còn quyền kênh xem lại, không ghi nhóm riêng. Demo dự kiến clip vài phút; pipeline/lưu trữ chưa triển khai, Figma/ảnh minh họa có thể còn bước duyệt cũ. [Recording](product/recording.md).

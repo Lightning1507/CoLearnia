@@ -1,5 +1,7 @@
 # Sơ đồ CoLearnia — bản hiện hành
 
+> **Delta sau kickoff 02/11:** bản Astah/PNG được xác nhận trước đó là nguồn hình trước ba thay đổi mới. Lượt này chỉ sửa tài liệu, giữ nguyên file `.asta` và ảnh đã có thay đổi của người dùng. Cần bỏ bước host xét duyệt/nhánh từ chối DISCUSSION, đổi thành server kiểm/tạo rồi chủ động vào; bổ sung random trong chuẩn bị ACTIVITY, ghi/xem video MAIN ở phân rã cuộc họp theo [recording](../recording.md). Activity tổng thể giữ mức khái quát, không thêm chi tiết pipeline. Chưa tuyên bố ảnh đã đồng bộ delta này.
+
 Nguồn chỉnh sửa duy nhất là [CoLearnia-use-cases.asta](CoLearnia-use-cases.asta), gồm **6 sơ đồ UC và 1 Activity**. Người dùng đã cập nhật format; ngày 01/11/2026 đã lưu project đang mở và xuất lại cả 7 PNG qua **Tools → Export Image → Multi Diagrams → PNG**, giữ tên ảnh cũ để không hỏng liên kết. Ảnh tổng quan không đổi byte; 6 ảnh còn lại thay đổi. Không chỉnh nội dung/bố cục người dùng trong lượt xuất.
 
 ## Các ảnh hiện có
@@ -25,7 +27,7 @@ Nguồn chỉnh sửa duy nhất là [CoLearnia-use-cases.asta](CoLearnia-use-ca
 
 ## Quy ước và lịch sử
 
-Theo [kế hoạch/đích phân rã](plan.md), UC ở giữa khung ngang, actor ngoài khung, oval vừa nội dung và font mục tiêu 14. Không dùng include/extend cho thứ tự “duyệt rồi vào”, đăng nhập là điều kiện. TIMER-01 tự kết thúc ACTIVITY theo deadline; host chỉ đóng DISCUSSION. Tổng quan không tách cộng tác hình/nét khỏi tham gia cuộc họp.
+Theo [kế hoạch/đích phân rã](plan.md), UC ở giữa khung ngang, actor ngoài khung, oval vừa nội dung và font mục tiêu 14. Không dùng include/extend cho thứ tự “tạo nhóm rồi vào”, đăng nhập là điều kiện. TIMER-01 tự kết thúc ACTIVITY theo deadline; host chỉ đóng DISCUSSION. Tổng quan không tách cộng tác hình/nét khỏi tham gia cuộc họp.
 
 Các số lượng/font/ảnh của các đợt bàn giao cũ không phải trạng thái hiện tại. [Bản batch3 lịch sử](../../archive/diagrams/README.md) được chuyển khỏi thư mục đang làm; tiếp tục chỉnh đúng project hiện hành. Không tạo project mới để thay bản có chỉnh sửa thủ công.
 
@@ -36,3 +38,7 @@ Checker kiểm nguồn/tệp/liên kết, không đọc ngữ nghĩa Astah, xác
 Người phụ trách dự án xác nhận file Astah và các ảnh UC hiện có là bản mới nhất, đã cập nhật. Ghi chú trước đây cho rằng Astah/PNG chưa cập nhật đã lỗi thời và được thay bằng xác nhận này. Các kết quả kiểm API/font ở trên là bằng chứng của lần kiểm trước, không phải lần kiểm mới trong lượt sửa tài liệu này.
 
 Quy tắc board hiện hành ở [board](../board-collaboration.md) và [HS-05 bản 3](../use-cases/05-board-collaboration.md): BOARD-01/05 chỉ DISCUSSION/ACTIVITY; BOARD-02 có quyền vẽ nhóm và quyền host tại MAIN. MAIN không freeze/resume, giữ host vẽ LIVE; không thêm oval tổng quan. Activity thể hiện hoạt động theo đúng phạm vi. Tiếp tục dùng cùng [CoLearnia-use-cases.asta](CoLearnia-use-cases.asta) và các đường dẫn PNG trong bảng trên.
+
+## Hai quyết định nhóm bổ sung sau xác nhận bản vẽ ngày 02/11/2026
+
+Tài liệu nghiệp vụ vừa cập nhật: UC-GRP-12 chỉ áp ACTIVITY, DISCUSSION hỏi/trả lời riêng với host tại MAIN; UC-GRP-08 có nhánh người cuối cùng chủ động rời DISCUSSION đã có người làm nhóm tự đóng. Không thêm oval/UC mới. Các xác nhận Astah/PNG phía trên giữ nguyên cho lần cập nhật trước; **lượt sửa tài liệu này chưa chỉnh hoặc kiểm lại Astah/PNG theo hai quyết định nhóm mới**. Khi cập nhật bản vẽ, dùng cùng file hiện hành, đối chiếu điều kiện/ghi chú GRP-12 và nhánh rời DISCUSSION theo HS-02/HS-06; không tạo file Astah mới.

@@ -1,5 +1,7 @@
 # CoLearnia — brief dựng draft bằng Figma Make
 
+> **Đọc delta sau kickoff ở cuối trang trước khi dùng prompt.** Các prompt 1–3 là lịch sử các lượt dựng; phần host xét DISCUSSION đã hết hiệu lực. Recording MAIN và random ACTIVITY là yêu cầu mới, chưa sửa trong Figma từ lượt tài liệu này.
+
 **Trạng thái:** đã chốt hướng tham chiếu Slack cho Workspace/chat, Google Meet cho phòng họp và Linear cho cách tiết chế thị giác. UI cụ thể, màu/font, kích thước và component vẫn chờ review draft; prototype chưa là feature đã chạy. Quy tắc nghiệp vụ lấy từ các nguồn bên dưới.
 
 ## Cách dùng ngay
@@ -127,7 +129,7 @@ HOST VÀ LỖI
 - Với thành viên, thao tác “Rời cuộc họp” đưa người đó về kênh LIVE và cuộc họp vẫn tiếp tục. Với host, hiển thị rõ thao tác “Kết thúc cho mọi người” và xác nhận hậu quả; có thể hủy, chuyển host rồi mới rời như thành viên thường. Không mặc định tự chọn người kế vị khi host chủ động rời.
 - Minh họa mất kết nối/đang kết nối lại và phiên đã kết thúc. Không tự bật lại mic/camera khi đổi tình huống.
 - Dùng “Tình huống demo” ngoài luồng sản phẩm để thử MEMBER/HOST, nguồn trống/đang share, nét thường/nét tự biến mất của host và lỗi thiết bị. Mọi trạng thái đều giả lập, không mô tả là cuộc gọi thật đã hoạt động.
-- Không thêm ghi hình, phụ đề AI, giơ tay, reactions, lịch họp, đồng hồ ngoài countdown hoạt động ở lượt sau hoặc công cụ vẽ mở rộng. Không tự chọn quy tắc host mất mạng chưa được đặc tả trong lượt này.
+- Recording theo [đặc tả mới](../product/recording.md); không thêm phụ đề AI, giơ tay, reactions, lịch họp, đồng hồ ngoài countdown hoạt động ở lượt sau hoặc công cụ vẽ mở rộng. Không tự chọn quy tắc host mất mạng chưa được đặc tả trong lượt này.
 
 KIỂM DRAFT
 - Thử luồng kênh LIVE → kiểm thiết bị → tham gia → mở/đóng chat hoặc người tham gia → rời/kết thúc; kiểm tình huống camera tắt và không được cấp quyền thiết bị.
@@ -151,6 +153,7 @@ NHÓM TRAO ĐỔI (DISCUSSION)
 - Trong nhóm, hiện rõ tên nhóm và “Đang theo dõi bài giảng phòng chung”. Nhận nguồn share/bài giảng từ phòng chung, mic trao đổi chỉ trong nhóm; có hai mức âm lượng cục bộ cho bài giảng và trao đổi nhóm.
 - Ẩn nút share riêng. Nhóm có frame/nét riêng khi tạm dừng nguồn bài giảng; không tác động board phòng chung.
 - Chat Everyone ghi “Mọi người trong nhóm”; vẫn có nhắn riêng Host bằng text/ảnh. Có nút “Về phòng chung” khác với “Rời cuộc họp”, chỉ chuyển người bấm.
+- Nhóm tạo hợp lệ chưa ai vào vẫn chờ. Khi còn người, người trong danh sách hợp lệ có thể chủ động vào lại. Người cuối cùng chủ động về phòng chung/rời cuộc họp sau khi nhóm đã có người thì tự kết thúc nhóm, bỏ nút Vào nhóm của cả danh sách và thu chat/board cũ; muốn tạo lại cần tạo nhóm hợp lệ mới. Không coi mất mạng là chủ động rời; không áp tự đóng này cho ACTIVITY. Ghi rõ số đang ở nhóm khác số người trong roster.
 - Host có thể kết thúc một hoặc tất cả nhóm trao đổi, đưa người trong các nhóm đó về phòng chung. Minh họa bằng một thao tác “Kết thúc nhóm trao đổi” với lựa chọn nhóm đích.
 
 NHÓM HOẠT ĐỘNG (ACTIVITY)
@@ -162,8 +165,8 @@ NHÓM HOẠT ĐỘNG (ACTIVITY)
 - Không dựng nút host kết thúc một nhóm hoặc toàn lượt ACTIVITY thủ công. Demo hết giờ bằng công cụ tình huống tách khỏi UI sản phẩm, không biến thành nút host.
 
 HỖ TRỢ NHÓM
-- Thành viên nhắn riêng Host trong chat cuộc họp. Host xem yêu cầu và vào đúng nhóm hỗ trợ; nhóm thấy thông báo host đang ở đó, tiếng hỗ trợ chỉ trong nhóm đích.
-- Host chỉ xem nội dung nhóm đích khi đang có quyền hỗ trợ, không hiện nội dung các nhóm khác song song. Rời hỗ trợ về phòng chung là thao tác đổi phòng, không phải rời cuộc họp; giữ trạng thái mic và hiển thị rõ mic nay thuộc phòng chung.
+- Thành viên nhắn riêng Host trong chat cuộc họp. Với DISCUSSION, host ở phòng chung và trả lời qua chat riêng, không có nút Vào hỗ trợ. Chỉ với ACTIVITY, host vào đúng nhóm hỗ trợ; nhóm thấy thông báo host đang ở đó, tiếng hỗ trợ chỉ trong nhóm đích.
+- Host chỉ xem nội dung nhóm ACTIVITY đích khi đang có quyền hỗ trợ, không hiện nội dung các nhóm khác song song. Rời hỗ trợ về phòng chung là thao tác đổi phòng, không phải rời cuộc họp; giữ trạng thái mic và hiển thị rõ mic nay thuộc phòng chung.
 - Thông báo hướng dẫn chung của host có audience rõ theo policy: DISCUSSION vẫn theo bài giảng; ACTIVITY không mặc nhiên nhận tiếng MAIN.
 
 Sau khi về phòng chung, không tự công khai chat hoặc board nhóm. Bố trí trạng thái vị trí, nguồn đang xem và phạm vi mic để người chưa đọc tài liệu vẫn hiểu mình đang ở đâu và ai nghe được mình.
@@ -184,7 +187,7 @@ Review bằng thao tác trên preview, không chỉ nhìn một ảnh đẹp:
 | Member → admin trong công cụ demo         | Quyền tạo kênh/quản lý PRIVATE hiện đúng; không có tự đổi role trong sản phẩm                    |
 | Kênh LIVE → lobby → phòng chung           | Thiết bị, host/member, share/camera và cách rời dễ hiểu                                          |
 | Share → freeze → về trực tiếp             | Ai bị tác động, hình đang dừng hay live; audio vẫn tiếp tục                                      |
-| Xin DISCUSSION → duyệt → tự vào → về MAIN | Không tự chuyển sau duyệt, không share riêng, rõ phạm vi mic/chat                                |
+| Xin DISCUSSION → duyệt → tự vào → về MAIN | Không tự chuyển sau khi tạo nhóm hợp lệ, không share riêng, rõ phạm vi mic/chat                  |
 | Host tạo ACTIVITY → học nhóm → hết giờ    | Nhóm độc lập, share không xin host, countdown tự đưa về MAIN; người về sớm chỉ chuyển chính mình |
 | Nhắn Host → hỗ trợ → rời hỗ trợ           | Đúng nhóm/đúng người, không phát tiếng riêng sang phòng khác                                     |
 
@@ -200,3 +203,13 @@ Khi nhận code: đưa từng phần vào ứng dụng hiện tại, review depe
 ## Hiệu lực sửa prompt 02/11/2026
 
 Quy tắc MAIN freeze trong prompt cũ đã được thay bằng host vẽ LIVE như lượt 2 ở trên. Prompt sửa lỗi cũ có yêu cầu clear cho người tạo frame MAIN không còn áp dụng. Lượt 3 mới đưa freeze/vẽ/resume chung vào DISCUSSION/ACTIVITY. Chưa gửi bản cập nhật này vào Figma Make hoặc kiểm lại prototype; không gọi UI hiện tại đã đúng chỉ vì brief đã đổi.
+
+## Hiệu lực chỉnh nhóm ngày 02/11/2026
+
+Quyết định mới thay phần hỗ trợ chung trong prompt 3 trước đây: host chỉ vào hỗ trợ ACTIVITY; DISCUSSION hỗ trợ qua chat riêng tại MAIN. Bổ sung vòng đời nhóm ở prompt 3 và [group modes](../product/group-modes.md). Đây là yêu cầu chỉnh draft, **chưa xác nhận đã áp dụng/kiểm tra trên Figma** trong lượt sửa tài liệu này. Khi review, thử nhóm chờ, rời/vào lại khi còn người, người cuối cùng chủ động rời và từ chối vào nhóm đã đóng; kiểm DISCUSSION không có Vào hỗ trợ, ACTIVITY giữ chức năng đó.
+
+## Delta áp dụng cho lượt sửa Figma sau kickoff 02/11
+
+Các prompt ở trên mô tả các lượt cũ; khi khác delta này, áp dụng delta. Bỏ host approve/reject và hàng chờ/hủy pending DISCUSSION; form Tạo nhóm trao đổi giữ tên/mục đích/roster, hợp lệ tạo ngay; từng người vẫn bấm Vào nhóm. ACTIVITY thêm chọn tập participant/số nhóm, random preview cân số lượng và chỉnh trước start, không xáo trong lượt.
+
+Theo [recording](../product/recording.md), thêm điều khiển ghi/dừng cho host, chỉ báo đang ghi cho mọi người, xử lý/sẵn sàng/lỗi và nơi xem video theo phiên/kênh. Ghi màn hình/camera/âm thanh MAIN, không ghi nhóm riêng. Không tự bịa quota/retention/quyền xóa; clip vài phút là demo, không giới hạn sản phẩm. Prototype chỉ mô phỏng, không tự coi đã có recorder/storage. Chưa sửa Figma trong lượt tài liệu này.

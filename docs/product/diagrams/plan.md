@@ -1,5 +1,7 @@
 # Kế hoạch sơ đồ Use Case phân rã
 
+> **Delta sau kickoff 02/11:** bản Astah/PNG được xác nhận trước đó là nguồn hình trước ba thay đổi mới. Lượt này chỉ sửa tài liệu, giữ nguyên file `.asta` và ảnh đã có thay đổi của người dùng. Cần bỏ bước host xét duyệt/nhánh từ chối DISCUSSION, đổi thành server kiểm/tạo rồi chủ động vào; bổ sung random trong chuẩn bị ACTIVITY, ghi/xem video MAIN ở phân rã cuộc họp theo [recording](../recording.md). Activity tổng thể giữ mức khái quát, không thêm chi tiết pipeline. Chưa tuyên bố ảnh đã đồng bộ delta này.
+
 Đích phân rã được người dùng đồng ý, cập nhật các quyết định tới 01/11/2026. Trạng thái bản Astah/PNG thực tế chỉ ghi tại [README bản vẽ](README.md). Đây là kế hoạch đầu ra mô hình UC, không là bảng trạng thái công việc cạnh tranh với GitHub Issues/Projects. Nguồn nghiệp vụ vẫn ở [danh mục UC](../use-case-catalog.md), [định hình tổng quan](../use-case-outline.md) và [6 hồ sơ đặc tả](../use-cases/README.md).
 
 ## Ba đợt triển khai
@@ -22,7 +24,7 @@ Mã trong bảng lược tiền tố `UC-`; tên sơ đồ bắt đầu bằng �
 - Association mô tả tương tác. Thành viên phối hợp nhận thông báo, được chuyển phạm vi hoặc nhận hỗ trợ không có quyền ra lệnh điều hành. Actor chủ động, actor phối hợp và điều kiện quyền lấy từ danh mục/đặc tả; sơ đồ không thay ma trận ACL.
 - Giữ quan hệ kế thừa hiện có trong mô hình tổng quan; không cần vẽ lại toàn cây trên từng góc nhìn. Chỉ thêm liên kết host khi có tương tác riêng, không nối lại mọi hành vi thành viên đã kế thừa.
 - Chuyển host (GRP-01) và kết thúc cuộc họp (LIVE-10) thuộc phân rã TQ-04 ở đợt 2. Giữ phần tử mô hình hiện có và mã cũ, không cắt chức năng hoặc ép vào phân rã hoạt động nhóm.
-- Trên hình, đặt thời lượng chỉ nối host; nhận countdown là luồng trong đặc tả. Thông báo hướng dẫn chung chỉ nối host; hỗ trợ riêng nối thêm thành viên trực tiếp trao đổi. Cập nhật 01/11: UC chuyển host chỉ nối host, không có bước thành viên đích xác nhận; kết thúc cuộc họp chỉ nối host.
+- Trên hình, đặt thời lượng chỉ nối host; nhận countdown là luồng trong đặc tả. Thông báo hướng dẫn chung chỉ nối host; hỗ trợ riêng ACTIVITY nối thêm thành viên trực tiếp trao đổi; DISCUSSION chỉ hỏi/trả lời qua LIVE-09 khi host ở MAIN. Cập nhật 01/11: UC chuyển host chỉ nối host, không có bước thành viên đích xác nhận; kết thúc cuộc họp chỉ nối host.
 - Đổi tên GRP-07 thành “Điều chuyển thành viên giữa các phòng”, GRP-09 thành “Kết thúc nhóm trao đổi”, gồm hai nhánh một/tất cả DISCUSSION; GRP-10 giữ mã truy vết đã gộp, không thêm oval thứ hai.
 - Đặt countdown có kết quả là đồng hồ chung cho lượt; hết giờ tự kết thúc ACTIVITY/về MAIN, không chờ host; không tạo oval hoặc actor hệ thống cho callback timer. Thông báo hướng dẫn chung có audience/ưu tiên âm thanh theo policy, không là oval khác chỉ để bật mic.
 - Duyệt rồi vào nhóm, chuẩn bị rồi bắt đầu, nhắn host rồi hỗ trợ là những quan hệ thời gian/điều kiện; không tự nối include/extend. Vẽ không bắt buộc freeze; freeze không bắt buộc vẽ. Đợt 1 chưa có quan hệ include/extend cần thêm.
