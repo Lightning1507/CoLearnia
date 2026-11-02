@@ -25,6 +25,8 @@ export const sources = [
   'docs/product/board-collaboration.md',
   'docs/product/use-case-outline.md',
   'docs/product/use-case-catalog.md',
+  'docs/product/functional-requirements.md',
+  'docs/product/delivery-domains.md',
   'docs/product/use-cases/README.md',
   'docs/product/use-cases/01-join-meeting.md',
   'docs/product/use-cases/02-discussion.md',

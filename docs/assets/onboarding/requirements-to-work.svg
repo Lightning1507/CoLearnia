@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="570" viewBox="0 0 1000 570" role="img" aria-labelledby="title desc"><title id="title">Từ nhu cầu tới task có thể giao</title><desc id="desc">UC mô tả mục tiêu, FR và AC xác định hành vi, miền xác định người chịu trách nhiệm, proposal chốt cách làm trước task.</desc><defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8Z" fill="#91aaa2"/></marker></defs><rect width="1000" height="570" fill="#fff"/><g font-family="Arial, sans-serif" fill="#183b38">
+<text x="32" y="38" font-size="26" fill="#183b38" text-anchor="start" font-weight="700">Từ “muốn cùng giải bài” tới công việc có thể giao</text>
+<rect x="32" y="72" width="445" height="105" rx="12" fill="#eef8f4" stroke="#b5d4ca"/>
+<text x="50" y="104" font-size="21" fill="#183b38" text-anchor="start" font-weight="700">UC · Người dùng muốn đạt điều gì?</text>
+<text x="50" y="135" font-size="18" fill="#536863" text-anchor="start" font-weight="400">UC-BOARD-01: Dừng hình để cộng tác</text>
+<text x="50" y="161" font-size="18" fill="#536863" text-anchor="start" font-weight="400">Đọc luồng sử dụng, không chỉ tên nút</text>
+<polyline points="477,124 515,124" fill="none" stroke="#91aaa2" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="530" y="72" width="438" height="105" rx="12" fill="#eef8f4" stroke="#b5d4ca"/>
+<text x="548" y="104" font-size="21" fill="#183b38" text-anchor="start" font-weight="700">FR + AC · Hệ thống phải làm đúng gì?</text>
+<text x="548" y="135" font-size="18" fill="#536863" text-anchor="start" font-weight="400">FR-06-02: chốt ảnh chung đúng nguồn</text>
+<text x="548" y="161" font-size="18" fill="#536863" text-anchor="start" font-weight="400">Cùng ảnh • tiếng vẫn chạy • lớp không dừng</text>
+<polyline points="749,177 749,215 500,215 500,247" fill="none" stroke="#91aaa2" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="200" y="247" width="600" height="112" rx="12" fill="#eef8f4" stroke="#b5d4ca"/>
+<text x="218" y="279" font-size="21" fill="#183b38" text-anchor="start" font-weight="700">Miền M5 · Ai chịu trách nhiệm đầu ra?</text>
+<text x="218" y="310" font-size="18" fill="#536863" text-anchor="start" font-weight="400">M5: board/freeze; phối hợp M3 nguồn hình,</text>
+<text x="218" y="336" font-size="18" fill="#536863" text-anchor="start" font-weight="400">M4 quyền nhóm, M2 ảnh/tệp. Không làm tách biệt.</text>
+<polyline points="500,359 500,391" fill="none" stroke="#91aaa2" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="200" y="391" width="600" height="100" rx="12" fill="#eef8f4" stroke="#b5d4ca"/>
+<text x="218" y="423" font-size="21" fill="#183b38" text-anchor="start" font-weight="700">Đề xuất + review → task + ước lượng</text>
+<text x="218" y="454" font-size="18" fill="#536863" text-anchor="start" font-weight="400">Thống nhất cách làm và điểm giao → chia task Jira</text>
+<text x="218" y="480" font-size="18" fill="#536863" text-anchor="start" font-weight="400">Mỗi task chỉ rõ FR/AC, người làm và điều kiện hoàn thành</text>
+<text x="32" y="535" font-size="18" fill="#536863" text-anchor="start" font-weight="400">Miền là cụm trách nhiệm; FR là yêu cầu. Không chia task bằng cách đếm đều số FR.</text>
+</g></svg>

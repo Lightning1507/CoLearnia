@@ -30,3 +30,9 @@ Theo [kế hoạch/đích phân rã](plan.md), UC ở giữa khung ngang, actor 
 Các số lượng/font/ảnh của các đợt bàn giao cũ không phải trạng thái hiện tại. [Bản batch3 lịch sử](../../archive/diagrams/README.md) được chuyển khỏi thư mục đang làm; tiếp tục chỉnh đúng project hiện hành. Không tạo project mới để thay bản có chỉnh sửa thủ công.
 
 Checker kiểm nguồn/tệp/liên kết, không đọc ngữ nghĩa Astah, xác minh font hay chứng minh media đã chạy. Lượt đồng bộ này lưu project hiện tại và thay PNG bằng bản export mới; không sửa layout của người dùng.
+
+## Trạng thái hiện hành — xác nhận ngày 02/11/2026
+
+Người phụ trách dự án xác nhận file Astah và các ảnh UC hiện có là bản mới nhất, đã cập nhật. Ghi chú trước đây cho rằng Astah/PNG chưa cập nhật đã lỗi thời và được thay bằng xác nhận này. Các kết quả kiểm API/font ở trên là bằng chứng của lần kiểm trước, không phải lần kiểm mới trong lượt sửa tài liệu này.
+
+Quy tắc board hiện hành ở [board](../board-collaboration.md) và [HS-05 bản 3](../use-cases/05-board-collaboration.md): BOARD-01/05 chỉ DISCUSSION/ACTIVITY; BOARD-02 có quyền vẽ nhóm và quyền host tại MAIN. MAIN không freeze/resume, giữ host vẽ LIVE; không thêm oval tổng quan. Activity thể hiện hoạt động theo đúng phạm vi. Tiếp tục dùng cùng [CoLearnia-use-cases.asta](CoLearnia-use-cases.asta) và các đường dẫn PNG trong bảng trên.

@@ -4,16 +4,18 @@ Copy phần phù hợp vào GitHub Issue/PR; đây là mẫu, không là task đ
 
 Khi viết PR description, chuyển brief/bàn giao thành nội dung tiếng Việt theo [PR template](../../.github/pull_request_template.md) và [quy ước PR](../../CONTRIBUTING.md#nhánh-và-pr): giữ What, Why, Environment Variables và Developer Test; How/Limits chỉ khi có thông tin cần giải thích. Không dán nguyên brief, điền cho đủ heading hoặc dùng mẫu bàn giao thay format PR. Env không đổi ghi “Không có”; test nêu kết quả thật và phần chưa kiểm.
 
+Khi viết PR description, chuyển brief/bàn giao thành nội dung tiếng Việt theo [PR template](../../.github/pull_request_template.md) và [quy ước PR](../../CONTRIBUTING.md#nhánh-và-pr): giữ What, Why, Environment Variables và Developer Test; How/Limits chỉ khi có thông tin cần giải thích. Không dán nguyên brief, điền cho đủ heading hoặc dùng mẫu bàn giao thay format PR. Env không đổi ghi “Không có”; test nêu kết quả thật và phần chưa kiểm.
+
 ## Brief trước triển khai
 
 PR title dùng tiếng Anh theo `<type>(<scope>): <short description> (#<issue>)`; số Issue chỉ thêm khi đã có thật. Description bằng tiếng Việt; `Closes #...` chỉ khi hoàn tất Issue, còn đóng góp một phần dùng `Refs #...`. Xem CONTRIBUTING để dùng chung quy ước, không lấy tên nhánh làm title mặc định.
 
-- Feature ID / issue / owner / reviewer / nhánh:
+- PB / FR ID / UC hoặc feature ID / issue / owner / reviewer / nhánh:
 - Kết quả quan sát được:
 - Nguồn áp dụng: đường dẫn + mục; quyết định đã chốt/điểm chưa rõ:
 - Phạm vi sửa và ngoài phạm vi:
-- Interface/contract bị ảnh hưởng, bên dùng và task phụ thuộc:
-- Tiêu chí đạt: thành công, từ chối/lỗi và cleanup/reconnect nếu liên quan:
+- Interface/contract bị ảnh hưởng: bên cung cấp/bên gọi, người soạn/reviewer; input/output, lỗi/quyền/state; xử lý khi thất bại/thu quyền; link task cung cấp/sử dụng và ca kiểm tích hợp:
+- Tiêu chí đạt: AC của FR mà task bao phủ; thành công, từ chối/lỗi và cleanup/reconnect nếu liên quan; phần AC cần phối hợp task khác:
 - Cách kiểm: lệnh/test/hành trình thật, điều kiện môi trường:
 
 Task chat dùng [messaging](../product/messaging.md): nêu conversation kind, audience được đọc/gửi/nhận event/tải file, phân trang root/reply và xử lý khi mất quyền. Không lấy session envelope của cuộc gọi làm contract bắt buộc cho DM/thread Workspace. DM rejoin và PRIVATE đã chốt tại messaging; nêu ca thêm/gỡ/re-add, lịch sử còn lưu và thu event/file/LIVE. Role quản lý không thay quyền nội dung; bị loại rồi rejoin Workspace không hồi PRIVATE cũ, owner/admin phải thêm lại. Schema/index còn cần thiết kế.

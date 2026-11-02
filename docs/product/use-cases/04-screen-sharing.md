@@ -27,7 +27,7 @@
 2. Hệ thống kiểm quyền/scope và nguồn hiện có; nếu trống thì giữ chỗ tự động cho actor để chuẩn bị chọn nguồn. Đây không là yêu cầu host duyệt.
 3. Hệ thống cho thực hiện Chọn màn hình để chia sẻ; người dùng bấm để browser mở bộ chọn nguồn và tự chọn màn hình/cửa sổ/tab. Ứng dụng không tự chọn nguồn hoặc tái sử dụng quyền capture cũ.
 4. Khi browser trả nguồn, hệ thống kiểm lại quyền, scope và giữ chỗ còn hợp lệ, rồi bắt đầu nguồn share của actor.
-5. Hệ thống chỉ cung cấp hình và âm thanh đi kèm màn hình nếu có cho đúng người được phép nhận, hiển thị người đang chia sẻ. Người xem có thể chọn freeze/vẽ theo HS-05, không bắt buộc thực hiện.
+5. Hệ thống chỉ cung cấp hình và âm thanh đi kèm màn hình nếu có cho đúng người được phép nhận, hiển thị người đang chia sẻ. Theo HS-05, MAIN chỉ host vẽ LIVE, không freeze; trong DISCUSSION/ACTIVITY thành viên có thể freeze/vẽ, không bắt buộc thực hiện.
 6. Khi xong, actor chọn dừng chia sẻ trong ứng dụng hoặc dùng Stop của browser.
 7. Hệ thống đóng nguồn screen/screen audio của actor và giải phóng chỗ để người khác có thể share; cập nhật trạng thái nguồn trong đúng scope. Chỉ dẫn trên hình trực tiếp và yêu cầu dừng hình cũ bị hủy theo nguồn; khung hình đã dừng được xử lý theo HS-05.
 

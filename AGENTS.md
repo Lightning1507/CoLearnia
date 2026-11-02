@@ -21,6 +21,7 @@
 
 ## Triển khai và an toàn
 
+- Khi chia việc/estimate, dùng [FR và AC](docs/product/functional-requirements.md) cùng PB/UC; FR chưa là task đã giao hoặc cam kết lịch.
 - Theo [workflow AI](docs/ai/workflow.md), [task brief](docs/ai/task-template.md) và [CONTRIBUTING](CONTRIBUTING.md); tạo nhánh đúng quy ước, giữ thay đổi có sẵn.
 - GitHub Issues nhận việc/trạng thái; PR lưu review/bằng chứng. GitHub Projects sẽ cấu hình sau; không dựng thêm bảng trạng thái cạnh tranh trong repo.
 - Đọc [kiến trúc](docs/architecture.md), [contracts](docs/contracts/README.md), [model DB](docs/database/model.md) và [lifecycle](docs/database/lifecycle.md) theo miền. Không tự chạy reset/seed/migration hoặc thay schema từ task tài liệu/UI.
@@ -38,3 +39,5 @@
 - [Host cuộc họp](docs/product/live-session.md#83-chuyển-host-và-host-mất-mạng): một kiểu cuộc họp, người bắt đầu là host; chuyển quyền trực tiếp, không cần người nhận chấp nhận, không tự nhận host. MAIN mọi participant tự share khi trống, không xin host/giành nguồn; DISCUSSION vẫn cấm share riêng. Host mất mạng quá grace: chọn ngẫu nhiên participant hợp lệ làm host tạm, tự hoàn quyền khi host cũ quay lại hợp lệ; host chủ động rời khi còn giữ quyền thì kết thúc phiên cho mọi người; nhánh không có ứng viên/nhiều sự cố đọc nguồn trước khi triển khai.
 
 - PRIVATE theo [messaging](docs/product/messaging.md): owner/admin quản lý danh sách, nội dung vẫn cần membership và channel access; thêm/re-add thấy lịch sử còn lưu, gỡ thu event/file/LIVE ngay. TEXT/LIVE độc lập WORKSPACE/PRIVATE; khóa trên UI không thay ACL. DM rejoin chỉ mở lịch sử khi cả hai membership hợp lệ; PRIVATE cũ không tự phục hồi sau rejoin Workspace, owner/admin phải thêm lại.
+
+- Board theo [nguồn hiện hành](docs/product/board-collaboration.md): MAIN không freeze/resume, chỉ host hiện hành ở MAIN/hướng dẫn được vẽ/clear LIVE, kể cả người khác share; nét thường hoặc tự biến mất, đổi/dừng nguồn xóa overlay. DISCUSSION/ACTIVITY giữ freeze/vẽ chung của nhóm, không công bố ra MAIN. Không cho quyền share thay quyền vẽ; server kiểm role/scope/source, thu quyền host cũ; chưa chốt thời gian/fade nét tạm.

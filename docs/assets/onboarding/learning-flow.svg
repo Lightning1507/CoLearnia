@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="650" viewBox="0 0 1000 650" role="img" aria-labelledby="title desc"><title id="title">Hai nhánh học nhóm trong một buổi học</title><desc id="desc">Từ MAIN có thể xin DISCUSSION hoặc host tổ chức ACTIVITY. Hai loại không đồng thời, đều trở về MAIN.</desc><defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8Z" fill="#91aaa2"/></marker></defs><rect width="1000" height="650" fill="#fff"/><g font-family="Arial, sans-serif" fill="#183b38">
+<text x="32" y="38" font-size="26" fill="#183b38" text-anchor="start" font-weight="700">Hai cách học nhóm trong một buổi học</text>
+<rect x="245" y="65" width="510" height="88" rx="12" fill="#eef8f4" stroke="#b5d4ca"/>
+<text x="263" y="97" font-size="21" fill="#183b38" text-anchor="start" font-weight="700">Vào LIVE → học ở MAIN</text>
+<text x="263" y="128" font-size="18" fill="#536863" text-anchor="start" font-weight="400">Một nguồn chia sẻ • chỉ host vẽ trực tiếp</text>
+<polyline points="500,153 500,179 252,179 252,207" fill="none" stroke="#91aaa2" stroke-width="2" marker-end="url(#arrow)"/>
+<polyline points="500,179 748,179 748,207" fill="none" stroke="#91aaa2" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="32" y="207" width="440" height="112" rx="12" fill="#eef8f4" stroke="#b5d4ca"/>
+<text x="50" y="239" font-size="21" fill="#183b38" text-anchor="start" font-weight="700">Trao đổi riêng, vẫn theo dõi bài giảng</text>
+<text x="50" y="270" font-size="18" fill="#536863" text-anchor="start" font-weight="400">Thành viên xin DISCUSSION</text>
+<text x="50" y="296" font-size="18" fill="#536863" text-anchor="start" font-weight="400">Host duyệt → từng người bấm “Vào nhóm”</text>
+<rect x="528" y="207" width="440" height="112" rx="12" fill="#eef8f4" stroke="#b5d4ca"/>
+<text x="546" y="239" font-size="21" fill="#183b38" text-anchor="start" font-weight="700">Làm bài theo nhóm độc lập</text>
+<text x="546" y="270" font-size="18" fill="#536863" text-anchor="start" font-weight="400">Host chuẩn bị ACTIVITY + thời lượng chung</text>
+<text x="546" y="296" font-size="18" fill="#536863" text-anchor="start" font-weight="400">Đóng DISCUSSION trước khi bắt đầu lượt</text>
+<polyline points="252,319 252,353" fill="none" stroke="#91aaa2" stroke-width="2" marker-end="url(#arrow)"/>
+<polyline points="748,319 748,353" fill="none" stroke="#91aaa2" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="32" y="353" width="440" height="112" rx="12" fill="#eef8f4" stroke="#b5d4ca"/>
+<text x="50" y="385" font-size="21" fill="#183b38" text-anchor="start" font-weight="700">Học trong DISCUSSION</text>
+<text x="50" y="416" font-size="18" fill="#536863" text-anchor="start" font-weight="400">Nhận bài giảng MAIN • tiếng nhóm riêng</text>
+<text x="50" y="442" font-size="18" fill="#536863" text-anchor="start" font-weight="400">Freeze/vẽ chung • không share riêng</text>
+<rect x="528" y="353" width="440" height="112" rx="12" fill="#eef8f4" stroke="#b5d4ca"/>
+<text x="546" y="385" font-size="21" fill="#183b38" text-anchor="start" font-weight="700">Học trong ACTIVITY</text>
+<text x="546" y="416" font-size="18" fill="#536863" text-anchor="start" font-weight="400">Mỗi nhóm một nguồn share riêng</text>
+<text x="546" y="442" font-size="18" fill="#536863" text-anchor="start" font-weight="400">Freeze/vẽ chung • không nhận bài giảng MAIN</text>
+<polyline points="252,465 252,502 500,502 500,540" fill="none" stroke="#91aaa2" stroke-width="2" marker-end="url(#arrow)"/>
+<polyline points="748,465 748,502 500,502" fill="none" stroke="#91aaa2" stroke-width="2" marker-end="url(#arrow)"/>
+<text x="47" y="495" font-size="17" fill="#536863" text-anchor="start" font-weight="400">Tự rời / host đóng</text>
+<text x="665" y="495" font-size="17" fill="#536863" text-anchor="start" font-weight="400">Tự về sớm / hết giờ tự về</text>
+<rect x="245" y="540" width="510" height="78" rx="12" fill="#eef8f4" stroke="#b5d4ca"/>
+<text x="263" y="572" font-size="21" fill="#183b38" text-anchor="start" font-weight="700">Trở về MAIN, tiếp tục buổi học</text>
+<text x="263" y="603" font-size="18" fill="#536863" text-anchor="start" font-weight="400">Tin nhắn và hình/nét nhóm không tự công khai</text>
+<text x="32" y="642" font-size="17" fill="#536863" text-anchor="start" font-weight="400">Hai nhánh là lựa chọn theo nhu cầu, không phải hai bước bắt buộc nối tiếp.</text>
+</g></svg>
