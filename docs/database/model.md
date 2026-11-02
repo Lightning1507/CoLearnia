@@ -57,3 +57,9 @@ Nguồn liên quan: [contracts](../contracts/README.md), [Workspace](../product/
 ## Ảnh hưởng board ngày 02/11/2026
 
 MAIN giữ overlay/nét trong RAM, không freeze/không file FRAME; chỉ board DISCUSSION/ACTIVITY có intent và FrozenFrame. Nét thường MAIN và nét tự biến mất có lifecycle khác nhau theo [board](../product/board-collaboration.md). Giữ 13 collection, không thêm collection nét/board hoặc DB write theo điểm. FRAME yêu cầu groupId hợp lệ; xem [collection design](collection-design.md). Đây là sửa thiết kế, chưa chạy schema/migration.
+
+## Phạm vi mới sau kickoff 02/11
+
+Thiết kế 13 collection hiện có chưa bao phủ đầy đủ recording. Theo [recording](../product/recording.md), cần metadata gắn phiên/kênh, trạng thái xử lý, tham chiếu byte, người khởi tạo/thời gian và thông tin phục vụ cleanup/quota. Video byte ở kho tệp, không nhúng MongoDB. Collection riêng hay mở rộng file metadata, field/index và migration do proposal M2–M3 thống nhất; chưa tạo collection thứ 14 hoặc schema runnable.
+
+DISCUSSION không còn request chờ host; E11 là thao tác tạo được kiểm hợp lệ ngay trong runtime, không collection xét duyệt. ACTIVITY thêm random preview vào cấu hình hiện có, chưa cần thực thể mới.

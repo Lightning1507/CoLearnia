@@ -307,3 +307,9 @@ Giữ field/13 collection hiện tại. [Capacity](../capacity.md) chọn 25 là
 - Bước này kiểm tài liệu/độ phủ/liên kết; chưa có test MongoDB, validator/index hoặc migration thực thi từ đầu ra này.
 
 Đặc tả index/validation/concurrency và kế hoạch migration/test hiện hành ở [bước 5](integrity-and-migrations.md). Các ghi chú “ở bước 5” phía trên là ranh giới nguồn: không có nghĩa còn thiếu đặc tả hoặc đã chạy DB. [Bước 6 đã review chéo](review-2026-11-01.md); các chỉnh sửa kỹ thuật sau review nằm ngay tại nguồn này và integrity, chưa có schema hoặc DB test thực thi.
+
+## Delta thiết kế sau kickoff 02/11
+
+RECORD-01 / UC-LIVE-11–12 / FR-15-01–03 bổ sung metadata bản ghi gắn LiveSession/kênh, trạng thái ghi/xử lý/sẵn sàng/lỗi ở mức hành vi, tham chiếu video byte và cleanup. Video thuộc kho tệp; không nhúng byte vào MongoDB hoặc tái dùng FRAME/attachment để vượt ACL. Xem [recording](../product/recording.md) và [model](model.md). 13 collection/16 khái niệm cũ mô tả phạm vi trước recording, chưa là thiết kế recording hoàn tất; chưa chốt field/index/migration mới.
+
+Quyền xem kiểm membership và channel access hiện tại, kể cả PRIVATE, không dựa vào participant cũ; xóa kênh/Workspace và thu quyền phải được tính trong lifecycle. Stop/end hoàn tất hoặc báo lỗi, dọn tài nguyên/tệp dở dang; quota/retention/quyền xóa và xử lý restart còn chờ proposal. DISCUSSION tạo hợp lệ ngay, không trạng thái host xét/hủy pending; random preview chỉ là cấu hình ACTIVITY, không tự chuyển người.

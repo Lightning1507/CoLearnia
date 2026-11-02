@@ -239,3 +239,9 @@ Còn mở đúng nguồn: thư viện/tham số hash, contract limits chưa có 
 ## Bổ sung kiểm board ngày 02/11/2026
 
 FRAME chỉ chấp nhận groupId DISCUSSION/ACTIVITY đang có quyền và intent hợp lệ; null/MAIN bị từ chối trước reserve/upload/bind. MAIN overlay không tạo file FRAME. Bổ sung DB-09: deny MAIN freeze dù host, thu quyền mutation host cũ và stale source revision; nhóm giữ FROZEN hợp lệ khi nguồn live dừng. Nét thường/tự biến mất tại MAIN vẫn ở RAM, không thêm collection/index; xem [board](../product/board-collaboration.md). Chưa chạy kiểm chứng DB.
+
+## Delta thiết kế sau kickoff 02/11
+
+RECORD-01 / UC-LIVE-11–12 / FR-15-01–03 bổ sung metadata bản ghi gắn LiveSession/kênh, trạng thái ghi/xử lý/sẵn sàng/lỗi ở mức hành vi, tham chiếu video byte và cleanup. Video thuộc kho tệp; không nhúng byte vào MongoDB hoặc tái dùng FRAME/attachment để vượt ACL. Xem [recording](../product/recording.md) và [model](model.md). 13 collection/16 khái niệm cũ mô tả phạm vi trước recording, chưa là thiết kế recording hoàn tất; chưa chốt field/index/migration mới.
+
+Quyền xem kiểm membership và channel access hiện tại, kể cả PRIVATE, không dựa vào participant cũ; xóa kênh/Workspace và thu quyền phải được tính trong lifecycle. Stop/end hoàn tất hoặc báo lỗi, dọn tài nguyên/tệp dở dang; quota/retention/quyền xóa và xử lý restart còn chờ proposal. DISCUSSION tạo hợp lệ ngay, không trạng thái host xét/hủy pending; random preview chỉ là cấu hình ACTIVITY, không tự chuyển người.
