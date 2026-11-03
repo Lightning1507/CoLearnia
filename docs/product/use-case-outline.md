@@ -20,14 +20,14 @@ Nguồn: [scope](scope.md), [backlog sơ bộ](backlog-draft.md), [quyền Works
 | A-00 | Người dùng hệ thống  | Vai trò chung, không biểu thị đã đăng nhập hoặc có quyền Workspace            | Đăng ký, đăng nhập, đăng xuất; tạo Workspace, xem Workspace mình thuộc và tham gia qua lời mời; làm actor tổng quát                                                                        |
 | A-03 | Thành viên Workspace | Có membership hiện hành trong Workspace đang xét; chỉ truy cập kênh được phép | Trao đổi trong kênh, DM cùng Workspace, thread trong TEXT, gửi/đọc/tải tệp đúng phạm vi; truy cập LIVE được phép, mic/camera, chat cuộc họp, tham gia nhóm và cộng tác hình/nét đúng scope |
 | A-04 | Admin Workspace      | Có vai trò admin trong Workspace đang xét                                     | Đổi tên Workspace; tạo/thu hồi lời mời; quản lý kênh; loại member theo quyền                                                                                                               |
-| A-05 | Owner Workspace      | Chủ sở hữu duy nhất của Workspace đang xét                                    | Các quyền quản trị tương ứng; đổi admin/member, chuyển owner, xóa Workspace                                                                                                                |
+| A-05 | Owner Workspace      | Chủ sở hữu duy nhất của Workspace đang xét                                    | Các quyền quản trị tương ứng; đổi admin/member, xóa Workspace                                                                                                                              |
 | A-07 | Host cuộc họp        | Đang giữ vai trò host hợp lệ trong LiveSession mà mình tham gia               | Điều hành phiên, xử lý DISCUSSION, tổ chức ACTIVITY, đặt thời lượng, vào hỗ trợ ACTIVITY và đóng DISCUSSION; ACTIVITY tự kết thúc theo deadline                                            |
 
 ### Giới hạn và cách đọc actor
 
 - Một người có thể đóng nhiều vai trò; vai trò phụ thuộc Workspace hoặc LiveSession cụ thể. A-03 chỉ tư cách thành viên nói chung, không chỉ riêng role `member` trong dữ liệu.
 - Admin/owner vẫn có thể trao đổi như thành viên khi đủ quyền truy cập; host vẫn có thể tham gia cuộc họp. Generalization tại mục 3 dùng chung tương tác; điều kiện của từng UC vẫn bắt buộc.
-- Admin không đổi role, sửa/xóa owner hoặc admin khác; owner có quyền đổi admin/member và chuyển owner theo baseline. Chưa đưa các thao tác này thành oval ở sơ đồ tổng quan.
+- Admin không đổi role, sửa/xóa owner hoặc admin khác; owner có quyền đổi admin/member theo baseline. Chưa đưa các thao tác này thành oval ở sơ đồ tổng quan.
 - Owner/admin không mặc nhiên là host, không mặc nhiên được nghe nhóm riêng hoặc đọc DM. Host không được quản trị Workspace chỉ vì giữ vai trò host.
 - Người bắt đầu LiveSession trở thành host; người vào sau không tự nhận host. Không có UC bật chế độ điều hành hoặc tự nhận host. Chuyển host do host chọn và gán trực tiếp cho người tham gia hợp lệ, không chờ chấp nhận; mất mạng quá grace thì server chọn ngẫu nhiên participant hợp lệ làm host tạm và tự hoàn quyền khi host cũ quay lại hợp lệ trong cùng phiên. Đây là nhánh phục hồi của UC điều hành, không là UC tự nhận host; host chủ động rời khi còn quyền kết thúc phiên, người đã bàn giao chính thức rời như thành viên; không có ứng viên/host tạm mất mạng còn cần đặc tả. MAIN mọi participant tự share khi nguồn trống, không xin host.
 - MAIN, DISCUSSION, ACTIVITY là ngữ cảnh hoạt động; không tạo actor nhóm A/B hoặc actor riêng cho từng mode. Quyền chia sẻ và nhận nội dung thể hiện trong đặc tả.
@@ -97,3 +97,9 @@ Theo xác nhận của người dùng, bỏ oval TQ-06 khỏi tổng quan. TQ-04
 ## Cập nhật sau kickoff 02/11
 
 TQ-04 bao gồm UC-LIVE-12 xem lại recording theo quyền kênh; TQ-07 giữ vai trò điều hành nhóm, không xét duyệt DISCUSSION. UC-LIVE-11 ghi hình là quyền host trong miền cuộc họp, thể hiện ở phân rã điều hành cuộc họp. Random nằm trong UC chuẩn bị ACTIVITY. Không tự thêm actor recorder hoặc oval tổng quan riêng cho thao tác kỹ thuật. [Recording](recording.md) là nguồn; Astah/PNG chưa được sửa trong lượt tài liệu này.
+
+## Hồ sơ cá nhân — bổ sung ngày 03/11/2026
+
+ACC-04 Chỉnh sửa hồ sơ cá nhân (tên hiển thị và avatar, gồm xóa ảnh) và ACC-05 Đổi mật khẩu là hai mục tiêu người dùng đã đăng nhập theo PROFILE-01. Chưa chỉnh Astah hoặc chốt bố cục tổng quan mới trong task proposal; không thêm actor hoặc oval riêng cho upload, chọn ảnh hay nhập mật khẩu hiện tại. Quên mật khẩu ngoài MVP.
+
+Ngày 03/11/2026: UC-WS-11 chuyển owner ngừng áp dụng trong MVP; không vẽ oval chuyển owner. Người tạo giữ OWNER, cấp ADMIN để hỗ trợ. Không thay chức năng chuyển host cuộc họp.

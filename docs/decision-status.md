@@ -37,11 +37,13 @@ Chi tiết implementation thông thường được chọn/review trong task đ�
 | Capacity          | Giữ gate chức năng 5; thử 10 → 25 trước, 50 nếu đạt; 100 không bắt buộc. Một app process, một mediasoup worker, Router/LIVE; Mongo local Docker rs0 một node | Chưa profile đạt; cần queue/pool/gate/quota budget hữu hạn và tải kết hợp. Không tự thêm Redis/multiapp/sharding. [Capacity](capacity.md)                                                                  |
 | Media             | mediasoup v3 chọn cho PoC, scaffold có Opus/VP8/native worker                                                                                                | ADR-001 còn Proposed; chưa chứng minh mic/camera/share/TURN/isolation/reconnect hoặc capacity. [ADR](adr/001-media-foundation.md)                                                                          |
 | Contracts         | Có schema scaffold và error/envelope; đã ghi đích PRIVATE/một kiểu họp/ObjectId/RuntimeId                                                                    | Source còn RESTRICTED/FREE-MODERATED, resourceId rộng; đồng bộ trước consumer nghiệp vụ. [Contracts](contracts/README.md)                                                                                  |
-| UC/bản vẽ         | 5 actor, 8 oval tổng quan; hiện hành 47 UC độc lập/truy cập chung và 6 hồ sơ trọng tâm                                                                       | Hình trước kickoff đã được xác nhận; sau kickoff cần bỏ host xét DISCUSSION, thêm random trong chuẩn bị ACTIVITY và ghi/xem recording. Chưa sửa `.asta`/PNG lượt này. [Bản vẽ](product/diagrams/README.md) |
+| UC/bản vẽ         | 5 actor, 8 oval tổng quan; hiện hành 48 UC độc lập/tài khoản/truy cập chung và 6 hồ sơ trọng tâm                                                             | Hình trước kickoff đã được xác nhận; sau kickoff cần bỏ host xét DISCUSSION, thêm random trong chuẩn bị ACTIVITY và ghi/xem recording. Chưa sửa `.asta`/PNG lượt này. [Bản vẽ](product/diagrams/README.md) |
 
 [Review DB bước 6](database/review-2026-11-01.md) ghi những sửa trước; [review tổng thể trước push](review-before-push-2026-11-01.md) ghi kết quả và giới hạn mới nhất. Không dùng review làm schema thứ hai hoặc bằng chứng DB/media chạy đúng.
 
 ## Điểm mở cần xử lý theo task
+
+**Làm rõ M1 ngày 03/11/2026:** đăng ký thành công tự đăng nhập; đi từ link mời thì quay lại lời mời và chủ động xác nhận, server kiểm lại hiệu lực trước cấp membership. Đăng nhập thông thường có danh sách/nút Tạo Workspace, kể cả chưa có Workspace. Lời mời Workspace dùng link, không hệ thống gửi mail hoặc nhập mã; PRIVATE cấp qua danh sách thành viên hiện có. Nguồn: [Workspace](product/workspace-channels.md). [Proposal M1](proposals/m1-workspace-auth.md) là Draft thiết kế/estimate, không tự chốt package/hash/endpoint hoặc lịch triển khai.
 
 | Điểm mở                                                                              | Khi nào cần quyết định                                                                                                            |
 | ------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
@@ -71,3 +73,11 @@ Các quyết định cũ “FREE/MODERATED”, “chuyển host cần chấp nh�
 Đã chốt: DISCUSSION tạo tự động sau kiểm hợp lệ, bỏ host duyệt/từ chối/hủy pending nghiệp vụ; người trong roster vẫn chủ động vào. ACTIVITY thêm random theo tập người/số nhóm, cân số lượng chênh tối đa một, host xem/chỉnh trước start. Recording MAIN gồm màn hình, camera, âm thanh do host ghi/dừng, lưu video cho thành viên còn quyền kênh xem; không ghi nhóm riêng.
 
 Chưa chốt: cơ chế recorder/encode/composition, bố cục/số camera, codec, schema/index metadata, quota, retention/quyền xóa, xử lý sự cố recorder/host chuyển quyền. Clip demo vài phút là mục tiêu PoC, không giới hạn sản phẩm. Chưa có benchmark hoặc evidence feature hoạt động. Nguồn: [group modes](product/group-modes.md), [recording](product/recording.md).
+
+## Hồ sơ cá nhân ngày 03/11/2026
+
+Đã chốt PROFILE-01: người dùng sửa tên hiển thị, cập nhật/xóa avatar và đổi mật khẩu bằng mật khẩu hiện tại. Quên mật khẩu để sau MVP. M1 chính, M2 phối hợp file avatar; 58 FR, M1 17 FR. Đổi mật khẩu thành công phải đăng xuất tất cả phiên của tài khoản trên mọi trình duyệt/thiết bị, thu socket/media liên quan và yêu cầu đăng nhập lại. Avatar chỉ cho chính chủ hoặc người đã đăng nhập có chung Workspace còn hiệu lực xem, tại nơi họ được phép thấy thông tin thành viên; không công khai URL ảnh. File purpose/binding, cách thực thi ACL, giới hạn ảnh và cleanup còn chờ review kỹ thuật; các phương án trong [proposal M1](proposals/m1-workspace-auth.md) là Draft, không tự thành schema thực thi. Catalog thêm ACC-04/05; Astah/PNG chưa cập nhật scope mới này.
+
+## OWNER/ADMIN ngày 03/11/2026
+
+Bỏ chuyển owner Workspace khỏi MVP; người tạo giữ OWNER, cấp/thu ADMIN hỗ trợ. FR-02-08/UC-WS-11 ngừng áp dụng, không tái dùng mã; còn 58 FR, M1 17 FR và 48 UC hiện hành. Chuyển host cuộc họp giữ nguyên. Q9 đã đóng; thiết kế transfer Workspace cũ trong review lịch sử không là yêu cầu implementation.
