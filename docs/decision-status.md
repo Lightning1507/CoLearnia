@@ -70,4 +70,12 @@ Các quyết định cũ “FREE/MODERATED”, “chuyển host cần chấp nh�
 
 Đã chốt: DISCUSSION tạo tự động sau kiểm hợp lệ, bỏ host duyệt/từ chối/hủy pending nghiệp vụ; người trong roster vẫn chủ động vào. ACTIVITY thêm random theo tập người/số nhóm, cân số lượng chênh tối đa một, host xem/chỉnh trước start. Recording MAIN gồm màn hình, camera, âm thanh do host ghi/dừng, lưu video cho thành viên còn quyền kênh xem; không ghi nhóm riêng.
 
-Chưa chốt: cơ chế recorder/encode/composition, bố cục/số camera, codec, schema/index metadata, quota, retention/quyền xóa, xử lý sự cố recorder/host chuyển quyền. Clip demo vài phút là mục tiêu PoC, không giới hạn sản phẩm. Chưa có benchmark hoặc evidence feature hoạt động. Nguồn: [group modes](product/group-modes.md), [recording](product/recording.md).
+Chưa chốt: cơ chế recorder/encode/composition, bố cục/số camera, codec, schema/index metadata, quota, retention/quyền xóa, xử lý sự cố recorder. Vòng đời đổi host đã được làm rõ ngày 03/11 bên dưới. Clip demo vài phút là mục tiêu PoC, không giới hạn sản phẩm. Chưa có benchmark hoặc evidence feature hoạt động. Nguồn: [group modes](product/group-modes.md), [recording](product/recording.md).
+
+## Vòng đời recording chốt ngày 03/11/2026
+
+Recording gắn với phiên MAIN; đổi host tiếp tục ghi, quyền điều khiển theo host hiện hành. Người bắt đầu ghi đã bàn giao rồi rời không tự dừng; chuyển nhóm/hỗ trợ không dừng hoặc đưa nguồn riêng vào bản ghi. Bấm Stop/kết thúc phiên thì hoàn tất, Record mới sau đó tạo tệp mới. Host chưa bàn giao chủ động rời vẫn kết thúc phiên theo baseline. Hướng PoC share + camera người đang nói, độc lập pin/viewport; chưa chốt bố cục chi tiết/codec/quota/thời lượng, không áp giới hạn 8 giờ của Meet. Chi tiết hiện hành tại [recording](product/recording.md#vòng-đời-đã-chốt-ngày-03112026); cơ chế/metadata/crash và các nhánh host nhiều sự cố vẫn cần thiết kế, chưa có bằng chứng chạy thật.
+
+## Pipeline recording chốt ngày 03/11/2026
+
+Chọn mediasoup PlainTransport → GStreamer do app server quản lý, chỉ xuất RTP/RTCP của nguồn MAIN hợp lệ. M3 điều khiển pipeline động, ghép hình/trộn tiếng/encode; M2 quản lý lưu tệp. Thay lựa chọn pipeline còn mở ở phần trước; PoC vẫn phải kiểm đồng bộ, đổi/thu quyền nguồn, EOS/finalize và tải kết hợp. Chưa có benchmark chứng minh tối ưu hơn headless hoặc capacity đạt. Chi tiết tại [recording](product/recording.md) và [proposal M3](proposals/m3-media.md).

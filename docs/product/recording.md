@@ -16,10 +16,22 @@ Host chọn bắt đầu → server kiểm quyền và khả năng recorder → 
 
 ## PoC và phần chưa chốt
 
+### Vòng đời đã chốt ngày 03/11/2026
+
+- Kiến trúc recorder đã chọn: Recording service M3 do app server quản lý, dùng quyền/state M4 để cấp context chỉ đọc MAIN gắn session/epoch/recording generation; độc lập với tab/layout/pin và volume nghe cục bộ của host. M3 quản lý capture/encode và bàn giao video cho storage M2. Pipeline đã chọn: mediasoup PlainTransport xuất RTP/RTCP nội bộ → GStreamer nhận/giải mã, ghép hình, trộn tiếng và encode/mux. Phiên bản/plugin, điều khiển pipeline động, clock/timestamp mapping, codec và ngân sách tài nguyên phải kiểm qua PoC; chưa có bằng chứng đồng bộ/capacity đạt.
+- Recording gắn với phiên MAIN, độc lập với người bấm ghi. Chuyển DISCUSSION/ACTIVITY hoặc host vào hỗ trợ không dừng recording và không đưa media riêng của nhóm vào bản ghi.
+- Chuyển/hoàn quyền host hợp lệ không dừng recording; host hiện hành có quyền dừng, host cũ không còn quyền điều khiển. Người bắt đầu ghi đã bàn giao host rồi rời LIVE hoặc mất kết nối không tự làm dừng bản ghi nếu phiên còn hoạt động; quay lại nhận trạng thái hiện hành, không cần bấm Record để nối tiếp.
+- Host chưa bàn giao mà chủ động rời vẫn kết thúc phiên cho mọi người theo [live session](live-session.md#83-chuyển-host-và-host-mất-mạng), nên recording dừng theo phiên. Đóng tab/mất mạng theo disconnect/control lease/grace, không coi ngay là chủ động kết thúc. Phiên kết thúc do hết người theo lifecycle cũng dừng recording; không thêm bộ đếm người/nhánh kết thúc phiên riêng trong recorder.
+- Bấm Dừng hoặc kết thúc phiên thì chốt đầu vào và hoàn tất video. Sau khi dừng, lần Record mới tạo recording ID/tệp mới; retry cùng ý định không tạo đoạn mới. Recorder lỗi vẫn báo lỗi/cleanup, không tự mở bản ghi mới.
+- Bố cục ghi khi có share MAIN: nội dung trình chiếu ở vùng chính, camera người đang nói tại MAIN ở ô bên cạnh; người nói tắt camera thì dùng ảnh đại diện. Ghép thành một video, độc lập layout/pin/viewport/volume cá nhân. Audio trộn tất cả mic đang phát hợp lệ và screen audio MAIN, không chỉ tiếng người đang hiện hình. PoC còn cần chốt thuật toán chọn/chuyển người nói, tỷ lệ/kích thước, hiển thị khi không có share hoặc không ai nói, overlay và thông số encode.
+- Không áp giới hạn 8 giờ của Google Meet. Giới hạn thời lượng/quota cần chọn theo số đo và ngân sách storage/tài nguyên trước vận hành. Đây là quyết định hành vi cho CoLearnia, không tuyên bố sao chép toàn bộ tính năng hoặc kiến trúc nội bộ của Meet.
+
+### Phần cần kiểm chứng và thiết kế
+
 - Demo clip vài phút để kiểm chứng ghi → dừng → xử lý → lưu → xem lại đúng quyền; đây không phải giới hạn thời lượng sản phẩm.
-- **Proposal/PoC cần chọn:** cơ chế capture/composition/encode, thư viện hoặc tiến trình cần dùng, bố cục share/camera và số camera ghi; cách trộn âm thanh MAIN; codec/chất lượng, định dạng phát và hỗ trợ trình duyệt. Chưa chọn FFmpeg, MediaRecorder hoặc nhà cung cấp.
+- **PoC cần kiểm chứng:** pipeline PlainTransport → GStreamer, compositor/audiomixer, thêm/bớt và thu quyền nguồn động, đồng bộ RTP/RTCP và tiếng–hình; điều khiển helper, EOS/finalize, giới hạn queue. Cần chốt chi tiết bố cục/người nói, plugin/version, codec/chất lượng, định dạng playback/seek và hỗ trợ browser. Không dùng headless browser hoặc MediaRecorder làm pipeline recording hiện tại.
 - Cần thiết kế dung lượng/quota, thời gian lưu/xóa và quyền xóa, nơi lưu byte, danh sách/trang xem, hành vi khi hết dung lượng, restart hoặc ghi gián đoạn. Chưa tự chọn giá trị, không mặc định giữ vĩnh viễn hoặc có job retry bền vững.
-- Vòng đời chi tiết khi bàn giao host hoặc host tạm mất mạng cần proposal; quyền điều khiển luôn theo host hiện hành, không tự chuyển nguồn recorder khỏi MAIN.
+- Vòng đời recording khi đổi host theo quyết định trên; cần thiết kế handoff nguyên tử, crash/flush và admission. Các nhánh không có ứng viên host hoặc host tạm tiếp tục mất mạng vẫn theo điểm mở của live-session; không tự chốt fallback bằng recorder.
 - Chưa cam kết capacity với recording. PoC phải đo CPU/RAM/disk/network khi cùng gọi/share/chat/nhóm/TURN; kiểm gate/quota/cleanup, không tự thêm Redis/worker pool hoặc giảm camera để đạt số lượng.
 
 ## Truy vết và phân công
