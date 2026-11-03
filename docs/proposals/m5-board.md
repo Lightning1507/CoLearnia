@@ -117,7 +117,7 @@ flowchart TD
     UI --> CanvasOverlay
     CanvasOverlay --> Norm
     Norm --> BoardSocketClient
-    CanvasOverlay -.->|Capture Frame Blob| FileUploader
+    CanvasOverlay -.->|"Capture Frame Blob"| FileUploader
   end
 
   subgraph ServerApp ["🖥️ CoLearnia Server (Fastify + Socket.IO)"]
@@ -147,11 +147,11 @@ flowchart TD
     DiskStore[("Private File Storage<br/>(Frame JPEG/WebP Bytes)")]
   end
 
-  BoardSocketClient <==>|Socket.IO Events<br/>(board:*)| SocketHandler
-  FileUploader ==>|HTTP POST /api/files/upload<br/>(with intentId)| FileSvc
+  BoardSocketClient <-->|"Socket.IO Events (board:*)"| SocketHandler
+  FileUploader -->|"HTTP POST /api/files/upload (with intentId)"| FileSvc
   FileSvc --> MongoFiles
   FileSvc --> DiskStore
-  BoardRT -.->|Verify & Bind Frame| FileSvc
+  BoardRT -.->|"Verify & Bind Frame"| FileSvc
 
   classDef client fill:#EFF6FF,stroke:#3B82F6,stroke-width:2px,color:#1E3A8A
   classDef server fill:#F0FDF4,stroke:#16A34A,stroke-width:2px,color:#14532D
@@ -318,7 +318,7 @@ classDiagram
     +string boardId
     +int contextVersion
     +string authorParticipantId
-    +Point[] points
+    +Array~Point~ points
     +string color
     +float width
     +bool isVanishing
@@ -343,9 +343,9 @@ classDiagram
     +string state
   }
 
-  BoardState "1" *-- "0..*" Stroke : chứa trong RAM
-  BoardState "1" o-- "0..1" FreezeIntent : quản lý trong RAM
-  BoardState ..> MongoFileMetadata : tham chiếu qua frameId khi FROZEN
+  BoardState "1" *-- "0..*" Stroke : "chứa trong RAM"
+  BoardState "1" o-- "0..1" FreezeIntent : "quản lý trong RAM"
+  BoardState ..> MongoFileMetadata : "tham chiếu qua frameId khi FROZEN"
 ```
 
 ---
@@ -448,7 +448,7 @@ sequenceDiagram
   Note over C,S: Thao tác vẽ nét
   C->>C: Render nét vẽ lên màn hình cục bộ (Optimistic 60fps)
   C->>S: board.stroke.draw(strokeId, contextVersion, points, color, width, isVanishing)
-  S->>S: Kiểm tra quyền (MAIN chỉ host; nhóm kiểm tra membership)
+  S->>S: Kiểm tra quyền (MAIN chỉ host, nhóm kiểm tra membership)
   S->>S: Gán authorParticipantId = session.user.id
   S->>S: Tăng strokeSequence, lưu Stroke vào RAM
   S-->>C: Ack(strokeId, sequence)
