@@ -4,13 +4,13 @@ Mỗi thành viên đặt proposal `.md` của miền mình trong thư mục nà
 
 ## Đặt tên file
 
-| Miền                        | Tên file                |
-| --------------------------- | ----------------------- |
-| M1 — Tài khoản và Workspace | `m1-workspace-auth.md`  |
-| M2 — Chat và tệp            | `m2-messaging-files.md` |
-| M3 — Media                  | `m3-media.md`           |
-| M4 — Phiên họp và nhóm      | `m4-session-groups.md`  |
-| M5 — Board                  | `m5-board.md`           |
+| Miền                        | Tên file                                     |
+| --------------------------- | -------------------------------------------- |
+| M1 — Tài khoản và Workspace | `m1-workspace-auth.md`                       |
+| M2 — Chat và tệp            | `m2-messaging-files.md`                      |
+| M3 — Media                  | `m3-media.md`                                |
+| M4 — Phiên họp và nhóm      | [m4-session-groups.md](m4-session-groups.md) |
+| M5 — Board                  | `m5-board.md`                                |
 
 Phạm vi chính xác lấy từ [5 miền phụ trách](../product/delivery-domains.md) và [FR/AC](../product/functional-requirements.md). Chỉ tạo file của miền đã nhận, không cần tạo sẵn các file trống.
 
