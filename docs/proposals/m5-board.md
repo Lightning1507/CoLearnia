@@ -106,60 +106,67 @@ Hệ thống Bảng vẽ (Domain M5) được xây dựng dựa trên sự phân
 4. **File Storage Integration (Private File Service - M2):** Tách luồng truyền byte ảnh tĩnh lớn ra khỏi WebSocket bằng cách sử dụng HTTP POST upload có kiểm tra quyền và gắn binding với intent.
 
 ```mermaid
-%%{init: {"theme":"base","themeVariables":{"fontFamily":"Inter, Helvetica, Arial","fontSize":"14px","primaryColor":"#EEF2FF","primaryBorderColor":"#6366F1","primaryTextColor":"#1E1B4B","lineColor":"#64748B","clusterBkg":"#F8FAFC","clusterBorder":"#CBD5E1"},"flowchart":{"curve":"basis","htmlLabels":true}}}%%
-flowchart TD
-  subgraph ClientApp ["📱 CoLearnia Web Client"]
-    UI["Stage / Call Shell (M3)"]
-    CanvasOverlay["StageCanvasOverlay (FE Canvas Engine)"]
-    Norm["Coordinate Normalizer<br/>(Letterbox & DPR Stripping)"]
-    BoardSocketClient["Board Socket Client"]
-    FileUploader["HTTP File Uploader"]
-    UI --> CanvasOverlay
-    CanvasOverlay --> Norm
-    Norm --> BoardSocketClient
-    CanvasOverlay -.->|"Capture Frame Blob"| FileUploader
-  end
+%%{init: {"theme":"base","themeVariables":{"fontFamily":"Inter, -apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif","fontSize":"13px","primaryColor":"#FFFFFF","primaryBorderColor":"#94A3B8","primaryTextColor":"#0F172A","lineColor":"#475569","textColor":"#0F172A","clusterBkg":"#F8FAFC","clusterBorder":"#CBD5E1"},"flowchart":{"curve":"basis","htmlLabels":true}}}%%
+flowchart LR
+  subgraph ArchitectureFrame ["Khung kiến trúc hệ thống Bảng vẽ và Dừng hình — Miền M5"]
+    subgraph ClientApp ["CoLearnia Web Client"]
+      UI["Stage / Call Shell (M3)"]
+      CanvasOverlay["StageCanvasOverlay (FE Canvas Engine)"]
+      Norm["Coordinate Normalizer<br/>(Letterbox & DPR Stripping)"]
+      BoardSocketClient["Board Socket Client"]
+      FileUploader["HTTP File Uploader"]
 
-  subgraph ServerApp ["🖥️ CoLearnia Server (Fastify + Socket.IO)"]
-    SocketHandler["BoardSocketHandler<br/>(Envelope & Validation)"]
-    AclPolicy["BoardAclPolicy<br/>(3 Layers Authorization)"]
-
-    subgraph RAMRuntime ["RAM In-Memory Runtime"]
-      BoardRT["BoardRuntime<br/>(BoardState, Strokes, Sequences)"]
-      IntentMgr["FreezeIntentManager<br/>(CAS Intent, TTL 15s)"]
+      UI --> CanvasOverlay
+      CanvasOverlay --> Norm
+      Norm --> BoardSocketClient
+      CanvasOverlay -.->|"Capture Frame Blob"| FileUploader
     end
 
-    subgraph OtherDomains ["Các miền phối hợp"]
-      SessionOrch["Session Orchestrator (M4)<br/>Scope, Lifecycle & Host"]
-      MediaReg["Media / Source Registry (M3)<br/>SourceId & SourceRevision"]
-      FileSvc["Private File Service (M2)<br/>Upload, Binding & Cleanup"]
+    subgraph ServerApp ["CoLearnia Server (Fastify + Socket.IO)"]
+      SocketHandler["BoardSocketHandler<br/>(Envelope & Validation)"]
+      AclPolicy["BoardAclPolicy<br/>(3 Layers Authorization)"]
+
+      subgraph RAMRuntime ["RAM In-Memory Runtime"]
+        BoardRT["BoardRuntime<br/>(BoardState, Strokes, Sequences)"]
+        IntentMgr["FreezeIntentManager<br/>(CAS Intent, TTL 15s)"]
+      end
+
+      subgraph OtherDomains ["Các miền phối hợp"]
+        SessionOrch["Session Orchestrator (M4)<br/>Scope, Lifecycle & Host"]
+        MediaReg["Media / Source Registry (M3)<br/>SourceId & SourceRevision"]
+        FileSvc["Private File Service (M2)<br/>Upload, Binding & Cleanup"]
+      end
+
+      SocketHandler --> AclPolicy
+      AclPolicy --> BoardRT
+      BoardRT <--> IntentMgr
+      BoardRT <--> SessionOrch
+      BoardRT <--> MediaReg
+      BoardRT -.->|"Verify & Bind Frame"| FileSvc
     end
 
-    SocketHandler --> AclPolicy
-    AclPolicy --> BoardRT
-    BoardRT <--> IntentMgr
-    BoardRT <--> SessionOrch
-    BoardRT <--> MediaReg
+    subgraph Storage ["Lưu trữ dữ liệu"]
+      MongoFiles[("MongoDB<br/>files collection (E08/E15)")]
+      DiskStore[("Private File Storage<br/>(Frame JPEG/WebP Bytes)")]
+    end
+
+    BoardSocketClient <-->|"Socket.IO Events (board:*)"| SocketHandler
+    FileUploader -->|"HTTP POST /api/files/upload (with intentId)"| FileSvc
+    FileSvc --> MongoFiles
+    FileSvc --> DiskStore
   end
 
-  subgraph Storage ["💾 Lưu trữ"]
-    MongoFiles[("MongoDB<br/>files collection (E08/E15)")]
-    DiskStore[("Private File Storage<br/>(Frame JPEG/WebP Bytes)")]
-  end
+  style ArchitectureFrame fill:#FFFFFF,stroke:#CBD5E1,stroke-width:2px,color:#0F172A
+  style ClientApp fill:#F0F9FF,stroke:#0284C7,stroke-width:1.5px,color:#0C4A6E
+  style ServerApp fill:#F0FDF4,stroke:#16A34A,stroke-width:1.5px,color:#14532D
+  style Storage fill:#FFFBEB,stroke:#D97706,stroke-width:1.5px,color:#78350F
+  style RAMRuntime fill:#FFFFFF,stroke:#86EFAC,stroke-width:1px,color:#14532D
+  style OtherDomains fill:#FFFFFF,stroke:#94A3B8,stroke-width:1px,stroke-dasharray:3 3,color:#334155
 
-  BoardSocketClient <-->|"Socket.IO Events (board:*)"| SocketHandler
-  FileUploader -->|"HTTP POST /api/files/upload (with intentId)"| FileSvc
-  FileSvc --> MongoFiles
-  FileSvc --> DiskStore
-  BoardRT -.->|"Verify & Bind Frame"| FileSvc
+  classDef default fill:#FFFFFF,stroke:#64748B,stroke-width:1px,color:#0F172A
+  classDef store fill:#FEF3C7,stroke:#D97706,stroke-width:1.5px,color:#78350F
+  classDef ext fill:#F8FAFC,stroke:#64748B,stroke-width:1px,stroke-dasharray:3 3,color:#334155
 
-  classDef client fill:#EFF6FF,stroke:#3B82F6,stroke-width:2px,color:#1E3A8A
-  classDef server fill:#F0FDF4,stroke:#16A34A,stroke-width:2px,color:#14532D
-  classDef store fill:#FEF3C7,stroke:#D97706,stroke-width:2px,color:#78350F
-  classDef ext fill:#F1F5F9,stroke:#64748B,stroke-dasharray:4 3,color:#334155
-
-  class ClientApp,UI,CanvasOverlay,Norm,BoardSocketClient,FileUploader client
-  class ServerApp,SocketHandler,AclPolicy,BoardRT,IntentMgr server
   class MongoFiles,DiskStore store
   class SessionOrch,MediaReg,FileSvc ext
 ```
