@@ -123,7 +123,6 @@ Mongo replica set một node được cấu hình từ dev/CI/staging. Transacti
 | ------------------------ | --------------------------------------------------------------------------------------------------- |
 | Tạo Workspace            | Workspace + owner membership + general TEXT + conversation CHANNEL trong một transaction            |
 | Nhận invitation          | Kiểm expiry/revoke/maxUses và upsert membership trong transaction; user đã là member không tốn lượt |
-| Transfer owner           | Kiểm owner hiện tại/target; đổi ownerId và role hai bên nguyên tử                                   |
 | Gửi message + attachment | Validate ACL và bind STAGED file cùng insert message; retry dùng unique clientMessageId             |
 | Create live session      | Khóa channel + unique DB; runtime Router chỉ được công bố khi metadata hợp lệ; failure cleanup      |
 | Kick/đổi quyền/xóa kênh  | Đặt deny barrier theo scope → đóng media/fanout → ghi DB → reconcile runtime → phát snapshot        |
@@ -181,3 +180,9 @@ Quan hệ help chỉ gắn ACTIVITY còn mở trong lượt hiệu lực. HOST_P
 RECORD-01 / UC-LIVE-11–12 / FR-15-01–03 bổ sung metadata bản ghi gắn LiveSession/kênh, trạng thái ghi/xử lý/sẵn sàng/lỗi ở mức hành vi, tham chiếu video byte và cleanup. Video thuộc kho tệp; không nhúng byte vào MongoDB hoặc tái dùng FRAME/attachment để vượt ACL. Xem [recording](../product/recording.md) và [model](model.md). 13 collection/16 khái niệm cũ mô tả phạm vi trước recording, chưa là thiết kế recording hoàn tất; chưa chốt field/index/migration mới.
 
 Quyền xem kiểm membership và channel access hiện tại, kể cả PRIVATE, không dựa vào participant cũ; xóa kênh/Workspace và thu quyền phải được tính trong lifecycle. Stop/end hoàn tất hoặc báo lỗi, dọn tài nguyên/tệp dở dang; quota/retention/quyền xóa và xử lý restart còn chờ proposal. DISCUSSION tạo hợp lệ ngay, không trạng thái host xét/hủy pending; random preview chỉ là cấu hình ACTIVITY, không tự chuyển người.
+
+## Delta PROFILE-01 ngày 03/11/2026
+
+M1 bổ sung ACC-04/05 và FR-01-04–06: sửa displayName/avatar và đổi mật khẩu hiện tại; quên mật khẩu để sau MVP. User cần tham chiếu avatar, file cần nguồn tạo/đọc/binding/cleanup theo chủ hồ sơ; không mặc định ghép vào CHANNEL/FRAME. Nghiệp vụ đã chốt: đổi mật khẩu thành công thu tất cả phiên của tài khoản và socket/media liên quan; avatar chỉ chính chủ hoặc người đã đăng nhập có chung Workspace còn hiệu lực được xem. Thiết kế thu phiên, binding/ACL file và cleanup cần review M1/M2/M4 trong [proposal](../proposals/m1-workspace-auth.md) trước implementation. Bộ 13 collection/index hiện tại chưa chứng minh bao phủ delta này; chưa thêm collection/index/validator hoặc thực thi migration.
+
+Cập nhật 03/11: WS-11/FR-02-08 chuyển owner không còn thuộc MVP. Owner pointer và membership OWNER vẫn phải khớp từ lúc tạo; role management không được đổi OWNER. Các mô tả/test transfer cũ còn trong review là lịch sử, không yêu cầu xây luồng bàn giao. Chuyển host phiên LIVE vẫn giữ nguyên.

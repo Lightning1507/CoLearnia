@@ -38,8 +38,8 @@ Các giá trị enum bên dưới là **đích thiết kế**, chưa phải sche
 | ------------------- | -------------------------------- | ------------------------------------------------ |
 | users               | E01 · ACC-01/02                  | Không nhúng Workspace/membership                 |
 | authSessions        | Hỗ trợ ACC-02/03                 | userId, độc lập từng phiên xác thực              |
-| workspaces          | E02 · WS-01/03/04/11             | ownerId; không mảng member/channel               |
-| memberships         | E03 · WS-07/09/10/11             | workspaceId + userId, role và incarnation        |
+| workspaces          | E02 · WS-01/03/04                | ownerId; không mảng member/channel               |
+| memberships         | E03 · WS-07/09/10                | workspaceId + userId, role và incarnation        |
 | invitations         | E04 · WS-05/06/07                | workspaceId, người tạo; không mảng người đã nhận |
 | channels            | E05 · WS-12/13/14                | workspaceId; không mảng quyền/tin nhắn           |
 | channelAccessGrants | Quan hệ E05–E03 · WS-15          | channelId + membershipId + incarnation           |
@@ -61,7 +61,7 @@ E11 Request, E12 Group, E13 Round, E14 Board và E16 Stroke vẫn thuộc RAM; E
 | displayName     | String bắt buộc          | Tên hiển thị hiện tại, không snapshot lặp vào từng tin                 |
 | status          | ACTIVE / DISABLED        | Hiệu lực xác thực theo baseline; không bổ sung màn hình khóa tài khoản |
 
-Không thêm avatar/profile settings hoặc chức năng đổi email/password từ thiết kế này. Thư viện/hash parameters vẫn chờ task auth; không ghi giá trị giả vào schema.
+Cập nhật scope 03/11: PROFILE-01 đã có sửa displayName/avatar và đổi mật khẩu; không có đổi email hoặc quên mật khẩu. Thiết kế User/file trước đây chưa bao phủ avatar: quyền xem đã chốt cho chính chủ hoặc người đã đăng nhập có chung Workspace còn hiệu lực. Field tham chiếu, purpose/binding, cách thực thi ACL và cleanup cần review theo proposal M1/M2 trước schema implementation, không tự dùng file CHANNEL/FRAME hoặc public URL. Thư viện/hash parameters vẫn chờ task auth; không ghi giá trị giả vào schema.
 
 ### 3.2. authSessions
 
@@ -83,7 +83,7 @@ Không lưu socket IDs/media objects. Revoke phải lan tới runtime do phiên 
 | revision  | Int ≥0           | Phiên bản mutation của Workspace/owner                             |
 | deletedAt | Date hoặc null   | Tombstone khóa truy cập; không là restore feature                  |
 
-Không unique ownerId trên toàn collection. Tạo Workspace/general/membership/conversation và transfer owner phải nhất quán theo lifecycle; index/transaction thực thi ở bước 5.
+Không unique ownerId trên toàn collection. Tạo Workspace/general/membership/conversation phải nhất quán theo lifecycle; index/transaction thực thi ở bước 5.
 
 ### 3.4. memberships
 
@@ -97,7 +97,7 @@ Không unique ownerId trên toàn collection. Tạo Workspace/general/membership
 | joinedAt            | Date                   | Lần gia nhập hiện tại; rejoin cập nhật               |
 | removedAt           | Date hoặc null         | Được gán khi bị loại; rejoin đặt null                |
 
-Mọi thay đổi role/status, kick và rejoin đều tăng revision bằng CAS; đổi role/transfer owner tăng revision, **không tăng incarnation** và không tự làm mất PRIVATE hợp lệ. Người đã ACTIVE nhận lời mời lại không tăng incarnation hoặc tốn lượt. User/Workspace không hợp lệ vẫn chặn truy cập dù status ACTIVE.
+Mọi thay đổi role/status, kick và rejoin đều tăng revision bằng CAS; đổi role tăng revision, **không tăng incarnation** và không tự làm mất PRIVATE hợp lệ. Người đã ACTIVE nhận lời mời lại không tăng incarnation hoặc tốn lượt. User/Workspace không hợp lệ vẫn chặn truy cập dù status ACTIVE.
 
 Không nhúng membershipIds vào User. Tombstone membership phải còn đủ để phân biệt các lần gia nhập, không xóa rồi tạo lại cùng version làm grant cũ sống lại; kế hoạch purge Workspace sẽ xử lý refs đồng bộ.
 
@@ -313,3 +313,5 @@ Giữ field/13 collection hiện tại. [Capacity](../capacity.md) chọn 25 là
 RECORD-01 / UC-LIVE-11–12 / FR-15-01–03 bổ sung metadata bản ghi gắn LiveSession/kênh, trạng thái ghi/xử lý/sẵn sàng/lỗi ở mức hành vi, tham chiếu video byte và cleanup. Video thuộc kho tệp; không nhúng byte vào MongoDB hoặc tái dùng FRAME/attachment để vượt ACL. Xem [recording](../product/recording.md) và [model](model.md). 13 collection/16 khái niệm cũ mô tả phạm vi trước recording, chưa là thiết kế recording hoàn tất; chưa chốt field/index/migration mới.
 
 Quyền xem kiểm membership và channel access hiện tại, kể cả PRIVATE, không dựa vào participant cũ; xóa kênh/Workspace và thu quyền phải được tính trong lifecycle. Stop/end hoàn tất hoặc báo lỗi, dọn tài nguyên/tệp dở dang; quota/retention/quyền xóa và xử lý restart còn chờ proposal. DISCUSSION tạo hợp lệ ngay, không trạng thái host xét/hủy pending; random preview chỉ là cấu hình ACTIVITY, không tự chuyển người.
+
+Owner transfer Workspace không triển khai trong MVP theo scope 03/11; không cho endpoint đổi role tạo/hủy OWNER. Giữ invariant một owner ở luồng tạo và bảo vệ owner khỏi kick.

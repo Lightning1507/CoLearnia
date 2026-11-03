@@ -34,7 +34,7 @@ Kiểu field, required/null, enum thiết kế và điều kiện theo loại �
 
 **Các ràng buộc index baseline phải giữ ở bước 5:** emailNormalized, auth/invitation tokenHash và storageKey unique theo collection; messages dedupe theo conversationId/senderId/clientMessageId; history theo conversation và cursor; một LiveSession ACTIVE/ENDING mỗi channel; một membership mỗi Workspace/user; một DIRECT/cặp/Workspace; index tra membership/channel/grant/files và TTL chỉ cho auth; purge nội dung/tệp bằng job. Key/options cụ thể nằm ở [bước 5](integrity-and-migrations.md), chưa là migration đã chạy. Không chỉ dựa Mongoose autoIndex hay unique validator.
 
-Một Workspace có đúng một owner; transfer owner cập nhật Workspace và hai membership nhất quán. Không unique ownerId trên toàn hệ thống. Một LIVE channel có nhiều phiên qua thời gian; không unique channelId cho mọi lịch sử phiên.
+Một Workspace có đúng một owner; owner được tạo cùng Workspace và owner membership nguyên tử; không có transfer owner trong MVP. Không unique ownerId trên toàn hệ thống. Một LIVE channel có nhiều phiên qua thời gian; không unique channelId cho mọi lịch sử phiên.
 
 ### 9.2. Runtime
 
@@ -63,3 +63,7 @@ MAIN giữ overlay/nét trong RAM, không freeze/không file FRAME; chỉ board 
 Thiết kế 13 collection hiện có chưa bao phủ đầy đủ recording. Theo [recording](../product/recording.md), cần metadata gắn phiên/kênh, trạng thái xử lý, tham chiếu byte, người khởi tạo/thời gian và thông tin phục vụ cleanup/quota. Video byte ở kho tệp, không nhúng MongoDB. Collection riêng hay mở rộng file metadata, field/index và migration do proposal M2–M3 thống nhất; chưa tạo collection thứ 14 hoặc schema runnable.
 
 DISCUSSION không còn request chờ host; E11 là thao tác tạo được kiểm hợp lệ ngay trong runtime, không collection xét duyệt. ACTIVITY thêm random preview vào cấu hình hiện có, chưa cần thực thể mới.
+
+## Delta PROFILE-01 ngày 03/11/2026
+
+M1 bổ sung ACC-04/05 và FR-01-04–06: sửa displayName/avatar và đổi mật khẩu hiện tại; quên mật khẩu để sau MVP. User cần tham chiếu avatar, file cần nguồn tạo/đọc/binding/cleanup theo chủ hồ sơ; không mặc định ghép vào CHANNEL/FRAME. Nghiệp vụ đã chốt: đổi mật khẩu thành công thu tất cả phiên của tài khoản và socket/media liên quan; avatar chỉ chính chủ hoặc người đã đăng nhập có chung Workspace còn hiệu lực được xem. Thiết kế thu phiên, binding/ACL file và cleanup cần review M1/M2/M4 trong [proposal](../proposals/m1-workspace-auth.md) trước implementation. Bộ 13 collection/index hiện tại chưa chứng minh bao phủ delta này; chưa thêm collection/index/validator hoặc thực thi migration.
