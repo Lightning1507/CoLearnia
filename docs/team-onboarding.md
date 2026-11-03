@@ -83,12 +83,12 @@ Ví dụ trên dùng nguồn MAIN vì nhóm là DISCUSSION. Với ACTIVITY, thao
 
 ### Quyền Workspace và host là hai việc khác nhau
 
-| Vai trò / phạm vi | Trách nhiệm                                                                                                  |
-| ----------------- | ------------------------------------------------------------------------------------------------------------ |
-| Owner Workspace   | Sở hữu Workspace, quản lý thành viên/kênh, cấp hoặc thu vai trò admin; có thể chuyển owner và xóa Workspace. |
-| Admin Workspace   | Hỗ trợ quản lý thành viên/kênh trong quyền được phép; không có toàn bộ quyền owner.                          |
-| Member Workspace  | Chat, tham gia LIVE, share đúng phòng khi trống, xin DISCUSSION.                                             |
-| Host phiên họp    | Điều hành phiên: đóng DISCUSSION, tổ chức ACTIVITY, hỗ trợ, chuyển host/kết thúc phiên.                      |
+| Vai trò / phạm vi | Trách nhiệm                                                                                                            |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| Owner Workspace   | Sở hữu Workspace, quản lý thành viên/kênh, cấp hoặc thu vai trò admin; có quyền xóa Workspace; MVP không chuyển owner. |
+| Admin Workspace   | Hỗ trợ quản lý thành viên/kênh trong quyền được phép; không có toàn bộ quyền owner.                                    |
+| Member Workspace  | Chat, tham gia LIVE, share đúng phòng khi trống, xin DISCUSSION.                                                       |
+| Host phiên họp    | Điều hành phiên: đóng DISCUSSION, tổ chức ACTIVITY, hỗ trợ, chuyển host/kết thúc phiên.                                |
 
 Một member có thể đồng thời là host; giáo viên phải bắt đầu phiên hoặc được chuyển quyền, hệ thống không tự nhận diện giáo viên. Owner/admin không mặc nhiên được nghe các nhóm hay đọc DM. Host mất mạng quá thời gian chờ có cơ chế thay tạm và hoàn quyền, khác thao tác chủ động kết thúc; xem [nguồn host](product/live-session.md#83-chuyển-host-và-host-mất-mạng).
 
@@ -134,7 +134,7 @@ Một miền có nhiều FR; một UC có thể liên quan nhiều FR. Khi chia 
 
 1. **Trước buổi giới thiệu:** đọc mục 1–4 và các sơ đồ trong trang này. Mục tiêu: kể lại luồng học, phân biệt hai loại nhóm và ghi câu hỏi nghiệp vụ. Chưa cần xem Figma hoặc đọc toàn bộ tài liệu kỹ thuật.
 2. **Khi team chọn người phụ trách:** đọc bảng tổng hợp rồi phần chi tiết miền mình quan tâm trong [5 miền](product/delivery-domains.md). Mục tiêu: hiểu đầu ra/điểm giao, trao đổi kỹ năng và giờ làm trước khi nhận.
-3. **Đã nhận miền, chuẩn bị proposal:** lấy mã FR từ bảng M1–M5, tìm đúng dòng ở [FR/AC](product/functional-requirements.md), theo link UC/product của dòng đó. Mục tiêu: biết phạm vi, AC phải đạt, câu hỏi và người cần phối hợp; chưa cần đọc hết 56 FR.
+3. **Đã nhận miền, chuẩn bị proposal:** lấy mã FR từ bảng M1–M5, tìm đúng dòng ở [FR/AC](product/functional-requirements.md), theo link UC/product của dòng đó. Mục tiêu: biết phạm vi, AC phải đạt, câu hỏi và người cần phối hợp; chưa cần đọc hết 58 FR.
 4. **Đề xuất thiết kế và estimate:** đọc [technical plan](technical-plan.md), [architecture](architecture.md), [decision status](decision-status.md); tra [DB](database/model.md) và [contracts](contracts/README.md) theo phần liên quan. Mục tiêu: proposal và task sơ bộ phù hợp nền chung, đủ để review điểm giao trước code phụ thuộc.
 5. **Task đã rõ, bắt đầu code:** theo [hướng dẫn chạy local](runbooks/local-development.md), [quy ước đóng góp](../CONTRIBUTING.md), [cách làm việc với AI](ai/workflow.md) và [mẫu mô tả task](ai/task-template.md); agent đọc [AGENTS.md](../AGENTS.md). Mục tiêu: chạy môi trường, triển khai đúng task, kiểm AC và mở PR có kết quả kiểm tra thực tế.
 
@@ -199,3 +199,5 @@ Cách tổ chức trang này tham khảo [Diátaxis](https://diataxis.fr/start-h
 DISCUSSION không chờ host: thành viên chọn Tạo nhóm trao đổi, hệ thống kiểm hợp lệ rồi cho người trong danh sách chủ động vào. Host vẫn đóng được nhóm. ACTIVITY thêm chia ngẫu nhiên, host xem/chỉnh trước khi bắt đầu; thời lượng và isolation giữ nguyên.
 
 Host có ghi hình MAIN gồm màn hình, camera và âm thanh; mọi người biết đang ghi. Video theo phiên để thành viên còn quyền kênh xem lại, không ghi nhóm riêng. Demo dự kiến clip vài phút; pipeline/lưu trữ chưa triển khai, Figma/ảnh minh họa có thể còn bước duyệt cũ. [Recording](product/recording.md).
+
+Hồ sơ cá nhân bổ sung ngày 03/11: người dùng sửa tên hiển thị/avatar và đổi mật khẩu bằng mật khẩu hiện tại; quên mật khẩu để sau MVP. M1 phụ trách luồng, M2 phối hợp file avatar.

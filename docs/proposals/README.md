@@ -4,6 +4,8 @@ Mỗi thành viên đặt proposal `.md` của miền mình trong thư mục nà
 
 ## Đặt tên file
 
+Bản hiện có: [M1 — Tài khoản, Workspace và quyền truy cập kênh](m1-workspace-auth.md), trạng thái Draft để team review; chưa là thiết kế đã duyệt hoặc task đã giao.
+
 | Miền                        | Tên file                |
 | --------------------------- | ----------------------- |
 | M1 — Tài khoản và Workspace | `m1-workspace-auth.md`  |
