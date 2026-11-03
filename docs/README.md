@@ -12,6 +12,8 @@
 
 ## Chọn nguồn theo việc
 
+**Chuẩn bị proposal:** xem [nơi nộp và hướng dẫn review](proposals/README.md), dùng [proposal mẫu](templates/feature-proposal-sample.md).
+
 | Công việc                                           | Nguồn chính                                                                                                                                                          |
 | --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Dựng draft UI bằng Figma Make                       | [Brief và prompt theo lượt](ui/figma-make-brief.md) — Workspace/chat, phòng họp và nhóm; chưa là UI đã duyệt                                                         |
