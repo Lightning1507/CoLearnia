@@ -72,7 +72,7 @@ Nguồn chi tiết: [ba use case và vòng đời khái niệm](product/scope.md
 | Media | WebRTC, mediasoup v3, mediasoup-client | Lựa chọn dự kiến, qua ADR-001/PoC trước khi Accepted |
 | Audio | Web Audio API/GainNode | Một output path/track; discussion và priority riêng |
 | Board | Canvas 2D, pointer events | Tọa độ chuẩn hóa, server ordering, undo của mình |
-| Files | Private disk volumes + API | Upload HTTP, kiểm quyền khi tải; không public static directory |
+| Files | Cloudflare R2 riêng tư cho ảnh chat/tài liệu/ảnh giữ hình/video; avatar ở Cloudinary | API M2 kiểm quyền tải/phát/tua; không mở bucket công khai hoặc dùng ổ đĩa máy chủ làm kho lâu dài. Cập nhật M2 ngày 05/11/2026 theo [proposal](proposals/m2-messaging-files.md#5-high-level-design); tệp tạm video còn chờ thử với M3. |
 | Deploy | VPS Linux + Compose + Nginx + coturn | Staging tuần 1; một app instance; port media trực tiếp |
 | CI | GitHub Actions | Lint/typecheck/tests/build; image theo commit SHA |
 
@@ -599,4 +599,4 @@ Quyết định này thay cách hiểu host có thể vào hỗ trợ mọi lo�
 
 RECORD-01 theo [nguồn nghiệp vụ](product/recording.md): host điều khiển ghi màn hình/camera/âm thanh MAIN; lưu theo phiên để thành viên còn quyền kênh xem. Không ghi nhóm riêng hoặc chuyển recorder theo host hỗ trợ. Chưa có implementation hoặc benchmark. Proposal M3 chủ trì, M4 cung cấp host/scope/lifecycle, M2 lưu/phục vụ byte/ACL, M1 quyền kênh.
 
-Cần chọn capture/composition/encode, bố cục/số camera/codec và cách phát, trạng thái xử lý, idempotency, cleanup khi stop/end/error/restart, quota/retention/quyền xóa. Chưa chốt thư viện, topology recorder, collection hoặc schema executable. Không coi recorder là participant được nghe mọi scope. Không giữ queue/mutex phiên khi chờ encode/lưu file; task phải thiết kế gate tài nguyên và giao diện cleanup. Đo CPU/RAM/disk/network cùng media/chat/board/TURN trước khi chốt capacity; PoC clip vài phút không là giới hạn thời lượng sản phẩm. REC-01 vẫn là reconnect, không dùng mã đó cho recording.
+Cần chọn capture/composition/encode, bố cục/số camera/codec và cách phát, trạng thái xử lý, idempotency, cleanup khi stop/end/error/restart, quota/retention/quyền xóa. Delta collection/index theo [schema recordings bàn giao](database/recordings-schema.md) được M2 tiếp nhận ngày 05/11: MP4/H264/AAC, tối đa 3 tiếng/đoạn, READY giữ vô thời hạn; chưa có thư viện/topology đã kiểm chứng hoặc schema executable. Không coi recorder là participant được nghe mọi scope. Không giữ queue/mutex phiên khi chờ encode/lưu file; task phải thiết kế gate tài nguyên và giao diện cleanup. Đo CPU/RAM/disk/network cùng media/chat/board/TURN trước khi chốt capacity; PoC clip vài phút không là giới hạn thời lượng sản phẩm. REC-01 vẫn là reconnect, không dùng mã đó cho recording.
