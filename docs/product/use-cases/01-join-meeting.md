@@ -58,7 +58,7 @@ Chỉ một host có quyền điều hành tại một thời điểm. Chuyển/
 
 **Bàn giao chính thức khác thay tạm:** không tự hoàn quyền cho người trước bàn giao khi họ vào lại; nếu host tạm bàn giao chính thức thành công thì lần bàn giao này thay đích hoàn quyền của sự cố trước.
 
-**Còn mở:** không có ứng viên hợp lệ; host tạm cũng mất mạng. Không tự chọn chuỗi kế vị, đồng host hoặc ưu tiên giáo viên/owner/admin cho các nhánh này.
+**Kế vị đã chốt:** A → B tạm → C tạm giữ đích A; B quay lại không tự giành từ C. Không online thì chờ grace hiện có, hết người end ngay. Auth/access bị thu xóa đích liên quan, cấp lại chỉ là member. Xem nguồn host cho trường hợp elect khi chưa có host connected.
 
 ## Hậu điều kiện
 

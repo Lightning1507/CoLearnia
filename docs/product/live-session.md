@@ -58,7 +58,12 @@ Khi server phát hiện host mất signaling hoặc control lease hết hạn, t
 
 **Bàn giao khi đang thay tạm:** chuyển quyền chủ động thành công là bàn giao chính thức, thay thế đích hoàn quyền của lần mất mạng trước; người host trước bàn giao không tự lấy lại quyền.
 
-**Nhánh còn cần chốt khi đặc tả:** còn ownership đang chờ reconnect nhưng không có participant đang kết nối/còn quyền để chọn host; host tạm cũng mất mạng và thứ tự hoàn quyền khi nhiều người lần lượt được thay tạm. Không suy hết ứng viên đồng nghĩa phiên rỗng nếu vẫn còn ownership trong grace. Phiên đã kết thúc hoặc người cũ mất quyền kênh thì không được phục hồi vai trò.
+**Kế vị và hoàn quyền khi nhiều sự cố — đã chốt ngày 04/11/2026:**
+
+- Giữ một đích hoàn quyền gốc trong cùng phiên. A là host, B thay tạm rồi mất kết nối, C thay tiếp: đích vẫn là A. B quay lại khi C còn hợp lệ thì là member, không giành host từ C; A quay lại hợp lệ mới tự hoàn quyền. Nếu không còn host tạm connected, một participant quay lại hợp lệ có thể được chọn tạm, nhưng không thay đích A.
+- Không có ứng viên connected nhưng còn ownership trong reconnect grace thì giữ phiên chờ các deadline grace hiện có, không cấp quyền điều hành cho kết nối đã mất. Người quay lại được kiểm quyền; đúng đích gốc thì hoàn quyền, người khác chỉ được chọn tạm khi chưa có host hợp lệ. Hết mọi grace mà không còn người thì ENDING ngay, không thêm empty grace. Join/resume/election/end được serialize.
+- Host hoặc đích hoàn quyền bị thu auth/quyền kênh thì thu tài nguyên và xóa đích hoàn quyền liên quan, chọn người connected/hợp lệ thay thế. Khi người bị thu được cấp lại quyền và vào lại, họ là member; không tự lấy lại host. Bàn giao chính thức cũng thay đích hoàn quyền gốc theo quy tắc trên. Host tạm khác bị thu quyền không xóa đích A còn hợp lệ.
+- Không dựng một chồng đích hoàn quyền theo từng host tạm. Khi không có đích gốc còn hợp lệ, host mới được chọn làm đầu mối hiện hành; những lần mất kết nối tiếp theo áp dụng cùng quy tắc. Phiên ENDED không phục hồi vai trò.
 
 ### 8.4. Audio graph
 

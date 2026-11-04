@@ -85,7 +85,7 @@ TTL MongoDB dọn document ở nền, không bảo đảm xóa đúng thời đi
 
 **Đã chọn hướng lưu ở bước 3:** E01–E10 cần phần bền vững theo model; E11–E16 chủ yếu runtime, E15 dùng tài nguyên E08; group/conversation/file refs đủ để khóa và cleanup sau mất runtime. Không bổ sung collection request/group/round/board/stroke hoặc cơ chế khôi phục buổi học sau restart chỉ vì có các khái niệm này.
 
-**Sau bước 4:** [collection-design](collection-design.md) mô tả field/type/null và nhúng/tham chiếu, grant gắn membership incarnation, file scope/binding/cleanup refs. Chưa có validator/index/migration thực thi; terminal request/dedupe runtime và giới hạn bộ nhớ hoàn thiện trong task runtime; đặc tả DB hiện hành ở bước 5. Chưa đặt retention mới cho User, invitation, audit hoặc metadata phiên/participant. Không có UC quản trị/xem lịch sử tương ứng chỉ từ việc metadata còn lưu. Nhánh không có ứng viên host hoặc host tạm cũng mất mạng vẫn là điểm nghiệp vụ mở tại [live session](../product/live-session.md#83-chuyển-host-và-host-mất-mạng).
+**Sau bước 4:** [collection-design](collection-design.md) mô tả field/type/null và nhúng/tham chiếu, grant gắn membership incarnation, file scope/binding/cleanup refs. Chưa có validator/index/migration thực thi; terminal request/dedupe runtime và giới hạn bộ nhớ hoàn thiện trong task runtime; đặc tả DB hiện hành ở bước 5. Chưa đặt retention mới cho User, invitation, audit hoặc metadata phiên/participant. Không có UC quản trị/xem lịch sử tương ứng chỉ từ việc metadata còn lưu. Nhánh không có ứng viên host hoặc host tạm cũng mất mạng theo policy đã chốt tại [live session](../product/live-session.md#83-chuyển-host-và-host-mất-mạng).
 
 Các ca phải kiểm khi triển khai, chưa phải test đã chạy:
 

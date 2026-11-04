@@ -95,7 +95,7 @@ Không vẽ quan hệ PB-04 → PB-07 → PB-04 thành chuỗi chờ: chat/file 
 
 ### Làm rõ host sau review UC
 
-Một kiểu cuộc họp; không chia FREE/MODERATED hoặc bật chế độ điều hành. Người bắt đầu giữ host, người vào sau không tự nhận host; MAIN mọi participant tự share khi nguồn trống và không giành nguồn. Các feature ID/ưu tiên giữ nguyên. Phát hiện host mất kết nối thu quyền cũ và chọn ngay ngẫu nhiên participant hợp lệ làm host tạm, host cũ quay lại hợp lệ tự nhận lại quyền trong cùng phiên. Host chủ động rời khi còn giữ quyền kết thúc phiên cho mọi người. Nhánh không có ứng viên/host tạm mất mạng còn cần chốt tại [vòng đời host](live-session.md#83-chuyển-host-và-host-mất-mạng) trước đặc tả/implementation phụ thuộc.
+Một kiểu cuộc họp; không chia FREE/MODERATED hoặc bật chế độ điều hành. Người bắt đầu giữ host, người vào sau không tự nhận host; MAIN mọi participant tự share khi nguồn trống và không giành nguồn. Các feature ID/ưu tiên giữ nguyên. Phát hiện host mất kết nối thu quyền cũ và chọn ngay ngẫu nhiên participant hợp lệ làm host tạm, host cũ quay lại hợp lệ tự nhận lại quyền trong cùng phiên. Host chủ động rời khi còn giữ quyền kết thúc phiên cho mọi người. Nhánh không có ứng viên/host tạm mất mạng đã chốt tại [vòng đời host](live-session.md#83-chuyển-host-và-host-mất-mạng) trước đặc tả/implementation phụ thuộc.
 
 ## PB-15 · Ghi hình MAIN và xem lại — bổ sung sau kickoff
 

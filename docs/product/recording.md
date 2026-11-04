@@ -30,6 +30,22 @@ Host chọn bắt đầu → server kiểm quyền và khả năng recorder → 
 - Contract start/stop/input-stopped/finalized, admission, metadata, deadline cleanup và byte dở cần review M2/M3/M4; quyền điều khiển luôn theo host hiện hành, không tự chuyển nguồn recorder khỏi MAIN.
 - Chưa cam kết capacity với recording. PoC phải đo CPU/RAM/disk/network khi cùng gọi/share/chat/nhóm/TURN; kiểm gate/quota/cleanup, không tự thêm Redis/worker pool hoặc giảm camera để đạt số lượng.
 
+### Đề xuất kỹ thuật cho PoC M3–M2–M4
+
+Chọn hướng recorder phía server để không phụ thuộc host còn mở trình duyệt. M3 tạo context nhận MAIN có session/epoch/recording generation riêng, dùng [mediasoup PlainTransport](https://mediasoup.org/documentation/v3/mediasoup/api/#PlainTransport) chuyển RTP nội bộ sang helper GStreamer. Context này không giả participant và không dùng cookie host. Source eligibility kiểm tại create/resume và mọi lần scope/quyền đổi; nhận revoke phải đóng nguồn trái quyền trước khi cấp scope private.
+
+GStreamer nhận/giải mã RTP theo capabilities thực tế, ghép bằng [compositor](https://gstreamer.freedesktop.org/documentation/compositor/index.html), trộn audio MAIN bằng [audiomixer](https://gstreamer.freedesktop.org/documentation/audiomixer/audiomixer.html), rồi encode H.264/AAC vào MP4 bằng [mp4mux](https://gstreamer.freedesktop.org/documentation/isomp4/mp4mux.html). Đây là cấu hình đề xuất cần PoC, chưa phải pipeline đã triển khai. Plugin/công cụ và phiên bản cụ thể do M3 xác nhận trên Linux trước tích hợp; không thêm dependency chỉ bằng thay đổi tài liệu này.
+
+Cấu hình thử: 1280×720, 15 fps, H.264 khoảng 2 Mbit/s và AAC 48 kHz/128 kbit/s. Share là vùng lớn, camera MAIN còn hợp lệ xếp thành các ô khi có nguồn; không có share thì dùng bố cục camera, không có hình thì nền thông báo. Không tự bật camera/mic, không ghi board/chat private; không lấy volume cá nhân làm gain bản ghi. Mọi mic MAIN/screen audio hợp lệ được trộn sau resample về cùng sample rate, có headroom để kiểm clipping. Các giá trị chất lượng/bố cục là profile PoC, không giới hạn sản phẩm hoặc bằng chứng đạt số người lớn.
+
+M2 là đầu mối đề xuất metadata và byte, M3 sở hữu tiến trình/attempt, M4 sở hữu host/scope/intent. Đề xuất một metadata bản ghi tham chiếu kho tệp chung, không hai collection cạnh tranh; schema/index phải được review riêng. Writer có backpressure và hàng đợi hữu hạn, không giữ cả video trong RAM. Dùng đường dẫn server tạo trong storage root; helper/RTP chỉ ở mạng nội bộ, không mở cho browser. Dừng input và đóng Consumer/transport tách khỏi EOS/finalize dữ liệu đã nhận; READY chỉ sau xác minh tệp/metadata và playback/seek.
+
+PoC phải kiểm bật/tắt nguồn và đổi host/scope khi đang ghi, zero-input, đồng bộ tiếng-hình, stop STARTING, end/flush, helper crash, disk đầy và restart. Mốc capture-ready/input-stopped/finalized có deadline và state riêng; timeout không tự bật lại recorder hoặc phát video dở. Cách phục hồi/xóa byte dở cần giữ ACL và không chọn retention sản phẩm thay người dùng.
+
+### Chính sách video chưa thống nhất
+
+Thời hạn lưu, ai được xóa, quota và hành vi hết dung lượng vẫn **chưa thống nhất**. Không tự đặt giữ vĩnh viễn, tự xóa sau một số ngày hoặc thêm quyền xóa. PoC dùng storage test cô lập với giới hạn vận hành được ghi trong evidence; không bật lưu video sản phẩm tới khi chính sách/giới hạn storage được xác nhận. Cấu hình chất lượng thử phía trên không thay quyết định chính sách này.
+
 ## Truy vết và phân công
 
 PB-15; FR-15-01–03; UC-LIVE-11 (ghi hình cuộc họp), UC-LIVE-12 (xem lại bản ghi). M3 chủ trì pipeline/đầu vào MAIN/UI recording; M4 cung cấp quyền host, scope và vòng đời phiên; M2 phụ trách lưu/phục vụ byte và quyền xem, phối hợp metadata với M3; M1 cung cấp quyền kênh hiện hành. Một owner schema/lifecycle phải được thống nhất trong proposal, không tạo hai kho video/file cạnh tranh.

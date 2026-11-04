@@ -46,7 +46,7 @@ Chi tiết implementation thông thường được chọn/review trong task đ�
 | Điểm mở                                                                              | Khi nào cần quyết định                                                                                                            |
 | ------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
 | Thư viện/tham số hash; input limits còn thiếu như displayName; thời hạn auth session | Task auth/contracts trước handler tương ứng; plan mới chọn yêu cầu/hướng, chưa chọn mọi giá trị                                   |
-| Không có ứng viên host hoặc host tạm cũng mất mạng                                   | Chốt policy tại live-session trước triển khai nhánh phụ thuộc; không suy kết thúc/kế vị từ nullable field                         |
+| Không có ứng viên host hoặc host tạm cũng mất mạng                                   | Áp policy live-session: giữ đích gốc, elect tạm ngay khi có người, hết mọi grace end; auth/access bị thu không tự hoàn            |
 | Retention audit/User/invitation/metadata phiên và participant                        | Trước vận hành dài hạn/cleanup đầy đủ; chưa tự TTL hoặc purge                                                                     |
 | Queue/pool/timeouts, quota frame theo board và tài nguyên máy                        | Trước chạy profile; số khởi đầu không là SLA hoặc capacity đạt                                                                    |
 | Người thật cho A–E, giờ làm, lịch bắt đầu/nộp, budget/VPS                            | Nhóm cung cấp khi chia việc/cam kết lịch hoặc mua dịch vụ; A–E trong plan chỉ tham khảo                                           |
@@ -75,5 +75,5 @@ Chưa chốt: cơ chế recorder/encode/composition, bố cục/số camera, cod
 ## Xác nhận bổ sung ngày 04/11/2026
 
 - ACTIVITY: được tự vào lại đúng nhóm đã phân còn mở; không vào nhóm khác; không host điều chuyển (FR-07-07/UC-GRP-07 ngừng áp dụng, không tái dùng mã). Host chỉ vào bằng help, không join như member. Nguồn: [group modes](product/group-modes.md).
-- Host: thu mọi quyền kết nối cũ và thay tạm ngay; quay lại hợp lệ tự hoàn trong cùng phiên. Giữ reconnect grace tối đa 30 giây cho ownership; bỏ empty grace. Nhánh kế vị đặc biệt và auth/access bị thu còn mở theo [live session](product/live-session.md).
+- Host: thu mọi quyền kết nối cũ và thay tạm ngay; quay lại hợp lệ tự hoàn trong cùng phiên. Giữ reconnect grace tối đa 30 giây cho ownership; bỏ empty grace. Giữ đích hoàn quyền gốc qua host tạm; hết grace mà không ai thì end; auth/access bị thu xóa đích liên quan, cấp lại chỉ là member theo [live session](product/live-session.md).
 - Ghi hình: thống nhất hướng pipeline và vòng đời qua đổi host/dừng/ghi lại/hủy STARTING/end/finalize; công cụ/codec, quota/retention, metadata và cleanup contract còn cần PoC. Nguồn: [recording](product/recording.md).

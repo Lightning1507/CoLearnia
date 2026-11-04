@@ -229,7 +229,7 @@ Các cấu trúc scope/binding ở đây thay field accessRef tổng quát của
 
 Một phiên ACTIVE/ENDING mỗi kênh theo baseline. policyRevision, phase, host tạm/đích hoàn quyền, help, nhóm, round/deadline và source leases là **runtime**, không coi revision DB là mọi policyRevision của phiên. Chuyển host phải cập nhật metadata/runtime có kiểm quyền và reconcile theo lifecycle; cách CAS/commit cụ thể ở bước 5.
 
-hostUserId phải tương ứng participant hợp lệ khi giữ quyền. Null không tự quyết định nhánh không có ứng viên hoặc host tạm mất mạng; hai nhánh đó vẫn cần chốt tại nguồn. Không phục hồi phiên ACTIVE từ DB sau process restart.
+hostUserId phải tương ứng participant hợp lệ khi giữ quyền. Null không tự quyết định nhánh không có ứng viên hoặc host tạm mất mạng; hai nhánh đó theo policy đã chốt tại nguồn. Không phục hồi phiên ACTIVE từ DB sau process restart.
 
 ### 3.12. sessionParticipants
 
