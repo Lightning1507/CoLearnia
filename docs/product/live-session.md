@@ -9,7 +9,7 @@ Nguồn ban đầu được trích chuyển từ [technical plan v2.1](../techni
 ### 6.1. Join và quyền sở hữu call
 
 1. `POST /channels/:cid/live-session/join` xác thực membership/channel, lấy khóa channel và tìm/tạo session; unique DB bảo vệ bản ghi; dọn Router tạo thừa nếu DB insert thất bại.
-   Người khởi tạo thành công phiên mới được gán host cùng việc tạo phiên; hai người join đồng thời chỉ có một phiên/một host. Người vào phiên đang tồn tại không lấy host, kể cả khi host đang mất kết nối. Chi tiết trường hợp host không còn sau grace theo mục 8.3.
+   Người khởi tạo thành công phiên mới được gán host cùng việc tạo phiên; hai người join đồng thời chỉ có một phiên/một host. Người vào phiên đang tồn tại không lấy host, kể cả khi host đang mất kết nối. Chi tiết trường hợp host mất kết nối theo mục 8.3.
 2. Cấp join ticket một lần, hạn 60 giây, gắn auth session/user/channel/session epoch. API retry cùng requestId không tạo phiên/ticket dùng song song.
 3. `session.join` consume ticket, kiểm lại quyền, giữ khóa theo user để cấp callGeneration. Nếu tài khoản đã gọi nơi khác, trả `CALL_ALREADY_ACTIVE`, UI yêu cầu người dùng chủ động chuyển phiên.
 4. Chuyển phiên: deny nguồn cũ → đóng tài nguyên cũ → tăng generation → bind participant mới. Late event từ socket cũ không đóng call mới. Unique participant theo session không thay registry toàn user.
@@ -42,11 +42,11 @@ Một Producer có thể được nhận qua nhiều lý do quyền, nhưng ch�
 
 Chỉ có một kiểu cuộc họp, không còn FREE/MODERATED. Người bắt đầu LiveSession được gán host nguyên tử cùng việc tạo phiên; join sau vào phiên đang có không tạo host thứ hai. Người khác không tự nhận host. Theo xác nhận ngày 01/11/2026, host chọn một participant đang kết nối/còn quyền trong chính phiên để chuyển quyền trực tiếp, không có bước mời/chờ người nhận chấp nhận. Server kiểm lại actor/target/revision; khi commit kết thúc help/announcement, thu quyền điều hành host cũ, chuyển role và tăng revision, thông báo host mới cho phòng. Nếu target không còn hợp lệ thì từ chối, không bàn giao một phần. Đây là bàn giao chính thức: người cũ trở thành thành viên, không tự lấy lại quyền khi vào lại. MAIN share không phụ thuộc vai trò host nên không bị dừng chỉ vì chuyển host; mất quyền scope/rời/mất lease vẫn phải đóng nguồn.
 
-Host mới không tự bật mic/camera; MIC đang bật ở scope cũ được pause trong media policy tới khi xác nhận scope điều hành; MAIN/DISCUSSION khác ACTIVITY độc lập. Host cũ trở về member/MAIN với quyền bình thường; không giữ quyền nghe group hỗ trợ trước đó.
+Host mới đang ở nhóm phải được thu membership/help cũ và chuyển về MAIN khi nhận vai trò; đây là chuyển scope theo lifecycle, không phải quyền host điều chuyển thành viên. Host mới không tự bật mic/camera; MIC đang bật ở scope cũ được pause trong media policy tới khi xác nhận scope điều hành; MAIN/DISCUSSION khác ACTIVITY độc lập. Host cũ trở về member/MAIN với quyền bình thường; không giữ quyền nghe group hỗ trợ trước đó.
 
-Host mất signaling: không chuyển MIC GROUP thành hướng dẫn MAIN/DISCUSSION. Trong grace giữ vai trò để chờ reconnect. Nếu host quay lại hợp lệ trong grace thì tiếp tục vai trò, không cần chọn người thay.
+Khi server phát hiện host mất signaling hoặc control lease hết hạn, thu ngay mọi quyền media/chat/board/help/announcement/điều hành của kết nối cũ. Không chuyển MIC GROUP thành hướng dẫn MAIN/DISCUSSION. Chọn host tạm ngay từ participant đang kết nối/còn quyền, không đợi reconnect grace 30 giây. Quyền nối lại ownership và danh tính cần hoàn quyền được giữ riêng với quyền thực thi của kết nối đã mất.
 
-**Đã chốt khi mất mạng quá grace:**
+**Đã chốt khi phát hiện host mất kết nối — cập nhật 04/11/2026:**
 
 - Server thu media/help/quyền điều hành của kết nối cũ, chọn ngẫu nhiên một participant hiện đang kết nối và còn quyền tham gia phiên làm **host tạm**. Không ưu tiên owner/admin và không cần bước chấp nhận; chuyển host chủ động cũng không cần người nhận chấp nhận; thông báo rõ cho cuộc họp.
 - Ghi nhận danh tính host bị mất mạng để hoàn quyền trong chính LiveSession này. Khi người đó kết nối lại hoặc join lại sau grace, server xác thực danh tính/quyền hiện tại rồi tự động thu quyền host tạm và trả quyền host cho người cũ; không cần host tạm đồng ý. Không tin cờ “host cũ” do client khai.
@@ -58,7 +58,12 @@ Host mất signaling: không chuyển MIC GROUP thành hướng dẫn MAIN/DISCU
 
 **Bàn giao khi đang thay tạm:** chuyển quyền chủ động thành công là bàn giao chính thức, thay thế đích hoàn quyền của lần mất mạng trước; người host trước bàn giao không tự lấy lại quyền.
 
-**Nhánh còn cần chốt khi đặc tả:** không còn participant hợp lệ để chọn; host tạm cũng mất mạng. Không tự thêm chuỗi ưu tiên/đồng host hoặc cơ chế hoàn quyền cho các nhánh này. Phiên đã kết thúc hoặc người cũ mất quyền kênh thì không được phục hồi vai trò.
+**Kế vị và hoàn quyền khi nhiều sự cố — đã chốt ngày 04/11/2026:**
+
+- Giữ một đích hoàn quyền gốc trong cùng phiên. A là host, B thay tạm rồi mất kết nối, C thay tiếp: đích vẫn là A. B quay lại khi C còn hợp lệ thì là member, không giành host từ C; A quay lại hợp lệ mới tự hoàn quyền. Nếu không còn host tạm connected, một participant quay lại hợp lệ có thể được chọn tạm, nhưng không thay đích A.
+- Không có ứng viên connected nhưng còn ownership trong reconnect grace thì giữ phiên chờ các deadline grace hiện có, không cấp quyền điều hành cho kết nối đã mất. Người quay lại được kiểm quyền; đúng đích gốc thì hoàn quyền, người khác chỉ được chọn tạm khi chưa có host hợp lệ. Hết mọi grace mà không còn người thì ENDING ngay, không thêm empty grace. Join/resume/election/end được serialize.
+- Host hoặc đích hoàn quyền bị thu auth/quyền kênh thì thu tài nguyên và xóa đích hoàn quyền liên quan, chọn người connected/hợp lệ thay thế. Khi người bị thu được cấp lại quyền và vào lại, họ là member; không tự lấy lại host. Bàn giao chính thức cũng thay đích hoàn quyền gốc theo quy tắc trên. Host tạm khác bị thu quyền không xóa đích A còn hợp lệ.
+- Không dựng một chồng đích hoàn quyền theo từng host tạm. Khi không có đích gốc còn hợp lệ, host mới được chọn làm đầu mối hiện hành; những lần mất kết nối tiếp theo áp dụng cùng quy tắc. Phiên ENDED không phục hồi vai trò.
 
 ### 8.4. Audio graph
 
@@ -80,26 +85,28 @@ Preference lưu cục bộ theo user/Workspace/người nói, không theo produc
 
 Socket disconnect không chứng minh media đã ngừng. Khi server nhận disconnect: chuyển participant sang RECONNECTING, chặn mutation mới, kết thúc announcement của nguồn đó, reconcile các Consumer theo quyền/scope hiện tại. Không được giữ quyền global chỉ vì mic WebRTC còn chạy. Với mạng đứt mà chưa được phát hiện, control lease có deadline server và heartbeat; cửa sổ phát hiện này phải được đo.
 
-Giữ call ownership/nhóm tối đa 30 giây từ disconnect hoặc control lease hết hạn để reconnect; media thông thường còn lại được đóng chậm nhất cuối grace. Trong grace vẫn áp dụng mọi kick/move/revoke mới. Deadline không kéo dài bởi request cũ/generation cũ. Sau grace, đóng toàn bộ participant resources và phải join lại; không tự phục hồi quyền cũ.
+Giữ call ownership tối đa 30 giây từ disconnect hoặc control lease hết hạn để reconnect; MAIN/ACTIVITY được đối soát theo quyền hiện hành, media thông thường còn lại được đóng chậm nhất cuối grace. Hai ngoại lệ thu ngay: mọi quyền của kết nối host cũ và membership/private scope DISCUSSION. Người mất kết nối ở DISCUSSION quay lại MAIN; nhóm từng có người mà rỗng thì đóng ngay. Trong grace vẫn áp dụng mọi kick/revoke/deadline mới; ACTIVITY hết hạn không được phục hồi. Deadline không kéo dài bởi request cũ/generation cũ. Sau grace, đóng toàn bộ participant resources và phải join lại; không tự phục hồi quyền cũ.
+
+Không có empty grace riêng. Sau khi xử lý leave/hết reconnect grace, nếu không còn participant connected hoặc ownership còn hợp lệ trong grace thì chuyển ENDING ngay. Một người đang được giữ ownership trong reconnect grace chưa làm phiên thành rỗng. Join và quyết định kết thúc phải serialize: join thắng trước thì phiên tiếp tục; ENDING thắng trước thì từ chối join cho tới khi cleanup xong. Host chủ động kết thúc/rời khi còn quyền vẫn end ngay cho mọi người.
 
 Resume ticket ngắn hạn, một lần, gắn auth/session epoch/callGeneration, rotate sau mỗi resume. Khi reconnect: auth và Origin/CSRF lại → kiểm registry/current membership → bind socket mới → gửi projection mới → recreate/reconcile transport nếu cần. Ticket không chứa quyền cũ để phục hồi. Nếu hết ticket nhưng còn auth hợp lệ, server chỉ cấp lại quyền resume sau kiểm participant/call ownership hiện hành; không chiếm call thiết bị mới.
 
 ### 11.2. Bảng vòng đời
 
-| Tình huống                                 | Xử lý bắt buộc                                                                                                                            |
-| ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| Transport failed                           | Close mapping cũ; ICE restart hoặc tạo transport theo adapter; không nhân Producer                                                        |
-| Rời phòng chủ động                         | Hủy intent/ticket/grant; leave fanout; close tracks/audio nodes/client controller và tài nguyên server                                    |
-| Kick/mất channel access/logout/auth expiry | Deny barrier; close media/socket liên quan, chặn file/REST ngay                                                                           |
-| Chuyển nhóm                                | Thu old scope trước, cấp new scope; hủy intent cũ; cập nhật đích chat theo scope                                                          |
-| Group đóng                                 | Kết thúc help liên quan; về MAIN; pause mic người chuyển để tự bật lại; khóa history/ảnh nhóm và dọn board hết refs                       |
-| Stop share                                 | Close screen + audio; invalidate intent/live overlay; frame frozen có trạng thái nguồn đã dừng                                            |
-| Host rớt                                   | Giữ scope an toàn, không auto global; hết grace thu quyền kết nối cũ; chọn host tạm ngẫu nhiên; host cũ quay lại hợp lệ tự nhận lại quyền |
-| Người cuối rời                             | Empty grace 60 giây rồi ENDING → close Router → ENDED; join phải tránh race với reaper                                                    |
-| Host kết thúc phiên                        | ENDING ngay, deny join/mutation, thu tất cả resources và khóa private conversations                                                       |
-| Worker chết                                | ENDED phiên liên quan, invalidate epoch, báo client join phiên mới; worker restart có health rõ                                           |
-| App restart                                | Invalidate runtime/resume đời cũ; đóng metadata stale/private history trước readiness                                                     |
-| Xóa kênh/Workspace                         | Khóa đọc trước cleanup; kết thúc session; file không tiếp tục được cấp qua URL cũ                                                         |
+| Tình huống                                 | Xử lý bắt buộc                                                                                                                |
+| ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
+| Transport failed                           | Close mapping cũ; ICE restart hoặc tạo transport theo adapter; không nhân Producer                                            |
+| Rời phòng chủ động                         | Hủy intent/ticket/grant; leave fanout; close tracks/audio nodes/client controller và tài nguyên server                        |
+| Kick/mất channel access/logout/auth expiry | Deny barrier; close media/socket liên quan, chặn file/REST ngay                                                               |
+| Chuyển nhóm                                | Thu old scope trước, cấp new scope; hủy intent cũ; cập nhật đích chat theo scope                                              |
+| Group đóng                                 | Kết thúc help liên quan; về MAIN; pause mic người chuyển để tự bật lại; khóa history/ảnh nhóm và dọn board hết refs           |
+| Stop share                                 | Close screen + audio; invalidate intent/live overlay; frame frozen có trạng thái nguồn đã dừng                                |
+| Host rớt                                   | Thu ngay mọi quyền kết nối cũ; chọn host tạm ngay, host cũ quay lại hợp lệ tự nhận lại quyền; không đợi reconnect grace       |
+| Người cuối rời                             | Nếu không còn participant connected/ownership trong reconnect grace thì ENDING ngay; không empty grace. Join và end serialize |
+| Host kết thúc phiên                        | ENDING ngay, deny join/mutation, thu tất cả resources và khóa private conversations                                           |
+| Worker chết                                | ENDED phiên liên quan, invalidate epoch, báo client join phiên mới; worker restart có health rõ                               |
+| App restart                                | Invalidate runtime/resume đời cũ; đóng metadata stale/private history trước readiness                                         |
+| Xóa kênh/Workspace                         | Khóa đọc trước cleanup; kết thúc session; file không tiếp tục được cấp qua URL cũ                                             |
 
 Resource generation giúp late `transportclose/producerclose/disconnect` không xóa nhầm object đời mới. Mọi close idempotent; đóng server phải báo client và ngược lại, không trông chờ thư viện tự đồng bộ nghiệp vụ.
 
@@ -109,7 +116,7 @@ Resource generation giúp late `transportclose/producerclose/disconnect` không 
 
 ## Giới hạn hỗ trợ nhóm — quyết định 02/11/2026
 
-Host chỉ vào hỗ trợ ACTIVITY; DISCUSSION hỏi/trả lời qua chat riêng khi host ở MAIN. Người cuối cùng chủ động về MAIN hoặc rời LIVE làm DISCUSSION đã có người tự kết thúc theo [group modes](group-modes.md); nhóm tạo hợp lệ chưa ai vào vẫn chờ, nhóm còn người cho roster hợp lệ chủ động vào lại. Mất signaling/đóng tab/crash không tự được coi là lệnh rời chủ động; giữ nhánh reconnect/grace hiện hành. Quyết định này không tự chốt cách đóng nhóm rỗng do sự cố sau grace, không thêm timeout và không thay deadline ACTIVITY.
+Host chỉ vào hỗ trợ ACTIVITY; DISCUSSION hỏi/trả lời qua chat riêng khi host ở MAIN. Người cuối cùng chủ động về MAIN hoặc rời LIVE làm DISCUSSION đã có người tự kết thúc theo [group modes](group-modes.md); nhóm tạo hợp lệ chưa ai vào vẫn chờ, nhóm còn người cho roster hợp lệ chủ động vào lại. Khi phát hiện disconnect/control lease hết hạn, DISCUSSION thu membership ngay; nhóm từng có người rỗng thì đóng, reconnect về MAIN. Call ownership vẫn có reconnect grace; ACTIVITY kiểm phân công/deadline hiện hành khi vào lại.
 
 ## Recording MAIN — sau kickoff
 

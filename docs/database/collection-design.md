@@ -1,6 +1,6 @@
 # Bước 4 — Thiết kế collection và document MongoDB
 
-**Cập nhật recording ngày 05/11/2026:** phần 13 collection trước recording giữ làm baseline cũ; delta `recordings` và `files: RECORDING` theo [schema bàn giao](recordings-schema.md), đã được proposal M2 nhận làm thiết kế. Profile MP4/H264/AAC, tối đa 3 tiếng/đoạn, READY giữ vô thời hạn; quota, bản tạm/lỗi và xóa byte sau parent deletion còn cần review. Các ghi chú recording “chưa có field/index” bên dưới phản ánh mốc trước delta; chưa có schema/index/migration thực thi hoặc test sản phẩm đạt.
+**Cập nhật recording ngày 05/11/2026:** phần 13 collection trước recording giữ làm baseline cũ; delta `recordings` và `files: RECORDING` theo [schema bàn giao](recordings-schema.md), đã được proposal M2 nhận làm thiết kế. Profile MP4/H264/AAC, tối đa 3 tiếng/đoạn, READY giữ vô thời hạn là phương án M2 đang đề xuất trong PR; main 4751079 vẫn để chính sách recording mở, cần review trước áp dụng; quota, bản tạm/lỗi và xóa byte sau parent deletion còn cần review. Các ghi chú recording “chưa có field/index” bên dưới phản ánh mốc trước delta; chưa có schema/index/migration thực thi hoặc test sản phẩm đạt.
 
 **Trạng thái:** thiết kế kỹ thuật để review ngày 01/11/2026, trong phạm vi bước 4 đã được giao. Chưa tạo Mongoose schema, đổi Zod, tạo index hoặc chạy migration/seed/DB. Quy tắc sản phẩm lấy từ [messaging](../product/messaging.md), [group modes](../product/group-modes.md) và [live session](../product/live-session.md); mô hình này không giải quyết thay các điểm nghiệp vụ còn mở.
 
@@ -231,7 +231,7 @@ Các cấu trúc scope/binding ở đây thay field accessRef tổng quát của
 
 Một phiên ACTIVE/ENDING mỗi kênh theo baseline. policyRevision, phase, host tạm/đích hoàn quyền, help, nhóm, round/deadline và source leases là **runtime**, không coi revision DB là mọi policyRevision của phiên. Chuyển host phải cập nhật metadata/runtime có kiểm quyền và reconcile theo lifecycle; cách CAS/commit cụ thể ở bước 5.
 
-hostUserId phải tương ứng participant hợp lệ khi giữ quyền. Null không tự quyết định nhánh không có ứng viên hoặc host tạm mất mạng; hai nhánh đó vẫn cần chốt tại nguồn. Không phục hồi phiên ACTIVE từ DB sau process restart.
+hostUserId phải tương ứng participant hợp lệ khi giữ quyền. Null không tự quyết định nhánh không có ứng viên hoặc host tạm mất mạng; hai nhánh đó theo policy đã chốt tại nguồn. Không phục hồi phiên ACTIVE từ DB sau process restart.
 
 ### 3.12. sessionParticipants
 

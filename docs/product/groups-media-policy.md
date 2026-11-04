@@ -10,7 +10,7 @@ Nguồn ban đầu được trích chuyển từ [technical plan v2.1](../techni
 
 Workspace: owner/admin/member. Session: host/member. Grant cụ thể: publish/share, board. Admin không mặc nhiên là host và không nghe nhóm riêng. Owner/admin quản lý kênh; member không tự đổi role. PRIVATE dùng allowlist rõ; owner/admin quản lý cấu hình không đồng nghĩa tự có quyền đọc private session.
 
-Host chỉ điều hành session mà mình đang tham gia. Chỉ có một kiểu cuộc họp: người bắt đầu LiveSession trở thành host, không có bước bật chế độ điều hành. Người vào sau không tự nhận hoặc giành host; host chuyển quyền trực tiếp cho participant hợp lệ, không cần người nhận chấp nhận. Chỉ một host tại một thời điểm; không thêm co-host/presenter. Owner/admin Workspace không mặc nhiên là host. Xem [vòng đời host](live-session.md#83-chuyển-host-và-host-mất-mạng) cho cơ chế host tạm ngẫu nhiên khi mất mạng quá grace và tự hoàn quyền khi host cũ quay lại; host chủ động rời khi còn giữ quyền kết thúc phiên cho mọi người; sau bàn giao chính thức người cũ rời như thành viên. Không có ứng viên/host tạm mất mạng vẫn là điểm mở.
+Host chỉ điều hành session mà mình đang tham gia. Chỉ có một kiểu cuộc họp: người bắt đầu LiveSession trở thành host, không có bước bật chế độ điều hành. Người vào sau không tự nhận hoặc giành host; host chuyển quyền trực tiếp cho participant hợp lệ, không cần người nhận chấp nhận. Chỉ một host tại một thời điểm; không thêm co-host/presenter. Owner/admin Workspace không mặc nhiên là host. Xem [vòng đời host](live-session.md#83-chuyển-host-và-host-mất-mạng) cho cơ chế host tạm ngẫu nhiên ngay khi phát hiện host mất kết nối và tự hoàn quyền khi host cũ quay lại; host chủ động rời khi còn giữ quyền kết thúc phiên cho mọi người; sau bàn giao chính thức người cũ rời như thành viên. Không có ứng viên/host tạm mất mạng vẫn là điểm mở.
 
 ### 5.2. Quyền publish theo bối cảnh
 
@@ -54,7 +54,7 @@ Người mới vào group được đọc phần lịch sử group trong phiên 
 ### 8.1. Host, group và hỗ trợ
 
 - Trong cuộc họp, DISCUSSION đi qua yêu cầu tên/mục đích/thành viên, hệ thống tạo khi hợp lệ rồi từng người được chọn bấm Vào nhóm; ACTIVITY do host tạo/phân khi chuyển sang lượt hoạt động. Theo [group modes](group-modes.md), người chưa phân vẫn ở MAIN; host không là thành viên mọi group.
-- Thành viên có thể tự về MAIN; host có thể điều chuyển người và đóng một/tất cả DISCUSSION. ACTIVITY chỉ kết thúc theo deadline/lỗi bắt đầu/kết thúc phiên, không có lệnh host đóng thủ công. Chuyển group thu media/chat/board/screen cũ trước, cập nhật membership và cấp nguồn mới. Đóng nhóm kết thúc help liên quan, đưa thành viên của nhóm đó về MAIN; private history bị khóa, nhóm khác không bị đóng theo.
+- Thành viên có thể tự về MAIN; host có thể đóng một/tất cả DISCUSSION; không điều chuyển người, thành viên chỉ tự vào lại đúng ACTIVITY đã phân còn mở. ACTIVITY chỉ kết thúc theo deadline/lỗi bắt đầu/kết thúc phiên, không có lệnh host đóng thủ công. Chuyển group thu media/chat/board/screen cũ trước, cập nhật membership và cấp nguồn mới. Đóng nhóm kết thúc help liên quan, đưa thành viên của nhóm đó về MAIN; private history bị khóa, nhóm khác không bị đóng theo.
 - Chat cuộc họp chỉ gửi text và ảnh, chọn **Everyone** hoặc **Host**. Everyone ánh xạ vào scope hiện tại: không chia nhóm là SESSION/MAIN; khi đang chia nhóm, thành viên trong group gửi vào GROUP đó, người chưa phân nhóm gửi vào MAIN. Everyone không phát xuyên các nhóm. Host đang hỗ trợ dùng group hỗ trợ làm scope Everyone; ngoài hỗ trợ dùng MAIN. UI ghi rõ đích gửi và đổi nhãn theo scope.
 - Host ánh xạ vào HOST_PRIVATE giữa người gửi và đúng host nhận tại thời điểm gửi; không có nhắn riêng tùy ý tới mọi participant. Không có host hợp lệ thì vô hiệu lựa chọn Host và báo rõ, không tự đổi sang Everyone.
 - Server kiểm scope/host hiện tại khi gửi và bind ảnh; đích đã stale do chuyển nhóm/host phải trả lỗi để người dùng xác nhận đích mới, không tự chuyển tin private sang Everyone hoặc host mới. Lịch sử/ảnh cũ giữ ACL ban đầu.
@@ -65,7 +65,7 @@ Người mới vào group được đọc phần lịch sử group trong phiên 
 
 **Giới hạn hỗ trợ đã chốt ngày 02/11/2026:** `host.help.enter` chỉ hợp lệ với ACTIVITY đang mở trong lượt còn hiệu lực. DISCUSSION chỉ hỏi/trả lời riêng qua HOST_PRIVATE; host tiếp tục ở MAIN, không nhận nội dung riêng của nhóm bằng vai trò host. UI không có nút Vào hỗ trợ DISCUSSION và server phải từ chối cả lệnh tự gửi. Tin/ảnh riêng chỉ cấp quyền trên nội dung được gửi, không cấp quyền toàn bộ board nhóm.
 
-Theo [vòng đời DISCUSSION](group-modes.md), tự về MAIN không đóng nhóm khi còn người khác; người cuối cùng chủ động rời nhóm đã có người tham gia làm nhóm tự kết thúc. Thu toàn bộ private scope của nhóm trước khi báo đã đóng; roster cũ không cấp lại quyền. Nhóm chưa ai vào vẫn chờ tham gia; mất mạng không tự áp nhánh chủ động rời. ACTIVITY không tự đóng theo số người còn lại.
+Theo [vòng đời DISCUSSION](group-modes.md), tự về MAIN không đóng nhóm khi còn người khác; người cuối cùng chủ động rời nhóm đã có người tham gia làm nhóm tự kết thúc. Thu toàn bộ private scope của nhóm trước khi báo đã đóng; roster cũ không cấp lại quyền. Nhóm chưa ai vào vẫn chờ; disconnect thu membership DISCUSSION ngay, nhóm từng có người rỗng thì đóng, reconnect về MAIN. ACTIVITY không tự đóng theo số người còn lại.
 
 ### 8.2. Kết thúc chia nhóm và về phòng chung
 
