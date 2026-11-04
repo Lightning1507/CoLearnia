@@ -12,6 +12,8 @@
 
 ## Chọn nguồn theo việc
 
+**Tiếp tục UI hoặc bàn giao Figma:** dùng [hướng dẫn bàn giao và lộ trình hoàn thiện UI](ui/figma-handoff.md), cùng [hiện trạng Figma và các luồng đã kiểm](ui/figma-current-state.md). Bản bàn giao chỉ cách đọc nguồn, chia đợt, viết prompt và nghiệm thu; bản hiện trạng ghi kết quả thực tế.
+
 **Chuẩn bị proposal:** xem [nơi nộp và hướng dẫn review](proposals/README.md), dùng [proposal mẫu](templates/feature-proposal-sample.md).
 
 | Công việc                                           | Nguồn chính                                                                                                                                                          |

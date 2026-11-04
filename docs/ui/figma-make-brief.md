@@ -1,10 +1,16 @@
 # CoLearnia — brief dựng draft bằng Figma Make
 
-> **Đọc delta sau kickoff ở cuối trang trước khi dùng prompt.** Các prompt 1–3 là lịch sử các lượt dựng; phần host xét DISCUSSION đã hết hiệu lực. Recording MAIN và random ACTIVITY là yêu cầu mới, chưa sửa trong Figma từ lượt tài liệu này.
+Hiện trạng màn hình, kết quả kiểm preview và các lỗi cần sửa được ghi tại [Figma — hiện trạng và bàn giao](figma-current-state.md). Cập nhật bản ghi đó sau mỗi lượt sửa; các prompt dưới đây giữ vai trò lịch sử dựng và tham khảo.
+
+Thành viên tiếp tục công việc dùng [hướng dẫn bàn giao UI](figma-handoff.md) để chọn đợt, đọc nguồn và viết prompt mới. Không chạy lại các prompt lịch sử để dựng lại ứng dụng.
+
+> **Tài liệu tham khảo và lịch sử dựng draft.** Không chạy lại Prompt 1–3 hoặc tạo file mới để tiếp tục. Hiện trạng sau các lượt sửa nằm tại [current-state](figma-current-state.md); quy tắc mới và việc tiếp theo nằm tại [bàn giao](figma-handoff.md). Các câu “chưa sửa/chưa kiểm” ở phần lịch sử chỉ mô tả thời điểm viết, không phải trạng thái hiện tại.
 
 **Trạng thái:** đã chốt hướng tham chiếu Slack cho Workspace/chat, Google Meet cho phòng họp và Linear cho cách tiết chế thị giác. UI cụ thể, màu/font, kích thước và component vẫn chờ review draft; prototype chưa là feature đã chạy. Quy tắc nghiệp vụ lấy từ các nguồn bên dưới.
 
-## Cách dùng ngay
+## Quy trình dựng ban đầu — chỉ để tham khảo
+
+Các bước dưới ghi cách khởi tạo draft trước đây. Người tiếp nhận hiện tại bỏ qua bước tạo file/dán lại prompt, dùng lộ trình trong bản bàn giao để sửa hoặc thêm vào file đang có.
 
 1. Chọn ảnh minh họa theo bảng tham chiếu bên dưới; tạo một file Figma Make cho draft CoLearnia, đính kèm ảnh Workspace/chat và dán **Prompt 1**. Nếu chưa đính kèm được ảnh, dùng mô tả trong prompt và ghi nhận draft mới bám mô tả, chưa đối chiếu ảnh.
 2. Xem preview, chỉnh những điểm lớn về bố cục và phong cách. Chưa cần chốt hết component hoặc làm mọi modal quản trị.
