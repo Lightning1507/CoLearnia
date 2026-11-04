@@ -335,9 +335,9 @@ sequenceDiagram
   else Chưa xác minh được ngừng input
     S->>A: Thu cưỡng chế quyền / tài nguyên recorder đúng đời
     S->>S: Giữ ENDING và reconcile hữu hạn, báo lỗi vận hành
-    Note over S,A: Chỉ hoàn tất end khi xác minh thu quyền; không giữ queue chờ encode
+    Note over S,A: Chỉ hoàn tất end khi xác minh thu quyền<br/>Không giữ queue chờ encode
   end
-  Note over S,F: Không phát vào socket room đã đóng; kết quả còn quyền do luồng xem lại cung cấp
+  Note over S,F: Không phát vào socket room đã đóng<br/>Kết quả còn quyền do luồng xem lại cung cấp
 ```
 
 Trong phương án này, finalize có thể chạy song song cleanup sau khi input đã được chốt. Media adapter thu quyền nhận nguồn mới độc lập phần hoàn tất dữ liệu đã nhận; loại tài nguyên cụ thể phụ thuộc pipeline được chọn. Timeout ngừng input giữ trạng thái bị thu quyền và kích hoạt reconcile. Sau ENDED, callback finalize chỉ cập nhật đúng recording attempt, không mở lại call; kết quả chỉ tới người còn quyền xem video. App crash cần đối chiếu bản ghi dở với miền media/tệp.
@@ -376,7 +376,7 @@ sequenceDiagram
   else Cleanup chưa đạt
     C->>C: Giữ deny, retry có giới hạn và cảnh báo
   end
-  Note over C,A: Không chờ browser ack hoặc purge byte; không cấp lại quyền cũ khi kết quả chưa rõ
+  Note over C,A: Không chờ browser ack hoặc purge byte<br/>Không cấp lại quyền cũ khi kết quả chưa rõ
 ```
 
 #### 6.2.5 Context chat/tệp và board
