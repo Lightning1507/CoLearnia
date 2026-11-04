@@ -44,13 +44,13 @@ Grace tham gia theo baseline hiện tại tối đa 30 giây từ disconnect/con
 
 Những nhánh này bổ sung quy tắc xuyên suốt khi tham gia/reconnect, không tạo UC “tự nhận host” và không thay thế toàn bộ UC-GRP-01 chuyển host chủ động.
 
-| Trường hợp                                  | Luồng đã chốt                                                                                                                                                                                                                                                |
-| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Người đầu tiên bắt đầu phiên                | Nhận host cùng việc tạo LiveSession; owner/admin không được ưu tiên vượt quy tắc này                                                                                                                                                                         |
-| Host chuyển quyền chủ động                  | Host chọn người đang kết nối/còn quyền trong phiên; kiểm lại actor/target/revision rồi chuyển ngay, không chờ người nhận chấp nhận. Target stale thì từ chối thao tác; không phát sinh lời mời chờ. Đây là UC-GRP-01 riêng, không bắt mọi lần join thực hiện |
-| Host mất mạng trong grace                   | Giữ vai trò chờ reconnect; không tự chuyển tiếng hỗ trợ thành hướng dẫn chung                                                                                                                                                                                |
-| Host mất mạng quá grace, có ứng viên hợp lệ | Thu quyền kết nối cũ, chọn ngẫu nhiên một participant đang kết nối/còn quyền làm host tạm, thông báo cho phòng; không cần người được chọn bấm chấp nhận                                                                                                      |
-| Host bị mất mạng quay lại                   | Xác thực đúng danh tính, cùng phiên còn hoạt động và còn quyền; tự thu quyền host tạm rồi hoàn quyền người cũ. Nếu đã quá grace thì đi qua join lại, không dùng resume cũ                                                                                    |
+| Trường hợp                                     | Luồng đã chốt                                                                                                                                                                                                                                                |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Người đầu tiên bắt đầu phiên                   | Nhận host cùng việc tạo LiveSession; owner/admin không được ưu tiên vượt quy tắc này                                                                                                                                                                         |
+| Host chuyển quyền chủ động                     | Host chọn người đang kết nối/còn quyền trong phiên; kiểm lại actor/target/revision rồi chuyển ngay, không chờ người nhận chấp nhận. Target stale thì từ chối thao tác; không phát sinh lời mời chờ. Đây là UC-GRP-01 riêng, không bắt mọi lần join thực hiện |
+| Host mất mạng trong reconnect grace            | Quyền kết nối cũ đã bị thu và host tạm đã được chọn; grace chỉ giữ ownership để nối lại, không giữ quyền thực thi host cũ                                                                                                                                    |
+| Phát hiện host mất kết nối, có ứng viên hợp lệ | Thu quyền kết nối cũ, chọn ngẫu nhiên một participant đang kết nối/còn quyền làm host tạm, thông báo cho phòng; không cần người được chọn bấm chấp nhận                                                                                                      |
+| Host bị mất mạng quay lại                      | Xác thực đúng danh tính, cùng phiên còn hoạt động và còn quyền; tự thu quyền host tạm rồi hoàn quyền người cũ. Nếu đã quá grace thì đi qua join lại, không dùng resume cũ                                                                                    |
 
 Chỉ một host có quyền điều hành tại một thời điểm. Chuyển/hoàn host thu help/announcement cũ trước; không tự bật mic/camera, đóng nhóm/reset countdown hoặc dừng MAIN share còn hợp lệ chỉ vì đổi vai trò. Không khôi phục role sang LiveSession mới hoặc cho người đã mất quyền kênh. Tin riêng gửi host cũ không tự chuyển lịch sử sang host tạm/mới.
 
@@ -58,7 +58,7 @@ Chỉ một host có quyền điều hành tại một thời điểm. Chuyển/
 
 **Bàn giao chính thức khác thay tạm:** không tự hoàn quyền cho người trước bàn giao khi họ vào lại; nếu host tạm bàn giao chính thức thành công thì lần bàn giao này thay đích hoàn quyền của sự cố trước.
 
-**Còn mở:** không có ứng viên hợp lệ; host tạm cũng mất mạng. Không tự chọn chuỗi kế vị, đồng host hoặc ưu tiên giáo viên/owner/admin cho các nhánh này.
+**Kế vị đã chốt:** A → B tạm → C tạm giữ đích A; B quay lại không tự giành từ C. Không online thì chờ grace hiện có, hết người end ngay. Auth/access bị thu xóa đích liên quan, cấp lại chỉ là member. Xem nguồn host cho trường hợp elect khi chưa có host connected.
 
 ## Hậu điều kiện
 

@@ -28,24 +28,24 @@ Thành viên tạo không gian trao đổi riêng trong lúc theo dõi bài gi�
 
 ## Nhánh thay thế và lỗi
 
-| Mã  | Điểm rẽ                                  | Xử lý                                                    | Tiếp tục/kết thúc                                                  |
-| --- | ---------------------------------------- | -------------------------------------------------------- | ------------------------------------------------------------------ |
-| E01 | A3 dữ liệu sai                           | Báo trường lỗi, không tạo nhóm/quyền                     | Quay A1, người dùng sửa và gửi lại                                 |
-| E02 | A3/B2 phase ACTIVITY hoặc phiên kết thúc | Từ chối create/join cũ, trả trạng thái hiện hành         | Kết thúc lần thao tác; không tự retry                              |
-| E03 | A3/B2 mất quyền hoặc roster stale        | Không tự thay người, không cấp quyền từ danh sách cũ     | Xem lại dữ liệu; tạo mới hoặc thử join khi còn hợp lệ              |
-| E04 | Retry sau phản hồi thất lạc              | Không nhân nhóm/membership; reconcile kết quả hiện hành  | Hiển thị đúng kết quả, không báo thành công giả                    |
-| E05 | B2 ngoài roster/nhóm đã đóng             | Từ chối, không trả chat/frame/media riêng                | Giữ scope đang hợp lệ; không mở lại nhóm bằng ID cũ                |
-| E06 | B4 MAIN chưa có share                    | Hiển thị chưa có nguồn; vẫn trao đổi nhóm                | Hoàn tất join, không tự bật share DISCUSSION                       |
-| E07 | B3–4 mất mạng                            | Theo HS-01 reconnect/grace; không khôi phục scope đã thu | Lấy trạng thái server; chỉ join lại nếu đủ điều kiện               |
-| E08 | Sau B, thành viên về MAIN/rời LIVE       | Thu private scope; về MAIN pause mic theo policy         | Còn người thì nhóm tiếp tục; người cuối chủ động rời thì đóng nhóm |
-| E09 | Host đóng nhóm hoặc start ACTIVITY       | Thu private scope, hủy intent, dọn frame/nét, bỏ nút vào | Không đưa nội dung nhóm ra MAIN; theo HS-03 nếu bắt đầu lượt       |
+| Mã  | Điểm rẽ                                  | Xử lý                                                                               | Tiếp tục/kết thúc                                                  |
+| --- | ---------------------------------------- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| E01 | A3 dữ liệu sai                           | Báo trường lỗi, không tạo nhóm/quyền                                                | Quay A1, người dùng sửa và gửi lại                                 |
+| E02 | A3/B2 phase ACTIVITY hoặc phiên kết thúc | Từ chối create/join cũ, trả trạng thái hiện hành                                    | Kết thúc lần thao tác; không tự retry                              |
+| E03 | A3/B2 mất quyền hoặc roster stale        | Không tự thay người, không cấp quyền từ danh sách cũ                                | Xem lại dữ liệu; tạo mới hoặc thử join khi còn hợp lệ              |
+| E04 | Retry sau phản hồi thất lạc              | Không nhân nhóm/membership; reconcile kết quả hiện hành                             | Hiển thị đúng kết quả, không báo thành công giả                    |
+| E05 | B2 ngoài roster/nhóm đã đóng             | Từ chối, không trả chat/frame/media riêng                                           | Giữ scope đang hợp lệ; không mở lại nhóm bằng ID cũ                |
+| E06 | B4 MAIN chưa có share                    | Hiển thị chưa có nguồn; vẫn trao đổi nhóm                                           | Hoàn tất join, không tự bật share DISCUSSION                       |
+| E07 | B3–4 mất mạng                            | Thu membership DISCUSSION ngay; nhóm từng có người rỗng thì đóng, reconnect về MAIN | Lấy trạng thái server; chỉ join lại nếu đủ điều kiện               |
+| E08 | Sau B, thành viên về MAIN/rời LIVE       | Thu private scope; về MAIN pause mic theo policy                                    | Còn người thì nhóm tiếp tục; người cuối chủ động rời thì đóng nhóm |
+| E09 | Host đóng nhóm hoặc start ACTIVITY       | Thu private scope, hủy intent, dọn frame/nét, bỏ nút vào                            | Không đưa nội dung nhóm ra MAIN; theo HS-03 nếu bắt đầu lượt       |
 
 ## Hậu điều kiện và vòng đời
 
 - Tạo thành công chỉ có nhóm/roster; chỉ join hợp lệ mới nhận private. Thất bại không cấp quyền stale.
 - Nhóm mới chưa ai vào vẫn chờ. Khi còn người, roster hợp lệ có thể chủ động vào lại.
 - Người cuối chủ động về MAIN/rời LIVE sau khi nhóm từng có người làm nhóm tự đóng; roster cũ không mở lại. Muốn tiếp tục tạo nhóm mới, không chờ host.
-- Disconnect không tự là chủ động rời; không tự đặt timeout sau grace. ACTIVITY không dùng quy tắc đóng khi rỗng này.
+- Disconnect thu membership ngay, không giữ grace DISCUSSION. Nhóm từng có người rỗng thì đóng; reconnect về MAIN, chỉ chủ động vào lại nếu nhóm còn mở/còn người và roster/quyền hợp lệ. ACTIVITY không đóng theo quy tắc rỗng này.
 - Host ở MAIN hỗ trợ DISCUSSION qua chat riêng text/ảnh; không vào hỗ trợ trực tiếp.
 
 ## Kiểm chứng
