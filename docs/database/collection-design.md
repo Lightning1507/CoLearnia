@@ -121,6 +121,8 @@ Quyết định 04/11/2026: một document cho link hiện hành của mỗi Wor
 | enabled         | Boolean                 | Tắt thì không nhận lượt gia nhập mới           |
 | revision        | Int ≥0                  | Tăng khi tạo lại/tắt; từ chối thao tác stale   |
 
+Tắt/tạo lại link nhận `expectedRevision` từ lần đọc invitation; cập nhật có điều kiện theo revision dưới Workspace gate và tăng revision khi có thay đổi. Yêu cầu cũ bị conflict, không được tắt hoặc thay link mới hơn. Retry cùng requestId không áp dụng lại thao tác; tắt link đã tắt tại đúng revision hiện hành không làm tăng revision.
+
 **Thiết kế chưa hoàn tất:** tokenHash không thể khôi phục link. M1 cần review cách lưu/tái tạo token an toàn để sao chép lại, field bổ sung và quản lý khóa trước schema/contract. Không giữ expiresAt/maxUses/uses từ thiết kế cũ; không TTL lời mời. createdAt/updatedAt theo quy ước chung. Không thêm lịch sử link hoặc gắn một email nhận trong MVP.
 
 ### 3.6. channels

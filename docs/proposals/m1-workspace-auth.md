@@ -6,7 +6,7 @@ Ngày: 03/11/2026. Reviewer: chờ phân công; M2 và M4 cần cùng review nh�
 
 > **TL;DR** — M1 phụ trách đăng ký/đăng nhập, hồ sơ tên hiển thị/avatar, đổi mật khẩu, Workspace, thành viên và quyền truy cập kênh TEXT/LIVE. Đăng ký thành công sẽ tự đăng nhập. Người mở link mời phải đăng nhập hoặc đăng ký, sau đó chủ động xác nhận tham gia Workspace. Đổi mật khẩu thành công đăng xuất tất cả phiên; avatar lưu Cloudinary, công khai qua URL; chỉ chính chủ được thay/xóa.
 > Triển khai trong repository hiện có với React, Express, Socket.IO, Zod và MongoDB/Mongoose. M1 phụ trách bảy collection; phối hợp M2 tạo phần hội thoại của kênh `general` trong cùng transaction và M4 thu quyền các kết nối LIVE đang mở.
-> WBS (bảng phân chia công việc) có 24 ngày công cơ sở, thêm 4 ngày công dự phòng thành 28 ngày công dự kiến; khoảng 20–38 ngày công, chưa phải cam kết lịch. Số này gồm giao diện, backend, kiểm thử, review và tích hợp thuộc M1; chưa gồm việc M2–M5 phải tự triển khai hoặc công việc PM. Cần đối chiếu với số giờ thực có trước khi chốt sprint.
+> WBS có 53 task con, mỗi task 2–8 giờ; tổng 268 giờ cơ sở và 32 giờ dự phòng tạm tính, tương đương 37.5 ngày công. Chưa phải cam kết lịch; cần review effort theo năng lực và số giờ thực có. Công M2–M5 cung cấp và công PM tính riêng.
 
 ## 1. Context
 
@@ -24,7 +24,7 @@ PROFILE-01 bổ sung ngày 03/11, cập nhật avatar ngày 04/11: M1 chính, M2
 
 Nguồn: [phân miền](../product/delivery-domains.md), [17 FR M1 trong PB-01–03](../product/functional-requirements.md), [Workspace](../product/workspace-channels.md), [messaging/PRIVATE](../product/messaging.md), [technical plan](../technical-plan.md), [architecture](../architecture.md), [DB model](../database/model.md), [integrity](../database/integrity-and-migrations.md), [contracts](../contracts/README.md).
 
-Các lựa chọn ghi **Đề xuất** đang chờ review, không tự thay quyết định trong tài liệu baseline. Các endpoint và interface bên dưới chưa được triển khai. T1–T19 là mã công việc trong proposal, chưa phải mã task trên Jira/GitHub.
+Các lựa chọn ghi **Đề xuất** đang chờ review, không tự thay quyết định trong tài liệu baseline. Các endpoint và interface bên dưới chưa được triển khai. T1–T19 là mã nhóm công việc, Tn.m là task con trong proposal; chưa phải mã task trên Jira/GitHub.
 
 ## 2. Objective
 
@@ -60,7 +60,7 @@ M1/M2/M4 làm rõ chi tiết kỹ thuật trước task phụ thuộc; team bổ
 
 | #   | Question / assumption                                                                                                 | Why it matters                                                                     | Owner                          | Needed by                   | Status                                                                                                                         |
 | --- | --------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- | ------------------------------ | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| Q1  | Chọn thư viện Argon2id, kiểm build trên Node/Linux image đang dùng; đo thời gian băm, RAM và số tác vụ chạy đồng thời | Giới hạn tài nguyên xác thực để tránh làm chậm media                               | M1, reviewer kỹ thuật          | Trước T3                    | Đề xuất Argon2id; thư viện/phiên bản và tham số tối ưu chưa chốt                                                               |
+| Q1  | Chọn thư viện Argon2id, kiểm build trên Node/Linux image đang dùng; đo thời gian băm, RAM và số tác vụ chạy đồng thời | Giới hạn tài nguyên xác thực để tránh làm chậm media                               | M1, reviewer kỹ thuật          | T3.1 thử; chốt trước T3.2   | Đề xuất Argon2id; thư viện/phiên bản và tham số tối ưu chưa chốt                                                               |
 | Q2  | Chuẩn hóa email; giới hạn password/displayName; cách phân trang mặc định                                              | Giao diện/backend kiểm cùng quy tắc; tránh trải nghiệm khác nhau hoặc bị lạm dụng  | M1, team review sản phẩm       | Trước T1/T3/T8              | Chưa chốt các giá trị thiếu nguồn; không suy từ field MongoDB                                                                  |
 | Q3  | Phiên 7 ngày trong plan là giá trị khởi đầu; cookie/CSRF contract và HTTPS local                                      | Phải kiểm tự đăng nhập, cookie và hết hạn phiên bằng trình duyệt thật              | M1, người phụ trách môi trường | Trước T4                    | Giữ hướng baseline; review cấu hình, không tự gia hạn phiên sau mỗi lần sử dụng                                                |
 | Q4  | M2 cung cấp thao tác tạo conversation dùng cùng Mongoose connection/transaction session                               | Thiếu sẽ không tạo Workspace hoàn chỉnh nguyên tử                                  | M1 + M2                        | Trước T6                    | Cần review interface ở 6.2                                                                                                     |
@@ -162,7 +162,7 @@ Tên và cấu hình index lấy từ [integrity mục 2](../database/integrity-
 - **Tạo Workspace:** tạo Workspace, membership OWNER, kênh `general` TEXT/WORKSPACE và conversation CHANNEL của M2 trong cùng transaction/connection. Không gửi socket hoặc thực hiện tác động ngoài DB trong callback transaction; chỉ gửi thông báo sau khi xác nhận commit.
 - **Nhận lời mời:** kiểm link, Workspace và membership; tạo/kích hoạt lại membership trong transaction, dưới khóa điều phối Workspace. Nếu đã ACTIVE, trả membership hiện có. Khi gia nhập lại, tăng incarnation đúng một lần để quyền PRIVATE của lần gia nhập cũ không còn hợp lệ. Không tự khôi phục vai trò quản trị khi nguồn nghiệp vụ chưa chốt.
 - **Cấp/gỡ quyền PRIVATE:** kiểm quyền quản trị và thành viên đích đang ACTIVE trong cùng Workspace. Nếu quyền thực sự thay đổi, cập nhật bản ghi quyền và channel revision trong cùng transaction. Thêm lại quyền không tự khôi phục nhóm hoặc kết nối media cũ.
-- **Xóa Workspace/kênh:** đánh dấu đã xóa (tombstone) để chặn truy cập trước. Dọn dữ liệu/file vật lý theo từng đợt và vòng đời của mỗi miền; không dùng một transaction để xóa toàn bộ lịch sử và file.
+- **Xóa Workspace/kênh:** dưới gate, đặt chốt chặn truy cập trong runtime → phối hợp M2/M4 thu tài nguyên đang mở → lưu trạng thái đã xóa (tombstone), revision và audit trong transaction/CAS → đối chiếu và gửi cập nhật. Chỉ dọn dữ liệu/file vật lý sau đó, theo từng đợt và vòng đời của mỗi miền. Chốt chặn runtime không phải tombstone trong DB; lỗi cleanup/commit xử lý theo mục 6.2, không báo xóa thành công khi kết quả chưa rõ. Không dùng một transaction để xóa toàn bộ lịch sử và file.
 
 **Backfill / migration:** chưa thực hiện trong task viết proposal. Trước khi triển khai, kiểm dữ liệu/index đang có và thử sao lưu/khôi phục trong môi trường riêng theo [kế hoạch migration](../database/integrity-and-migrations.md). Nếu DB có dữ liệu `RESTRICTED`, phải có migration sang `PRIVATE` được review; chỉ sửa enum trong code là chưa đủ. Không tự chạy `syncIndexes`, reset hoặc seed để che lỗi. Ngoài môi trường test, tắt autoIndex/autoCreate và kiểm tra schema/index khi ứng dụng báo sẵn sàng phục vụ. Thời hạn lưu User/lời mời/audit còn mở. TTL tự dọn phiên hết hạn không thay thế việc kiểm tra hạn phiên khi xử lý yêu cầu.
 
@@ -170,30 +170,32 @@ Tên và cấu hình index lấy từ [integrity mục 2](../database/integrity-
 
 Đường dẫn chung là `/api/v1`. Request/response dùng schema Zod strict trong contracts để kiểm dữ liệu và từ chối field không được khai báo. Kết quả thành công có dạng `{ data, requestId }`; lỗi có dạng `{ error: { code, message }, requestId }`. ID của đối tượng lưu trong DB dùng ObjectId dạng hex; requestId dùng UUID. Không trả passwordHash, tokenHash hoặc lỗi Mongoose thô ra client. Bảng dưới là API dự kiến để review, chưa phải endpoint đã chạy.
 
-| Method / path                                  | Request chính                                                | Response / quyền                                                                                                                               |
-| ---------------------------------------------- | ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| GET `/auth/csrf`                               | Không cần auth                                               | Khởi tạo CSRF bằng cookie có chữ ký theo plan; không cấp phiên đăng nhập                                                                       |
-| POST `/auth/register`                          | email, password, displayName                                 | Thông tin User được phép trả về + CSRF mới; Set-Cookie auth mới sau commit, tự đăng nhập                                                       |
-| POST `/auth/login`                             | email, password                                              | Thông tin User được phép trả về + CSRF mới; cấp mới session/CSRF của trình duyệt hiện tại                                                      |
-| GET `/auth/me`                                 | Cookie                                                       | Thông tin User được phép trả về khi phiên hiện hành còn hiệu lực                                                                               |
-| POST `/auth/logout`                            | Cookie, CSRF                                                 | Thu phiên hiện tại, xóa cookie; lặp an toàn, không logout mọi thiết bị                                                                         |
-| GET / POST `/workspaces`                       | POST: name, requestId                                        | Danh sách Workspace còn là thành viên / Workspace mới và kênh đầu tiên; người gọi đã đăng nhập                                                 |
-| GET / PATCH / DELETE `/workspaces/:wid`        | PATCH: name; thao tác thay đổi có requestId/revision phù hợp | Member đọc, owner/admin sửa, owner xóa                                                                                                         |
-| GET `/workspaces/:wid/members`                 | cursor, limit                                                | Member ACTIVE; thông tin user/role cần hiển thị, không lộ dữ liệu xác thực                                                                     |
-| PATCH / DELETE `/workspaces/:wid/members/:uid` | role hoặc remove, expectedRevision, requestId                | Chỉ owner đổi ADMIN/MEMBER; owner/admin loại thành viên theo ma trận dưới                                                                      |
-| POST `/workspaces/:wid/invitations`            | requestId                                                    | Owner/admin; tạo link khi chưa có; nếu link đang bật, trả link đó. Khi đã tắt, dùng thao tác tạo lại. Không tự sinh nhiều link.                |
-| GET `/workspaces/:wid/invitations`             | —                                                            | Owner/admin; lấy link hiện hành để sao chép và trạng thái bật/tắt; khi tắt không trả token dùng được. Không tạo/đổi link; không trả tokenHash. |
-| DELETE `/workspaces/:wid/invitations/current`  | requestId                                                    | Owner/admin; tắt link hiện hành, gọi lại an toàn; không loại thành viên đã tham gia.                                                           |
-| POST `/workspaces/:wid/invitations/regenerate` | requestId                                                    | Owner/admin; thay token và bật link mới nguyên tử; link cũ mất hiệu lực, thành viên hiện có không bị ảnh hưởng.                                |
-| POST `/invitations/preview`                    | token                                                        | Sau đăng nhập, trả tên Workspace, khả năng tham gia và membership hiện có; không cấp membership/không lộ danh sách thành viên.                 |
-| POST `/invitations/accept`                     | token, requestId                                             | Sau đăng nhập và người dùng xác nhận; trả Workspace/membership hoặc lỗi link hiện tại                                                          |
-| GET / POST `/workspaces/:wid/channels`         | POST: name, type, accessMode, requestId                      | Chỉ liệt kê kênh có quyền đọc/sử dụng nội dung; owner/admin tạo                                                                                |
-| GET `/workspaces/:wid/channels/manage`         | cursor, limit                                                | **Đề xuất thêm:** owner/admin đọc thông tin phục vụ quản trị, tách list nội dung                                                               |
-| PATCH / DELETE `/channels/:cid`                | name hoặc delete, expectedRevision, requestId                | Owner/admin; không cho sửa type/accessMode                                                                                                     |
-| GET `/channels/:cid/access`                    | cursor, limit                                                | Owner/admin; danh sách quyền PRIVATE hiện hành và thành viên liên quan, không trả nội dung kênh                                                |
-| PUT / DELETE `/channels/:cid/access/:uid`      | requestId, expectedRevision                                  | **Đề xuất đường dẫn WS-15:** owner/admin cấp/gỡ PRIVATE cho thành viên hiện hành                                                               |
+| Method / path                                  | Request chính                                                | Response / quyền                                                                                                                                                   |
+| ---------------------------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| GET `/auth/csrf`                               | Không cần auth                                               | Khởi tạo CSRF bằng cookie có chữ ký theo plan; không cấp phiên đăng nhập                                                                                           |
+| POST `/auth/register`                          | email, password, displayName                                 | Thông tin User được phép trả về + CSRF mới; Set-Cookie auth mới sau commit, tự đăng nhập                                                                           |
+| POST `/auth/login`                             | email, password                                              | Thông tin User được phép trả về + CSRF mới; cấp mới session/CSRF của trình duyệt hiện tại                                                                          |
+| GET `/auth/me`                                 | Cookie                                                       | Thông tin User được phép trả về khi phiên hiện hành còn hiệu lực                                                                                                   |
+| POST `/auth/logout`                            | Cookie, CSRF                                                 | Thu phiên hiện tại, xóa cookie; lặp an toàn, không logout mọi thiết bị                                                                                             |
+| GET / POST `/workspaces`                       | POST: name, requestId                                        | Danh sách Workspace còn là thành viên / Workspace mới và kênh đầu tiên; người gọi đã đăng nhập                                                                     |
+| GET / PATCH / DELETE `/workspaces/:wid`        | PATCH: name; thao tác thay đổi có requestId/revision phù hợp | Member đọc, owner/admin sửa, owner xóa                                                                                                                             |
+| GET `/workspaces/:wid/members`                 | cursor, limit                                                | Member ACTIVE; thông tin user/role cần hiển thị, không lộ dữ liệu xác thực                                                                                         |
+| PATCH / DELETE `/workspaces/:wid/members/:uid` | role hoặc remove, expectedRevision, requestId                | Chỉ owner đổi ADMIN/MEMBER; owner/admin loại thành viên theo ma trận dưới                                                                                          |
+| POST `/workspaces/:wid/invitations`            | requestId                                                    | Owner/admin; tạo link khi chưa có; nếu link đang bật, trả link đó. Khi đã tắt, dùng thao tác tạo lại. Không tự sinh nhiều link.                                    |
+| GET `/workspaces/:wid/invitations`             | —                                                            | Owner/admin; lấy link hiện hành để sao chép và trạng thái bật/tắt, revision hiện hành; khi tắt không trả token dùng được. Không tạo/đổi link; không trả tokenHash. |
+| DELETE `/workspaces/:wid/invitations/current`  | requestId, expectedRevision                                  | Owner/admin; tắt link hiện hành, gọi lại an toàn; không loại thành viên đã tham gia.                                                                               |
+| POST `/workspaces/:wid/invitations/regenerate` | requestId, expectedRevision                                  | Owner/admin; thay token và bật link mới nguyên tử; link cũ mất hiệu lực, thành viên hiện có không bị ảnh hưởng.                                                    |
+| POST `/invitations/preview`                    | token                                                        | Sau đăng nhập, trả tên Workspace, khả năng tham gia và membership hiện có; không cấp membership/không lộ danh sách thành viên.                                     |
+| POST `/invitations/accept`                     | token, requestId                                             | Sau đăng nhập và người dùng xác nhận; trả Workspace/membership hoặc lỗi link hiện tại                                                                              |
+| GET / POST `/workspaces/:wid/channels`         | POST: name, type, accessMode, requestId                      | Chỉ liệt kê kênh có quyền đọc/sử dụng nội dung; owner/admin tạo                                                                                                    |
+| GET `/workspaces/:wid/channels/manage`         | cursor, limit                                                | **Đề xuất thêm:** owner/admin đọc thông tin phục vụ quản trị, tách list nội dung                                                                                   |
+| PATCH / DELETE `/channels/:cid`                | name hoặc delete, expectedRevision, requestId                | Owner/admin; không cho sửa type/accessMode                                                                                                                         |
+| GET `/channels/:cid/access`                    | cursor, limit                                                | Owner/admin; danh sách quyền PRIVATE hiện hành và thành viên liên quan, không trả nội dung kênh                                                                    |
+| PUT / DELETE `/channels/:cid/access/:uid`      | requestId, expectedRevision                                  | **Đề xuất đường dẫn WS-15:** owner/admin cấp/gỡ PRIVATE cho thành viên hiện hành                                                                                   |
 
 **Quy tắc link đã chốt:** tối đa một link đang bật; sao chép lại không sinh link mới, không hạn/lượt. Owner/admin tắt hoặc tạo lại được; ai có link hợp lệ đều có thể đăng nhập rồi xác nhận tham gia.
+
+**Chống thao tác link từ trang cũ:** GET trả revision của bản ghi invitation, không dùng revision Workspace thay thế. Tắt/tạo lại gửi `expectedRevision`; dưới Workspace gate, server kiểm quyền và cập nhật có điều kiện theo revision đó. Revision không khớp trả `CONFLICT` (409 theo mapping đang đề xuất), không thay token/trạng thái; UI tải lại trước khi người dùng xác nhận thao tác mới. Thay đổi thành công tăng revision. Gửi lại cùng requestId/payload không áp dụng thao tác lần nữa lên link mới hơn; không tự lấy revision mới để thử lại một thao tác cũ. Tắt link đã tắt tại đúng revision hiện hành là no-op.
 
 **Thiết kế token còn mở:** chính sách một link không hạn/lượt đã chốt ngày 04/11; cách lưu hoặc tái tạo token để owner/admin sao chép lại chưa chốt. Chỉ lưu tokenHash là không đủ. M1 cần đề xuất cơ chế, bảo vệ khóa nếu dùng mã hóa và cập nhật schema/contract trước T8; không coi các field hiện tại là schema hoàn chỉnh. Không tự giảm estimate T8 khi chưa review phần này.
 
@@ -338,22 +340,22 @@ Rollback: xử lý các phiên đang hoạt động theo runbook trước khi kh
 
 Bảng dưới là các ca kiểm thử dự kiến để nghiệm thu M1; chưa phải kết quả kiểm thử. Xem giải nghĩa loại kiểm thử và thuật ngữ tại Appendix.
 
-| ID  | Level                   | Tình huống / kết quả cần đạt                                                                                                                                                                                                                                                        | Goals / FR             |
-| --- | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- |
-| A1  | Unit + Integration      | Đăng ký hợp lệ tạo User và phiên, tự đăng nhập; email trùng hoặc dữ liệu sai không tạo tài khoản dở dang; đăng nhập sai không cấp phiên                                                                                                                                             | G1 / FR-01-01/02       |
-| A2  | Browser + Integration   | Kiểm cookie/CSRF/Origin; CSRF thiếu/sai bị từ chối; tải lại trang giữ phiên; hết hạn/logout chặn HTTP/socket/media của đúng phiên, giữ các phiên khác                                                                                                                               | G1/G6 / FR-01-02/03    |
-| U1  | Browser + Integration   | Chỉ sửa tên chính mình; từ chối tên sai hoặc yêu cầu sửa email/role; cập nhật tên tại các màn hiển thị mà không sửa sai dữ liệu lịch sử                                                                                                                                             | G7 / FR-01-04          |
-| U2  | File + Integration      | Thử chọn/thay/xóa ảnh và ảnh lỗi/quá giới hạn; từ chối file sai chủ/mục đích. Thay đồng thời không xóa ảnh đang dùng. Chỉ chính chủ được thay/xóa; URL ảnh đọc công khai, kể cả sau rời Workspace. Từ chối metadata giả; kiểm lỗi cập nhật DB/xóa Cloudinary và ảnh upload chưa gắn | G7 / FR-01-05          |
-| U3  | Auth race + Integration | Sai currentPassword không thu phiên. Đổi đúng thì mật khẩu mới có hiệu lực, thu tất cả phiên/socket/media và buộc đăng nhập lại. Đăng nhập đồng thời không tạo phiên từ hash cũ; chưa rõ commit thì không báo sai kết quả                                                           | G7 / FR-01-06          |
-| W1  | Datastore + Integration | Chủ động gây lỗi từng bước tạo Workspace/general; rollback đầy đủ, gửi lại không tạo OWNER hoặc conversation trùng                                                                                                                                                                  | G2 / FR-02-01          |
-| W2  | Integration + UI        | Liệt kê đúng Workspace còn quyền, đổi tên đúng vai trò; chỉ OWNER được xóa. Sau xóa chặn tài nguyên đang mở và có thể thử dọn lại khi lỗi                                                                                                                                           | G2/G6 / FR-02-02/03    |
-| I1  | Browser + Integration   | Mở lời mời khi chưa đăng nhập, đăng ký/đăng nhập rồi trở về đúng lời mời; chỉ tham gia sau xác nhận; thành viên ACTIVE không tạo membership mới                                                                                                                                     | G3 / FR-02-04/05       |
-| I2  | Datastore race          | Sao chép lại không đổi link; tạo đồng thời vẫn chỉ một link hiện hành; tạo lại/tắt chạy cùng accept cho kết quả theo thứ tự xử lý dưới Workspace gate. Link cũ hoặc đã tắt không cấp membership mới. Join đồng thời không trùng; rejoin không hồi PRIVATE.                          | G3 / FR-02-04/05       |
-| P1  | Unit + Integration      | Thành viên xem đúng danh sách, không tự nâng quyền; chỉ OWNER đổi ADMIN/MEMBER; ADMIN không loại OWNER/ADMIN khác; API đổi role không được sửa OWNER                                                                                                                                | G4 / FR-02-06/07       |
-| C1  | Integration + UI        | Tạo TEXT/LIVE với hai accessMode; liệt kê/mở/đổi tên đúng quyền; từ chối đổi type/accessMode sau tạo; xóa LIVE phải dọn tài nguyên thật                                                                                                                                             | G5/G6 / FR-03-01/02/03 |
-| C2  | Integration + UI        | Owner/admin xem được danh sách quyền PRIVATE để thêm/gỡ; ngoài danh sách vẫn không đọc/gửi/tải/vào LIVE. Thêm lại thấy lịch sử còn lưu; gỡ quyền chặn thao tác chờ, sự kiện và luồng tải                                                                                            | G5/G6 / FR-03-04       |
-| R1  | Fault injection + race  | Thu quyền đồng thời với gửi tin/upload/vào LIVE; chủ động gây lỗi commit và hàm phối hợp, rồi thử lại. Không cho quyền cũ tiếp tục có hiệu lực hoặc báo hoàn tất khi chưa xong                                                                                                      | G6 / các FR revoke     |
-| B1  | Self-test               | Tự thử luồng đăng nhập sai/đúng, chưa có Workspace, tạo Workspace, mời người thứ hai, cấp PRIVATE rồi gỡ lúc người đó đang sử dụng                                                                                                                                                  | G1–G7                  |
+| ID  | Level                   | Tình huống / kết quả cần đạt                                                                                                                                                                                                                                                                                                                                                                                                  | Goals / FR             |
+| --- | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- |
+| A1  | Unit + Integration      | Đăng ký hợp lệ tạo User và phiên, tự đăng nhập; email trùng hoặc dữ liệu sai không tạo tài khoản dở dang; đăng nhập sai không cấp phiên                                                                                                                                                                                                                                                                                       | G1 / FR-01-01/02       |
+| A2  | Browser + Integration   | Kiểm cookie/CSRF/Origin; CSRF thiếu/sai bị từ chối; tải lại trang giữ phiên; hết hạn/logout chặn HTTP/socket/media của đúng phiên, giữ các phiên khác                                                                                                                                                                                                                                                                         | G1/G6 / FR-01-02/03    |
+| U1  | Browser + Integration   | Chỉ sửa tên chính mình; từ chối tên sai hoặc yêu cầu sửa email/role; cập nhật tên tại các màn hiển thị mà không sửa sai dữ liệu lịch sử                                                                                                                                                                                                                                                                                       | G7 / FR-01-04          |
+| U2  | File + Integration      | Thử chọn/thay/xóa ảnh và ảnh lỗi/quá giới hạn; từ chối file sai chủ/mục đích. Thay đồng thời không xóa ảnh đang dùng. Chỉ chính chủ được thay/xóa; URL ảnh đọc công khai, kể cả sau rời Workspace. Từ chối metadata giả; kiểm lỗi cập nhật DB/xóa Cloudinary và ảnh upload chưa gắn                                                                                                                                           | G7 / FR-01-05          |
+| U3  | Auth race + Integration | Sai currentPassword không thu phiên. Đổi đúng thì mật khẩu mới có hiệu lực, thu tất cả phiên/socket/media và buộc đăng nhập lại. Đăng nhập đồng thời không tạo phiên từ hash cũ; chưa rõ commit thì không báo sai kết quả                                                                                                                                                                                                     | G7 / FR-01-06          |
+| W1  | Datastore + Integration | Chủ động gây lỗi từng bước tạo Workspace/general; rollback đầy đủ, gửi lại không tạo OWNER hoặc conversation trùng                                                                                                                                                                                                                                                                                                            | G2 / FR-02-01          |
+| W2  | Integration + UI        | Liệt kê đúng Workspace còn quyền, đổi tên đúng vai trò; chỉ OWNER được xóa. Sau xóa chặn tài nguyên đang mở và có thể thử dọn lại khi lỗi                                                                                                                                                                                                                                                                                     | G2/G6 / FR-02-02/03    |
+| I1  | Browser + Integration   | Mở lời mời khi chưa đăng nhập, đăng ký/đăng nhập rồi trở về đúng lời mời; chỉ tham gia sau xác nhận; thành viên ACTIVE không tạo membership mới                                                                                                                                                                                                                                                                               | G3 / FR-02-04/05       |
+| I2  | Datastore race          | Hai admin cùng đọc revision: một người tạo lại, người kia tắt/tạo lại với revision cũ bị conflict, link mới không đổi. Retry cùng requestId không áp lại thay đổi; sao chép lại không đổi link; tạo đồng thời vẫn chỉ một link hiện hành; tạo lại/tắt chạy cùng accept cho kết quả theo thứ tự xử lý dưới Workspace gate. Link cũ hoặc đã tắt không cấp membership mới. Join đồng thời không trùng; rejoin không hồi PRIVATE. | G3 / FR-02-04/05       |
+| P1  | Unit + Integration      | Thành viên xem đúng danh sách, không tự nâng quyền; chỉ OWNER đổi ADMIN/MEMBER; ADMIN không loại OWNER/ADMIN khác; API đổi role không được sửa OWNER                                                                                                                                                                                                                                                                          | G4 / FR-02-06/07       |
+| C1  | Integration + UI        | Tạo TEXT/LIVE với hai accessMode; liệt kê/mở/đổi tên đúng quyền; từ chối đổi type/accessMode sau tạo; xóa LIVE phải dọn tài nguyên thật                                                                                                                                                                                                                                                                                       | G5/G6 / FR-03-01/02/03 |
+| C2  | Integration + UI        | Owner/admin xem được danh sách quyền PRIVATE để thêm/gỡ; ngoài danh sách vẫn không đọc/gửi/tải/vào LIVE. Thêm lại thấy lịch sử còn lưu; gỡ quyền chặn thao tác chờ, sự kiện và luồng tải                                                                                                                                                                                                                                      | G5/G6 / FR-03-04       |
+| R1  | Fault injection + race  | Thu quyền đồng thời với gửi tin/upload/vào LIVE; chủ động gây lỗi commit và hàm phối hợp, rồi thử lại. Không cho quyền cũ tiếp tục có hiệu lực hoặc báo hoàn tất khi chưa xong                                                                                                                                                                                                                                                | G6 / các FR revoke     |
+| B1  | Self-test               | Tự thử luồng đăng nhập sai/đúng, chưa có Workspace, tạo Workspace, mời người thứ hai, cấp PRIVATE rồi gỡ lúc người đó đang sử dụng                                                                                                                                                                                                                                                                                            | G1–G7                  |
 
 Kiểm thử DB dùng replica set và index/validator thật trong DB/volume riêng, không reset DB đang dùng. Các ca khóa/thời gian/hết hạn dùng dữ liệu và đồng hồ kiểm thử xác định để lặp lại được. Mock chỉ kiểm cách gọi interface, chưa chứng minh dữ liệu giữa các nhóm được cách ly. Kiểm `listIndexes`, rollback, kết quả commit chưa rõ và kế hoạch truy vấn theo ma trận DB hiện hành. Kiểm bằng trình duyệt cả thành công, chưa có dữ liệu và lỗi. Chỉ nghiệm thu tích hợp khi có phần triển khai thật của M2/M4/M3/M5; ghi rõ phần còn bị chặn do phụ thuộc.
 
@@ -400,49 +402,215 @@ Code/schema chỉ quay về phiên bản cũ khi đủ điều kiện tương th
 
 ## 9. WBS
 
-WBS (Work Breakdown Structure) là bảng phân chia công việc. Est. tính bằng ngày công M1 ở kịch bản dự kiến, chưa gồm thời gian dự phòng; mỗi dòng đã tính viết code, kiểm thử liên quan và sửa sau review thông thường. T15 kiểm tích hợp bổ sung; T16 chuẩn bị vận hành và bàn giao. M2/M4 ước lượng phần họ phải triển khai trong proposal riêng để tránh cộng hai lần.
+WBS giữ T1–T19 làm **nhóm công việc** để truy vết các phần thiết kế. Task con Tn.m là đơn vị dự kiến đưa lên Jira; các mã này chưa phải mã Jira. Mỗi task con có một đầu ra kiểm được và estimate **2–8 giờ tập trung**, ưu tiên đầu ra vừa sức; có thể là 2, 4, 6 hoặc 8 giờ tùy độ phức tạp. Không ép công việc vào mốc 4 giờ. Không tạo Issue giao nguyên một nhóm lớn.
 
-| ID  | Task / đầu ra kiểm được                                                                                                    | Layer / file dự kiến       | Depends on                                      | Est. (pd) | Serves   |
-| --- | -------------------------------------------------------------------------------------------------------------------------- | -------------------------- | ----------------------------------------------- | --------- | -------- |
-| T1  | Thống nhất schema Zod, API và dữ liệu trả về của M1 với M2/M4; đổi RESTRICTED thành PRIVATE và dùng ObjectId trong phần M1 | contracts, review          | —                                               | 1.0       | G1–G7    |
-| T2  | Viết model/index/validator M1; hỗ trợ transaction chung và kiểm migration trong DB riêng                                   | database                   | T1, Q6                                          | 1.5       | G1–G5    |
-| T3  | Viết đăng ký/đăng nhập, cấp phiên mới; đo và giới hạn tác vụ băm mật khẩu                                                  | auth BE/tests              | T1, T2, Q1/Q2                                   | 1.5       | G1       |
-| T4  | Làm giao diện xác thực, tải lại trạng thái đăng nhập, cookie/CSRF, xác thực socket và thu phiên khi logout/hết hạn         | web/auth/realtime          | T3, Q3, T5 contract                             | 1.5       | G1/G6    |
-| T5  | Viết kiểm quyền dùng chung, khóa điều phối Workspace và hàm phối hợp thu quyền; kiểm thao tác đồng thời và lỗi             | shared policy/coordination | T1, T2, Q5/Q8                                   | 2.0       | G2–G6    |
-| T6  | Tạo Workspace, OWNER, general và conversation trong cùng transaction; kiểm rollback khi lỗi                                | Workspace BE, M2 port      | T2, T5, Q4 provider                             | 1.0       | G2       |
-| T7  | Làm màn chọn/tạo/mở/đổi tên Workspace, danh sách đúng quyền và bố cục ghép chat/cuộc gọi                                   | Workspace FE/BE            | T4, T6                                          | 1.0       | G2       |
-| T8  | Tạo/sao chép lại/tắt/tạo lại/nhận link mời; kiểm một link hiện hành, retry, nhận đồng thời và gia nhập lại                 | invitations BE/tests       | T4, T5, T6, Q2; review token T1                 | 1.5       | G3       |
-| T9  | Làm giao diện nhận lời mời qua đăng nhập/đăng ký, giữ mã mời và xử lý lỗi                                                  | invite FE/browser          | T7, T8                                          | 0.75      | G1/G3    |
-| T10 | Tạo/liệt kê/đổi tên kênh TEXT/LIVE, WORKSPACE/PRIVATE; tách dữ liệu quản trị khỏi nội dung                                 | channels FE/BE             | T5, T7, M2 ConversationPort                     | 1.25      | G5       |
-| T11 | Làm danh sách và đổi vai trò thành viên trên FE/BE; kiểm quyền và cập nhật đồng thời bằng CAS                              | members FE/BE              | T5, T7                                          | 1.25      | G4       |
-| T12 | Loại thành viên qua giao diện/API, thu tài nguyên đang mở và giữ quyền ngoài Workspace đó                                  | members + adapters         | T11, M2/M4 provider                             | 1.0       | G4/G6    |
-| T13 | Xem danh sách, cấp/gỡ/cấp lại quyền PRIVATE trên giao diện; áp dụng ngay với tài nguyên đang mở                            | access FE/BE + adapters    | T10, M2/M4 provider                             | 1.0       | G5/G6    |
-| T14 | Xóa kênh/Workspace: xác nhận trên UI, đánh dấu xóa, thử dọn lại khi lỗi và hiển thị trạng thái                             | lifecycle FE/BE            | T10, T12, T13                                   | 1.25      | G2/G5/G6 |
-| T15 | Kiểm luồng hai người dùng với M2/M4 thật; kiểm thu quyền, thao tác đồng thời và commit chưa rõ; sửa lỗi tích hợp thuộc M1  | integration/browser        | T4, T6–T14, T17–T19, M2/M4/M3/M5 phần liên quan | 1.5       | G1–G7    |
-| T16 | Viết hướng dẫn vận hành/cấu hình, migration và rollback; thử nhanh trên staging và bàn giao                                | docs/ops                   | T15                                             | 1.0       | G1–G7    |
-| T17 | Làm hồ sơ tên hiển thị trên FE/BE; cập nhật dữ liệu hiển thị và kiểm đúng chủ hồ sơ                                        | profile FE/BE              | T3, T4, T1 contracts                            | 1.0       | G7       |
-| T18 | Chọn/thay/xóa avatar Cloudinary; kiểm đúng chủ và metadata, tích hợp dọn ảnh với M2                                        | profile + M2 file port     | T17, Q10, M2 avatar provider                    | 1.5       | G7       |
-| T19 | Đổi mật khẩu trên FE/BE; kiểm cập nhật đồng thời, thu tất cả phiên và tài nguyên liên quan                                 | auth + M4 revoke           | T3, T4, T5, Q10                                 | 1.5       | G7/G6    |
+Giờ đã gồm triển khai, kiểm thử liên quan và sửa sau review thông thường của M1; không gồm thời gian chờ. M2/M4 ước lượng phần họ cung cấp trong proposal riêng. Tổng từng nhóm dưới đây được tính từ task con; đây vẫn là estimate sơ bộ để review, chưa phải cam kết hoàn thành trong ngày.
 
-T4 có thể bắt đầu khi interface của T5 đã review, chưa cần chờ toàn bộ T5 hoàn thành. Chưa nghiệm thu việc logout/hết hạn phiên đóng media cho tới khi có phần triển khai thật và kiểm tích hợp T15. T12/T13/T14 phải thu quyền ngay trong chức năng tương ứng, không dồn toàn bộ việc này đến T15. Team có thể chia nhỏ thêm sau review; một dòng WBS không bắt buộc tương ứng đúng một Issue hoặc một FR.
+### Tổng hợp theo nhóm
+
+| ID  | Nhóm công việc                                                                                                             | Layer / file dự kiến       | Depends on                                      | Tổng giờ | Serves   |
+| --- | -------------------------------------------------------------------------------------------------------------------------- | -------------------------- | ----------------------------------------------- | -------- | -------- |
+| T1  | Thống nhất schema Zod, API và dữ liệu trả về của M1 với M2/M4; đổi RESTRICTED thành PRIVATE và dùng ObjectId trong phần M1 | contracts, review          | —                                               | 14       | G1–G7    |
+| T2  | Viết model/index/validator M1; hỗ trợ transaction chung và kiểm migration trong DB riêng                                   | database                   | T1, Q6                                          | 20       | G1–G5    |
+| T3  | Viết đăng ký/đăng nhập, cấp phiên mới; đo và giới hạn tác vụ băm mật khẩu                                                  | auth BE/tests              | T1, T2, Q1/Q2                                   | 16       | G1       |
+| T4  | Làm giao diện xác thực, tải lại trạng thái đăng nhập, cookie/CSRF, xác thực socket và thu phiên khi logout/hết hạn         | web/auth/realtime          | T3, Q3, T5 contract                             | 22       | G1/G6    |
+| T5  | Viết kiểm quyền dùng chung, khóa điều phối Workspace và hàm phối hợp thu quyền; kiểm thao tác đồng thời và lỗi             | shared policy/coordination | T1, T2, Q5/Q8                                   | 22       | G2–G6    |
+| T6  | Tạo Workspace, OWNER, general và conversation trong cùng transaction; kiểm rollback khi lỗi                                | Workspace BE, M2 port      | T2, T5, Q4 provider                             | 8        | G2       |
+| T7  | Làm màn chọn/tạo/mở/đổi tên Workspace, danh sách đúng quyền và bố cục ghép chat/cuộc gọi                                   | Workspace FE/BE            | T4, T6                                          | 12       | G2       |
+| T8  | Tạo/sao chép lại/tắt/tạo lại/nhận link mời; kiểm một link hiện hành, retry, nhận đồng thời và gia nhập lại                 | invitations BE/tests       | T4, T5, T6, Q2; review token T1                 | 20       | G3       |
+| T9  | Làm giao diện nhận lời mời qua đăng nhập/đăng ký, giữ mã mời và xử lý lỗi                                                  | invite FE/browser          | T7, T8                                          | 6        | G1/G3    |
+| T10 | Tạo/liệt kê/đổi tên kênh TEXT/LIVE, WORKSPACE/PRIVATE; tách dữ liệu quản trị khỏi nội dung                                 | channels FE/BE             | T5, T7, M2 ConversationPort                     | 16       | G5       |
+| T11 | Làm danh sách và đổi vai trò thành viên trên FE/BE; kiểm quyền và cập nhật đồng thời bằng CAS                              | members FE/BE              | T5, T7                                          | 10       | G4       |
+| T12 | Loại thành viên qua giao diện/API, thu tài nguyên đang mở và giữ quyền ngoài Workspace đó                                  | members + adapters         | T11, M2/M4 provider                             | 10       | G4/G6    |
+| T13 | Xem danh sách, cấp/gỡ/cấp lại quyền PRIVATE trên giao diện; áp dụng ngay với tài nguyên đang mở                            | access FE/BE + adapters    | T10, M2/M4 provider                             | 14       | G5/G6    |
+| T14 | Xóa kênh/Workspace: xác nhận trên UI, đánh dấu xóa, thử dọn lại khi lỗi và hiển thị trạng thái                             | lifecycle FE/BE            | T10, T12, T13                                   | 18       | G2/G5/G6 |
+| T15 | Kiểm luồng hai người dùng với M2/M4 thật; kiểm thu quyền, thao tác đồng thời và commit chưa rõ; ghi nhận lỗi tích hợp      | integration/browser        | T4, T6–T14, T17–T19, M2/M4/M3/M5 phần liên quan | 14       | G1–G7    |
+| T16 | Viết hướng dẫn vận hành/cấu hình, migration và rollback; thử nhanh trên staging và bàn giao                                | docs/ops                   | T15                                             | 8        | G1–G7    |
+| T17 | Làm hồ sơ tên hiển thị trên FE/BE; cập nhật dữ liệu hiển thị và kiểm đúng chủ hồ sơ                                        | profile FE/BE              | T3, T4, T1 contracts                            | 8        | G7       |
+| T18 | Chọn/thay/xóa avatar Cloudinary; kiểm đúng chủ và metadata, tích hợp dọn ảnh với M2                                        | profile + M2 file port     | T17, Q10, M2 avatar provider                    | 14       | G7       |
+| T19 | Đổi mật khẩu trên FE/BE; kiểm cập nhật đồng thời, thu tất cả phiên và tài nguyên liên quan                                 | auth + M4 revoke           | T3, T4, T5, Q10                                 | 16       | G7/G6    |
+
+### Task con để giao việc
+
+Mã task dùng để truy vết, không phải thứ tự triển khai: T4.4 (xác thực HTTP/phiên/CSRF) cần làm trước giao diện T4.1. Các ca lỗi và đồng thời thuộc chức năng được kiểm ngay trong task đó; T15 kiểm bổ sung khi ghép các miền thật.
+
+Bảng tổng hợp chỉ nêu phụ thuộc giữa các nhóm; khi giao việc dùng phụ thuộc chi tiết của task con. Phụ thuộc task con ghi theo nhóm nghĩa là cần hoàn tất nhóm đó; nếu chỉ cần một phần thì ghi đúng mã task con. Task nghiên cứu kết thúc bằng kết quả thử, quyết định đề xuất và phần chưa rõ; hết thời lượng phải báo để review, không tự kéo dài hoặc coi thử nghiệm là feature đã xong.
+
+**T1**
+
+| ID   | Đầu ra và kiểm tra hoàn thành                                                                                        | Phụ thuộc / điều kiện bắt đầu                                                              | Giờ |
+| ---- | -------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ | --- |
+| T1.1 | Chốt contract auth/profile và lỗi; ghi input, output, quyền, giới hạn còn cần quyết định.                            | Q2/Q3; chốt contract đổi mật khẩu, Q10 phần thu phiên; Q1 thử ở T3.1, avatar review ở T1.3 | 4   |
+| T1.2 | Chốt contract Workspace/kênh và interface M2/M4; cập nhật Zod PRIVATE/ObjectId, kiểm consumer và ghi kết quả review. | M2/M4 review; Q4/Q5, Q2 cách lưu token; không chờ T1.1 nếu phần giao tiếp đã rõ            | 6   |
+| T1.3 | Chốt contract upload/xác minh/gắn/xóa avatar với M2; ghi metadata, lỗi và trách nhiệm cleanup để T18 triển khai.     | Q10, M2 review; dùng contract user ở T1.1                                                  | 4   |
+
+**T2**
+
+| ID   | Đầu ra và kiểm tra hoàn thành                                                                                                          | Phụ thuộc / điều kiện bắt đầu          | Giờ |
+| ---- | -------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- | --- |
+| T2.1 | Tạo model/index/validator User và authSession; kiểm unique email, phiên hết hạn và dữ liệu không hợp lệ.                               | T1.1; Q6                               | 6   |
+| T2.2 | Tạo model/index/validator Workspace, membership và invitation; kiểm ràng buộc owner, một link hiện hành và membership.                 | T1.2; Q6                               | 6   |
+| T2.3 | Tạo model/index/validator kênh và PRIVATE grant; kiểm grant gắn đúng lần membership và ràng buộc unique.                               | T1.2; Q6                               | 4   |
+| T2.4 | Cung cấp connection/transaction session dùng chung; thử rollback với M2 và preflight index/migration trên DB riêng, ghi cách rollback. | T2.1–T2.3; Q6, M2 transaction contract | 4   |
+
+**T3**
+
+| ID   | Đầu ra và kiểm tra hoàn thành                                                                          | Phụ thuộc / điều kiện bắt đầu                                                       | Giờ |
+| ---- | ------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------- | --- |
+| T3.1 | Thử thư viện/cấu hình băm và giới hạn tác vụ; ghi số đo CPU/RAM/thời gian, đề xuất cấu hình để review. | Q1/Q2; không chờ chốt thư viện mới được thử thư viện                                | 4   |
+| T3.2 | Đăng ký và cấp phiên: kiểm tự đăng nhập, email trùng và input lỗi.                                     | T1.1, T2.1, T2.4, T3.1; Q1/Q2 đã review                                             | 6   |
+| T3.3 | Đăng nhập và cấp phiên mới: kiểm thông tin sai, giới hạn thử và phối hợp khóa User với đổi mật khẩu.   | T3.2, T5.2; quy tắc phối hợp đăng nhập/đổi mật khẩu đã chốt ở T1.1; không chờ T19.1 | 6   |
+
+**T4**
+
+| ID   | Đầu ra và kiểm tra hoàn thành                                                                                                         | Phụ thuộc / điều kiện bắt đầu                                                               | Giờ |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- | --- |
+| T4.4 | Viết middleware đọc/kiểm phiên HTTP, API phiên hiện tại và cấp/kiểm CSRF theo contract; kiểm cookie hết hạn, giả mạo và lỗi xác thực. | T1.1, T2.1, T3.2; Q3                                                                        | 6   |
+| T4.1 | Làm form đăng ký/đăng nhập, lấy phiên hiện tại và tải lại trang; kiểm cookie/CSRF và thông báo lỗi.                                   | T3.3, T4.4; Q3                                                                              | 6   |
+| T4.2 | Xác thực socket bằng cùng phiên; kiểm Origin, CSRF theo contract và từ chối phiên không hợp lệ.                                       | T4.4; contract đăng ký kết nối của M2/M4, Q3; không chờ policy Workspace nếu chỉ kiểm phiên | 4   |
+| T4.3 | Đăng xuất/hết hạn phiên: thu phiên, cập nhật UI và gọi adapter đóng kết nối; kiểm bằng adapter giả, ca thật kiểm ở T15.2.             | T4.1, T4.2, T5.3                                                                            | 6   |
+
+**T5**
+
+| ID   | Đầu ra và kiểm tra hoàn thành                                                                                                                  | Phụ thuộc / điều kiện bắt đầu             | Giờ |
+| ---- | ---------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------- | --- |
+| T5.1 | Viết policy membership/role/channel access dùng chung; kiểm bảng ca cho phép và từ chối.                                                       | T1.2, T2.3                                | 6   |
+| T5.2 | Viết cơ chế điều phối User/Workspace theo thứ tự khóa baseline; kiểm thao tác đồng thời, nhả khóa khi lỗi và interface để các miền dùng chung. | T1.1, T1.2; Q5/Q8; không phụ thuộc T3/T19 | 4   |
+| T5.3 | Viết điều phối chặn truy cập và gọi adapter thu quyền đúng phạm vi; kiểm lỗi cleanup bằng adapter giả.                                         | T5.1, T5.2; Q5 contract đã review         | 6   |
+| T5.4 | Xử lý kết quả commit chưa rõ và đối chiếu lại quyền; kiểm retry, giữ chặn và không tự mở lại tài nguyên.                                       | T5.3; Q8                                  | 6   |
+
+**T6**
+
+| ID   | Đầu ra và kiểm tra hoàn thành                                                                          | Phụ thuộc / điều kiện bắt đầu             | Giờ |
+| ---- | ------------------------------------------------------------------------------------------------------ | ----------------------------------------- | --- |
+| T6.1 | Tạo Workspace, OWNER, general và conversation trong transaction chung với M2; kiểm kết quả thành công. | T2.2, T2.3, T2.4, T5.1, T5.2; Q4 provider | 6   |
+| T6.2 | Kiểm rollback, retry và yêu cầu tạo lặp; bảo đảm không có Workspace hoặc conversation dở dang.         | T6.1                                      | 2   |
+
+**T7**
+
+| ID   | Đầu ra và kiểm tra hoàn thành                                                                                                       | Phụ thuộc / điều kiện bắt đầu     | Giờ |
+| ---- | ----------------------------------------------------------------------------------------------------------------------------------- | --------------------------------- | --- |
+| T7.1 | Làm API danh sách Workspace có quyền và UI chọn/tạo/mở; kiểm trạng thái chưa có Workspace, lỗi tạo và truy cập trái quyền.          | T4.1, T4.4, T5.1, T6.2            | 6   |
+| T7.2 | Làm API/UI đổi tên Workspace và shell/sidebar ghép chat/cuộc gọi; kiểm revision cũ, lỗi lưu và chuyển trang không tự ngắt cuộc gọi. | T7.1; contract web shell M2/M3/M4 | 6   |
+
+**T8**
+
+| ID   | Đầu ra và kiểm tra hoàn thành                                                                                                                                                       | Phụ thuộc / điều kiện bắt đầu                                | Giờ |
+| ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ | --- |
+| T8.1 | Tạo/lấy lại link hiện hành; kiểm quyền owner/admin, bảo vệ token và không tự xoay link khi sao chép.                                                                                | T1.2, T2.2, T4.4, T5.1, T5.2, T6.2; cách lưu token đã review | 6   |
+| T8.2 | Tắt/tạo lại link theo expectedRevision; kiểm hai admin dùng revision cũ bị conflict, retry không tác động link mới, không loại thành viên đã tham gia.                              | T8.1                                                         | 4   |
+| T8.3 | Preview/nhận link và gia nhập lại; kiểm xác nhận chủ động, đồng thời, không trùng membership và không phục hồi PRIVATE cũ.                                                          | T8.1, T8.2; T2.4                                             | 6   |
+| T8.4 | Làm màn owner/admin xem và sao chép link, tắt/tạo lại với xác nhận; gửi revision đã đọc; kiểm conflict yêu cầu tải lại, quyền và không hiển thị link đã tắt như link còn dùng được. | T7.1, T8.1, T8.2                                             | 4   |
+
+**T9**
+
+| ID   | Đầu ra và kiểm tra hoàn thành                                                                            | Phụ thuộc / điều kiện bắt đầu | Giờ |
+| ---- | -------------------------------------------------------------------------------------------------------- | ----------------------------- | --- |
+| T9.1 | Làm luồng mở link qua đăng ký/đăng nhập rồi xác nhận tham gia; kiểm giữ mã mời và không tự gia nhập.     | T4.1, T7.1, T8.3              | 4   |
+| T9.2 | Hoàn thiện trạng thái link không còn dùng được, đã là thành viên và lỗi mạng; kiểm lại trên trình duyệt. | T9.1                          | 2   |
+
+**T10**
+
+| ID    | Đầu ra và kiểm tra hoàn thành                                                                                                                  | Phụ thuộc / điều kiện bắt đầu                           | Giờ |
+| ----- | ---------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- | --- |
+| T10.1 | Làm API và form tạo kênh TEXT/LIVE theo accessMode; tạo conversation TEXT với M2, kiểm quyền và rollback khi lỗi.                              | T2.3, T2.4, T4.4, T5.1, T5.2, T7.1; M2 ConversationPort | 6   |
+| T10.2 | Làm API list nội dung/list quản trị và UI sidebar/quản trị; kiểm phân trang, kênh không có quyền và không lộ nội dung PRIVATE qua quyền admin. | T10.1                                                   | 6   |
+| T10.3 | Đổi tên kênh trên UI/API; kiểm revision cũ và không sửa type/accessMode.                                                                       | T10.2                                                   | 4   |
+
+**T11**
+
+| ID    | Đầu ra và kiểm tra hoàn thành                                                                                          | Phụ thuộc / điều kiện bắt đầu | Giờ |
+| ----- | ---------------------------------------------------------------------------------------------------------------------- | ----------------------------- | --- |
+| T11.1 | Làm API/UI danh sách thành viên, phân trang và dữ liệu hiển thị; kiểm membership hiện hành, không lộ dữ liệu xác thực. | T4.4, T5.1, T7.1              | 4   |
+| T11.2 | Cấp/gỡ ADMIN trên UI/API; kiểm chỉ OWNER, giữ vai trò OWNER, cập nhật đồng thời và UI tải lại khi revision cũ.         | T11.1, T5.2                   | 6   |
+
+**T12**
+
+| ID    | Đầu ra và kiểm tra hoàn thành                                                                                                            | Phụ thuộc / điều kiện bắt đầu           | Giờ |
+| ----- | ---------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------- | --- |
+| T12.1 | Làm API loại thành viên qua điều phối thu quyền; kiểm đúng Workspace, audit theo baseline, retry và lỗi commit/cleanup bằng adapter giả. | T4.4, T5.3, T5.4, T11.1; M2/M4 contract | 6   |
+| T12.2 | Làm UI xác nhận và kiểm adapter M2/M4 thật: ngừng tài nguyên bị thu, giữ quyền ở Workspace khác.                                         | T12.1; M2/M4 provider                   | 4   |
+
+**T13**
+
+| ID    | Đầu ra và kiểm tra hoàn thành                                                                    | Phụ thuộc / điều kiện bắt đầu     | Giờ |
+| ----- | ------------------------------------------------------------------------------------------------ | --------------------------------- | --- |
+| T13.1 | Làm danh sách/cấp/cấp lại PRIVATE trên UI/API; kiểm đúng membership hiện hành và quyền quản trị. | T10.2, T5.1, T5.2                 | 6   |
+| T13.2 | Gỡ PRIVATE và kiểm với M2/M4 thật; ngừng chat/file/LIVE đúng kênh, cập nhật UI và xử lý retry.   | T13.1, T5.3, T5.4; M2/M4 provider | 8   |
+
+**T14**
+
+| ID    | Đầu ra và kiểm tra hoàn thành                                                                | Phụ thuộc / điều kiện bắt đầu                                 | Giờ |
+| ----- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------- | --- |
+| T14.1 | Xóa kênh trên UI/API: xác nhận, thu quyền, đánh dấu xóa; kiểm không tự tạo lại general.      | T10.2, T5.3, T5.4; M2/M4 provider; không chờ hoàn tất T12/T13 | 6   |
+| T14.2 | Xóa Workspace trên UI/API; kiểm chỉ OWNER và đóng tài nguyên trong Workspace đó.             | T5.3, T5.4, T7.1; M2/M4 provider, cách đánh dấu xóa đã review | 8   |
+| T14.3 | Kiểm dọn lại sau lỗi và trạng thái xóa trên UI; giữ chặn truy cập khi cleanup chưa hoàn tất. | T14.2                                                         | 4   |
+
+**T15**
+
+| ID    | Đầu ra và kiểm tra hoàn thành                                                                             | Phụ thuộc / điều kiện bắt đầu                                                  | Giờ |
+| ----- | --------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ | --- |
+| T15.1 | Kiểm tích hợp hai tài khoản: auth → tạo Workspace → mời → kênh/profile/avatar; ghi bằng chứng và kết quả. | T4, T6–T11, T17/T18; M2 conversation/avatar thật; không chờ T12–T14/T19        | 4   |
+| T15.2 | Kiểm tích hợp thu quyền khi chat/file/LIVE đang mở; xác nhận không ảnh hưởng phạm vi còn quyền.           | T4.3, T12, T13, T14, T19; M2/M4/M3/M5 phần liên quan sẵn sàng; không chờ T15.1 | 6   |
+| T15.3 | Kiểm tích hợp thao tác đồng thời và commit chưa rõ; ghi lỗi tái hiện được, kết quả và vấn đề còn chặn.    | T5.4, T6.2, T8.3, T12–T14, T19; Q8; không chờ T15.1/T15.2                      | 4   |
+
+**T16**
+
+| ID    | Đầu ra và kiểm tra hoàn thành                                                                        | Phụ thuộc / điều kiện bắt đầu                   | Giờ |
+| ----- | ---------------------------------------------------------------------------------------------------- | ----------------------------------------------- | --- |
+| T16.1 | Hoàn thiện runbook cấu hình, migration/rollback và các giới hạn đã kiểm; người review làm theo được. | Soạn từ T2.4/T4; hoàn thiện sau các kết quả T15 | 4   |
+| T16.2 | Chạy smoke trên staging theo luồng M1, lưu bằng chứng và bàn giao phần còn mở.                       | T16.1; staging sẵn sàng                         | 4   |
+
+**T17**
+
+| ID    | Đầu ra và kiểm tra hoàn thành                                                                          | Phụ thuộc / điều kiện bắt đầu          | Giờ |
+| ----- | ------------------------------------------------------------------------------------------------------ | -------------------------------------- | --- |
+| T17.1 | Làm API xem/sửa tên của chính mình, email chỉ đọc; kiểm input và từ chối sửa hồ sơ người khác.         | T1.1, T2.1, T4.4                       | 4   |
+| T17.2 | Làm màn hồ sơ và cập nhật tên ở các màn liên quan; kiểm lỗi lưu và không yêu cầu mật khẩu khi đổi tên. | T17.1, T4.1; contract projection M2/M4 | 4   |
+
+**T18**
+
+| ID    | Đầu ra và kiểm tra hoàn thành                                                                                          | Phụ thuộc / điều kiện bắt đầu        | Giờ |
+| ----- | ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------ | --- |
+| T18.1 | Tích hợp chọn/upload avatar Cloudinary qua M2; kiểm upload đúng chủ, lỗi upload và metadata được xác minh.             | T1.3, T17.1; Q10, M2 avatar provider | 4   |
+| T18.2 | Thay/xóa tham chiếu avatar và dọn ảnh cũ qua M2; kiểm cập nhật đồng thời, lỗi DB/cleanup, giữ ảnh cũ khi lưu thất bại. | T18.1                                | 6   |
+| T18.3 | Hoàn thiện UI chọn/thay/xóa và ảnh mặc định; kiểm quyền chính chủ và URL công khai theo quyết định hiện hành.          | T18.1, T18.2, T17.2                  | 4   |
+
+**T19**
+
+| ID    | Đầu ra và kiểm tra hoàn thành                                                                                          | Phụ thuộc / điều kiện bắt đầu                 | Giờ |
+| ----- | ---------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- | --- |
+| T19.1 | Làm API đổi mật khẩu: kiểm mật khẩu hiện tại, validation và phối hợp khóa/CAS với đăng nhập.                           | T1.1, T3.3, T4.4, T5.2; Q10 phần đổi mật khẩu | 6   |
+| T19.2 | Thu tất cả phiên sau đổi mật khẩu; kiểm socket/media với M4 và không đi theo nhánh host chủ động rời.                  | T19.1, T4.2, T5.3; M4 provider                | 6   |
+| T19.3 | Làm form cảnh báo đăng xuất mọi phiên, xóa cookie và yêu cầu đăng nhập lại; kiểm hai trình duyệt, lỗi không đăng xuất. | T19.2, T4.1, T4.3                             | 4   |
+
+### Cách nhận việc và báo tiến độ
+
+- Trước khi giao task, chốt người phụ trách, reviewer, tiêu chí chấp nhận và phụ thuộc; gắn FR/AC tương ứng. Task con kế thừa Goal/FR của nhóm cha, không tự mở rộng phạm vi.
+- Chọn task vừa với số giờ thực có trong ngày. Nếu chỉ có 4 giờ thì không nhận task 8 giờ với kỳ vọng xong trong ngày; tách tiếp theo đầu ra hoặc điều chỉnh kế hoạch cùng team. Không chia thành những việc vụn không kiểm được kết quả.
+- Báo ngay khi phát hiện phụ thuộc chưa sẵn sàng, điều chưa chốt, rủi ro hoặc khả năng vượt estimate; không chờ daily hay hết ngày. Ghi **đã làm được gì, đang vướng gì, ảnh hưởng và cần ai hỗ trợ** trên Jira và báo người liên quan trong nhóm. Daily dùng để tổng hợp, không thay việc báo sớm.
+- Chưa xong thì cập nhật phần còn lại và estimate mới; không ghi Done chỉ vì hết giờ. Task vượt dự kiến được review để hỗ trợ, tách phần còn lại hoặc đổi kế hoạch; không âm thầm chuyển hạn sang hôm sau. Task chờ phụ thuộc phải được đánh dấu blocked và ghi bên cần hỗ trợ.
+- Done nghĩa là có đầu ra, kiểm thử liên quan đã chạy và review theo quy trình team. Thời gian chờ reviewer không tính là giờ tập trung; theo dõi riêng để không che thời gian thực tế. Một PR có thể gồm vài task con cùng đầu ra, không bắt buộc mỗi task có một PR.
+
+T4 bắt đầu theo từng phụ thuộc của task con, không chờ toàn bộ T5. T12/T13/T14 thu quyền và kiểm tích hợp trong chức năng tương ứng; T15 kiểm lại luồng liên miền, không thay phần nghiệm thu đó. Lỗi tích hợp phát hiện ở T15 được ghi thành bug/task có tiêu chí và estimate riêng; cập nhật tổng và dùng dự phòng nếu phù hợp, không giấu toàn bộ công sửa lỗi trong một task “test và fix” kéo dài.
 
 ## 10. Estimation
 
-Một ngày công (pd, person-day) = **8 giờ tập trung**, không phải một ngày lịch của sinh viên. Đây là ước lượng ban đầu, chưa có tốc độ hoàn thành thực tế của team. Công kiểm thử/review đã có trong WBS và chỉ được phân loại lại ở bảng dưới, không cộng thêm lần hai. Dev là viết code; Test là kiểm thử; Review / rollout là review và chuẩn bị đưa vào sử dụng; Buffer là thời gian dự phòng.
+Một ngày công (pd) = **8 giờ tập trung**, không phải một ngày lịch của sinh viên. Estimate task gồm code, kiểm thử liên quan và sửa sau review thông thường; thời gian chờ người review/provider theo dõi riêng. Công của M2–M5 và PM chưa nằm trong bảng.
 
-|          | Dev  | Test | Review / rollout | Buffer | Total |
-| -------- | ---- | ---- | ---------------- | ------ | ----- |
-| Best     | 10.5 | 4.0  | 2.5              | 3.0    | 20.0  |
-| Expected | 14.5 | 6.0  | 3.5              | 4.0    | 28.0  |
-| Worst    | 19.0 | 9.0  | 5.0              | 5.0    | 38.0  |
+| Thành phần                      | Giờ | Ngày công |
+| ------------------------------- | --- | --------- |
+| Cơ sở — cộng task con           | 268 | 33.5      |
+| Dự phòng tạm giữ để team review | 32  | 4         |
+| Tổng để đối chiếu năng lực      | 300 | 37.5      |
 
-Việc bỏ chuyển owner chưa đủ cơ sở để giảm một lượng ngày công cụ thể; T11 vẫn còn quản lý vai trò và kiểm quyền. Giữ khoảng ước lượng thận trọng để team review lại, chưa coi là cam kết.
+Bản trước có 192 giờ cơ sở. Review task phát hiện phần thiếu, phụ thuộc chưa đúng và các đầu ra phức tạp bị ép vào 4 giờ; ước lượng mới là **268 giờ cơ sở**. Không giữ tổng cũ bằng cách chia đều hoặc hạ giờ cho đẹp. Dự phòng 32 giờ kế thừa bản trước, chưa được kiểm chứng là đủ; không dùng để che scope đã biết. Các kịch bản Best/Expected/Worst cũ không còn dùng vì chưa được ước lượng lại theo task mới.
 
-WBS cơ sở = 24 pd = Dev 14.5 + Test 6 + Review/rollout 3.5; kịch bản Expected thêm 4 pd dự phòng. Tổng dự kiến 224 giờ **chỉ M1**, chưa tính PM và thời gian chờ. Ví dụ có 20 giờ tập trung/tuần thì 224/20 ≈ 11.2 tuần trước thời gian chờ; có 32 giờ thì ≈ 7 tuần. Đây là phép quy đổi để kiểm tính khả thi, không lịch đã chốt. Khung 6–7 tuần không tự bảo đảm đủ nếu người làm kiêm PM.
+Đây là đề xuất để review, chưa là cam kết. Task 6–8 giờ giả định contract đã rõ, nền dùng chung/provider sẵn sàng và người làm hiểu phần đó. Nếu không thỏa, báo blocker hoặc tách task khảo sát có giới hạn thời gian, rồi ước lượng lại; không mặc định AI giúp hoàn tất trong mốc giờ này. Với task 8 giờ, nếu người nhận chỉ có 4 giờ/ngày thì cần tách tiếp theo đầu ra trước khi đưa vào kế hoạch một ngày.
 
-Avatar/đổi mật khẩu tăng 4 ngày công cơ sở của M1. M2 ước lượng riêng công xây nền file avatar; phần đó không nằm trong 4 ngày công này.
+Với tổng 300 giờ, 20 giờ tập trung/tuần tương đương khoảng 15.0 tuần, 32 giờ/tuần khoảng 9.4 tuần, chưa tính chờ và PM. Vì vậy M1 hiện **chưa có cơ sở cam kết một người hoàn tất trong 6–7 tuần**. Trước chốt sprint, team cần điền giờ thực có, review các task 6–8 giờ và phân người hỗ trợ phù hợp hoặc thống nhất lịch/phạm vi. Không tự bỏ FR.
 
-Ước lượng giả định M2/M4 cung cấp các hàm phối hợp theo thứ tự WBS, nghiệp vụ không thay đổi lớn, giao diện tối thiểu được chốt sớm và môi trường Mongo replica set/kiểm thử sử dụng được. Kịch bản cao nhất gấp 1.9 lần thấp nhất (38/20) vì còn thiếu số đo, tốc độ làm việc thực tế và phụ thuộc liên miền. Cần làm rõ Q1/Q4/Q5/Q7, demo sớm luồng đăng nhập → tạo Workspace rồi ước lượng lại. Nếu thời gian không đủ, team phân thêm người hỗ trợ task hoặc thống nhất đổi lịch/phạm vi; không tự bỏ FR.
+T15 là kiểm tích hợp xuyên miền, không cộng lại các ca đã tính trong task chức năng. Lỗi phát hiện thêm phải ghi task, estimate và cập nhật phần dự phòng/tổng; không tính trùng sửa sau review thông thường. Sau demo sớm đăng nhập → tạo Workspace, dùng giờ thực tế để cập nhật estimate còn lại.
 
 ## Appendix
 
