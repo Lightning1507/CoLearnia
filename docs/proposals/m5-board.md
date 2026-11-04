@@ -200,101 +200,67 @@ Xây dựng hệ thống bảng vẽ và dừng hình tương tác trực tiếp
 ### 5.2 Sơ đồ kiến trúc tổng thể
 
 ```mermaid
-%%{init: {"theme":"base","themeVariables":{"fontFamily":"Inter, -apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif","fontSize":"13px","primaryColor":"#FFFFFF","primaryBorderColor":"#94A3B8","primaryTextColor":"#0F172A","lineColor":"#475569","textColor":"#0F172A","clusterBkg":"#F8FAFC","clusterBorder":"#CBD5E1"},"flowchart":{"curve":"basis","htmlLabels":true}}}%%
 flowchart LR
-  subgraph ArchitectureFrame ["Khung kiến trúc hệ thống Bảng vẽ và Dừng hình — Miền M5"]
-    subgraph ClientApp ["CoLearnia Web Client"]
-      UI["Stage / Call Shell (M3)"]
-      CanvasOverlay["StageCanvasOverlay (FE Canvas Engine)"]
-      Norm["Coordinate Normalizer<br/>(Letterbox & DPR Stripping)"]
-      BoardSocketClient["Board Socket Client"]
-      FileUploader["HTTP File Uploader"]
-
-      UI --> CanvasOverlay
-      CanvasOverlay --> Norm
-      Norm --> BoardSocketClient
-      CanvasOverlay -.->|"Capture Frame Blob"| FileUploader
-    end
-
-    subgraph ServerApp ["CoLearnia Server (Express + Socket.IO)"]
-      SocketHandler["BoardSocketHandler<br/>(Envelope & Validation)"]
-      AclPolicy["BoardAclPolicy<br/>(3 Layers Authorization)"]
-
-      subgraph RAMRuntime ["RAM In-Memory Runtime"]
-        BoardRT["BoardRuntime<br/>(BoardState, Strokes, Sequences)"]
-        IntentMgr["FreezeIntentManager<br/>(CAS Intent, TTL 15s)"]
-      end
-
-      subgraph OtherDomains ["Các miền phối hợp"]
-        SessionOrch["Session Orchestrator (M4)<br/>Scope, Lifecycle & Host"]
-        MediaReg["Media / Source Registry (M3)<br/>SourceId & SourceRevision"]
-        FileSvc["Private File Service (M2)<br/>Upload, Binding & Cleanup"]
-      end
-
-      SocketHandler --> AclPolicy
-      AclPolicy --> BoardRT
-      BoardRT <--> IntentMgr
-      BoardRT <--> SessionOrch
-      BoardRT <--> MediaReg
-      BoardRT -.->|"Verify & Bind Frame"| FileSvc
-    end
-
-    subgraph Storage ["Lưu trữ dữ liệu"]
-      MongoFiles[("MongoDB<br/>files collection (E08/E15)")]
-      DiskStore[("Private File Storage<br/>(Frame JPEG/WebP Bytes)")]
-    end
-
-    BoardSocketClient <-->|"Socket.IO Events (board:*)"| SocketHandler
-    FileUploader -->|"HTTP POST /api/files/upload (with intentId)"| FileSvc
-    FileSvc --> MongoFiles
-    FileSvc --> DiskStore
-  end
-
-  style ArchitectureFrame fill:#FFFFFF,stroke:#CBD5E1,stroke-width:2px,color:#0F172A
-  style ClientApp fill:#F0F9FF,stroke:#0284C7,stroke-width:1.5px,color:#0C4A6E
-  style ServerApp fill:#F0FDF4,stroke:#16A34A,stroke-width:1.5px,color:#14532D
-  style Storage fill:#FFFBEB,stroke:#D97706,stroke-width:1.5px,color:#78350F
-  style RAMRuntime fill:#FFFFFF,stroke:#86EFAC,stroke-width:1px,color:#14532D
-  style OtherDomains fill:#FFFFFF,stroke:#94A3B8,stroke-width:1px,stroke-dasharray:3 3,color:#334155
-
-  classDef default fill:#FFFFFF,stroke:#64748B,stroke-width:1px,color:#0F172A
-  classDef store fill:#FEF3C7,stroke:#D97706,stroke-width:1.5px,color:#78350F
-  classDef ext fill:#F8FAFC,stroke:#64748B,stroke-width:1px,stroke-dasharray:3 3,color:#334155
-
-  class MongoFiles,DiskStore store
-  class SessionOrch,MediaReg,FileSvc ext
+  User[Người dùng / Web Client] --> UI[Stage / StageCanvasOverlay M3/M5]
+  UI --> SocketClient[Board Socket Client]
+  UI --> FileUploader[HTTP File Uploader M2]
+  SocketClient <-->|Socket.IO events| SocketHandler[BoardSocketHandler Express + Socket.IO]
+  FileUploader -->|HTTP POST /api/files/upload| FileSvc[M2: Private File Service]
+  M1[M1: Auth & Channel Access] --> Acl[BoardAclPolicy: Phân quyền 3 lớp & Vị trí]
+  SocketHandler --> Acl
+  Acl --> BoardRT[RAM: BoardRuntime in-memory]
+  BoardRT <--> IntentMgr[RAM: FreezeIntentManager CAS lock 15s]
+  BoardRT <--> M4[M4: Session & Group Lifecycle]
+  BoardRT <--> M3[M3: Media Registry & sourceRevision]
+  BoardRT -.->|Verify & Bind frame| FileSvc
+  FileSvc --> MongoFiles[(MongoDB: files collection E08/E15)]
+  FileSvc --> DiskStore[(Private Disk Storage: Frame WebP bytes)]
 ```
+
+### Cách đọc sơ đồ
+
+Mỗi ô đại diện cho một thành phần phần mềm; mũi tên thể hiện hướng trao đổi dữ liệu và điều phối giữa các module trong backend và frontend. Sơ đồ thể hiện rõ sự phân định ranh giới: Canvas rendering trên Web Client, Socket.IO điều phối thời gian thực, toàn bộ nét vẽ và trạng thái bảng chạy 100% trong RAM server, còn frame ảnh tĩnh lưu trữ trên Disk và quản lý metadata qua collection \`files\` của M2.
+
+| Thành phần trong hình                          | Trách nhiệm chính                                                                                                                                                  |
+| :--------------------------------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| \`StageCanvasOverlay\` (Web Client)            | Lớp canvas React phủ trên video player của M3, lắng nghe pointer event, chuẩn hóa tọa độ và render 60fps qua \`requestAnimationFrame\`.                            |
+| \`BoardSocketClient\` & \`HTTP File Uploader\` | Phân tách hai luồng truyền tải: Socket.IO trao đổi lệnh/nét vẽ kích thước nhỏ (≤ 16 KiB); HTTP POST tải byte ảnh tĩnh lớn lên Private File Service (M2).           |
+| \`BoardSocketHandler\` (Express + Socket.IO)   | Điểm tiếp nhận Socket.IO server, kiểm tra envelope, xác thực schema Zod, bắt lỗi và định tuyến tới các service nội bộ.                                             |
+| \`BoardAclPolicy\`                             | Kiểm tra phân quyền 3 lớp: Quyền Workspace → Quyền Session → Quyền Scope/Action; kiểm tra vị trí Host (\`currentLocation === 'MAIN'\`) và quyền clear trong nhóm.  |
+| \`BoardRuntime\` (RAM in-memory)               | Quản lý máy trạng thái board (\`LIVE\`, \`FREEZING\`, \`FROZEN\`), lưu trữ strokes, counter \`mutationSequence\`, cache chống trùng LRU và dọn dẹp tombstone FIFO. |
+| \`FreezeIntentManager\` (RAM in-memory)        | Quản lý khóa CAS cho các yêu cầu dừng hình, cấp \`intentId\` TTL 15s, nhả mutation queue của phiên trong suốt thời gian client upload ảnh.                         |
+| Miền phối hợp (M1, M3, M4)                     | M1 cung cấp danh tính và quyền kênh; M3 cung cấp \`sourceRevision\` video; M4 điều phối vòng đời phiên, nhóm và deadline TIMER-01.                                 |
+| M2 Private File Service & Storage              | Tiếp nhận file ảnh nhị phân qua HTTP, lưu trữ trên Private Disk Storage và quản lý metadata trong MongoDB collection \`files\` theo baseline §3.10.                |
 
 ### 5.3 Máy trạng thái của Board
 
 Mỗi scope có đúng một `BoardState`. Riêng phòng chung **MAIN**, trạng thái luôn luôn là `LIVE` và không bao giờ chuyển tiếp sang `FREEZING` hay `FROZEN`.
 
 ```mermaid
-%%{init: {"theme":"base","themeVariables":{"fontFamily":"Inter, Helvetica, Arial","fontSize":"13px","primaryColor":"#EEF2FF","primaryBorderColor":"#6366F1","primaryTextColor":"#1E1B4B","lineColor":"#475569"}}}%%
 stateDiagram-v2
   direction LR
-  [*] --> LIVE: Khoi tao context
-  LIVE --> FREEZING: board.freeze.begin hop le
-  FREEZING --> FROZEN: board.freeze.commit hop le (qua 2 pha atomic check)
-  FREEZING --> LIVE: Het han 15s / Nguon doi luc upload / Huy intent
-  FROZEN --> LIVE: board.resume hop le
-  LIVE --> [*]: Nhom dong hoac phien ket thuc (Teardown 2 pha)
-  FREEZING --> [*]: Nhom dong hoac phien ket thuc (Huy file tam)
-  FROZEN --> [*]: Nhom dong hoac phien ket thuc (Xoa frame va net)
+  [*] --> LIVE: Khởi tạo context bảng vẽ
+  LIVE --> FREEZING: board.freeze.begin hợp lệ (cấp intentId, nhả queue)
+  FREEZING --> FROZEN: board.freeze.commit hợp lệ (vượt qua 2 pha atomic check)
+  FREEZING --> LIVE: Hết hạn 15s / Nguồn đổi khi upload / Hủy intent
+  FROZEN --> LIVE: board.resume hợp lệ (tăng boardVersion, đóng context cũ)
+  LIVE --> [*]: Nhóm đóng hoặc phiên kết thúc (Teardown 2 pha)
+  FREEZING --> [*]: Nhóm đóng hoặc phiên kết thúc (Hủy file tạm, trả Ack)
+  FROZEN --> [*]: Nhóm đóng hoặc phiên kết thúc (Dọn RAM, đặt cleanupAfter)
 
   note right of LIVE
-    Ve tren luong video truc tiep.
-    Phong MAIN luon o trang thai nay.
+    Vẽ trên luồng video trực tiếp.
+    Phòng MAIN luôn luôn ở trạng thái này.
   end note
 
   note right of FREEZING
-    Mutation queue phien da duoc nha.
-    Client dang chup va upload anh HTTP.
+    Mutation queue của phiên đã được nhả.
+    Client đang chụp và upload ảnh HTTP lên M2.
   end note
 
   note right of FROZEN
-    Ca nhom xem frame tinh dong bo.
-    Doi/dung nguon live khong anh huong toi frame va net ve.
+    Cả nhóm cùng xem và vẽ trên frame ảnh tĩnh đồng bộ.
+    Đổi hoặc dừng nguồn video live bên dưới không ảnh hưởng tới frame và nét vẽ.
   end note
 ```
 
@@ -347,63 +313,72 @@ stateDiagram-v2
 
 ## 6. Detailed design
 
-### 6.1 Cấu trúc dữ liệu
+### 6.1 Cơ sở dữ liệu và Cấu trúc lưu trữ (Database & Ownership)
 
-#### 6.1.1 Lưu trữ bền vững (MongoDB files collection)
+Miền M5 tuân thủ nghiêm ngặt nguyên tắc **không tạo collection mới** trong MongoDB (bảo toàn nguyên vẹn 13 collection đã chốt của baseline). Toàn bộ nét vẽ (\`strokes\`), máy trạng thái (\`BoardState\`), active intents (\`FreezeIntent\`), con trỏ laser và số thứ tự đồng bộ (\`mutationSequence\`) đều được quản lý **100% trong bộ nhớ RAM server (\`BoardRuntime\`)**, hoàn toàn không lưu trữ xuống cơ sở dữ liệu bền vững.
 
-Miền M5 tuân thủ nghiêm ngặt nguyên tắc **không tạo collection mới** trong MongoDB (giữ nguyên 13 collection đã chốt). M5 tái sử dụng 100% collection `files` (E08/E15) và schema chuẩn của Private File Service (M2) theo [`docs/database/collection-design.md` §3.10](../database/collection-design.md) để lưu metadata của ảnh frame dừng hình.
+Duy nhất tệp ảnh chụp frame tĩnh dừng hình trong nhóm DISCUSSION và ACTIVITY được ủy quyền lưu trữ qua Private File Service (M2) bằng cách tái sử dụng collection \`files\` (E08/E15) theo đúng đặc tả [docs/database/collection-design.md §3.10](../database/collection-design.md).
 
-Vòng đời trạng thái của document trong collection `files`:
+#### 6.1.1 Bảng phân bổ lưu trữ dữ liệu
+
+| Nơi lưu / Collection              | Bản chất kỹ thuật & Dữ liệu quản lý                                                                                                                                                                                                                                                                                                                  | Điều kiện toàn vẹn & Query/Index sử dụng                                                                                                                                                                                                                                                                                      |
+| :-------------------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **\`files\` (MongoDB)**           | Lưu metadata tệp ảnh chụp frame dừng hình (\`purpose: 'FRAME'\`). Chỉ thuộc phạm vi \`DISCUSSION\` hoặc \`ACTIVITY\` (\`groupId\` bắt buộc; phòng MAIN tuyệt đối không có frame). Document lưu \`byteSize\`, \`reservedBytes: 2097152\`, \`dimensions\`, \`originalName: null\`, trạng thái chuyển tiếp \`STAGED\` → \`READY\` → \`DELETE_PENDING\`. | **Query / Index baseline §3.10:**<br/>- \`ix_files_scope_frame\`: \`{ "scope.sessionId": 1, "scope.groupId": 1, purpose: 1, state: 1 }\`<br/>- \`ix_files_cleanup\`: \`{ state: 1, cleanupAfter: 1 }\`<br/>- \`uq_files_binding_intent\`: \`{ "binding.kind": 1, "binding.intentId": 1 }\` (unique sparse chống trùng intent) |
+| **Kho tệp riêng (Disk Storage)**  | Lưu trữ dữ liệu byte nhị phân của tệp ảnh tĩnh (\`image/webp\` hoặc \`image/jpeg\`). Tệp được lưu trong thư mục private, tuyệt đối không tạo URL công khai; mọi yêu cầu tải đều phải kiểm tra quyền thành viên nhóm qua API HTTP streaming.                                                                                                          | Đường dẫn vật lý private theo \`storageKey\`:\`workspaces/:wid/sessions/:sid/frames/:frameId.webp\`. Tự động dọn dẹp khi nhận tín hiệu xóa từ M2 sweeper.                                                                                                                                                                     |
+| **Bộ nhớ RAM (\`BoardRuntime\`)** | Lưu trữ in-memory 100% nét vẽ hoạt động, nét vẽ xóa mềm (tombstone), vị trí con trỏ tạm, khóa CAS freeze intent và counter \`mutationSequence\`. Giải phóng hoàn toàn khi đóng nhóm hoặc kết thúc phiên họp.                                                                                                                                         | Cấu trúc dữ liệu \`Map<scopeId, BoardRuntime>\` trong RAM tiến trình Node.js; không persist xuống database; khống chế dung lượng ≤ 2.0 MiB/context.                                                                                                                                                                           |
+
+#### 6.1.2 Vòng đời tệp ảnh dừng hình trong collection \`files\`
 
 ```mermaid
-%%{init: {"theme":"base","themeVariables":{"fontFamily":"Inter, Helvetica, Arial","fontSize":"13px","primaryColor":"#FEF3C7","primaryBorderColor":"#D97706","primaryTextColor":"#78350F","lineColor":"#475569"}}}%%
 stateDiagram-v2
   direction LR
-  [*] --> STAGED: Upload thanh cong, gan intentId, giu cho reservedBytes
-  STAGED --> READY: freeze.commit hop le (qua 2 pha atomic check), bind BOARD_FRAME
-  STAGED --> DELETE_PENDING: Intent het han, SOURCE_CHANGED hoac nhom dong khi cho bind
-  READY --> DELETE_PENDING: Resume hoac nhom dong, dat cleanupAfter
-  DELETE_PENDING --> [*]: Sweeper xoa file va metadata
+  [*] --> STAGED: Upload frame HTTP thành công, giữ chỗ reservedBytes (2 MiB)
+  STAGED --> READY: board.freeze.commit hợp lệ (vượt qua 2 pha atomic check), bind BOARD_FRAME
+  STAGED --> DELETE_PENDING: Intent hết hạn (15s), đổi nguồn khi upload hoặc nhóm đóng khi chờ M2
+  READY --> DELETE_PENDING: Nhóm Resume hoặc nhóm đóng (hết giờ TIMER-01), đặt lịch cleanupAfter
+  DELETE_PENDING --> [*]: Sweeper M2 định kỳ xóa byte đĩa và metadata
 ```
 
-Cấu trúc document trong collection `files` khớp chính xác baseline §3.10:
+#### 6.1.3 Cấu trúc BSON Document mẫu trong collection \`files\`
 
-```ts
+Cấu trúc document khớp chính xác 100% với baseline \`collection-design.md\` §3.10:
+
+\`\`\`ts
 {
-  _id: ObjectId("..."),
-  workspaceId: ObjectId("..."),              // Phạm vi Workspace (E01)
-  uploaderId: ObjectId("..."),               // Chủ upload do server gán từ session (E03)
-  storageKey: "workspaces/.../sessions/.../frames/frame-uuid.webp",
-  originalName: null,                        // Frame tĩnh không cần tên tải xuống của người dùng
-  purpose: "FRAME",                          // Bắt buộc 'FRAME' theo baseline §3.10
-  mimeType: "image/webp",                    // MIME thực được xác minh
-  byteSize: 458920,                          // Kích thước tệp thực tế (Int >= 0)
-  reservedBytes: 2097152,                    // Quota giữ chỗ khi STAGED (2 MiB)
-  dimensions: { width: 1920, height: 1080 },
-  state: "READY",                            // STAGED -> READY -> DELETE_PENDING
-  scope: {
-    sessionId: ObjectId("..."),
-    epoch: "epoch-uuid",
-    boardId: "board-uuid",
-    contextVersion: 1,
-    groupId: ObjectId("...")                 // Bắt buộc cho DISCUSSION / ACTIVITY; MAIN không có
-  },
-  authorization: {
-    memberships: [{ membershipId: ObjectId("..."), incarnation: 1, revision: 0 }],
-    channel: { channelId: ObjectId("..."), revision: 0 }
-  },
-  binding: {
-    kind: "BOARD_FRAME",
-    intentId: "intent-uuid"                  // Gắn kết với freeze intent đã được cấp
-  },
-  expiresAt: null,                           // Null sau khi đã commit thành công
-  cleanupAfter: null,                        // Sẽ được đặt lịch khi resume hoặc nhóm đóng
-  createdAt: ISODate("2026-11-04T..."),
-  updatedAt: ISODate("2026-11-04T...")
+_id: ObjectId("6545f1b2c8a1e2001f3d4e01"),
+workspaceId: ObjectId("6545f1b2c8a1e2001f3d4001"), // Phạm vi Workspace (E01)
+uploaderId: ObjectId("6545f1b2c8a1e2001f3d4002"), // Thành viên bấm freeze do server xác thực từ session (E03)
+storageKey: "workspaces/6545f1b2c8a1e2001f3d4001/sessions/6545f1b2c8a1e2001f3d4005/frames/frame-7a8b9c.webp",
+originalName: null, // Frame tĩnh không cần tên tải xuống của người dùng
+purpose: "FRAME", // Bắt buộc 'FRAME' theo baseline §3.10
+mimeType: "image/webp", // MIME thực được xác minh từ magic bytes
+byteSize: 458920, // Kích thước tệp thực tế (Int >= 0)
+reservedBytes: 2097152, // Quota giữ chỗ khi STAGED (2 MiB)
+dimensions: { width: 1920, height: 1080 }, // Kích thước ảnh thực tế để căn chỉnh tỷ lệ render
+state: "READY", // STAGED -> READY -> DELETE_PENDING
+scope: {
+sessionId: ObjectId("6545f1b2c8a1e2001f3d4005"),
+epoch: "epoch-91a2b3c4",
+boardId: "board-scope-group-01",
+contextVersion: 1,
+groupId: ObjectId("6545f1b2c8a1e2001f3d4009") // Bắt buộc cho DISCUSSION / ACTIVITY; MAIN không có
+},
+authorization: {
+memberships: [{ membershipId: ObjectId("6545f1b2c8a1e2001f3d4010"), incarnation: 1, revision: 0 }],
+channel: { channelId: ObjectId("6545f1b2c8a1e2001f3d4003"), revision: 0 }
+},
+binding: {
+kind: "BOARD_FRAME",
+intentId: "intent-f47ac10b-58cc-4372-a567-0e02b2c3d479" // Gắn kết duy nhất với freeze intent đã được cấp
+},
+expiresAt: null, // Null sau khi đã commit thành công thành READY
+cleanupAfter: null, // Sẽ được đặt lịch khi resume hoặc nhóm đóng (tối đa 5 phút)
+createdAt: ISODate("2026-11-04T14:30:00.000Z"),
+updatedAt: ISODate("2026-11-04T14:30:05.000Z")
 }
-```
+\`\`\`
 
-#### 6.1.2 Cấu trúc dữ liệu trong bộ nhớ (RAM BoardRuntime)
+#### 6.1.4 Cấu trúc dữ liệu trong bộ nhớ (RAM BoardRuntime)
 
 Toàn bộ trạng thái hoạt động của bảng vẽ được quản lý bởi `BoardRuntime` trong RAM server:
 
@@ -458,7 +433,6 @@ export interface FreezeIntent {
 ```
 
 ```mermaid
-%%{init: {"theme":"base","themeVariables":{"fontFamily":"Inter, Helvetica, Arial","fontSize":"13px","primaryColor":"#EEF2FF","primaryBorderColor":"#6366F1","primaryTextColor":"#1E1B4B","lineColor":"#64748B","clusterBkg":"#F8FAFC","clusterBorder":"#CBD5E1"},"classDiagram":{"htmlLabels":true}}}%%
 classDiagram
   direction LR
   class BoardState {
@@ -595,8 +569,6 @@ sequenceDiagram
   participant M4 as Session Orchestrator (M4)
   participant F as Private File Service (M2)
   participant G as Thanh vien khac trong nhom
-
-  rect rgb(238, 242, 255)
     Note over C,S: Buoc 1: Xin intent dung hinh
     C->>S: board.freeze.begin(envelope, boardVersion, sourceRevision)
     S->>S: Kiem tra quyen nhom, pha phien, nguon video hop le
@@ -605,8 +577,6 @@ sequenceDiagram
     S-)G: board.state.updated(status: FREEZING, activeIntentId)
     Note over S: Nha mutation queue cua phien trong khi client xu ly anh
   end
-
-  rect rgb(240, 253, 244)
     Note over C,F: Buoc 2: Chup va upload anh tinh
     C->>C: Chup frame tu video bang Canvas drawImage()
     C->>C: Nen thanh Blob image/webp
@@ -614,8 +584,6 @@ sequenceDiagram
     F->>F: Luu byte, tao file record (state: STAGED, reservedBytes: 2MiB)
     F-->>C: Tra ve fileId
   end
-
-  rect rgb(254, 243, 199)
     Note over C,S: Buoc 3: Xac nhan dung hinh (Commit & 2-Phase Verification)
     C->>S: board.freeze.commit(envelope, intentId, fileId, dimensions)
     Note over S: Pha 1: Pre-bind check (intent hop le, sourceRevision khop)
@@ -676,8 +644,6 @@ sequenceDiagram
   participant C as Client (Nguoi ve)
   participant S as BoardRuntime / Server
   participant P as Thanh vien cung scope
-
-  rect rgb(239, 246, 255)
     Note over C,S: Thao tac ve net (ho tro Idempotent retry)
     C->>C: Render net cuc bo (optimistic 60fps)
     C->>S: board.stroke.draw(envelope, strokeId, points, color, width, isVanishing)
@@ -693,8 +659,6 @@ sequenceDiagram
       P->>P: Render net ve cua peer tren canvas
     end
   end
-
-  rect rgb(254, 242, 242)
     Note over C,S: Thao tac Undo va Pruning
     C->>S: board.stroke.undo(envelope, strokeId)
     S->>S: Tim net ve theo strokeId trong context hien tai
@@ -783,14 +747,6 @@ flowchart TD
   QActMem -- "Sai" --> QActHelp{"La Host dang ho tro ACTIVITY nay?"}
   QActHelp -- "Dung" --> AllowActHelp["Chap nhan ve net ho tro ACTIVITY"]
   QActHelp -- "Sai" --> DenyAct["Tu choi: NOT_IN_GROUP / PERMISSION_DENIED"]
-
-  classDef allow fill:#DCFCE7,stroke:#16A34A,color:#14532D
-  classDef deny fill:#FEE2E2,stroke:#DC2626,color:#7F1D1D
-  classDef step fill:#EEF2FF,stroke:#6366F1,color:#1E1B4B
-
-  class StartDraw,QScope,QMainHost,QLoc,QDiscMem,QActMem,QActHelp step
-  class AllowMain,AllowDisc,AllowAct,AllowActHelp allow
-  class DenyMainHost,DenyMainLoc,DenyDisc,DenyAct deny
 ```
 
 #### 6.3.3 Thu hồi quyền theo sự kiện
@@ -822,14 +778,6 @@ flowchart TD
   Norm --> InBounds{"0 <= x <= 1 va 0 <= y <= 1 ?"}
   InBounds -- "Hop le" --> Accept["Luong tu hoa 4 chu so thap phan, chap nhan vao net"]
   InBounds -- "Ngoai vung" --> Discard["Bo qua diem nam trong dai den"]
-
-  classDef step fill:#EEF2FF,stroke:#6366F1,color:#1E1B4B
-  classDef ok fill:#DCFCE7,stroke:#16A34A,color:#14532D
-  classDef deny fill:#FEE2E2,stroke:#DC2626,color:#7F1D1D
-
-  class Input,Calc,Check,Pillar,Letter,Norm,InBounds step
-  class Accept ok
-  class Discard deny
 ```
 
 Công thức toán học chuẩn xác:
@@ -916,7 +864,6 @@ Giả sử Container có kích thước $1280 \times 720$ (tỷ lệ 16:9), ngu�
 #### 6.6.2 Hành vi khi Client Reconnect
 
 ```mermaid
-%%{init: {"theme":"base","themeVariables":{"fontFamily":"Inter, Helvetica, Arial","fontSize":"13px","primaryColor":"#EEF2FF","primaryBorderColor":"#6366F1","primaryTextColor":"#1E1B4B","lineColor":"#475569"}}}%%
 flowchart LR
   R1["Socket Reconnect"] --> R2["Gui board.sync(scopeId, mode: 'SNAPSHOT')"]
   R2 --> R3{"Scope va quyen con hop le?"}
@@ -928,14 +875,6 @@ flowchart LR
   R7 --> R8
   R8 -- "Co" --> R9["Tai frame qua frameUrl (ACL nhom)"]
   R8 -- "Khong" --> R10["Hien video truc tiep va overlay"]
-
-  classDef step fill:#EEF2FF,stroke:#6366F1,color:#1E1B4B
-  classDef deny fill:#FEE2E2,stroke:#DC2626,color:#7F1D1D
-  classDef ok fill:#DCFCE7,stroke:#16A34A,color:#14532D
-
-  class R1,R2,R3,R5,R6,R7,R8 step
-  class R4 deny
-  class R9,R10 ok
 ```
 
 ---
@@ -1107,7 +1046,6 @@ Mỗi thao tác quan trọng ghi một log JSON gồm các trường:
 | **Chấp nhận / Tự động (Low)** | Tệp frame mồ côi                                                                                                                        | Xử lý triệt để qua sweeper định kỳ và TTL 15s                                                                     |
 
 ```mermaid
-%%{init: {"theme":"base","themeVariables":{"fontFamily":"Inter, Helvetica, Arial","fontSize":"13px","primaryColor":"#EEF2FF","primaryBorderColor":"#6366F1","primaryTextColor":"#1E1B4B","lineColor":"#475569"}}}%%
 quadrantChart
   title Ma trận rủi ro Domain M5
   x-axis Khả năng thấp --> Khả năng cao
@@ -1161,7 +1099,6 @@ Toàn bộ phạm vi triển khai của Miền M5 được phân rã thành **11
 ### 9.2 Đồ thị phụ thuộc
 
 ```mermaid
-%%{init: {"theme":"base","themeVariables":{"fontFamily":"Inter, Helvetica, Arial","fontSize":"13px","primaryColor":"#EEF2FF","primaryBorderColor":"#6366F1","primaryTextColor":"#1E1B4B","lineColor":"#64748B"}}}%%
 flowchart LR
   W1["W1 Contracts<br/>0.5d (4h)"]
   W2["W2 Normalizer<br/>1.0d (8h)"]
@@ -1183,12 +1120,6 @@ flowchart LR
   W2 --> W3 --> W9 --> W10
   W1 --> W9
   W2 --> W9
-
-  classDef crit fill:#FEE2E2,stroke:#DC2626,stroke-width:1.5px,color:#7F1D1D
-  classDef norm fill:#EEF2FF,stroke:#6366F1,stroke-width:1px,color:#1E1B4B
-
-  class W1,W4,W5,W6,W7,W8,W10 crit
-  class W2,W3,W9,W11 norm
 ```
 
 ---
