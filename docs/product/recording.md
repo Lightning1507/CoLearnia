@@ -14,12 +14,20 @@
 
 Host chọn bắt đầu → server kiểm quyền và khả năng recorder → thông báo đang ghi → thu nguồn MAIN → host dừng hoặc phiên kết thúc → hoàn tất/xử lý tệp → video sẵn sàng để thành viên còn quyền xem. Không báo đã ghi khi capture chưa khởi động hoặc đã lỗi; chưa xử lý xong không hiển thị video là sẵn sàng. Lỗi ghi/lưu cần thông báo và không làm kết thúc cuộc gọi đang hoạt động. Dừng/đóng phải giải phóng tài nguyên và không nhân job/tệp khi retry.
 
-## PoC và phần chưa chốt
+## Vòng đời đã thống nhất ngày 04/11/2026
+
+- Bản ghi gắn session/epoch và recording generation, độc lập cookie/kết nối người bắt đầu. Đổi hoặc hoàn quyền host không stop/start lại bản ghi; quyền điều khiển thuộc host hiện hành, nguồn luôn MAIN.
+- Dừng rồi ghi lại tạo intent/ID đoạn mới; retry cùng intent không tạo đoạn mới. Hết lượt ACTIVITY không dừng ghi; mic bị pause không được tự bật để đưa vào bản ghi.
+- Dừng trong STARTING hủy start intent và chặn callback muộn chuyển sang đang ghi. Dữ liệu/tệp dở không được công bố READY; cách lưu tạm và cleanup byte cần contract M2/M3.
+- Kết thúc phiên chốt và ngừng đầu vào trước khi xác nhận thu quyền, sau đó có thể finalize tệp ngoài session queue. Call kết thúc không phải chờ video READY; callback finalize chỉ cập nhật đúng attempt, không mở lại phiên.
+- Hướng pipeline: capture nguồn MAIN → ghép hình/trộn tiếng → encode → lưu → phục vụ video có ACL. Công cụ/codec/bố cục và giới hạn tài nguyên cụ thể cần PoC, chưa chọn từ quyết định vòng đời này.
+
+## PoC và chi tiết kỹ thuật cần hoàn thiện
 
 - Demo clip vài phút để kiểm chứng ghi → dừng → xử lý → lưu → xem lại đúng quyền; đây không phải giới hạn thời lượng sản phẩm.
 - **Proposal/PoC cần chọn:** cơ chế capture/composition/encode, thư viện hoặc tiến trình cần dùng, bố cục share/camera và số camera ghi; cách trộn âm thanh MAIN; codec/chất lượng, định dạng phát và hỗ trợ trình duyệt. Chưa chọn FFmpeg, MediaRecorder hoặc nhà cung cấp.
 - Cần thiết kế dung lượng/quota, thời gian lưu/xóa và quyền xóa, nơi lưu byte, danh sách/trang xem, hành vi khi hết dung lượng, restart hoặc ghi gián đoạn. Chưa tự chọn giá trị, không mặc định giữ vĩnh viễn hoặc có job retry bền vững.
-- Vòng đời chi tiết khi bàn giao host hoặc host tạm mất mạng cần proposal; quyền điều khiển luôn theo host hiện hành, không tự chuyển nguồn recorder khỏi MAIN.
+- Contract start/stop/input-stopped/finalized, admission, metadata, deadline cleanup và byte dở cần review M2/M3/M4; quyền điều khiển luôn theo host hiện hành, không tự chuyển nguồn recorder khỏi MAIN.
 - Chưa cam kết capacity với recording. PoC phải đo CPU/RAM/disk/network khi cùng gọi/share/chat/nhóm/TURN; kiểm gate/quota/cleanup, không tự thêm Redis/worker pool hoặc giảm camera để đạt số lượng.
 
 ## Truy vết và phân công

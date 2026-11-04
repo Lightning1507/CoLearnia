@@ -158,7 +158,7 @@ Group ở đây dùng chung một ký hiệu cho hai mode: quan hệ với Reque
 
 ### Vòng đời nhóm làm rõ ngày 02/11/2026
 
-DISCUSSION đã tạo hợp lệ chưa ai vào khác với nhóm đã có người. Khi còn người, roster hợp lệ cho phép chủ động vào lại; người cuối cùng chủ động rời làm nhóm tự kết thúc, roster không mở lại nhóm cũ. Không coi disconnect là chủ động rời. E12/hiện diện vẫn là runtime; không phát sinh thực thể hoặc collection mới. Chi tiết và giới hạn sau grace ở [group modes](../product/group-modes.md).
+DISCUSSION đã tạo hợp lệ chưa ai vào khác với nhóm đã có người. Khi còn người, roster hợp lệ cho phép chủ động vào lại; người cuối cùng chủ động rời làm nhóm tự kết thúc, roster không mở lại nhóm cũ. Disconnect thu membership DISCUSSION ngay; nhóm từng có người rỗng thì đóng, reconnect về MAIN. E12/hiện diện vẫn là runtime; không phát sinh thực thể/collection. Quyết định 04/11 ở [group modes](../product/group-modes.md).
 
 ## Delta thiết kế sau kickoff 02/11
 
