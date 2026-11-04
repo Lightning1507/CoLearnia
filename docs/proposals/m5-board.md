@@ -339,44 +339,46 @@ stateDiagram-v2
   DELETE_PENDING --> [*]: Sweeper M2 định kỳ xóa byte đĩa và metadata
 ```
 
-#### 6.1.3 Cấu trúc BSON Document mẫu trong collection \`files\`
+#### 6.1.3 Cấu trúc BSON Document mẫu trong collection `files`
 
-Cấu trúc document khớp chính xác 100% với baseline \`collection-design.md\` §3.10:
+Cấu trúc document khớp chính xác 100% với baseline `collection-design.md` §3.10:
 
-\`\`\`ts
+```json
 {
-_id: ObjectId("6545f1b2c8a1e2001f3d4e01"),
-workspaceId: ObjectId("6545f1b2c8a1e2001f3d4001"), // Phạm vi Workspace (E01)
-uploaderId: ObjectId("6545f1b2c8a1e2001f3d4002"), // Thành viên bấm freeze do server xác thực từ session (E03)
-storageKey: "workspaces/6545f1b2c8a1e2001f3d4001/sessions/6545f1b2c8a1e2001f3d4005/frames/frame-7a8b9c.webp",
-originalName: null, // Frame tĩnh không cần tên tải xuống của người dùng
-purpose: "FRAME", // Bắt buộc 'FRAME' theo baseline §3.10
-mimeType: "image/webp", // MIME thực được xác minh từ magic bytes
-byteSize: 458920, // Kích thước tệp thực tế (Int >= 0)
-reservedBytes: 2097152, // Quota giữ chỗ khi STAGED (2 MiB)
-dimensions: { width: 1920, height: 1080 }, // Kích thước ảnh thực tế để căn chỉnh tỷ lệ render
-state: "READY", // STAGED -> READY -> DELETE_PENDING
-scope: {
-sessionId: ObjectId("6545f1b2c8a1e2001f3d4005"),
-epoch: "epoch-91a2b3c4",
-boardId: "board-scope-group-01",
-contextVersion: 1,
-groupId: ObjectId("6545f1b2c8a1e2001f3d4009") // Bắt buộc cho DISCUSSION / ACTIVITY; MAIN không có
-},
-authorization: {
-memberships: [{ membershipId: ObjectId("6545f1b2c8a1e2001f3d4010"), incarnation: 1, revision: 0 }],
-channel: { channelId: ObjectId("6545f1b2c8a1e2001f3d4003"), revision: 0 }
-},
-binding: {
-kind: "BOARD_FRAME",
-intentId: "intent-f47ac10b-58cc-4372-a567-0e02b2c3d479" // Gắn kết duy nhất với freeze intent đã được cấp
-},
-expiresAt: null, // Null sau khi đã commit thành công thành READY
-cleanupAfter: null, // Sẽ được đặt lịch khi resume hoặc nhóm đóng (tối đa 5 phút)
-createdAt: ISODate("2026-11-04T14:30:00.000Z"),
-updatedAt: ISODate("2026-11-04T14:30:05.000Z")
+  "_id": "6545f1b2c8a1e2001f3d4e01",
+  "workspaceId": "6545f1b2c8a1e2001f3d4001",
+  "uploaderId": "6545f1b2c8a1e2001f3d4002",
+  "storageKey": "workspaces/6545f1b2c8a1e2001f3d4001/sessions/6545f1b2c8a1e2001f3d4005/frames/frame-7a8b9c.webp",
+  "originalName": null,
+  "purpose": "FRAME",
+  "mimeType": "image/webp",
+  "byteSize": 458920,
+  "reservedBytes": 2097152,
+  "dimensions": { "width": 1920, "height": 1080 },
+  "state": "READY",
+  "scope": {
+    "sessionId": "6545f1b2c8a1e2001f3d4005",
+    "epoch": "epoch-91a2b3c4",
+    "boardId": "board-scope-group-01",
+    "contextVersion": 1,
+    "groupId": "6545f1b2c8a1e2001f3d4009"
+  },
+  "authorization": {
+    "memberships": [
+      { "membershipId": "6545f1b2c8a1e2001f3d4010", "incarnation": 1, "revision": 0 }
+    ],
+    "channel": { "channelId": "6545f1b2c8a1e2001f3d4003", "revision": 0 }
+  },
+  "binding": {
+    "kind": "BOARD_FRAME",
+    "intentId": "intent-f47ac10b-58cc-4372-a567-0e02b2c3d479"
+  },
+  "expiresAt": null,
+  "cleanupAfter": null,
+  "createdAt": "2026-11-04T14:30:00.000Z",
+  "updatedAt": "2026-11-04T14:30:05.000Z"
 }
-\`\`\`
+```
 
 #### 6.1.4 Cấu trúc dữ liệu trong bộ nhớ (RAM BoardRuntime)
 
@@ -536,44 +538,44 @@ sequenceDiagram
   participant M4 as Session Orchestrator (M4)
   participant F as Private File Service (M2)
   participant G as Thanh vien khac trong nhom
-    Note over C,S: Buoc 1: Xin intent dung hinh
-    C->>S: board.freeze.begin(envelope, boardVersion, sourceRevision)
-    S->>S: Kiem tra quyen nhom, pha phien, nguon video hop le
-    S->>S: Tao FreezeIntent (TTL 15s, CAS lock)
-    S-->>C: Ack(intentId, expiresAt, uploadUrl)
-    S-)G: board.state.updated(status: FREEZING, activeIntentId)
-    Note over S: Nha mutation queue cua phien trong khi client xu ly anh
-  end
-    Note over C,F: Buoc 2: Chup va upload anh tinh
-    C->>C: Chup frame tu video bang Canvas drawImage()
-    C->>C: Nen thanh Blob image/webp
-    C->>F: HTTP POST /api/files/upload (intentId, scope.groupId)
-    F->>F: Luu byte, tao file record (state: STAGED, reservedBytes: 2MiB)
-    F-->>C: Tra ve fileId
-  end
-    Note over C,S: Buoc 3: Xac nhan dung hinh (Commit & 2-Phase Verification)
-    C->>S: board.freeze.commit(envelope, intentId, fileId, dimensions)
-    Note over S: Pha 1: Pre-bind check (intent hop le, sourceRevision khop)
-    S->>F: Bind file BOARD_FRAME, state READY
-    Note over S,M4: Pha 2: Post-bind Atomic Re-check sau khi M2 hoan tat
-    S->>M4: Kiem tra lai trang thai nhom (ACTIVE / TIMER chua het deadline)
-    alt Nhom da dong hoac het gio TIMER-01 trong luc upload/bind
-      S-->>C: Error(GROUP_CLOSED / TIMER_EXPIRED)
-      S->>F: Dat lich xoa file STAGED/READY ngay lap tuc (DELETE_PENDING)
-      S->>S: Huy FreezeIntent, khong chuyen sang FROZEN
-    else Nguon video da thay doi trong luc upload
-      S-->>C: Error(SOURCE_CHANGED)
-      S-)G: board.state.updated(status: LIVE)
-      S->>F: Dat lich xoa file tam
-      S->>S: Huy FreezeIntent
-    else Post-bind hop le va nhom van ACTIVE
-      S->>S: Chuyen BoardState sang FROZEN, gan frameId
-      S-->>C: Ack(success: true, frameId)
-      S-)G: board.state.updated(status: FROZEN, frameId, frameUrl)
-      par Tai anh dong thoi
-        C->>F: Tai frame tinh (byteSize), kiem tra ACL nhom
-        G->>F: Tai frame tinh (byteSize), kiem tra ACL nhom
-      end
+
+  Note over C,S: Buoc 1: Xin intent dung hinh
+  C->>S: board.freeze.begin(envelope, boardVersion, sourceRevision)
+  S->>S: Kiem tra quyen nhom, pha phien, nguon video hop le
+  S->>S: Tao FreezeIntent (TTL 15s, CAS lock)
+  S-->>C: Ack(intentId, expiresAt, uploadUrl)
+  S-)G: board.state.updated(status: FREEZING, activeIntentId)
+  Note over S: Nha mutation queue cua phien trong khi client xu ly anh
+
+  Note over C,F: Buoc 2: Chup va upload anh tinh
+  C->>C: Chup frame tu video bang Canvas drawImage()
+  C->>C: Nen thanh Blob image/webp
+  C->>F: HTTP POST /api/files/upload (intentId, scope.groupId)
+  F->>F: Luu byte, tao file record (state: STAGED, reservedBytes: 2MiB)
+  F-->>C: Tra ve fileId
+
+  Note over C,S: Buoc 3: Xac nhan dung hinh (Commit & 2-Phase Verification)
+  C->>S: board.freeze.commit(envelope, intentId, fileId, dimensions)
+  Note over S: Pha 1: Pre-bind check (intent hop le, sourceRevision khop)
+  S->>F: Bind file BOARD_FRAME, state READY
+  Note over S,M4: Pha 2: Post-bind Atomic Re-check sau khi M2 hoan tat
+  S->>M4: Kiem tra lai trang thai nhom (ACTIVE / TIMER chua het deadline)
+  alt Nhom da dong hoac het gio TIMER-01 trong luc upload/bind
+    S-->>C: Error(GROUP_CLOSED / TIMER_EXPIRED)
+    S->>F: Dat lich xoa file STAGED/READY ngay lap tuc (DELETE_PENDING)
+    S->>S: Huy FreezeIntent, khong chuyen sang FROZEN
+  else Nguon video da thay doi trong luc upload
+    S-->>C: Error(SOURCE_CHANGED)
+    S-)G: board.state.updated(status: LIVE)
+    S->>F: Dat lich xoa file tam
+    S->>S: Huy FreezeIntent
+  else Post-bind hop le va nhom van ACTIVE
+    S->>S: Chuyen BoardState sang FROZEN, gan frameId
+    S-->>C: Ack(success: true, frameId)
+    S-)G: board.state.updated(status: FROZEN, frameId, frameUrl)
+    par Tai anh dong thoi
+      C->>F: Tai frame tinh (byteSize), kiem tra ACL nhom
+      G->>F: Tai frame tinh (byteSize), kiem tra ACL nhom
     end
   end
 ```
@@ -611,71 +613,37 @@ sequenceDiagram
   participant C as Client (Nguoi ve)
   participant S as BoardRuntime / Server
   participant P as Thanh vien cung scope
-    Note over C,S: Thao tac ve net (ho tro Idempotent retry)
-    C->>C: Render net cuc bo (optimistic 60fps)
-    C->>S: board.stroke.draw(envelope, strokeId, points, color, width, isVanishing)
-    S->>S: Kiem tra strokeId trong cache LRU (Idempotency check)
-    alt Da ton tai strokeId (do mat Ack lan truoc, khop author & payload)
-      S-->>C: Ack(strokeId, sequence, isDuplicate: true)
-    else Net ve moi hop le (<= 500 diem, <= 16 KiB)
-      S->>S: Kiem tra quyen (MAIN kiem ca role Host va currentLocation === 'MAIN')
-      S->>S: Gan authorParticipantId = session.user.id
-      S->>S: Tang mutationSequence, luu Stroke vao RAM
-      S-->>C: Ack(strokeId, sequence)
-      S-)P: board.stroke.added(stroke, sequence)
-      P->>P: Render net ve cua peer tren canvas
+
+  Note over C,S: Thao tac ve net (ho tro Idempotent retry)
+  C->>C: Render net cuc bo (optimistic 60fps)
+  C->>S: board.stroke.draw(envelope, strokeId, points, color, width, isVanishing)
+  S->>S: Kiem tra strokeId trong cache LRU (Idempotency check)
+  alt Da ton tai strokeId (do mat Ack lan truoc, khop author & payload)
+    S-->>C: Ack(strokeId, sequence, isDuplicate: true)
+  else Net ve moi hop le (<= 500 diem, <= 16 KiB)
+    S->>S: Kiem tra quyen (MAIN kiem ca role Host va currentLocation === 'MAIN')
+    S->>S: Gan authorParticipantId = session.user.id
+    S->>S: Tang mutationSequence, luu Stroke vao RAM
+    S-->>C: Ack(strokeId, sequence)
+    S-)P: board.stroke.added(stroke, sequence)
+    P->>P: Render net ve cua peer tren canvas
+  end
+
+  Note over C,S: Thao tac Undo va Pruning
+  C->>S: board.stroke.undo(envelope, strokeId)
+  S->>S: Tim net ve theo strokeId trong context hien tai
+  alt Net ve khong thuoc ve nguoi goi
+    S-->>C: Error(NOT_STROKE_AUTHOR)
+  else Dung tac gia
+    S->>S: Danh dau isTombstoned = true, tang mutationSequence
+    opt So net tombstone > 100
+      S->>S: Thuc hien pruning FIFO loai bo tombstone cu nhat
     end
+    S-->>C: Ack(success: true, sequence)
+    S-)P: board.stroke.undone(strokeId, sequence)
+    C->>C: Xoa net ve khoi canvas
+    P->>P: Xoa net ve khoi canvas
   end
-    Note over C,S: Thao tac Undo va Pruning
-    C->>S: board.stroke.undo(envelope, strokeId)
-    S->>S: Tim net ve theo strokeId trong context hien tai
-    alt Net ve khong thuoc ve nguoi goi
-      S-->>C: Error(NOT_STROKE_AUTHOR)
-    else Dung tac gia
-      S->>S: Danh dau isTombstoned = true, tang mutationSequence
-      opt So net tombstone > 100
-        S->>S: Thuc hien pruning FIFO loai bo tombstone cu nhat
-      end
-      S-->>C: Ack(success: true, sequence)
-      S-)P: board.stroke.undone(strokeId, sequence)
-      C->>C: Xoa net ve khoi canvas
-      P->>P: Xoa net ve khoi canvas
-    end
-  end
-```
-
----
-
-#### 6.2.7 Sequence Diagram 4: Phân trang Snapshot Sync và Hàng đợi Sự kiện Đồng thời (Sync Pagination & Concurrent Event Queue)
-
-```mermaid
-sequenceDiagram
-  autonumber
-  participant C as Client (Dang sync)
-  participant S as BoardRuntime / Server
-  participant P as Peer khac trong room
-
-  Note over C: Client can dong bo board (vi du 120 net active trong phong)
-  C->>S: board.sync(scopeId, mode: 'SNAPSHOT', page: 1, limit: 50)
-  S-->>C: Ack(state, strokes[1..50], page: 1, totalPages: 3, hasMore: true, snapshotSeq: 100)
-  C->>C: Luu batch 1 vao stagingBuffer
-
-  par Peer ve net moi trong luc Client dang keo batch 2
-    P->>S: board.stroke.draw(...)
-    S-)C: board.stroke.added(strokeX, sequence: 101)
-    Note over C: Phat hien seq 101 > snapshotSeq (100) -> Xep vao pendingEventQueue
-  and Client fetch batch tiep theo
-    C->>S: board.sync(scopeId, mode: 'SNAPSHOT', page: 2, limit: 50)
-    S-->>C: Ack(state, strokes[51..100], page: 2, totalPages: 3, hasMore: true, snapshotSeq: 100)
-    C->>C: Luu batch 2 vao stagingBuffer
-  end
-
-  C->>S: board.sync(scopeId, mode: 'SNAPSHOT', page: 3, limit: 50)
-  S-->>C: Ack(state, strokes[101..120], page: 3, totalPages: 3, hasMore: false, snapshotSeq: 100)
-  C->>C: Nhan du toan bo 120 net (hasMore: false)
-  C->>C: Atomic swap stagingBuffer len Canvas chinh
-  C->>C: Replay cac event trong pendingEventQueue (strokeX sequence 101)
-  Note over C: Canvas dong bo tron ven 100%, khong mat net, khong lech event
 ```
 
 ---
