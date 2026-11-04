@@ -1,6 +1,6 @@
 # Mô hình dữ liệu và trạng thái runtime
 
-**Cập nhật recording ngày 05/11/2026:** phần 13 collection trước recording giữ làm baseline cũ; delta `recordings` và `files: RECORDING` theo [schema bàn giao](recordings-schema.md), đã được proposal M2 nhận làm thiết kế. Profile MP4/H264/AAC, tối đa 3 tiếng/đoạn, READY giữ vô thời hạn là phương án M2 đang đề xuất trong PR; main 4751079 vẫn để chính sách recording mở, cần review trước áp dụng; quota, bản tạm/lỗi và xóa byte sau parent deletion còn cần review. Các ghi chú recording “chưa có field/index” bên dưới phản ánh mốc trước delta; chưa có schema/index/migration thực thi hoặc test sản phẩm đạt.
+**Cập nhật recording ngày 05/11/2026:** phần 13 collection trước recording giữ làm baseline cũ; delta `recordings` và `files: RECORDING` theo [schema bàn giao](recordings-schema.md), đã được proposal M2 nhận làm thiết kế. Main 7c4320f (PR #27) đã nhận schema/đề xuất M3 và chốt tối đa 3 tiếng/đoạn, READY giữ vô thời hạn; profile MP4/H264/AAC cần PoC; quota, bản tạm/lỗi và xóa byte sau parent deletion còn cần review. Các ghi chú recording “chưa có field/index” bên dưới phản ánh mốc trước delta; chưa có schema/index/migration thực thi hoặc test sản phẩm đạt.
 
 **Trạng thái:** thiết kế đích đã [review chéo bước 6](review-2026-11-01.md). Bước 4–5 ngày 01/11/2026 đã mô tả collection/document và đặc tả integrity/migration; chưa có Mongoose schemas, index/migration nghiệp vụ hoặc bằng chứng feature chạy chỉ từ tài liệu này. Scaffold có database connector và Mongo replica set.
 
@@ -65,3 +65,5 @@ MAIN giữ overlay/nét trong RAM, không freeze/không file FRAME; chỉ board 
 Thiết kế 13 collection hiện có chưa bao phủ đầy đủ recording. Theo [recording](../product/recording.md), cần metadata gắn phiên/kênh, trạng thái xử lý, tham chiếu byte, người khởi tạo/thời gian và thông tin phục vụ cleanup/quota. Video byte ở kho tệp, không nhúng MongoDB. Collection riêng hay mở rộng file metadata, field/index và migration do proposal M2–M3 thống nhất; chưa tạo collection thứ 14 hoặc schema runnable.
 
 DISCUSSION không còn request chờ host; E11 là thao tác tạo được kiểm hợp lệ ngay trong runtime, không collection xét duyệt. ACTIVITY thêm random preview vào cấu hình hiện có, chưa cần thực thể mới.
+
+Chi tiết delta recording để M2 review tại [schema recordings và mở rộng files](recordings-schema.md): field, index, CAS/transaction, receipt, quota và cleanup. Đây là đề xuất thiết kế, chưa thêm collection/index hoặc chạy migration.

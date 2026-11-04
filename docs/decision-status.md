@@ -8,7 +8,7 @@ Minh Quân 15 (M2) chọn **Cloudflare R2 riêng tư** cho video ngày 04/11; m�
 
 ## Đồng bộ thiết kế recordings ngày 05/11/2026
 
-Theo yêu cầu Minh Quân 15, [proposal M2](proposals/m2-messaging-files.md#65-lưu-và-xem-lại-recording) nhận [schema M3 bàn giao](database/recordings-schema.md): recording tối đa 3 tiếng, profile MP4/H264/AAC, READY giữ vô thời hạn, một nonterminal/phiên và PoC một slot toàn process. `recordings` và `files: RECORDING` do M2 cập nhật, READY commit cùng nhau; danh sách xem lại chỉ READY. Đây là đề xuất thiết kế M2 theo bản bàn giao, còn cần review chéo trong PR; main mới nhất vẫn để retention/quota mở. Không coi hạn 3 tiếng/READY vô thời hạn là chính sách chung đã được nhóm duyệt. Chưa tạo schema/index/migration hoặc kiểm pipeline/capacity. Hạn mức byte, bản tạm/lỗi, quyền xóa sau parent deletion và adapter ghi R2 vẫn cần review/PoC. Nguồn nghiệp vụ đồng bộ tại [recording](product/recording.md).
+Theo yêu cầu Minh Quân 15, [proposal M2](proposals/m2-messaging-files.md#65-lưu-và-xem-lại-recording) nhận [schema M3 bàn giao](database/recordings-schema.md): recording tối đa 3 tiếng, profile MP4/H264/AAC, READY giữ vô thời hạn, một nonterminal/phiên và PoC một slot toàn process. `recordings` và `files: RECORDING` do M2 cập nhật, READY commit cùng nhau; danh sách xem lại chỉ READY. Main 7c4320f (PR #27) đã đưa proposal M3/schema vào repo và xác nhận hạn 3 tiếng/READY vô thời hạn. Quota, quyền xóa thủ công và xử lý khi xóa kênh/Workspace vẫn mở; tích hợp R2 của M2 còn cần review/PoC. Chưa tạo schema/index/migration hoặc kiểm pipeline/capacity. Hạn mức byte, bản tạm/lỗi, quyền xóa sau parent deletion và adapter ghi R2 vẫn cần review/PoC. Nguồn nghiệp vụ đồng bộ tại [recording](product/recording.md).
 
 ## Cách hiểu trạng thái
 
@@ -78,10 +78,26 @@ Các quyết định cũ “FREE/MODERATED”, “chuyển host cần chấp nh�
 
 Đã chốt: DISCUSSION tạo tự động sau kiểm hợp lệ, bỏ host duyệt/từ chối/hủy pending nghiệp vụ; người trong roster vẫn chủ động vào. ACTIVITY thêm random theo tập người/số nhóm, cân số lượng chênh tối đa một, host xem/chỉnh trước start. Recording MAIN gồm màn hình, camera, âm thanh do host ghi/dừng, lưu video cho thành viên còn quyền kênh xem; không ghi nhóm riêng.
 
-Chưa chốt: cơ chế recorder/encode/composition, bố cục/số camera, codec, schema/index metadata, quota, retention/quyền xóa, xử lý sự cố recorder/host chuyển quyền. Clip demo vài phút là mục tiêu PoC, không giới hạn sản phẩm. Chưa có benchmark hoặc evidence feature hoạt động. Nguồn: [group modes](product/group-modes.md), [recording](product/recording.md).
+Còn cần thiết kế/review và PoC: điều khiển pipeline/encode/composition cụ thể, bố cục/số input, plugin/codec, schema/index metadata, quota, quyền xóa và xử lý video khi xóa kênh/Workspace, xử lý sự cố recorder. Hướng pipeline đã chọn được ghi bên dưới, chưa là bằng chứng implementation. Thời lượng/retention đã được chốt tại cập nhật 04/11 bên dưới. Vòng đời đổi host đã được làm rõ ngày 03/11 bên dưới. Clip demo vài phút là mục tiêu PoC, không giới hạn sản phẩm. Chưa có benchmark hoặc evidence feature hoạt động. Nguồn: [group modes](product/group-modes.md), [recording](product/recording.md).
+
+## Vòng đời recording chốt ngày 03/11/2026
+
+Recording gắn với phiên MAIN; đổi host tiếp tục ghi, quyền điều khiển theo host hiện hành. Người bắt đầu ghi đã bàn giao rồi rời không tự dừng; chuyển nhóm/hỗ trợ không dừng hoặc đưa nguồn riêng vào bản ghi. Bấm Stop/kết thúc phiên thì hoàn tất, Record mới sau đó tạo tệp mới. Host chưa bàn giao chủ động rời vẫn kết thúc phiên theo baseline. Profile PoC cập nhật 04/11 theo #28 dùng share + các ô camera MAIN hợp lệ (không share là lưới camera, không hình là nền), độc lập pin/viewport; chưa chốt bố cục chi tiết/codec/quota; thời lượng cập nhật 04/11 là tối đa 3 tiếng/đoạn, không áp giới hạn 8 giờ của Meet. Chi tiết hiện hành tại [recording](product/recording.md#vòng-đời-đã-chốt-ngày-03112026); cơ chế/metadata/crash và các nhánh host nhiều sự cố vẫn cần thiết kế, chưa có bằng chứng chạy thật.
+
+## Pipeline recording chốt ngày 03/11/2026
+
+Chọn mediasoup PlainTransport → GStreamer do app server quản lý, chỉ xuất RTP/RTCP của nguồn MAIN hợp lệ. M3 điều khiển pipeline động, ghép hình/trộn tiếng/encode; M2 quản lý lưu tệp. Thay lựa chọn pipeline còn mở ở phần trước; PoC vẫn phải kiểm đồng bộ, đổi/thu quyền nguồn, EOS/finalize và tải kết hợp. Chưa có benchmark chứng minh tối ưu hơn headless hoặc capacity đạt. Chi tiết tại [recording](product/recording.md) và [proposal M3](proposals/m3-media.md).
+
+## Thời lượng và lưu trữ recording — chốt ngày 04/11/2026
+
+Người dùng xác nhận mỗi đoạn ghi tối đa 3 tiếng từ capture thực sự bắt đầu; đủ hạn tự dừng/finalize, call tiếp tục, host được báo trước và chủ động ghi đoạn mới khi admission cho phép. Video READY giữ vô thời hạn, không tự xóa theo tuổi; tệp tạm/lỗi vẫn cleanup. Quota/disk đầy không tự xóa READY cũ để lấy chỗ. Quyền xóa thủ công, quota cụ thể và video khi xóa kênh/Workspace còn cần chốt. Nguồn: [recording](product/recording.md#thời-lượng-và-lưu-trữ--chốt-ngày-04112026). Phương án một recorder gồm finalize toàn process chỉ là profile PoC của M3, chưa là concurrency sản phẩm hoặc bằng chứng ghi 3 tiếng đạt.
+
+## Bàn giao recording không phụ thuộc nhà cung cấp — 04/11/2026
+
+M3 finalize artifact tạm; M2 dùng private storage adapter, xác minh byte và commit metadata trước READY. Provider là chi tiết M2, không chọn R2/Stream từ contract M3. Stored receipt/read-back quyết định cleanup tạm; transfer deadline tách encoder finalize và không chặn call end. Nguồn: [recording](product/recording.md#bàn-giao-và-storage-adapter), [contract M3](proposals/m3-media.md#631-contract-bàn-giao-video-m3m2-không-phụ-thuộc-nhà-cung-cấp). Đây là thiết kế, chưa có adapter/PoC chạy đạt.
 
 ## Xác nhận bổ sung ngày 04/11/2026
 
 - ACTIVITY: được tự vào lại đúng nhóm đã phân còn mở; không vào nhóm khác; không host điều chuyển (FR-07-07/UC-GRP-07 ngừng áp dụng, không tái dùng mã). Host chỉ vào bằng help, không join như member. Nguồn: [group modes](product/group-modes.md).
 - Host: thu mọi quyền kết nối cũ và thay tạm ngay; quay lại hợp lệ tự hoàn trong cùng phiên. Giữ reconnect grace tối đa 30 giây cho ownership; bỏ empty grace. Giữ đích hoàn quyền gốc qua host tạm; hết grace mà không ai thì end; auth/access bị thu xóa đích liên quan, cấp lại chỉ là member theo [live session](product/live-session.md).
-- Ghi hình: thống nhất hướng pipeline và vòng đời qua đổi host/dừng/ghi lại/hủy STARTING/end/finalize; công cụ/codec, quota/retention, metadata và cleanup contract còn cần PoC. Nguồn: [recording](product/recording.md).
+- Ghi hình: thống nhất hướng pipeline và vòng đời qua đổi host/dừng/ghi lại/hủy STARTING/end/finalize theo các mục recording bên trên. Mỗi đoạn tối đa 3 tiếng, video READY giữ vô thời hạn; quota cụ thể, quyền xóa và xử lý khi xóa kênh/Workspace còn cần chốt. Công cụ/plugin, codec và khả năng vận hành cần kiểm qua PoC. Nguồn: [recording](product/recording.md).

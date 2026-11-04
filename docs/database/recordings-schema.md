@@ -2,9 +2,9 @@
 
 **Trạng thái 05/11/2026:** đề xuất delta để M2 review và sở hữu repository/storage; chưa tạo Mongoose/Zod schema, collection, index hoặc migration. Không thay 13 collection baseline chỉ bằng tài liệu này. M3 cung cấp kết quả pipeline, M4 cấp quyền điều khiển và vòng đời phiên, M1 cung cấp ACL hiện hành. Chỉ M2 ghi metadata recording/file qua application service.
 
-Nguồn đã đối chiếu: [model](model.md), [collection design §2, §3.10–3.12](collection-design.md), [integrity §2–5](integrity-and-migrations.md), [lifecycle](lifecycle.md), [UC-LIVE-11–12](uc-data-map.md#uc-recording--dữ-liệu-mới), [recording](../product/recording.md), [bàn giao M3–M2 trong proposal M2](../proposals/m2-messaging-files.md#651-phối-hợp-m2m3-trước-trong-và-sau-capture). Host/join/socket theo mốc PR #28 được ghi ở đầu proposal M3. Các nguồn DB cũ chưa có recording và vẫn ghi retention/schema mở; bản bàn giao dùng hạn 3 tiếng/READY vô thời hạn làm đầu vào đề xuất. Sau khi merge main 4751079, recording chung vẫn để chính sách quota/retention mở; các giá trị này cần review chéo trong PR M2, không tự là quyết định sản phẩm đã duyệt.
+Nguồn đã đối chiếu: [model](model.md), [collection design §2, §3.10–3.12](collection-design.md), [integrity §2–5](integrity-and-migrations.md), [lifecycle](lifecycle.md), [UC-LIVE-11–12](uc-data-map.md#uc-recording--dữ-liệu-mới), [recording](../product/recording.md), [contract M3–M2](../proposals/m3-media.md#631-contract-bàn-giao-video-m3m2-không-phụ-thuộc-nhà-cung-cấp). Host/join/socket theo mốc PR #28 được ghi ở đầu proposal M3. Các nguồn DB cũ chưa có recording và vẫn ghi retention/schema mở; quyết định 3 tiếng/READY vô thời hạn tại nguồn recording là đầu vào mới của delta này.
 
-**Bản bàn giao được đưa vào repo theo yêu cầu Minh Quân 15 ngày 05/11/2026:** nội dung schema giữ theo bản M3 cung cấp; hai liên kết proposal M3 chưa có trong checkout được dẫn tới điểm giao tương ứng của M2. Kho đích M2 cấu hình là Cloudflare R2 riêng tư. Chi tiết cách ghi/di chuyển tệp vẫn cần PoC; schema này không bắt buộc ổ đĩa máy chủ làm kho lâu dài.
+**Cấu hình kho của M2:** kho đích lâu dài là Cloudflare R2 riêng tư; avatar vẫn ở Cloudinary. Provider chỉ cấu hình phía backend, không đổi contract M3/FE. Artifact/tệp tạm thuộc quản lý M2, có hạn mức và cleanup; không dùng ổ đĩa máy chủ làm kho lâu dài.
 
 ## 1. Phương án đề nghị
 
@@ -129,7 +129,7 @@ Lock order giữ nguyên: user ownership nếu cần → Workspace mutation → 
 
 ## 7. API và projection
 
-REST đề xuất ở [proposal M2 §6.6](../proposals/m2-messaging-files.md#66-api-và-thông-báo-giữa-các-phần). List/detail chỉ trả DTO được phép: recordingId, channelId/sessionId khi còn được đọc, state, revision, thời điểm/duration/kích thước phù hợp. Không trả operations/hash ý định, authorization, storage locator/receipt nội bộ, writer lease, raw error hoặc credential. File byte chỉ mở khi recording và files cùng READY, binding khớp, sau ACL hiện hành; fileId biết được không cấp quyền. Các state đang ghi do M4 projection theo audience; không tự mở REST history FAILED/metadata nội bộ cho mọi thành viên kênh.
+REST đề xuất ở [M3 §6.3.2](../proposals/m3-media.md#632-api-rest-đề-xuất-cho-m3-và-các-miền-phối-hợp). List/detail chỉ trả DTO được phép: recordingId, channelId/sessionId khi còn được đọc, state, revision, thời điểm/duration/kích thước phù hợp. Không trả operations/hash ý định, authorization, storage locator/receipt nội bộ, writer lease, raw error hoặc credential. File byte chỉ mở khi recording và files cùng READY, binding khớp, sau ACL hiện hành; fileId biết được không cấp quyền. Các state đang ghi do M4 projection theo audience; không tự mở REST history FAILED/metadata nội bộ cho mọi thành viên kênh.
 
 ## 8. Ca kiểm M2 cần có trước implementation được nghiệm thu
 

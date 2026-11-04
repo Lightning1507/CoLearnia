@@ -58,6 +58,8 @@
 
 - [Bước 6 — review chéo database](database/review-2026-11-01.md): độ phủ UC, findings đã sửa, điểm mở và điều kiện trước code; hoàn tất review tài liệu, chưa nghiệm thu DB thực tế.
 
+- [Delta recording — schema recordings và files](database/recordings-schema.md): đề xuất cho M2 review field/index, commit READY, quota và cleanup; chưa tạo schema executable hoặc migration.
+
 - [Sơ đồ database dạng DBML](database/diagrams/README.md): copy 13 collection vào dbdiagram.io để xem/xuất ảnh; không là SQL hay script khởi tạo MongoDB.
 
 ## Lịch sử và tham khảo — không nạp mặc định

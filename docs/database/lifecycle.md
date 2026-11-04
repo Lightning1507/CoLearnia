@@ -1,6 +1,6 @@
 # Vòng đời dữ liệu, transaction và cleanup
 
-**Cập nhật recording ngày 05/11/2026:** phần 13 collection trước recording giữ làm baseline cũ; delta `recordings` và `files: RECORDING` theo [schema bàn giao](recordings-schema.md), đã được proposal M2 nhận làm thiết kế. Profile MP4/H264/AAC, tối đa 3 tiếng/đoạn, READY giữ vô thời hạn là phương án M2 đang đề xuất trong PR; main 4751079 vẫn để chính sách recording mở, cần review trước áp dụng; quota, bản tạm/lỗi và xóa byte sau parent deletion còn cần review. Các ghi chú recording “chưa có field/index” bên dưới phản ánh mốc trước delta; chưa có schema/index/migration thực thi hoặc test sản phẩm đạt.
+**Cập nhật recording ngày 05/11/2026:** phần 13 collection trước recording giữ làm baseline cũ; delta `recordings` và `files: RECORDING` theo [schema bàn giao](recordings-schema.md), đã được proposal M2 nhận làm thiết kế. Main 7c4320f (PR #27) đã nhận schema/đề xuất M3 và chốt tối đa 3 tiếng/đoạn, READY giữ vô thời hạn; profile MP4/H264/AAC cần PoC; quota, bản tạm/lỗi và xóa byte sau parent deletion còn cần review. Các ghi chú recording “chưa có field/index” bên dưới phản ánh mốc trước delta; chưa có schema/index/migration thực thi hoặc test sản phẩm đạt.
 
 **Trạng thái:** thiết kế đích; bước 3 — nơi lưu/vòng đời đã được cụ thể hóa ngày 01/11/2026. Transaction probe trong CI kiểm cơ chế Mongo, không thay kiểm thử nghiệp vụ hoặc sweeper thực.
 

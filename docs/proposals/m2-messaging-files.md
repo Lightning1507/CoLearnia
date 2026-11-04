@@ -253,16 +253,16 @@ M3 tạo video từ nội dung MAIN; M2 tham gia từ trước khi thu hình đ�
 
 **Trạng thái:** `STARTING → RECORDING → STOPPING → PROCESSING → READY`, nghĩa là chuẩn bị → đang ghi → đang dừng → đang hoàn tất/upload/kiểm → xem được. Lỗi đã xác định đi `FAILED`; hủy khi đang chuẩn bị không được giả đã thu hình. `files` vẫn dùng STAGED/READY/DELETE_PENDING. Khi công bố video, cập nhật cả recording và file sang READY trong cùng lần lưu MongoDB; không có trường hợp một bên báo xem được còn bên kia chưa xong. Callback cũ không đổi READY thành FAILED.
 
-**Giới hạn đề xuất theo schema bàn giao:**
+**Giới hạn theo nguồn recording và schema trên main:**
 
-Sau khi merge main `4751079`, nguồn recording chung vẫn để quota/retention mở. Phần dưới giữ phương án M2 theo yêu cầu đồng bộ schema để team review; hạn 3 tiếng, profile và READY vô thời hạn chưa được gọi là chính sách sản phẩm đã duyệt chỉ từ PR này. Chỉ PoC trên kho thử cô lập có hạn mức; chưa bật lưu video sản phẩm trước khi nhóm xác nhận chính sách/giới hạn.
+Main `7c4320f` (PR #27) đã bổ sung proposal M3 và schema recordings, xác nhận tối đa 3 tiếng/đoạn và READY giữ vô thời hạn. M2 theo các nguồn này; quota, quyền xóa thủ công và xử lý khi xóa kênh/Workspace vẫn cần chốt. Profile codec/phát phải qua PoC; chưa bật lưu sản phẩm khi giới hạn vận hành chưa được xác nhận.
 
 - Mỗi đoạn thu tối đa **3 tiếng**, tính từ lúc thực sự bắt đầu; đổi host không đặt lại đồng hồ. Hết hạn tự dừng đầu vào rồi hoàn tất phần đã thu. Thời lượng đo trong tệp có thể lệch do hoàn tất dữ liệu; ngưỡng chấp nhận phải qua PoC, không dùng validator cắt cứng theo thời lượng tệp.
 - Cấu hình video đầu là **MP4, H264 cho hình, AAC cho tiếng**, MIME `video/mp4`. Phải thử phát/tua và kiểm hình/tiếng thật trước nghiệm thu; đây chưa là bằng chứng encoder đã chạy.
 - Video READY **giữ vô thời hạn**, không có TTL hoặc lịch tự xóa chỉ vì đã cũ. Không áp 15 phút upload chat, 24 giờ chat riêng hoặc 7 ngày xóa tệp cha vào video. Khi kênh/Workspace bị xóa, chặn đọc ngay; quyền xóa byte và chính sách sau khi cha bị xóa còn cần quyết định riêng. Giữ vô thời hạn không có nghĩa dung lượng được dùng vô hạn: hạn mức video/chi phí phải có trước bật lưu.
 - Mỗi phiên chỉ có một bản ghi ở STARTING/RECORDING/STOPPING/PROCESSING. Vì vậy đang upload đoạn trước thì chưa ghi đoạn mới. Bản PoC có **một slot ghi toàn process**, tính cả hoàn tất/upload/kiểm và cleanup còn giữ tài nguyên; FAILED chưa đồng nghĩa đã trả slot. M3 giữ admission, M2 cung cấp trạng thái tài nguyên để xác nhận trả slot; không dùng index MongoDB thay giới hạn này.
 
-**Tìm video từ kênh:** mở kênh LIVE → mục Bản ghi → danh sách video READY của các phiên đã kết thúc hoặc còn hoạt động → chọn xem. M2 có API theo kênh, không yêu cầu biết sessionId và không chờ API lịch sử phiên M4. Danh sách theo kênh sắp mới nhất bằng `readyAt` và ID; đề xuất 30, tối đa 50 mục/trang. Danh sách theo phiên sắp theo `createdAt` và ID; chỉ trả các mục READY cho người xem thông thường. M4 cung cấp trạng thái đang ghi/xử lý hoặc thông báo lỗi cho đúng người đang được phép nhận trong phiên; không mặc định mở lịch sử FAILED/nội bộ qua REST cho cả kênh.
+**Tìm video từ kênh:** mở kênh LIVE → mục Bản ghi → danh sách video READY của các phiên đã kết thúc hoặc còn hoạt động → chọn xem. M2 có API theo kênh, không yêu cầu biết sessionId và không chờ API lịch sử phiên M4. Danh sách theo kênh sắp mới nhất bằng `readyAt` và ID; đề xuất 20, tối đa 50 mục/trang theo API M3. Danh sách theo phiên sắp theo `createdAt` và ID; chỉ trả các mục READY cho người xem thông thường. M4 cung cấp trạng thái đang ghi/xử lý hoặc thông báo lỗi cho đúng người đang được phép nhận trong phiên; không mặc định mở lịch sử FAILED/nội bộ qua REST cho cả kênh.
 
 Mỗi mục chỉ trả ID, kênh/phiên được đọc, trạng thái, thời điểm và thông tin phát phù hợp. Không trả mã kho, đường dẫn, chi tiết thao tác/biên nhận nội bộ hoặc lỗi thô. Giao diện phân biệt chưa có video sẵn sàng, đang tải và lỗi lấy danh sách. Khi đoạn đang PROCESSING còn giữ slot, hiển thị chưa thể ghi đoạn mới, không giả nút ghi đã hoạt động.
 
@@ -280,7 +280,7 @@ flowchart TD
   B --> C[M2 kiểm hạn mức, slot và cấp đầu nhận video]
   C --> D[M3 ghi MAIN, tối đa 3 tiếng mỗi đoạn]
   D --> E[M2 nhận dữ liệu có giới hạn]
-  E --> F[Lưu R2: cách truyền và tệp tạm chốt sau thử nghiệm]
+  E --> F[M3 hoàn tất artifact do M2 quản lý, M2 lưu R2]
   F --> G[Dừng ghi: M3 hoàn tất video, M2 hoàn tất upload]
   G --> H[M2 kiểm kết quả lưu và đánh dấu sẵn sàng]
   H --> I[Người dùng mở mục Bản ghi của kênh]
@@ -288,9 +288,9 @@ flowchart TD
   J --> K[M2 đọc từng đoạn từ R2 và trả về trình phát]
 ```
 
-**Cách đọc sơ đồ:** M2 kiểm hạn mức trước khi M3 ghi hình. M3 tạo nội dung, M2 nhận từng phần và quản lý việc lưu trên R2. Đến hạn 3 tiếng hoặc có lệnh dừng, phải hoàn tất cả video lẫn upload mới báo sẵn sàng. Trong lúc PROCESSING chưa thể ghi đoạn tiếp; chỉ sau khi trả slot mới nhận lượt mới. Khi xem lại, M2 kiểm quyền rồi đọc từng đoạn từ R2 về trình duyệt. Sơ đồ chưa chốt ghi thẳng lên R2 hay dùng tệp tạm trong lúc ghi; hai bên thử trước để chọn cách chạy được. Lỗi lưu phải báo rõ và không làm kết thúc cuộc gọi.
+**Cách đọc sơ đồ:** M2 kiểm hạn mức trước khi M3 ghi hình. M3 tạo nội dung, M2 nhận từng phần và quản lý việc lưu trên R2. Đến hạn 3 tiếng hoặc có lệnh dừng, phải hoàn tất cả video lẫn upload mới báo sẵn sàng. Trong lúc PROCESSING chưa thể ghi đoạn tiếp; chỉ sau khi trả slot mới nhận lượt mới. Khi xem lại, M2 kiểm quyền rồi đọc từng đoạn từ R2 về trình duyệt. Theo contract M3 mới trên main, M2 cấp artifactRef trước capture, M3 hoàn tất artifact rồi M2 lưu/kiểm R2. Cách nối writer và quản lý tệp tạm vẫn phải thử; không tự đổi pipeline M3 sang ghi thẳng R2. Lỗi lưu phải báo rõ và không làm kết thúc cuộc gọi.
 
-**Điểm cần thử cùng Việt:** ưu tiên truyền từng phần từ đầu ghi do M2 quản lý lên R2, với giới hạn bộ nhớ và tốc độ. T9.1 kiểm định dạng video có cần quay lại sửa phần đã ghi hay không; R2 không thay thế một tệp cho phép sửa ở vị trí bất kỳ. Nếu bộ ghi không hỗ trợ đường truyền này thì review phương án tệp tạm có hạn mức, có dọn và thuộc quản lý M2. Tệp tạm chỉ phục vụ ghi/xử lý, không là kho lâu dài hoặc đường cho người dùng tải. Chưa chọn một trong hai cách khi chưa có kết quả thử. M2 giữ mã tệp R2 và thông tin video trong MongoDB; mỗi bản ghi/lần xử lý dùng mã riêng để tránh ghi đè.
+**Điểm cần thử cùng Việt:** đối chiếu đầu ra artifact của pipeline M3 với đầu ghi/tệp tạm do M2 cấp, rồi truyền từng phần lên R2 có giới hạn bộ nhớ và tốc độ. T9.1 kiểm định dạng video có cần quay lại sửa phần đã ghi hay không; R2 không thay thế một tệp cho phép sửa ở vị trí bất kỳ. Nếu bộ ghi không hỗ trợ đường truyền này thì review phương án tệp tạm có hạn mức, có dọn và thuộc quản lý M2. Tệp tạm chỉ phục vụ ghi/xử lý, không là kho lâu dài hoặc đường cho người dùng tải. Chưa chọn một trong hai cách khi chưa có kết quả thử. M2 giữ mã tệp R2 và thông tin video trong MongoDB; mỗi bản ghi/lần xử lý dùng mã riêng để tránh ghi đè.
 
 **Upload và xác nhận:** backend dự kiến dùng `@aws-sdk/client-s3` theo [hướng dẫn R2 cho Node.js](https://developers.cloudflare.com/r2/examples/aws/aws-sdk-js-v3/); chưa thêm dependency trong task tài liệu. T9.7 thử cách upload chia phần cho tệp lớn, có trần số phần đang gửi, bộ nhớ, thời gian và số lần thử lại. Ghi bền mã lượt upload và các phần cần đối soát để dọn được sau restart. R2 không cấp sẵn quota nghiệp vụ cho từng Workspace: M2 phải tự kiểm hạn mức trước ghi và trước upload. Đang upload vẫn là đang xử lý, chưa được phát.
 
@@ -327,6 +327,8 @@ Hủy trong STARTING cần chặn cả callback capture muộn. Nếu đã có b
 | M3: `finalizeRecording` → M2 commit     | M3 gửi đúng ID/attempt/generation, mô tả output đã hoàn tất; M2 tự kiểm đích R2, commit hai document và trả storedReceipt hoặc kết quả chưa rõ. | Gọi lại cùng kết quả trả cùng artifact, không nhân file, reservation hoặc metadata. Kết quả khác của cùng attempt báo conflict.  |
 | M3/M4: `abortRecording / failRecording` | Lý do hủy/lỗi an toàn, mốc cắt đầu vào, ID/attempt; trả tài nguyên đã dừng/phần đang dọn.                                                       | Gọi lại an toàn; không chuyển READY thành FAILED vì callback cũ.                                                                 |
 | M3/M4: `getRecordingResult`             | Tra theo start key hoặc recording ID/attempt sau timeout.                                                                                       | Unknown commit phải read-back trước retry/fail; không báo “chưa tạo” rồi tạo thêm bản ghi.                                       |
+
+Contract đối chiếu trực tiếp tại [M3 mục 6.3.1](m3-media.md#631-contract-bàn-giao-video-m3m2-không-phụ-thuộc-nhà-cung-cấp): M2 cấp artifactRef trước capture, M3 hoàn tất artifact rồi gọi commit, M2 xác minh R2 và trả stored receipt trước dọn tạm. ArtifactRef không phải raw path hoặc quyền xem. Không đổi pipeline M3 sang ghi trực tiếp R2 chỉ vì adapter có thể truyền từng phần; T9.1 kiểm cụ thể đường writer/tệp tạm với đầu ra M3 đã chọn.
 
 Các tên hàm ở bảng là lớp gọi nội bộ của M2, ánh xạ tới bốn thao tác bền trong schema: reserve/commit/abort/releaseTemporary. `finalizeRecording` nhận mô tả đầu ra từ M3; chính M2 xác minh R2 và commit, không bắt M3 tự chứng minh upload do M2 thực hiện. Thêm thao tác `releaseTemporary` sau receipt bền và kiểm tệp đích tồn tại; gọi lại an toàn, lỗi dọn tạm không đổi READY thành FAILED. `getRecordingResult` trả trạng thái/receipt đúng start/operation, không yêu cầu capture còn ACTIVE hoặc cookie người bắt đầu còn hiệu lực cho việc hoàn tất nội bộ. Quyền người dùng vẫn kiểm riêng khi trả nội dung ra ngoài.
 
