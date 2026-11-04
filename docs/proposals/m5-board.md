@@ -433,59 +433,26 @@ export interface FreezeIntent {
 ```
 
 ```mermaid
-classDiagram
-  direction LR
-  class BoardState {
-    +string id
-    +string scopeId
-    +string scopeType
-    +int version
-    +BoardStatus status
-    +string sourceId
-    +int sourceRevision
-    +string frameId
-    +int mutationSequence
-    +string activeIntentId
-  }
+flowchart TD
+  subgraph RAMRuntime ["Bộ nhớ RAM Server (BoardRuntime — In-Memory 100%)"]
+    direction TB
+    Board["BoardState (Trạng thái bảng)<br/>───────────────────────<br/>• id, scopeId, scopeType<br/>• status: LIVE / FREEZING / FROZEN<br/>• version, mutationSequence<br/>• sourceId, sourceRevision<br/>• frameId, activeIntentId"]
+    Intent["FreezeIntent (Khóa CAS Intent)<br/>───────────────────────<br/>• intentId (UUID), scopeId<br/>• requestedByParticipantId<br/>• sourceRevision, expiresAt (15s)<br/>• status: PENDING / COMMITTED"]
+    Strokes["Danh sách nét vẽ (Strokes Buffer)<br/>───────────────────────<br/>• Tối đa 500 nét active, 100 tombstone<br/>• points: Array&lt;Point&gt; (≤ 500 điểm, 0.xxxx)<br/>• color, width, isVanishing, isTombstoned<br/>• authorParticipantId (Server gán)"]
 
-  class Stroke {
-    +string id
-    +string boardId
-    +string sessionId
-    +int contextVersion
-    +string authorParticipantId
-    +Array~Point~ points
-    +string color
-    +float width
-    +bool isVanishing
-    +bool isTombstoned
-  }
+    Board ---|"Quản lý khóa (0..1 intent)"| Intent
+    Board ---|"Lưu trữ nét vẽ (0..500 strokes)"| Strokes
+  end
 
-  class FreezeIntent {
-    +string intentId
-    +string boardId
-    +string requestedByParticipantId
-    +int sourceRevision
-    +int expiresAt
-    +IntentStatus status
-  }
+  subgraph M2Storage ["Hạ tầng lưu trữ tệp Private File Service (M2)"]
+    direction TB
+    FileDoc[("MongoDB files Document (§3.10)<br/>───────────────────────<br/>• _id, workspaceId, uploaderId<br/>• purpose: 'FRAME'<br/>• state: STAGED / READY / DELETE_PENDING<br/>• byteSize, reservedBytes: 2 MiB<br/>• dimensions: 1920x1080"]
+    DiskFile[("Private Disk Storage<br/>───────────────────────<br/>• Byte nhị phân ảnh WebP/JPEG<br/>• Lưu private theo storageKey<br/>• Truy cập qua ACL thành viên nhóm")]
 
-  class FileMetadata {
-    +ObjectId _id
-    +ObjectId workspaceId
-    +ObjectId uploaderId
-    +string storageKey
-    +int byteSize
-    +int reservedBytes
-    +string purpose
-    +Object scope
-    +Object binding
-    +string state
-  }
+    FileDoc ---|"Lưu trữ vật lý"| DiskFile
+  end
 
-  BoardState "1" *-- "0..500" Stroke : "chứa trong RAM (tối đa 500 active, 100 tombstone)"
-  BoardState "1" o-- "0..1" FreezeIntent : "quản lý trong RAM"
-  BoardState ..> FileMetadata : "tham chiếu qua frameId khi FROZEN"
+  Board -.->|"Tham chiếu frameId (khi FROZEN)"| FileDoc
 ```
 
 #### 6.1.3 Bất biến dữ liệu (Invariants)
