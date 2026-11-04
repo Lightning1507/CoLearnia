@@ -1,5 +1,7 @@
 # Mô hình dữ liệu và trạng thái runtime
 
+**Cập nhật recording ngày 05/11/2026:** phần 13 collection trước recording giữ làm baseline cũ; delta `recordings` và `files: RECORDING` theo [schema bàn giao](recordings-schema.md), đã được proposal M2 nhận làm thiết kế. Main 7c4320f (PR #27) đã nhận schema/đề xuất M3 và chốt tối đa 3 tiếng/đoạn, READY giữ vô thời hạn; profile MP4/H264/AAC cần PoC; quota, bản tạm/lỗi và xóa byte sau parent deletion còn cần review. Các ghi chú recording “chưa có field/index” bên dưới phản ánh mốc trước delta; chưa có schema/index/migration thực thi hoặc test sản phẩm đạt.
+
 **Trạng thái:** thiết kế đích đã [review chéo bước 6](review-2026-11-01.md). Bước 4–5 ngày 01/11/2026 đã mô tả collection/document và đặc tả integrity/migration; chưa có Mongoose schemas, index/migration nghiệp vụ hoặc bằng chứng feature chạy chỉ từ tài liệu này. Scaffold có database connector và Mongo replica set.
 
 Đọc theo thứ tự: [UC ↔ dữ liệu](uc-data-map.md) → [mô hình nghiệp vụ](conceptual-model.md) → [nơi lưu/vòng đời](lifecycle.md) → [collection/field/nhúng-tham chiếu](collection-design.md) → [index/validation/concurrency/migration](integrity-and-migrations.md). E01–E16 là khái niệm, không phải 16 collection.
@@ -67,3 +69,5 @@ DISCUSSION không còn request chờ host; E11 là thao tác tạo được ki�
 ## Delta PROFILE-01 ngày 03/11/2026
 
 M1 bổ sung ACC-04/05 và FR-01-04–06: sửa displayName/avatar và đổi mật khẩu hiện tại; quên mật khẩu để sau MVP. Cập nhật 04/11: avatar lưu trên Cloudinary, công khai qua URL; chỉ chính chủ được thay/xóa. MongoDB giữ metadata ảnh trên User; xem cấu trúc đề xuất tại [collection-design](collection-design.md#31-users). Không áp dụng cách truy cập công khai này cho file chat hoặc video cuộc họp. Đổi mật khẩu vẫn thu tất cả phiên và socket/media liên quan. Luồng upload, xác minh ảnh và dọn ảnh cũ cần M1/M2 review theo [proposal](../proposals/m1-workspace-auth.md); chưa triển khai schema/index/migration.
+
+Chi tiết delta recording để M2 review tại [schema recordings và mở rộng files](recordings-schema.md): field, index, CAS/transaction, receipt, quota và cleanup. Đây là đề xuất thiết kế, chưa thêm collection/index hoặc chạy migration.

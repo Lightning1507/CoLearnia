@@ -90,7 +90,7 @@ Ví dụ trên dùng nguồn MAIN vì nhóm là DISCUSSION. Với ACTIVITY, thao
 | Member Workspace  | Chat, tham gia LIVE, share đúng phòng khi trống, xin DISCUSSION.                                                       |
 | Host phiên họp    | Điều hành phiên: đóng DISCUSSION, tổ chức ACTIVITY, hỗ trợ, chuyển host/kết thúc phiên.                                |
 
-Một member có thể đồng thời là host; giáo viên phải bắt đầu phiên hoặc được chuyển quyền, hệ thống không tự nhận diện giáo viên. Owner/admin không mặc nhiên được nghe các nhóm hay đọc DM. Host mất mạng quá thời gian chờ có cơ chế thay tạm và hoàn quyền, khác thao tác chủ động kết thúc; xem [nguồn host](product/live-session.md#83-chuyển-host-và-host-mất-mạng).
+Một member có thể đồng thời là host; giáo viên phải bắt đầu phiên hoặc được chuyển quyền, hệ thống không tự nhận diện giáo viên. Owner/admin không mặc nhiên được nghe các nhóm hay đọc DM. Host bị phát hiện mất kết nối được thu quyền cũ và thay tạm ngay; vào lại hợp lệ được hoàn quyền, khác thao tác chủ động kết thúc; xem [nguồn host](product/live-session.md#83-chuyển-host-và-host-mất-mạng).
 
 **PRIVATE** là kênh riêng tư với danh sách người được cấp quyền truy cập, độc lập với loại TEXT/LIVE. Owner/admin quản lý danh sách nhưng muốn đọc nội dung vẫn cần quyền truy cập; DM chỉ hai bên. **Everyone (Mọi người) trong chat họp** là những người ở MAIN hoặc nhóm hiện tại, không phải tất cả nhóm. Chat họp chỉ text/ảnh; chat TEXT/DM có thêm file, thread chỉ có trong TEXT.
 

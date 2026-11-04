@@ -41,10 +41,10 @@
 
 - [Gom FR thành 5 miền phụ trách](product/delivery-domains.md): phạm vi FE/BE/dữ liệu, phần dùng chung và điểm giao nhau; đề xuất để team review cùng Figma, chưa gán người hoặc estimate.
 
-- [Functional Requirements MVP](product/functional-requirements.md): 58 FR theo 15 PB, có truy vết UC, tiêu chí chấp nhận, phụ thuộc/rủi ro và điểm chưa chốt; cơ sở chia Issue/estimate, chưa là lịch hoặc việc đã giao.
+- [Functional Requirements MVP](product/functional-requirements.md): 57 FR theo 15 PB, có truy vết UC, tiêu chí chấp nhận, phụ thuộc/rủi ro và điểm chưa chốt; cơ sở chia Issue/estimate, chưa là lịch hoặc việc đã giao.
 
 - [Định hình Use Case](product/use-case-outline.md): 5 actor, 8 oval tổng quan và ranh giới các miền đã thống nhất; không thay nguồn quyền nghiệp vụ.
-- [Danh mục Use Case chi tiết](product/use-case-catalog.md): 43 UC nghiệp vụ và 5 UC tài khoản/truy cập chung; giữ mã truy vết cho các mục gộp.
+- [Danh mục Use Case chi tiết](product/use-case-catalog.md): 42 UC nghiệp vụ và 5 UC tài khoản/truy cập chung; giữ mã truy vết cho các mục gộp.
 - [6 hồ sơ đặc tả](product/use-cases/README.md): luồng trọng tâm, điều kiện, nhánh lỗi và điểm mở; không đặc tả mọi UC trong danh mục.
 - [Sơ đồ Astah và trạng thái ảnh xuất](product/diagrams/README.md): có tổng quan, 5 sơ đồ phân rã và Activity; file Astah và ảnh UC đã được người phụ trách xác nhận là bản mới nhất; xem mục lục bản vẽ để mở nguồn.
 
@@ -59,6 +59,8 @@
 - [Bước 5 — integrity và migration](database/integrity-and-migrations.md): index/options, validation, transaction/CAS/khóa/quota, cleanup và kế hoạch migration/rollback, matrix DB-01–12. Chưa chạy các ca DB; điều chỉnh sau review được cập nhật tại nguồn.
 
 - [Bước 6 — review chéo database](database/review-2026-11-01.md): độ phủ UC, findings đã sửa, điểm mở và điều kiện trước code; hoàn tất review tài liệu, chưa nghiệm thu DB thực tế.
+
+- [Delta recording — schema recordings và files](database/recordings-schema.md): đề xuất cho M2 review field/index, commit READY, quota và cleanup; chưa tạo schema executable hoặc migration.
 
 - [Sơ đồ database dạng DBML](database/diagrams/README.md): copy 13 collection vào dbdiagram.io để xem/xuất ảnh; không là SQL hay script khởi tạo MongoDB.
 
@@ -86,4 +88,4 @@ Thay quy tắc/contract phải cập nhật nguồn chính và bên dùng liên 
 
 ## Thay đổi sau kickoff 02/11
 
-[Recording MAIN](product/recording.md) là nguồn RECORD-01 / PB-15 / FR-15-01–03 / UC-LIVE-11–12. DISCUSSION tạo tự động theo [group modes](product/group-modes.md); UC-GRP-03 xét duyệt ngừng áp dụng. Tổng hiện hành 58 FR/15 PB; HS-02 bản 5, HS-03 thêm random preview. Thiết kế DB recording/pipeline còn chờ proposal, chưa thay code/schema. Astah/PNG/Figma cần áp delta mới, không ghi đè file hoặc coi đã sửa hình trong lượt tài liệu này.
+[Recording MAIN](product/recording.md) là nguồn RECORD-01 / PB-15 / FR-15-01–03 / UC-LIVE-11–12. DISCUSSION tạo tự động theo [group modes](product/group-modes.md); UC-GRP-03 xét duyệt và UC-GRP-07 host điều chuyển ngừng áp dụng. Tổng hiện hành 57 FR/15 PB; HS-02 bản 5, HS-03 thêm random preview. Hướng pipeline/vòng đời recording đã xác nhận 04/11; công cụ và thiết kế DB còn cần contract/PoC, chưa thay code/schema. Astah/PNG/Figma cần áp delta mới, không ghi đè file hoặc coi đã sửa hình trong lượt tài liệu này.

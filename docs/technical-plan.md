@@ -18,7 +18,7 @@ Tài liệu là cơ sở chung để tạo backlog, viết contracts, triển kh
 
 **Lịch sử cập nhật v2.1:** đồng bộ runtime với repository sang Node.js 26.12.1/pnpm 11.5.2 và ghi nhận hiện trạng scaffold/local. Giữ nguyên phạm vi, kiến trúc sản phẩm và lộ trình v2.0. Các mục triển khai và kiểm thử bên dưới mô tả đích cần đạt; trạng thái đã hoàn thành phải đối chiếu source và evidence theo commit/môi trường. Native media smoke chỉ xác nhận worker/Router khởi động, chưa chứng minh camera/mic, cách ly nhóm hoặc TURN.
 
-**Đơn giản hóa cuộc họp ngày 27/10, cập nhật 01/11/2026:** giữ baseline v2.3, thay quy tắc FREE/MODERATED cũ bằng một kiểu cuộc họp. Người bắt đầu là host; người vào sau không tự nhận host; chuyển quyền trực tiếp, không cần người nhận chấp nhận; bàn giao chính thức khác thay host tạm do mất mạng. MAIN mọi participant tự share khi trống, một nguồn tại một thời điểm, không xin host hoặc giành nguồn. DISCUSSION/ACTIVITY và hai phase giữ nguyên. [Policy](product/groups-media-policy.md) và [vòng đời host](product/live-session.md#83-chuyển-host-và-host-mất-mạng) là nguồn chi tiết; host mất mạng quá grace được thay tạm bằng participant hợp lệ chọn ngẫu nhiên, tự hoàn quyền khi host cũ quay lại hợp lệ trong cùng phiên. Host chủ động rời khi còn giữ quyền kết thúc phiên cho mọi người; sau bàn giao chính thức người cũ rời như thành viên. Không có ứng viên/host tạm mất mạng còn cần đặc tả. Không thêm co-host/co-organizer/presenter. Đây là thiết kế, không là code đã chạy.
+**Đơn giản hóa cuộc họp ngày 27/10, cập nhật 01/11/2026:** giữ baseline v2.3, thay quy tắc FREE/MODERATED cũ bằng một kiểu cuộc họp. Người bắt đầu là host; người vào sau không tự nhận host; chuyển quyền trực tiếp, không cần người nhận chấp nhận; bàn giao chính thức khác thay host tạm do mất mạng. MAIN mọi participant tự share khi trống, một nguồn tại một thời điểm, không xin host hoặc giành nguồn. DISCUSSION/ACTIVITY và hai phase giữ nguyên. [Policy](product/groups-media-policy.md) và [vòng đời host](product/live-session.md#83-chuyển-host-và-host-mất-mạng) là nguồn chi tiết; host mất kết nối được thu quyền cũ và thay tạm ngay bằng participant hợp lệ chọn ngẫu nhiên, tự hoàn quyền khi host cũ quay lại hợp lệ trong cùng phiên. Host chủ động rời khi còn giữ quyền kết thúc phiên cho mọi người; sau bàn giao chính thức người cũ rời như thành viên. Không có ứng viên/host tạm mất mạng còn cần đặc tả. Không thêm co-host/co-organizer/presenter. Đây là thiết kế, không là code đã chạy.
 
 **Tổ chức nguồn ngày 26/10/2026:** các mục nghiệp vụ, kiến trúc và dữ liệu đã được chuyển sang tài liệu theo miền, giữ nguyên nội dung baseline. Các heading bên dưới dẫn tới nguồn chi tiết; [mục lục tài liệu](README.md) ghi cách đọc và thứ tự xử lý khi có mâu thuẫn.
 
@@ -72,7 +72,7 @@ Nguồn chi tiết: [ba use case và vòng đời khái niệm](product/scope.md
 | Media | WebRTC, mediasoup v3, mediasoup-client | Lựa chọn dự kiến, qua ADR-001/PoC trước khi Accepted |
 | Audio | Web Audio API/GainNode | Một output path/track; discussion và priority riêng |
 | Board | Canvas 2D, pointer events | Tọa độ chuẩn hóa, server ordering, undo của mình |
-| Files | Private disk volumes + API | Upload HTTP, kiểm quyền khi tải; không public static directory |
+| Files | Cloudflare R2 riêng tư cho ảnh chat/tài liệu/ảnh giữ hình/video; avatar ở Cloudinary | API M2 kiểm quyền tải/phát/tua; không mở bucket công khai hoặc dùng ổ đĩa máy chủ làm kho lâu dài. Cập nhật M2 ngày 05/11/2026 theo [proposal](proposals/m2-messaging-files.md#5-high-level-design); tệp tạm video còn chờ thử với M3. |
 | Deploy | VPS Linux + Compose + Nginx + coturn | Staging tuần 1; một app instance; port media trực tiếp |
 | CI | GitHub Actions | Lint/typecheck/tests/build; image theo commit SHA |
 
@@ -301,9 +301,9 @@ Browser có thể sửa mọi request. Server tự tra actor/owner/scope/permiss
 | Consumer | Một/participant/producer |
 | Share picker lease / freeze intent | 30 giây / 15 giây |
 | Join/resume ticket | 60 giây, một lần, rotate |
-| Control lease / socket grace | 30 giây / tối đa 30 giây sau disconnect/lease expiry |
+| Control lease / reconnect grace | 30 giây / tối đa 30 giây sau disconnect/lease expiry |
 | Heartbeat app | 5 giây khi kết nối; server rate limit và theo dõi deadline |
-| Empty room grace | 60 giây |
+| Empty room grace | Không dùng; end ngay khi không còn participant hoặc ownership trong reconnect grace |
 | Announcement | Tối đa 30 giây; factor discussion thử ban đầu 0,3 |
 | Auth session | 7 ngày khởi đầu; expiry tuyệt đối và revoke server |
 | Login rate limit | Thử ban đầu 5 lần thất bại/phút/IP+account; tuning tránh khóa nhầm |
@@ -600,6 +600,6 @@ Quyết định này thay cách hiểu host có thể vào hỗ trợ mọi lo�
 
 RECORD-01 theo [nguồn nghiệp vụ](product/recording.md): host điều khiển ghi màn hình/camera/âm thanh MAIN; lưu theo phiên để thành viên còn quyền kênh xem. Không ghi nhóm riêng hoặc chuyển recorder theo host hỗ trợ. Chưa có implementation hoặc benchmark. Proposal M3 chủ trì, M4 cung cấp host/scope/lifecycle, M2 lưu/phục vụ byte/ACL, M1 quyền kênh.
 
-Cần chọn capture/composition/encode, bố cục/số camera/codec và cách phát, trạng thái xử lý, idempotency, cleanup khi stop/end/error/restart, quota/retention/quyền xóa. Chưa chốt thư viện, topology recorder, collection hoặc schema executable. Không coi recorder là participant được nghe mọi scope. Không giữ queue/mutex phiên khi chờ encode/lưu file; task phải thiết kế gate tài nguyên và giao diện cleanup. Đo CPU/RAM/disk/network cùng media/chat/board/TURN trước khi chốt capacity; PoC clip vài phút không là giới hạn thời lượng sản phẩm. REC-01 vẫn là reconnect, không dùng mã đó cho recording.
+Cần chọn capture/composition/encode, bố cục/số camera/codec và cách phát, trạng thái xử lý, idempotency, cleanup khi stop/end/error/restart, quota/retention/quyền xóa. Delta collection/index theo [schema recordings bàn giao](database/recordings-schema.md) đã có trên main 7c4320f qua PR #27: tối đa 3 tiếng/đoạn, READY giữ vô thời hạn; profile MP4/H264/AAC cần PoC, quota và quyền xóa sau parent deletion còn mở; chưa có thư viện/topology đã kiểm chứng hoặc schema executable. Không coi recorder là participant được nghe mọi scope. Không giữ queue/mutex phiên khi chờ encode/lưu file; task phải thiết kế gate tài nguyên và giao diện cleanup. Đo CPU/RAM/disk/network cùng media/chat/board/TURN trước khi chốt capacity; PoC clip vài phút không là giới hạn thời lượng sản phẩm. REC-01 vẫn là reconnect, không dùng mã đó cho recording.
 
 Cập nhật scope 03/11/2026: chuyển owner Workspace không thuộc MVP; người tạo giữ OWNER và có thể cấp ADMIN. Không triển khai route owner-transfer; chuyển host cuộc họp không bị ảnh hưởng. Nguồn: [scope](product/scope.md).

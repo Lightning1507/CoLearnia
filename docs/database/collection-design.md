@@ -1,5 +1,7 @@
 # Bước 4 — Thiết kế collection và document MongoDB
 
+**Cập nhật recording ngày 05/11/2026:** phần 13 collection trước recording giữ làm baseline cũ; delta `recordings` và `files: RECORDING` theo [schema bàn giao](recordings-schema.md), đã được proposal M2 nhận làm thiết kế. Main 7c4320f (PR #27) đã nhận schema/đề xuất M3 và chốt tối đa 3 tiếng/đoạn, READY giữ vô thời hạn; profile MP4/H264/AAC cần PoC; quota, bản tạm/lỗi và xóa byte sau parent deletion còn cần review. Các ghi chú recording “chưa có field/index” bên dưới phản ánh mốc trước delta; chưa có schema/index/migration thực thi hoặc test sản phẩm đạt.
+
 **Trạng thái:** thiết kế kỹ thuật để review ngày 01/11/2026, trong phạm vi bước 4 đã được giao. Chưa tạo Mongoose schema, đổi Zod, tạo index hoặc chạy migration/seed/DB. Quy tắc sản phẩm lấy từ [messaging](../product/messaging.md), [group modes](../product/group-modes.md) và [live session](../product/live-session.md); mô hình này không giải quyết thay các điểm nghiệp vụ còn mở.
 
 Đầu vào: [46 UC ↔ dữ liệu](uc-data-map.md), [16 khái niệm](conceptual-model.md), [nơi lưu/vòng đời bước 3](lifecycle.md). [Model](model.md) giữ mục lục và các ràng buộc baseline; tài liệu này sở hữu cấu trúc document đích. [Bước 5](integrity-and-migrations.md) đặc tả index/options, validation, concurrency và kế hoạch migration/kiểm thử; chưa triển khai thực thi.
@@ -221,8 +223,8 @@ Không lưu displayName snapshot, read receipt, typing, reaction, editedAt/delet
 - FRAME: scope = { sessionId: Id, epoch: RuntimeId, boardId: RuntimeId, contextVersion: Int, groupId: RuntimeId }; binding = { kind: BOARD_FRAME, intentId: RuntimeId }. FRAME chỉ thuộc DISCUSSION/ACTIVITY, groupId bắt buộc; MAIN không freeze nên không có FRAME; board/context/intent phải còn hợp lệ trong runtime. Nguồn/source revision được kiểm bằng intent/board runtime; không suy source hoặc quyền chỉ từ metadata file.
 - Khi resume/đóng scope làm hết ref: thu quyền bằng runtime trước, cập nhật lịch dọn; file đang được board dùng không bị dọn chỉ vì createdAt cũ. Sau crash bootstrap đóng đời runtime cũ rồi sweep đối chiếu refs.
 - Một file chỉ bind một đích; message có 0..4 file theo cấu hình khởi đầu, một frame dùng một file ảnh. Muốn gửi ảnh từ canvas qua chat đi luồng upload attachment riêng, không đổi purpose/scope/binding của frame đang dùng.
-- Upload STAGED không là tệp thành công để download. Orphan hoặc DELETE_PENDING vẫn giữ storageKey/scope đủ để job xóa byte idempotent trước khi xóa metadata. Không dùng TTL files như cách duy nhất dọn disk.
-- Byte quota Workspace và quota tạm phiên khác nhau; reservedBytes không là tính năng quota mới. [Bước 5](integrity-and-migrations.md) chọn aggregate file metadata/reservation dưới Workspace gate của một process, đối chiếu disk sau crash; chưa là thuật toán đã kiểm chứng.
+- Upload STAGED không là tệp thành công để download. Orphan hoặc DELETE_PENDING vẫn giữ storageKey/scope đủ để job xóa byte idempotent trước khi xóa metadata. Không dùng TTL files như cách duy nhất dọn nội dung R2.
+- Byte quota Workspace và quota tạm phiên khác nhau; reservedBytes không là tính năng quota mới. [Bước 5](integrity-and-migrations.md) chọn aggregate file metadata/reservation dưới Workspace gate của một process, đối chiếu R2 sau crash; chưa là thuật toán đã kiểm chứng.
 
 Các cấu trúc scope/binding ở đây thay field accessRef tổng quát của khung cũ bằng cấu trúc có kiểu; không giữ cả hai bản authority. Validator + transition checks cho STAGED/READY/DELETE_PENDING lấy tại integrity; không để client tùy ý patch. Download đang mở phải được đăng ký để revoke/expiry hủy stream mà không giữ gate suốt lượt tải; byte đã gửi không thể thu hồi.
 
@@ -240,7 +242,7 @@ Các cấu trúc scope/binding ở đây thay field accessRef tổng quát của
 
 Một phiên ACTIVE/ENDING mỗi kênh theo baseline. policyRevision, phase, host tạm/đích hoàn quyền, help, nhóm, round/deadline và source leases là **runtime**, không coi revision DB là mọi policyRevision của phiên. Chuyển host phải cập nhật metadata/runtime có kiểm quyền và reconcile theo lifecycle; cách CAS/commit cụ thể ở bước 5.
 
-hostUserId phải tương ứng participant hợp lệ khi giữ quyền. Null không tự quyết định nhánh không có ứng viên hoặc host tạm mất mạng; hai nhánh đó vẫn cần chốt tại nguồn. Không phục hồi phiên ACTIVE từ DB sau process restart.
+hostUserId phải tương ứng participant hợp lệ khi giữ quyền. Null không tự quyết định nhánh không có ứng viên hoặc host tạm mất mạng; hai nhánh đó theo policy đã chốt tại nguồn. Không phục hồi phiên ACTIVE từ DB sau process restart.
 
 ### 3.12. sessionParticipants
 
