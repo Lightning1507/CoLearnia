@@ -42,3 +42,7 @@ Quy tắc board hiện hành ở [board](../board-collaboration.md) và [HS-05 b
 ## Hai quyết định nhóm bổ sung sau xác nhận bản vẽ ngày 02/11/2026
 
 Tài liệu nghiệp vụ vừa cập nhật: UC-GRP-12 chỉ áp ACTIVITY, DISCUSSION hỏi/trả lời riêng với host tại MAIN; UC-GRP-08 có nhánh người cuối cùng chủ động rời DISCUSSION đã có người làm nhóm tự đóng. Không thêm oval/UC mới. Các xác nhận Astah/PNG phía trên giữ nguyên cho lần cập nhật trước; **lượt sửa tài liệu này chưa chỉnh hoặc kiểm lại Astah/PNG theo hai quyết định nhóm mới**. Khi cập nhật bản vẽ, dùng cùng file hiện hành, đối chiếu điều kiện/ghi chú GRP-12 và nhánh rời DISCUSSION theo HS-02/HS-06; không tạo file Astah mới.
+
+## Delta nghiệp vụ ngày 04/11/2026 cần cập nhật hình
+
+Bỏ oval/luồng UC-GRP-07 host điều chuyển; member tự vào lại đúng ACTIVITY đã phân, host chỉ help. DISCUSSION disconnect thu membership ngay/nhóm rỗng đóng; host rớt thay tạm ngay; không empty grace. Astah/PNG chưa được sửa/xuất lại trong lượt tài liệu này; đối chiếu [nguồn nhóm](../group-modes.md) và [host/reconnect](../live-session.md) trước dùng hình làm baseline.

@@ -8,14 +8,14 @@
 
 Chỉ đặc tả 6 luồng quan trọng, không viết đặc tả riêng toàn bộ danh mục. [Danh mục UC](../use-case-catalog.md) và [actor/tổng quan](../use-case-outline.md) vẫn giữ mã và cấu trúc đã thống nhất. Mã HS là hồ sơ luồng, **không phải UC mới**. Một hồ sơ có thể chứa nhiều UC thực hiện khác thời điểm/actor; các giai đoạn ghi rõ mã sở hữu. Không dùng việc đặt chung hồ sơ để suy ra include, extend hoặc gộp các UC trên sơ đồ.
 
-| Hồ sơ                              | Nội dung                                     | UC được đặc tả trong hồ sơ                                                                  | Feature / backlog                         |
-| ---------------------------------- | -------------------------------------------- | ------------------------------------------------------------------------------------------- | ----------------------------------------- |
-| [HS-01](01-join-meeting.md)        | Vào cuộc họp; nhánh xác lập và phục hồi host | UC-LIVE-01; nhánh phục hồi host liên quan UC-GRP-01, không thay đặc tả chuyển host chủ động | LIVE-01/02, HOST-01, REC-01 / PB-05/07/11 |
-| [HS-02](02-discussion.md)          | Tạo và chủ động vào DISCUSSION               | UC-GRP-02/04; GRP-03 ngừng áp dụng; tự về MAIN tham chiếu UC-GRP-08                         | GRP-01/02 / PB-07                         |
-| [HS-03](03-activity.md)            | Tổ chức và kết thúc lượt ACTIVITY            | UC-GRP-05/06/11; nhánh UC-GRP-07/08; kết thúc tự động theo deadline                         | GRP-01/02, TIMER-01 / PB-07/10/14         |
-| [HS-04](04-screen-sharing.md)      | Chia sẻ và dừng nguồn màn hình theo scope    | UC-LIVE-05, bao gồm thao tác dừng đã gộp vào luồng                                          | LIVE-03 / PB-05                           |
-| [HS-05](05-board-collaboration.md) | Freeze, vẽ chung và resume                   | UC-BOARD-01/02/05; undo/clear là nhánh trong UC-BOARD-02                                    | BOARD-01, FREEZE-01 / PB-06               |
-| [HS-06](06-private-help.md)        | Chat đúng đích và host hỗ trợ riêng nhóm     | UC-LIVE-08/09, UC-GRP-12                                                                    | HELP-01 / PB-09                           |
+| Hồ sơ                              | Nội dung                                     | UC được đặc tả trong hồ sơ                                                                        | Feature / backlog                         |
+| ---------------------------------- | -------------------------------------------- | ------------------------------------------------------------------------------------------------- | ----------------------------------------- |
+| [HS-01](01-join-meeting.md)        | Vào cuộc họp; nhánh xác lập và phục hồi host | UC-LIVE-01; nhánh phục hồi host liên quan UC-GRP-01, không thay đặc tả chuyển host chủ động       | LIVE-01/02, HOST-01, REC-01 / PB-05/07/11 |
+| [HS-02](02-discussion.md)          | Tạo và chủ động vào DISCUSSION               | UC-GRP-02/04; GRP-03 ngừng áp dụng; tự về MAIN tham chiếu UC-GRP-08                               | GRP-01/02 / PB-07                         |
+| [HS-03](03-activity.md)            | Tổ chức và kết thúc lượt ACTIVITY            | UC-GRP-05/06/11; nhánh UC-GRP-08 và vào lại đúng ACTIVITY đã phân; kết thúc tự động theo deadline | GRP-01/02, TIMER-01 / PB-07/10/14         |
+| [HS-04](04-screen-sharing.md)      | Chia sẻ và dừng nguồn màn hình theo scope    | UC-LIVE-05, bao gồm thao tác dừng đã gộp vào luồng                                                | LIVE-03 / PB-05                           |
+| [HS-05](05-board-collaboration.md) | Freeze, vẽ chung và resume                   | UC-BOARD-01/02/05; undo/clear là nhánh trong UC-BOARD-02                                          | BOARD-01, FREEZE-01 / PB-06               |
+| [HS-06](06-private-help.md)        | Chat đúng đích và host hỗ trợ riêng nhóm     | UC-LIVE-08/09, UC-GRP-12                                                                          | HELP-01 / PB-09                           |
 
 Actor dùng A-00/A-03/A-04/A-05/A-07 theo bản tổng quan đã rút gọn ngày 29/10/2026. Hành vi thành viên trong cuộc họp dùng A-03, kể cả khi đồng thời là host; hành vi điều hành và quyền vẽ MAIN chỉ dành cho host dùng A-07. Đã vào phiên và quyền scope là điều kiện thực hiện. Backend, bộ đếm giờ và cơ chế phục hồi là xử lý của CoLearnia, không thêm actor hệ thống nội bộ.
 

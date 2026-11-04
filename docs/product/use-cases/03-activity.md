@@ -12,7 +12,7 @@ Host tổ chức các nhóm độc lập với MAIN, thiết lập thời lượ
 | UC-GRP-06 · Bắt đầu lượt hoạt động nhóm   | A-07; A-03 được phân   | Bắt đầu lượt có thời lượng hợp lệ; đóng DISCUSSION trước, đưa người vào nhóm độc lập                 |
 | UC-GRP-11 · Đặt thời lượng lượt hoạt động | A-07; A-03 theo dõi    | Host thiết lập thời lượng chung khi tổ chức; khi bắt đầu thành công có deadline, hết giờ tự kết thúc |
 
-UC-GRP-07 điều chuyển người và UC-GRP-08 tự về MAIN là các luồng liên quan. UC-GRP-09 chỉ còn dùng cho host đóng DISCUSSION; không dùng làm thao tác host kết thúc ACTIVITY. Host kết thúc toàn cuộc họp vẫn thuộc UC-LIVE-10, khác phạm vi hồ sơ này.
+UC-GRP-07 điều chuyển người ngừng áp dụng từ 04/11/2026. Thành viên tự về MAIN và vào lại đúng ACTIVITY đã phân còn mở; host không điều chuyển người. UC-GRP-09 chỉ còn dùng cho host đóng DISCUSSION; không dùng làm thao tác host kết thúc ACTIVITY. Host kết thúc toàn cuộc họp vẫn thuộc UC-LIVE-10, khác phạm vi hồ sơ này.
 
 ## Điều kiện và kết quả riêng từng UC
 
@@ -56,7 +56,7 @@ UC-GRP-07 điều chuyển người và UC-GRP-08 tự về MAIN là các luồn
 | HS-03-E01 | A1–4    | Phân công stale hoặc thành viên mất quyền     | Báo host xem lại cấu hình; quay A1, không bắt đầu bằng dữ liệu lỗi                                                                                                                                     |
 | HS-03-E02 | A2–4    | Actor không còn host hoặc đã có lượt khác     | Từ chối lệnh stale, trả trạng thái hiện hành; không điều khiển lượt khác                                                                                                                               |
 | HS-03-E03 | A5–6    | Lỗi sau đóng DISCUSSION hoặc chuyển một phần  | Hủy lượt chưa hoàn tất, thu ACTIVITY/deadline/tài nguyên mới, đưa người còn quyền về MAIN/pause mic. Không khôi phục DISCUSSION; chỉ báo đã hủy sau cleanup. Host có thể kiểm lại rồi bắt đầu lượt mới |
-| HS-03-E04 | B       | Host điều chuyển người — UC-GRP-07            | Kiểm đích/phase/quyền, thu scope cũ trước khi cấp mới, đóng share người rời; không mang chat/board theo, không reset deadline                                                                          |
+| HS-03-E04 | B       | Vào lại ACTIVITY đã phân                      | Thành viên tự vào lại đúng nhóm còn mở/còn quyền, không vào nhóm khác; host không move và chỉ vào bằng help. UC-GRP-07 cũ ngừng áp dụng                                                                |
 | HS-03-E05 | B       | Thành viên về sớm — UC-GRP-08                 | Theo B2–3; chỉ ảnh hưởng người bấm, không kết thúc nhóm/lượt cho người khác                                                                                                                            |
 | HS-03-E06 | B/C     | Callback deadline trễ/lặp hoặc thuộc lượt cũ  | Reconcile deadline server của lượt hiện hành; không kết thúc lượt mới bởi callback cũ. Cleanup idempotent; không cho thao tác nhóm quá hạn tiếp tục vì callback chưa chạy                              |
 | HS-03-E07 | A1–4    | Duration không hợp lệ                         | Từ chối, quay A1 để sửa trước khi bắt đầu. Chỉ nhận số nguyên từ 1 đến 120 phút; không sửa/gia hạn/tạm dừng lượt đang chạy                                                                             |
@@ -91,7 +91,7 @@ Tham chiếu [quality scenarios](../../technical-plan.md#142-quality-scenarios):
 
 ## Vị trí trên sơ đồ
 
-UC-GRP-05/06/11 và UC-GRP-07 thuộc điều hành; UC-GRP-08 tự về MAIN thuộc tham gia nhóm. Luồng tự kết thúc khi hết giờ không tạo oval/actor mới. UC-GRP-09 chỉ dành cho DISCUSSION theo [danh mục](../use-case-catalog.md). Trạng thái kiểm bản Astah/PNG ghi tại [trạng thái bản vẽ](../diagrams/README.md).
+UC-GRP-05/06/11 thuộc điều hành; UC-GRP-07 đã ngừng áp dụng; UC-GRP-08 tự về MAIN thuộc tham gia nhóm. Luồng tự kết thúc khi hết giờ không tạo oval/actor mới. UC-GRP-09 chỉ dành cho DISCUSSION theo [danh mục](../use-case-catalog.md). Trạng thái kiểm bản Astah/PNG ghi tại [trạng thái bản vẽ](../diagrams/README.md).
 
 ## Chuẩn bị bằng random — cập nhật sau kickoff
 
