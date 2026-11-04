@@ -249,7 +249,7 @@ Workspace shell có general/kênh, danh sách DM của chính mình và panel th
 
 RoomPage có nguồn hợp lệ theo MAIN/DISCUSSION/ACTIVITY hoặc frame đã freeze của nhóm hiện tại (MAIN không freeze), camera tiles, danh sách người, chat, scope badge, mic/camera/share/volume/board controls. Hiển thị rõ “MIC trong nhóm / toàn phòng / đang hỗ trợ” và “hình đã dừng, tiếng vẫn trực tiếp”. Mọi chuyển phạm vi công bố phải nhìn thấy được. Chat/panel chuyển tab không unmount call controller.
 
-Không tạo màn hình quiz/library hoặc đồng hồ ngoài countdown TIMER-01, hoặc hai ứng dụng độc lập cho phòng nhóm và lớp học. Cập nhật 03/11: PROFILE-01 gồm sửa tên hiển thị/avatar và đổi mật khẩu hiện tại; quên mật khẩu để sau MVP. Avatar phối hợp nền file M2, không tự dùng public URL; ảnh gửi chat/tệp vẫn thuộc scope.
+Không tạo màn hình quiz/library hoặc đồng hồ ngoài countdown TIMER-01, hoặc hai ứng dụng độc lập cho phòng nhóm và lớp học. Cập nhật 03/11: PROFILE-01 gồm sửa tên hiển thị/avatar và đổi mật khẩu hiện tại; quên mật khẩu để sau MVP. Cập nhật 04/11: avatar lưu Cloudinary, công khai qua URL; chỉ chính chủ thay/xóa. M2 phối hợp upload và cleanup. Quyền ảnh/file chat và video cuộc họp giữ nguyên.
 
 ### 12.2. Repository
 
@@ -348,7 +348,7 @@ Thu ít nhất 20 mẫu cho thao tác lặp Q-01/Q-03/Q-04/Q-06, báo p50/p95 v�
 | ID | Phạm vi | Ca quan trọng | Owner/reviewer |
 |---|---|---|---|
 | T-01 | Auth/Workspace | Sai Workspace/channel, tự nâng role, đổi ADMIN/MEMBER đúng quyền, hết auth khi socket mở | A/C |
-| T-02 | DB concurrency | Invitation maxUses, join channel, rollback Workspace/general, DM đồng thời, message/reply dedupe và reply count | A/E |
+| T-02 | DB concurrency | Invitation một link hiện hành, tắt/tạo lại đồng thời accept, join channel, rollback Workspace/general, DM đồng thời, message/reply dedupe và reply count | A/E |
 | T-03 | Camera/mic/share | Hai mạng, device denied, MAIN tranh lease/browser Stop; DISCUSSION deny screen; ACTIVITY member tự share, cùng nhóm chỉ một nguồn, hai nhóm độc lập, nguồn bận không giành | B/D |
 | T-04 | Publish/consume | Giả nguồn/owner/transport/grant; Consumer ready sau revoke; duplicate receive | B/C |
 | T-05 | Group modes/isolation | Create hợp lệ tạo DISCUSSION tự động, roster chưa cấp private tới khi join; phase ACTIVITY chặn create/join; random preview không cấp scope; ACTIVITY không nhận MAIN; host help chỉ ACTIVITY; leave/revoke không lộ nội dung | C/B |

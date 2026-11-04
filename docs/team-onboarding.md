@@ -200,4 +200,6 @@ DISCUSSION không chờ host: thành viên chọn Tạo nhóm trao đổi, hệ 
 
 Host có ghi hình MAIN gồm màn hình, camera và âm thanh; mọi người biết đang ghi. Video theo phiên để thành viên còn quyền kênh xem lại, không ghi nhóm riêng. Demo dự kiến clip vài phút; pipeline/lưu trữ chưa triển khai, Figma/ảnh minh họa có thể còn bước duyệt cũ. [Recording](product/recording.md).
 
-Hồ sơ cá nhân bổ sung ngày 03/11: người dùng sửa tên hiển thị/avatar và đổi mật khẩu bằng mật khẩu hiện tại; quên mật khẩu để sau MVP. M1 phụ trách luồng, M2 phối hợp file avatar.
+Hồ sơ cá nhân bổ sung ngày 03/11: người dùng sửa tên hiển thị/avatar và đổi mật khẩu bằng mật khẩu hiện tại; quên mật khẩu để sau MVP. M1 phụ trách luồng, M2 phối hợp Cloudinary. Cập nhật 04/11: avatar công khai qua URL; chỉ chính chủ thay/xóa, không đổi quyền file chat/video.
+
+**Link mời Workspace:** owner/admin sao chép một link dùng chung, không hết hạn/giới hạn lượt. Ai có link hợp lệ đều có thể đăng nhập rồi xác nhận tham gia; owner/admin có thể tắt hoặc tạo lại link. Kênh PRIVATE vẫn cần được cấp quyền riêng.

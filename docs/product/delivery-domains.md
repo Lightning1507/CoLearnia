@@ -174,4 +174,4 @@ Nguồn [recording](recording.md); không tự chọn thư viện hay thêm Redi
 
 ### Bổ sung hồ sơ ngày 03/11/2026
 
-FR-01-04–06 do M1 phụ trách chính; M2 cung cấp nền file avatar và cleanup, không nhận thêm FR chính. Avatar cần binding/ACL theo User, không mặc định dùng scope của tin nhắn. Tổng hiện hành 58 FR: M1 17, M2 11, M3 9, M4 16, M5 5; cần tính thêm effort hỗ trợ M2 trong proposal của M2.
+FR-01-04–06 do M1 phụ trách chính; M2 cung cấp nền file avatar và cleanup, không nhận thêm FR chính. Cập nhật 04/11: avatar lưu Cloudinary, công khai qua URL; chỉ chính chủ thay/xóa. M1 lưu metadata trên User, M2 phối hợp upload đã xác minh và cleanup; không dùng scope tin nhắn. Tổng hiện hành 58 FR: M1 17, M2 11, M3 9, M4 16, M5 5; cần tính thêm effort hỗ trợ M2 trong proposal của M2.
