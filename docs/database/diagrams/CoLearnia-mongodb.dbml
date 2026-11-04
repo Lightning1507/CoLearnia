@@ -60,15 +60,13 @@ Table memberships {
 }
 
 Table invitations {
-  Note: 'Link mời theo Workspace; không lưu token raw. uses tăng chỉ khi gia nhập thật.'
+  Note: 'Một link hiện hành/Workspace, không hạn/lượt. tokenHash chưa đủ để sao chép lại link; field lưu/tái tạo token còn chờ review M1 theo collection-design 3.5.'
   _id ObjectId [pk, not null]
-  workspaceId ObjectId [not null, note: 'Id → workspaces/users; Phạm vi và actor phát hành']
-  createdByUserId ObjectId [not null, note: 'Id → workspaces/users; Phạm vi và actor phát hành']
-  tokenHash String [not null, unique, note: 'String, private; Tra link mà không lưu token raw']
-  expiresAt BSONDate [not null, note: 'Date; Hết hạn kiểm server']
-  revokedAt BSONDate [null, note: 'Date hoặc null; Thu hồi chặn nhận mới']
-  maxUses Number [not null, note: 'Int >0; Giới hạn lượt của link theo baseline']
-  uses Number [not null, note: 'Int ≥0; Lượt nhận thành công, không tính user đã ACTIVE']
+  workspaceId ObjectId [not null, unique]
+  createdByUserId ObjectId [not null]
+  tokenHash String [not null, unique, note: 'Xác minh token hiện hành; thay khi tạo lại']
+  enabled Boolean [not null]
+  revision Number [not null, note: 'Int >=0; tăng khi tắt/tạo lại']
   createdAt BSONDate [not null]
   updatedAt BSONDate [not null]
 }

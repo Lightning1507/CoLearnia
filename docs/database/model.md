@@ -14,21 +14,21 @@ Mục 9.1–9.2 giữ số từ [technical plan](../technical-plan.md) để tru
 
 Thiết kế có **13 collection**: 12 collection baseline và channelAccessGrants biểu diễn quyền PRIVATE theo UC-WS-15. Collection mới là quan hệ quyền đã được đồng ý, không thêm tính năng hay actor.
 
-| Collection          | Vai trò và quyết định chính                                                                          |
-| ------------------- | ---------------------------------------------------------------------------------------------------- |
-| users               | Danh tính và thông tin xác thực; không nhúng membership                                              |
-| authSessions        | Phiên xác thực/tokenHash, expiry/revoke server                                                       |
-| workspaces          | Owner duy nhất trong từng Workspace, revision và tombstone                                           |
-| memberships         | Một cặp Workspace/user, role/status; incarnation tăng khi rejoin sau bị loại                         |
-| invitations         | Link mời có tokenHash, hạn/thu hồi/giới hạn lượt                                                     |
-| channels            | TEXT/LIVE và WORKSPACE/PRIVATE; không nhúng mảng quyền                                               |
-| channelAccessGrants | Grant theo channel/membership/incarnation; thay allowedUserIds, không tự phục hồi PRIVATE sau rejoin |
-| conversations       | CHANNEL/DIRECT/SESSION/GROUP/HOST_PRIVATE; scope theo kind, đóng/purge                               |
-| messages            | Tin/reply độc lập, dedupe, root reference và attachment IDs                                          |
-| files               | Metadata có purpose/scope/binding và lịch dọn; byte ở kho private                                    |
-| liveSessions        | Metadata lifecycle/host/epoch; không thay SessionRuntime                                             |
-| sessionParticipants | Metadata tham gia/vị trí gần nhất, không cấp quyền runtime                                           |
-| auditEvents         | Actor/action/target/kết quả; không chép nội dung riêng                                               |
+| Collection          | Vai trò và quyết định chính                                                                                          |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| users               | Danh tính và thông tin xác thực; không nhúng membership                                                              |
+| authSessions        | Phiên xác thực/tokenHash, expiry/revoke server                                                                       |
+| workspaces          | Owner duy nhất trong từng Workspace, revision và tombstone                                                           |
+| memberships         | Một cặp Workspace/user, role/status; incarnation tăng khi rejoin sau bị loại                                         |
+| invitations         | Một link hiện hành/Workspace, bật/tắt/tạo lại, không hạn/lượt; cách lưu/tái tạo token để sao chép lại còn chờ review |
+| channels            | TEXT/LIVE và WORKSPACE/PRIVATE; không nhúng mảng quyền                                                               |
+| channelAccessGrants | Grant theo channel/membership/incarnation; thay allowedUserIds, không tự phục hồi PRIVATE sau rejoin                 |
+| conversations       | CHANNEL/DIRECT/SESSION/GROUP/HOST_PRIVATE; scope theo kind, đóng/purge                                               |
+| messages            | Tin/reply độc lập, dedupe, root reference và attachment IDs                                                          |
+| files               | Metadata có purpose/scope/binding và lịch dọn; byte ở kho private                                                    |
+| liveSessions        | Metadata lifecycle/host/epoch; không thay SessionRuntime                                                             |
+| sessionParticipants | Metadata tham gia/vị trí gần nhất, không cấp quyền runtime                                                           |
+| auditEvents         | Actor/action/target/kết quả; không chép nội dung riêng                                                               |
 
 Kiểu field, required/null, enum thiết kế và điều kiện theo loại ở [bước 4](collection-design.md). Không có SavedArtifact, polls, votes, timer, request/group/board/stroke collection trong thiết kế hiện tại. GroupRuntime và board/nét ở RAM; conversation/file giữ refs đủ để khóa và dọn sau khi runtime mất.
 
@@ -66,4 +66,4 @@ DISCUSSION không còn request chờ host; E11 là thao tác tạo được ki�
 
 ## Delta PROFILE-01 ngày 03/11/2026
 
-M1 bổ sung ACC-04/05 và FR-01-04–06: sửa displayName/avatar và đổi mật khẩu hiện tại; quên mật khẩu để sau MVP. User cần tham chiếu avatar, file cần nguồn tạo/đọc/binding/cleanup theo chủ hồ sơ; không mặc định ghép vào CHANNEL/FRAME. Nghiệp vụ đã chốt: đổi mật khẩu thành công thu tất cả phiên của tài khoản và socket/media liên quan; avatar chỉ chính chủ hoặc người đã đăng nhập có chung Workspace còn hiệu lực được xem. Thiết kế thu phiên, binding/ACL file và cleanup cần review M1/M2/M4 trong [proposal](../proposals/m1-workspace-auth.md) trước implementation. Bộ 13 collection/index hiện tại chưa chứng minh bao phủ delta này; chưa thêm collection/index/validator hoặc thực thi migration.
+M1 bổ sung ACC-04/05 và FR-01-04–06: sửa displayName/avatar và đổi mật khẩu hiện tại; quên mật khẩu để sau MVP. Cập nhật 04/11: avatar lưu trên Cloudinary, công khai qua URL; chỉ chính chủ được thay/xóa. MongoDB giữ metadata ảnh trên User; xem cấu trúc đề xuất tại [collection-design](collection-design.md#31-users). Không áp dụng cách truy cập công khai này cho file chat hoặc video cuộc họp. Đổi mật khẩu vẫn thu tất cả phiên và socket/media liên quan. Luồng upload, xác minh ảnh và dọn ảnh cũ cần M1/M2 review theo [proposal](../proposals/m1-workspace-auth.md); chưa triển khai schema/index/migration.

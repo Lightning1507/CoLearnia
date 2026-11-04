@@ -26,7 +26,7 @@ Tên trạng thái trong bảng diễn đạt vòng đời; field/enum thiết k
 | E01 User · ACC-01/02                                | MongoDB; auth service sở hữu danh tính                                                  | Đăng ký, kiểm trạng thái khi xác thực; hash được bảo vệ                                         | Logout chỉ thu phiên xác thực, không xóa User. Chưa có UC xóa tài khoản hoặc thời hạn purge User                                                                                                                                                    |
 | E02 Workspace · WS-01/03/04/11                      | MongoDB; Workspace service                                                              | Tạo nguyên tử với owner membership/general/conversation; đổi tên/owner                          | Xóa khóa toàn bộ phạm vi ngay, kết thúc LIVE và khóa chat/file; dọn tệp theo 13.3. Không có restore UI                                                                                                                                              |
 | E03 Membership · WS-01/07/09/10/11                  | MongoDB; nguồn quyền Workspace hiện tại                                                 | Tạo/khôi phục tư cách qua lời mời, đổi role/owner                                               | Loại khỏi Workspace thu mọi truy cập liên quan và vô hiệu quyền PRIVATE cũ. Rejoin không tự khôi phục PRIVATE; DM theo quy tắc cả hai membership hợp lệ                                                                                             |
-| E04 Invitation · WS-05/06/07                        | MongoDB; hiệu lực/hạn/lượt sử dụng                                                      | Owner/admin tạo/thu hồi; nhận hợp lệ cập nhật lượt và membership                                | Hết hạn/thu hồi/hết lượt chặn nhận ngay, không phụ thuộc TTL. Không tự thêm thời hạn xóa metadata lời mời                                                                                                                                           |
+| E04 Invitation · WS-05/06/07                        | MongoDB; link hiện hành, trạng thái bật/tắt                                             | Owner/admin tạo/sao chép lại/tắt/tạo lại; nhận hợp lệ tạo hoặc khôi phục membership             | Không hết hạn/giới hạn lượt; link cũ sau tạo lại hoặc đã tắt bị từ chối. Tắt/đổi link không loại thành viên hiện có. Cơ chế lưu/tái tạo token còn chờ M1 review.                                                                                    |
 | E05 Channel · WS-12/13/14/15                        | MongoDB; loại/accessMode, danh sách quyền PRIVATE                                       | General sinh cùng Workspace; owner/admin tạo/đổi tên, thêm/gỡ quyền                             | Gỡ quyền thu content/file/LIVE; thêm lại mới mở lịch sử còn lưu. Xóa kênh khóa phạm vi và dọn theo 13.3; không đổi TEXT/LIVE hoặc WORKSPACE/PRIVATE sau tạo                                                                                         |
 | E06 Conversation · MSG và LIVE chat                 | MongoDB; loại, scope, hai bên nếu riêng, dấu đóng/purge                                 | TEXT có CHANNEL; mở DIRECT theo cặp; meeting tạo hội thoại đúng scope                           | CHANNEL/DIRECT tồn tại ngoài LIVE; SESSION/GROUP/HOST_PRIVATE khóa theo phạm vi tại 9.3. Thêm quyền kênh không mở lại hội thoại cuộc họp đã đóng                                                                                                    |
 | E07 Message · MSG-01/04/06, LIVE-08/09              | MongoDB; chat service, dedupe theo conversation/người gửi/lệnh                          | Gửi/reply với attachment binding; history lấy từ DB sau kiểm quyền                              | Cùng vòng đời E06, không thêm UC sửa/xóa tin. Reply không có vòng đời/ACL độc lập với kênh; crash trước ack không nhân tin khi retry                                                                                                                |
@@ -89,7 +89,7 @@ TTL MongoDB dọn document ở nền, không bảo đảm xóa đúng thời đi
 
 Các ca phải kiểm khi triển khai, chưa phải test đã chạy:
 
-1. Tạo Workspace lỗi giữa chừng không để thiếu owner/general/conversation; nhận lời mời đồng thời không nhân membership/lượt dùng.
+1. Tạo Workspace lỗi giữa chừng không để thiếu owner/general/conversation; nhận lời mời đồng thời không nhân membership.
 2. Gỡ quyền PRIVATE khi người đó đang chat/LIVE/tải file: mọi đường truy cập đều bị thu, thêm lại chỉ mở dữ liệu còn lưu theo vòng đời.
 3. Loại khỏi Workspace rồi mời lại: DM cũ mở khi cả hai hợp lệ; PRIVATE vẫn bị chặn tới khi owner/admin thêm lại.
 4. Create DISCUSSION đồng thời ACTIVITY/END hoặc retry: không nhân nhóm, không cấp quyền vượt phase.
@@ -119,13 +119,13 @@ Files CHANNEL/DIRECT chỉ gắn được vào đúng conversation tương ứng
 
 Mongo replica set một node được cấu hình từ dev/CI/staging. Transaction nhiều document cần deployment hỗ trợ; không gọi mediasoup hoặc chờ upload bên trong transaction DB. [MongoDB transactions](https://www.mongodb.com/docs/manual/core/transactions/).
 
-| Thao tác                 | Cách bảo đảm                                                                                        |
-| ------------------------ | --------------------------------------------------------------------------------------------------- |
-| Tạo Workspace            | Workspace + owner membership + general TEXT + conversation CHANNEL trong một transaction            |
-| Nhận invitation          | Kiểm expiry/revoke/maxUses và upsert membership trong transaction; user đã là member không tốn lượt |
-| Gửi message + attachment | Validate ACL và bind STAGED file cùng insert message; retry dùng unique clientMessageId             |
-| Create live session      | Khóa channel + unique DB; runtime Router chỉ được công bố khi metadata hợp lệ; failure cleanup      |
-| Kick/đổi quyền/xóa kênh  | Đặt deny barrier theo scope → đóng media/fanout → ghi DB → reconcile runtime → phát snapshot        |
+| Thao tác                 | Cách bảo đảm                                                                                                                                      |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Tạo Workspace            | Workspace + owner membership + general TEXT + conversation CHANNEL trong một transaction                                                          |
+| Nhận invitation          | Kiểm link hiện hành còn bật và upsert membership trong transaction dưới Workspace gate; tạo lại/tắt cùng gate; user ACTIVE trả membership hiện có |
+| Gửi message + attachment | Validate ACL và bind STAGED file cùng insert message; retry dùng unique clientMessageId                                                           |
+| Create live session      | Khóa channel + unique DB; runtime Router chỉ được công bố khi metadata hợp lệ; failure cleanup                                                    |
+| Kick/đổi quyền/xóa kênh  | Đặt deny barrier theo scope → đóng media/fanout → ghi DB → reconcile runtime → phát snapshot                                                      |
 
 Nếu DB lỗi sau thu media, không tự mở lại nguồn: participant nhận trạng thái cần resync, chỉ khôi phục sau khi xác thực DB và policy. Barrier phải chặn REST/file/socket liên quan, không chỉ handler kick. Sau crash, không có media runtime cũ; bootstrap đánh dấu phiên cũ ENDED và đóng conversation private trước khi cho join mới.
 
@@ -183,6 +183,6 @@ Quyền xem kiểm membership và channel access hiện tại, kể cả PRIVATE
 
 ## Delta PROFILE-01 ngày 03/11/2026
 
-M1 bổ sung ACC-04/05 và FR-01-04–06: sửa displayName/avatar và đổi mật khẩu hiện tại; quên mật khẩu để sau MVP. User cần tham chiếu avatar, file cần nguồn tạo/đọc/binding/cleanup theo chủ hồ sơ; không mặc định ghép vào CHANNEL/FRAME. Nghiệp vụ đã chốt: đổi mật khẩu thành công thu tất cả phiên của tài khoản và socket/media liên quan; avatar chỉ chính chủ hoặc người đã đăng nhập có chung Workspace còn hiệu lực được xem. Thiết kế thu phiên, binding/ACL file và cleanup cần review M1/M2/M4 trong [proposal](../proposals/m1-workspace-auth.md) trước implementation. Bộ 13 collection/index hiện tại chưa chứng minh bao phủ delta này; chưa thêm collection/index/validator hoặc thực thi migration.
+M1 bổ sung ACC-04/05 và FR-01-04–06: sửa displayName/avatar và đổi mật khẩu hiện tại; quên mật khẩu để sau MVP. Cập nhật 04/11: avatar lưu trên Cloudinary, công khai qua URL; chỉ chính chủ được thay/xóa. MongoDB giữ metadata ảnh trên User; xem cấu trúc đề xuất tại [collection-design](collection-design.md#31-users). Không áp dụng cách truy cập công khai này cho file chat hoặc video cuộc họp. Đổi mật khẩu vẫn thu tất cả phiên và socket/media liên quan. Luồng upload, xác minh ảnh và dọn ảnh cũ cần M1/M2 review theo [proposal](../proposals/m1-workspace-auth.md); chưa triển khai schema/index/migration.
 
 Cập nhật 03/11: WS-11/FR-02-08 chuyển owner không còn thuộc MVP. Owner pointer và membership OWNER vẫn phải khớp từ lúc tạo; role management không được đổi OWNER. Các mô tả/test transfer cũ còn trong review là lịch sử, không yêu cầu xây luồng bàn giao. Chuyển host phiên LIVE vẫn giữ nguyên.
