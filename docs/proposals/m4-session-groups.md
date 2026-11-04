@@ -392,32 +392,117 @@ M4 cung cấp context hiện hành để M2/M5 kiểm quyền, không xử lý t
 
 ### 6.3 API, socket và contract dự kiến
 
-`group.join` nhận DISCUSSION thuộc roster trong GUIDANCE hoặc đúng ACTIVITY đã được phân của round còn mở. Không cho tự chọn ACTIVITY khác, không có `participant.move` hoặc host điều chuyển. Host chỉ vào ACTIVITY qua `host.help.enter`; draft không phân host hiện hành như member. `group.leave` chỉ đưa actor về MAIN.
+Contract dưới đây là thiết kế để frontend/backend review trước khi thêm Zod schema và handler; chưa phải chức năng đã chạy. Giữ một application service/policy cho mọi entrypoint. Mỗi bảng nêu rõ cách gọi, dữ liệu, kết quả, quyền và lỗi cần xử lý.
 
-**Envelope:** giữ `requestId`, `sessionId`, `epoch`, `callGeneration`, `expectedPolicyRevision`, payload strict theo command; actor lấy từ auth. IDs có kiểu đúng miền. Draft edit/start thêm `expectedDraftRevision`; đọc snapshot không bị yêu cầu khớp policyRevision cũ vì dùng để resync. Join ban đầu dùng ticket trước khi có participant envelope. Các field chi tiết phải được bên dùng review trước khi thêm schema.
+#### 6.3.1 REST — chuẩn bị tham gia cuộc gọi
 
-REST dùng tiền tố `/api/v1`; đường dẫn trong bảng được ghi tương đối dưới tiền tố này. Mutation HTTP theo contract cookie/CSRF của M1; handshake và lệnh socket kiểm danh tính/Origin theo cơ chế chung. Payload, ack và event đều dùng schema strict; hợp schema vẫn phải qua policy server.
+Prefix chung là `/api/v1`; đường dẫn dưới đây ghi đầy đủ để client gọi. Request/response strict, actor lấy từ cookie xác thực M1. Mutation HTTP kiểm CSRF/Origin theo contract chung. Thành công trả `{ data, requestId }`, lỗi trả `{ error: { code, message }, requestId }`; không trả token xác thực, đường dẫn storage hoặc raw DB error.
 
-| Entrypoint đề xuất                         | Input chính                                                                             | Output / kiểm quan trọng                                                                                                  |
-| ------------------------------------------ | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `POST /channels/:cid/live-session/join`    | Request ID; không nhận host/role client tự gán                                          | Session ID/epoch, ticket một lần hạn 60s; auth/channel access, unique phiên mở và rollback pending khi lỗi                |
-| `session.join`                             | Ticket; xác nhận takeover nếu cần theo contract M3/M4                                   | Participant/callGeneration + projection; ticket gắn user/auth/session/channel và kiểm lại quyền                           |
-| `session.resync`                           | Envelope hiện hành, requestId của lần resync và các mốc đã thấy                         | Snapshot lọc quyền cùng audienceEpoch, projectionSequence, policyRevision và server time; không mở lại scope từ cache     |
-| `session.leave`, `session.end`             | Envelope                                                                                | Kết quả rời của actor hoặc kết thúc phiên theo host hiện hành; host chủ động leave khi còn quyền cũng end                 |
-| `host.transfer`                            | Target participant, expected revision                                                   | Host mới và revision; không invite/accept, không trả private nhóm                                                         |
-| `group.createDiscussion`                   | Name, purpose, roster participant IDs                                                   | Group ID/roster hợp lệ, nút join theo projection; không membership tự động                                                |
-| `group.join`, `group.leave`                | Group ID khi join; leave actor hiện tại                                                 | Scope mới/revision; không sửa actor hoặc đi vào nhóm bằng ID ngoài roster                                                 |
-| `discussion.close`                         | Một group ID hoặc selector tất cả DISCUSSION                                            | Transition/kết quả đóng đúng nhóm; không nhận ACTIVITY làm đích                                                           |
-| `activity.prepare`, `activity.updateDraft` | MANUAL/RANDOM, selected participants, group count/assignments, duration, draft revision | Preview cùng draft revision; chưa chuyển người. Random chỉ trước start                                                    |
-| `activity.start`                           | Draft ID/revision + envelope                                                            | Round ID/deadline sau thành công, hoặc trạng thái đang hủy/hủy do lỗi; không nhận thời gian hết hạn từ client             |
-| `host.help.enter`, `host.help.leave`       | Group ACTIVITY đích khi enter                                                           | Scope hỗ trợ/MAIN và revision; leave giữ mic state qua adapter M3                                                         |
-| `announcement.start`, `announcement.stop`  | Envelope; không audience tùy ý                                                          | Quyền hướng dẫn MAIN/DISCUSSION, announcement ID/deadline và trạng thái; phối hợp M3                                      |
-| `screen.acquire`, `screen.release`         | Scope dự kiến, request ID; release kèm lease ID/generation                              | Giữ chỗ nguyên tử theo policy, không xin host; không cho release lease đời mới hoặc publish sau hết hạn                   |
-| `recording.start`, `recording.stop`        | Envelope; stop kèm recording ID/revision                                                | Host hiện hành; start intent và recording generation; stop ack xác nhận trạng thái tiếp nhận, READY theo kết quả finalize |
+| Method / path                                  | Request                                    | Response thành công / điều kiện quyền                                                                                                                                                                                                                      | Lỗi chính                                                                                                                                                                                    |
+| ---------------------------------------------- | ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| POST `/api/v1/channels/:cid/live-session/join` | Path `cid`: ObjectId; body `{ requestId }` | 200: `{ sessionId, epoch, ticket, expiresAt }`; ticket một lần, hạn 60 giây, gắn user/authSession/kênh/đời phiên. M1 kiểm membership và quyền đọc nội dung kênh LIVE. M4 tìm/tạo đúng một phiên mở, Router/metadata pending phải rollback/đối soát nếu lỗi | 400 INVALID_INPUT; 401 AUTH_REQUIRED; 403 FORBIDDEN/CSRF_INVALID; 404 NOT_FOUND khi không được biết kênh; 409 OPERATION_IN_PROGRESS khi phiên đang ENDING; 429 RATE_LIMITED; 503 SERVER_BUSY |
+
+Nhận ticket chưa là participant và chưa được nhận media/chat/board. Frontend dùng ticket gọi `session.join` trên socket đã xác thực; không gửi host/role/userId để tự cấp quyền. Mở lobby hoặc lấy ticket không tự ngắt cuộc gọi đang sở hữu. Các điều khiển phiên/nhóm phía dưới dùng Socket.IO ack; không đặt thêm một bộ REST mutation có policy riêng.
+
+#### 6.3.2 Kiểu ID, envelope và ack dùng chung
+
+| Trường / kiểu                                                                                                                | Cách dùng                                                                                                                                                                               |
+| ---------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `requestId`: UUID                                                                                                            | Nhận diện ý định command; retry cùng ý định giữ nguyên, thay payload phải dùng ID mới. Resync có requestId riêng cho từng lượt                                                          |
+| `sessionId`, `participantId`, `targetParticipantId`: ObjectId hex 24 ký tự                                                   | ID metadata phiên/participation được server cấp; không dùng userId thay participantId                                                                                                   |
+| `epoch`, `groupId`, `roundId`, `draftId`, `draftGroupId`, `transitionToken`, `snapshotId`, `announcementId`, `leaseId`: UUID | ID đời runtime, nhóm/lượt/bản chuẩn bị/thao tác; không ép groupId thành ObjectId                                                                                                        |
+| `callGeneration`: số nguyên dương                                                                                            | Đời ownership socket đang được phép dùng                                                                                                                                                |
+| `expectedPolicyRevision`: số nguyên không âm                                                                                 | Mốc state/quyền client dựa vào khi mutation; mismatch trả STALE_STATE để resync                                                                                                         |
+| `ScopeRef`                                                                                                                   | `{ type: 'MAIN' }` hoặc `{ type: 'GROUP', groupId }`; server suy mode DISCUSSION/ACTIVITY từ runtime, client không tự khai mode để lấy quyền                                            |
+| `E` — envelope mutation                                                                                                      | `{ requestId, sessionId, epoch, callGeneration, expectedPolicyRevision, payload }`; payload strict theo tên command                                                                     |
+| Envelope resync                                                                                                              | `{ requestId, sessionId, epoch, callGeneration, payload: { lastProjectionSequence?, lastPolicyRevision? } }`; không buộc khớp expected revision cũ vì đây là đường lấy state mới        |
+| Ack thành công                                                                                                               | `{ data: { status: 'accepted' / 'pending' / 'completed', operationId?, result? }, requestId }`; trường thuộc từng command, không một success chung cho nhận lệnh và tài nguyên sẵn sàng |
+| Ack lỗi                                                                                                                      | `{ error: { code, message }, requestId }`; lọc metadata theo quyền hiện hành, không tự replay kết quả private cũ                                                                        |
+
+Join lần đầu là ngoại lệ chưa có participant envelope: `{ requestId, ticket, takeover? }`. Đề xuất takeover có `{ confirmed: true, expectedCallGeneration }`, lấy từ xung đột ownership hiện hành đã được lọc theo quyền. `CALL_ALREADY_ACTIVE` không consume ticket; xác nhận là command requestId mới với ticket còn hạn và ownership dự kiến. Server kiểm lại auth/access/ticket/ownership rồi thu đời cũ trước cấp đời mới. Hủy giữ cuộc gọi cũ, hết ticket lấy lại ticket hợp lệ; payload takeover cuối cùng cần M3–M4 cùng review.
+
+#### 6.3.3 Socket.IO — tham gia, host và nhóm
+
+Client gọi `socket.emit(command, input, ack)`. Ngoài join/resync, Input trong bảng là **payload nằm trong E**, không phải body HTTP. Đầu ra là result khi completed hoặc operationId/trạng thái khi còn pending. Actor/role/current scope/deadline luôn lấy từ server. Handshake kiểm Origin/xác thực theo M1; mọi command đều kiểm lại auth/access và có thể trả AUTH_REQUIRED/FORBIDDEN dù bảng chỉ nêu lỗi đặc thù.
+
+| Command                  | Payload / input                                                                                    | Result / quyền                                                                                                                                                                             | Lỗi đặc thù cần FE xử lý                                                                                                       |
+| ------------------------ | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
+| `session.join`           | `{ requestId, ticket, takeover? }`, không dùng E                                                   | `{ participantId, callGeneration, snapshot }` hoặc descriptor snapshot chia phần; ticket chỉ consume khi join ownership hợp lệ, một join intent không nhân participant                     | AUTH_REQUIRED, FORBIDDEN, INVALID_INPUT cho ticket hết hạn/đã dùng sai intent, CALL_ALREADY_ACTIVE, SESSION_ENDED, SERVER_BUSY |
+| `session.resync`         | Envelope resync ở bảng trên                                                                        | `{ snapshot }` hoặc `{ snapshotId, partCount }` có mốc nhất quán; chỉ trả quyền hiện hành đúng socket/ownership                                                                            | AUTH_REQUIRED, FORBIDDEN, STALE_STATE, SESSION_ENDED                                                                           |
+| `session.leave`          | `{}`                                                                                               | Member rời call, thu đúng đời và trả `{ left: true }`; actor còn giữ host thì dùng luồng end cho mọi người                                                                                 | STALE_STATE, OPERATION_IN_PROGRESS                                                                                             |
+| `session.end`            | `{}`                                                                                               | Host hiện hành; trả operation ENDING rồi `{ sessionState: 'ENDED' }` sau thu quyền/metadata đạt                                                                                            | FORBIDDEN, STALE_STATE, OPERATION_IN_PROGRESS                                                                                  |
+| `host.transfer`          | `{ targetParticipantId }`                                                                          | Host-only; target connected/còn quyền cùng phiên. Trả `{ hostParticipantId, policyRevision }`; direct transfer, không invite/accept                                                        | FORBIDDEN, TARGET_UNAVAILABLE, STALE_STATE                                                                                     |
+| `group.createDiscussion` | `{ name, purpose, rosterParticipantIds }`                                                          | Participant ở GUIDANCE; name ≤80, purpose ≤500, roster không trùng và hợp lệ. Trả `{ groupId, rosterParticipantIds }`; tạo không tự cấp membership                                         | INVALID_INPUT, INVALID_PHASE, TARGET_UNAVAILABLE, STALE_STATE                                                                  |
+| `group.join`             | `{ groupId }`                                                                                      | Member; DISCUSSION: roster hợp lệ/GUIDANCE/OPEN; ACTIVITY: đúng nhóm đã phân trong round còn mở/còn hạn. Trả `{ scope, audienceEpoch, policyRevision }`                                    | FORBIDDEN, GROUP_CLOSED, INVALID_PHASE, STALE_STATE                                                                            |
+| `group.leave`            | `{}`                                                                                               | Chỉ member hiện thuộc nhóm, đưa về MAIN/pause mic; trả scope/audienceEpoch/revision. Không đổi phân công ACTIVITY, không kéo cả nhóm theo                                                  | INVALID_PHASE, STALE_STATE, OPERATION_IN_PROGRESS                                                                              |
+| `discussion.close`       | `{ target: { kind: 'ONE', groupId } }` hoặc `{ target: { kind: 'ALL' } }`                          | Host ở GUIDANCE; đóng đúng DISCUSSION, trả `{ closedGroupIds }` khi cleanup hoàn tất; không nhận ACTIVITY                                                                                  | FORBIDDEN, GROUP_CLOSED, INVALID_PHASE, STALE_STATE                                                                            |
+| `activity.prepare`       | `{ mode: 'MANUAL' / 'RANDOM', selectedParticipantIds, groupCount, durationMinutes, assignments? }` | Host ở GUIDANCE; duration nguyên 1–120. RANDOM server phân cân; MANUAL cần assignments đúng tập đã chọn. Trả `{ draftId, draftRevision, assignments, durationMinutes }`, chưa chuyển người | FORBIDDEN, INVALID_INPUT, INVALID_PHASE, TARGET_UNAVAILABLE                                                                    |
+| `activity.updateDraft`   | `{ draftId, expectedDraftRevision, assignments, durationMinutes }`                                 | Host chỉnh draft trước start; mỗi người xuất hiện đúng một lần trong tập phân, không phân host hiện hành như member. Trả preview/draftRevision mới                                         | FORBIDDEN, INVALID_INPUT, STALE_STATE, INVALID_PHASE                                                                           |
+| `activity.start`         | `{ draftId, expectedDraftRevision }`                                                               | Host; đóng DISCUSSION trước, chuyển scope, trả `{ roundId, deadline, serverTime }` sau thành công. Lỗi một phần trả trạng thái đang hủy/đã hủy, không giữ lượt chạy dở                     | FORBIDDEN, STALE_STATE, INVALID_PHASE, TARGET_UNAVAILABLE, OPERATION_IN_PROGRESS                                               |
+| `host.help.enter`        | `{ groupId }`                                                                                      | Host; đúng ACTIVITY còn mở/còn hạn. Trả scope hỗ trợ/audienceEpoch/revision, thông báo vào nhóm; sang B thu A trước                                                                        | FORBIDDEN, GROUP_CLOSED, INVALID_PHASE, STALE_STATE                                                                            |
+| `host.help.leave`        | `{}`                                                                                               | Host đang hỗ trợ chủ động về MAIN, giữ mic bật/tắt theo policy; trả scope MAIN/audienceEpoch/revision                                                                                      | FORBIDDEN, INVALID_PHASE, STALE_STATE                                                                                          |
+| `announcement.start`     | `{}`                                                                                               | Host ở MAIN/hướng dẫn; trả `{ announcementId, deadline }`, tối đa 30 giây; audience MAIN/DISCUSSION, không ACTIVITY                                                                        | FORBIDDEN, INVALID_PHASE, OPERATION_IN_PROGRESS                                                                                |
+| `announcement.stop`      | `{ announcementId }`                                                                               | Host hiện hành; stop đúng announcement, trả `{ stopped: true }`, lặp cùng operation hội tụ                                                                                                 | FORBIDDEN, STALE_STATE                                                                                                         |
+| `screen.acquire`         | `{ scope: ScopeRef }`                                                                              | Actor đúng MAIN/ACTIVITY, slot trống; trả `{ leaseId, leaseGeneration, expiresAt }`. DISCUSSION bị deny, không giành nguồn                                                                 | FORBIDDEN, INVALID_PHASE, SHARE_BUSY, STALE_STATE                                                                              |
+| `screen.release`         | `{ leaseId, leaseGeneration }`                                                                     | Chỉ lease/ownership đúng actor và đời; trả `{ released: true }`; callback cũ không release lease mới                                                                                       | FORBIDDEN, STALE_STATE                                                                                                         |
+| `recording.start`        | `{}`                                                                                               | Host hiện hành, phiên ACTIVE và recorder/storage admission hợp lệ; trả `{ recordingId, attemptId, generation, state }`, chỉ báo RECORDING sau capture-ready                                | FORBIDDEN, STALE_STATE, OPERATION_IN_PROGRESS, SERVER_BUSY; lỗi storage theo contract M2/M3                                    |
+| `recording.stop`         | `{ recordingId, expectedRecordingRevision }`                                                       | Host hiện hành; hủy STARTING hoặc chốt stop của attempt đúng đời. Trả trạng thái thực, inputStoppedAt khi đã xác minh; READY sau finalize riêng                                            | FORBIDDEN, STALE_STATE, OPERATION_IN_PROGRESS; lỗi recorder theo contract M3                                                   |
+
+`assignments` là danh sách `{ draftGroupId, participantIds }`; draftGroupId chỉ tham chiếu nhóm trong draft, không cấp runtime grant. Start trả round/group IDs hiệu lực qua snapshot/projection. Không có `participant.move`, host join ACTIVITY như member, host đóng ACTIVITY thủ công hoặc pause/extend duration. Publish track/Consumer-ready thuộc signaling M3 và dùng lease/policy M4; upload/chat/board có API riêng của M2/M5.
+
+#### 6.3.4 Ví dụ gọi và kết quả
+
+Ví dụ command Vào nhóm sau khi đã tham gia call; các ID là dữ liệu minh họa hợp kiểu:
+
+```json
+{
+  "requestId": "7d6a6f24-9b68-4f90-b752-46b91f40ab11",
+  "sessionId": "690a00000000000000000001",
+  "epoch": "7d6a6f24-9b68-4f90-b752-46b91f40ab12",
+  "callGeneration": 3,
+  "expectedPolicyRevision": 12,
+  "payload": {
+    "groupId": "7d6a6f24-9b68-4f90-b752-46b91f40ab13"
+  }
+}
+```
+
+Ack completed chỉ sau khi phần thu quyền cũ đã có hiệu lực và scope mới commit hợp lệ:
+
+```json
+{
+  "data": {
+    "status": "completed",
+    "result": {
+      "scope": {
+        "type": "GROUP",
+        "groupId": "7d6a6f24-9b68-4f90-b752-46b91f40ab13"
+      },
+      "audienceEpoch": 5,
+      "policyRevision": 13
+    }
+  },
+  "requestId": "7d6a6f24-9b68-4f90-b752-46b91f40ab11"
+}
+```
+
+Lệnh dựa revision cũ trả lỗi để FE resync; không tự áp payload lên state mới:
+
+```json
+{
+  "error": {
+    "code": "STALE_STATE",
+    "message": "Trạng thái đã thay đổi. Đồng bộ lại trước khi thực hiện."
+  },
+  "requestId": "7d6a6f24-9b68-4f90-b752-46b91f40ab11"
+}
+```
+
+REST dùng HTTP status, Socket.IO dùng ack code; thống nhất cùng semantic error catalog trước thêm schema. Mã CSRF_INVALID/NOT_FOUND/RATE_LIMITED của tầng HTTP theo M1; không lộ đối tượng ngoài quyền chỉ để trả lỗi chi tiết. Các lỗi adapter/recording phải mapping vào catalog có review, không trả string tùy ý từ process hoặc DB.
 
 Event dự kiến: `session.snapshot`, `session.changed`, `host.changed`, `group.changed`, `activity.changed`, `participant.scopeChanged`, `session.ended`. Không broadcast cùng snapshot cho toàn session rồi để FE tự giấu. Projection có thể cho xem metadata roster/count đúng policy nhưng không chứa URL frame, producer/chat ID hoặc nội dung private trái quyền. M2 phát message/file event, M3 signaling media, M5 board events; M4 không gửi bản sao các luồng đó.
 
-Snapshot/event M4 mang `{ sessionId, epoch, callGeneration, audienceEpoch, projectionSequence, policyRevision }`; snapshot trả thêm requestId của lần join/resync. Server tạo snapshot nhất quán tại một mốc projectionSequence. Mỗi event điều khiển thực sự gửi cho người đó tăng sequence; global policyRevision có thể nhảy vì thay đổi không liên quan tới họ, nên không dùng khoảng nhảy policyRevision để kết luận mất event. M2/M5 giữ sequence/dedupe riêng cho nội dung của mình, nhưng phải phối hợp dấu audience để FE loại dữ liệu trái context.
+Snapshot/event M4 mang `{ sessionId, epoch, callGeneration, audienceEpoch, projectionSequence, policyRevision }`; snapshot trả thêm requestId của lần join/resync. Khi chia phần, mỗi phần có thêm `{ snapshotId, partIndex, partCount }`, partIndex bắt đầu từ 0. Tất cả phần thuộc cùng một snapshot nhất quán, không đọc lại state đang đổi cho từng phần. FE chỉ thay state sau khi nhận đủ và kiểm đúng snapshot/context; thiếu phần, quá budget hoặc quyền đổi thì bỏ cả bộ và resync. Server tạo snapshot nhất quán tại một mốc projectionSequence. Mỗi event điều khiển thực sự gửi cho người đó tăng sequence; global policyRevision có thể nhảy vì thay đổi không liên quan tới họ, nên không dùng khoảng nhảy policyRevision để kết luận mất event. M2/M5 giữ sequence/dedupe riêng cho nội dung của mình, nhưng phải phối hợp dấu audience để FE loại dữ liệu trái context.
 
 Giới hạn bytes cho command/ack/event, số phần tử roster/draft và ngân sách snapshot phải chốt tại Q5 trước khi bật handler. Snapshot chỉ chứa metadata và tham chiếu được phép; nét vẽ/ảnh/media không nằm trong snapshot M4. Payload lớn dùng phân trang hoặc chia phần có cùng snapshot revision và kiểm lại quyền khi trả, không bỏ giới hạn socket để chứa toàn bộ trạng thái. Giới hạn truyền tải không tự trở thành giới hạn số nhóm của sản phẩm.
 
@@ -434,7 +519,7 @@ Giới hạn bytes cho command/ack/event, số phần tử roster/draft và ngâ
 - Recording start có khóa ý định ổn định và đối soát metadata với miền recording/tệp; retry cũ không tạo đoạn video mới. Tin nhắn dùng cơ chế dedupe bền riêng của M2.
 - Thời hạn/budget bộ nhớ của replay cache thuộc Q5. Reconnect dùng snapshot hiện hành, không tự phát lại private packets qua Socket.IO recovery.
 
-#### 6.3.1 Interface nội bộ cần bàn giao
+#### 6.3.5 Interface nội bộ cần bàn giao
 
 Tên hàm dưới đây là đề xuất giao tiếp trong cùng process; không phải thêm endpoint công khai. Mỗi adapter đăng ký tại composition root, dùng cùng context điều phối và trả lỗi/timeout có cấu trúc.
 
