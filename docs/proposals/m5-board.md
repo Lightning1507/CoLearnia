@@ -434,25 +434,25 @@ export interface FreezeIntent {
 
 ```mermaid
 flowchart TD
-  subgraph RAMRuntime ["Bộ nhớ RAM Server (BoardRuntime — In-Memory 100%)"]
+  subgraph RAMRuntime ["Bo nho RAM Server (BoardRuntime - In-Memory 100%)"]
     direction TB
-    Board["BoardState (Trạng thái bảng)<br/>───────────────────────<br/>• id, scopeId, scopeType<br/>• status: LIVE / FREEZING / FROZEN<br/>• version, mutationSequence<br/>• sourceId, sourceRevision<br/>• frameId, activeIntentId"]
-    Intent["FreezeIntent (Khóa CAS Intent)<br/>───────────────────────<br/>• intentId (UUID), scopeId<br/>• requestedByParticipantId<br/>• sourceRevision, expiresAt (15s)<br/>• status: PENDING / COMMITTED"]
-    Strokes["Danh sách nét vẽ (Strokes Buffer)<br/>───────────────────────<br/>• Tối đa 500 nét active, 100 tombstone<br/>• points: Array&lt;Point&gt; (≤ 500 điểm, 0.xxxx)<br/>• color, width, isVanishing, isTombstoned<br/>• authorParticipantId (Server gán)"]
+    Board["BoardState (Trang thai bang)<br/>id, scopeId, scopeType<br/>status: LIVE / FREEZING / FROZEN<br/>version, mutationSequence<br/>sourceId, sourceRevision<br/>frameId, activeIntentId"]
+    Intent["FreezeIntent (Khoa CAS Intent)<br/>intentId UUID, scopeId<br/>requestedByParticipantId<br/>sourceRevision, expiresAt 15s<br/>status: PENDING / COMMITTED"]
+    Strokes["Danh sach net ve (Strokes Buffer)<br/>Toi da 500 net active, 100 tombstone<br/>points: Point array toi da 500 diem<br/>color, width, isVanishing, isTombstoned<br/>authorParticipantId do Server gan"]
 
-    Board ---|"Quản lý khóa (0..1 intent)"| Intent
-    Board ---|"Lưu trữ nét vẽ (0..500 strokes)"| Strokes
+    Board --- Intent
+    Board --- Strokes
   end
 
-  subgraph M2Storage ["Hạ tầng lưu trữ tệp Private File Service (M2)"]
+  subgraph M2Storage ["Ha tang luu tru tep Private File Service (M2)"]
     direction TB
-    FileDoc[("MongoDB files Document (§3.10)<br/>───────────────────────<br/>• _id, workspaceId, uploaderId<br/>• purpose: 'FRAME'<br/>• state: STAGED / READY / DELETE_PENDING<br/>• byteSize, reservedBytes: 2 MiB<br/>• dimensions: 1920x1080"]
-    DiskFile[("Private Disk Storage<br/>───────────────────────<br/>• Byte nhị phân ảnh WebP/JPEG<br/>• Lưu private theo storageKey<br/>• Truy cập qua ACL thành viên nhóm")]
+    FileDoc["MongoDB files Document (Muc 3.10)<br/>_id, workspaceId, uploaderId<br/>purpose: FRAME<br/>state: STAGED / READY / DELETE_PENDING<br/>byteSize, reservedBytes: 2 MiB<br/>dimensions: 1920x1080"]
+    DiskFile["Private Disk Storage<br/>Byte nhi phan anh WebP/JPEG<br/>Luu private theo storageKey<br/>Truy cap qua ACL thanh vien nhom"]
 
-    FileDoc ---|"Lưu trữ vật lý"| DiskFile
+    FileDoc --- DiskFile
   end
 
-  Board -.->|"Tham chiếu frameId (khi FROZEN)"| FileDoc
+  Board -.->|"Tham chieu frameId (khi FROZEN)"| FileDoc
 ```
 
 #### 6.1.3 Bất biến dữ liệu (Invariants)
