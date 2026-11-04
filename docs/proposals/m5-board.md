@@ -972,31 +972,24 @@ Mỗi thao tác quan trọng ghi một log JSON gồm các trường:
 | **R6** | **Mất Ack khiến client gửi lại trùng nét vẽ (Duplicate Stroke):** Mạng chập chờn gây nhân đôi nét vẽ trên canvas.                            | Trung bình | Trung bình | **Trung bình** | Cơ chế Idempotency cache trong BoardRuntime (LRU 1.000 items): nếu nhận cùng `strokeId` khớp author/context/payload, trả về ngay Ack cũ mà không tạo thêm nét mới.      |
 | **R7** | **Tắt feature flag làm treo màn hình học viên:** Tắt cờ chặn socket khiến nhóm FROZEN không thể resume.                                      | Trung bình | Cao        | **Cao**        | Graceful kill-switch: server broadcast `board.disabled`, tự động reset board FROZEN về LIVE để client chuyển về video trực tiếp trước khi đóng cổng.                    |
 
-### 8.3 Ma trận rủi ro
+### 8.3 Ma trận phân loại rủi ro (Risk Matrix)
 
-| Mức độ rủi ro                 | Rủi ro thành phần                                                                                                                       | Chiến lược xử lý                                                                                                  |
-| :---------------------------- | :-------------------------------------------------------------------------------------------------------------------------------------- | :---------------------------------------------------------------------------------------------------------------- |
-| **Ưu tiên cao (Critical)**    | **R1** (Freeze Race), **R2** (Trôi nét Canvas), **R3** (Tắc nghẽn Socket frame), **R4** (Rò rỉ RAM khi undo), **R7** (Tắt cờ treo hình) | Giảm thiểu bằng CAS lock, chuẩn hóa tọa độ, giới hạn 500 điểm / 16 KiB, pruning tombstone và graceful kill-switch |
-| **Theo dõi sát (Medium)**     | **R5** (Nhóm đóng lúc upload / post-bind race), **R6** (Mất Ack duplicate nét)                                                          | Kiểm soát bằng xác thực 2 pha M4 và idempotency cache LRU                                                         |
-| **Chấp nhận / Tự động (Low)** | Tệp frame mồ côi                                                                                                                        | Xử lý triệt để qua sweeper định kỳ và TTL 15s                                                                     |
+Phân bổ và chiến lược xử lý theo ma trận Tác động (Impact) và Khả năng xảy ra (Likelihood):
 
-```mermaid
-quadrantChart
-  title Ma trận rủi ro Domain M5
-  x-axis Khả năng thấp --> Khả năng cao
-  y-axis Tác động thấp --> Tác động cao
-  quadrant-1 Ưu tiên cao
-  quadrant-2 Theo dõi sát
-  quadrant-3 Chấp nhận
-  quadrant-4 Giảm thiểu
-  R1 Freeze Race: [0.55, 0.85]
-  R2 Troi net: [0.85, 0.85]
-  R3 Tac nghen Socket: [0.80, 0.85]
-  R4 Ro ri RAM Undo: [0.65, 0.80]
-  R5 Nhom dong luc commit: [0.45, 0.60]
-  R6 Mat Ack duplicate net: [0.55, 0.55]
-  R7 Tat co treo hinh: [0.40, 0.85]
-```
+| Tác động \ Khả năng     | Thấp (Low)       | Trung bình (Medium)                                                            | Cao (High)                                                   |
+| :---------------------- | :--------------- | :----------------------------------------------------------------------------- | :----------------------------------------------------------- |
+| **Cao (High)**          | —                | **R1** (Freeze Race)<br/>**R4** (Rò rỉ RAM Undo)<br/>**R7** (Tắt cờ treo hình) | **R2** (Trôi nét Canvas)<br/>**R3** (Tắc nghẽn Socket frame) |
+| **Trung bình (Medium)** | —                | **R5** (Nhóm đóng lúc commit)<br/>**R6** (Mất Ack duplicate nét)               | —                                                            |
+| **Thấp (Low)**          | Tệp frame mồ côi | —                                                                              | —                                                            |
+
+#### Phân nhóm chiến lược xử lý:
+
+1. **Ưu tiên cao / Giảm thiểu chủ động (Critical - R1, R2, R3, R4, R7):**
+   - Kiểm soát bằng CAS lock trong RAM, thuật toán khử trôi letterbox, trần kỹ thuật kép (≤ 500 điểm & ≤ 16 KiB), pruning tombstone FIFO (> 100 nét) và broadcast graceful kill-switch.
+2. **Theo dõi sát / Kiểm soát bằng kiến trúc (Medium - R5, R6):**
+   - Kiểm soát bằng giao thức xác thực 2 pha atomic re-check với M4 và bộ đệm Idempotency LRU 1.000 items.
+3. **Chấp nhận / Tự động thu hồi (Low - Tệp frame mồ côi):**
+   - Xử lý triệt để qua sweeper định kỳ và cơ chế TTL 15s của M2.
 
 ---
 
