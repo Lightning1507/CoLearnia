@@ -77,7 +77,7 @@ Không cần gửi toàn bộ file nghiệp vụ cho Make. Người nhận đọ
 
 ### Những thay đổi mới phải giữ khi đọc nguồn cũ
 
-Các quyết định sau đã được người phụ trách xác nhận trong buổi làm việc; một số nguồn local/AGENTS và prompt lịch sử còn câu cũ. Đây là phần bàn giao để tránh dùng nhầm, không phải thay đổi mới do người viết tự chọn:
+Các quyết định sau đã được người phụ trách xác nhận và đã có trong nguồn product sau merge main ngày 05/11. Đọc nguồn hiện hành trước prompt phụ thuộc; prompt lịch sử và một số đoạn tổng kết cũ có thể chưa phản ánh đủ các delta. Đây là phần nhắc để tránh dùng nhầm, không phải thay đổi mới do người viết tự chọn:
 
 - Host tạm được chọn ngay khi server phát hiện host mất kết nối; không chờ hết grace mới bầu. Việc giữ cơ hội hoàn quyền cho host gốc là vấn đề khác với thời điểm bầu host tạm.
 - DISCUSSION đã có người tự đóng khi không còn ai kết nối, kể cả người cuối mất kết nối. Kết nối lại về MAIN; chỉ được chủ động vào lại nếu nhóm còn mở và người đó còn trong danh sách hợp lệ. Nhóm mới chưa ai vào vẫn chờ.
@@ -85,6 +85,7 @@ Các quyết định sau đã được người phụ trách xác nhận trong b
 - DISCUSSION không cần host duyệt và host không vào hỗ trợ; trao đổi riêng với host qua chat. ACTIVITY có host vào hỗ trợ đúng nhóm.
 - MAIN không freeze; host hiện hành ở MAIN được vẽ LIVE, kể cả người khác share. Freeze/vẽ chung nằm ở nhóm.
 - Avatar dùng URL Cloudinary công khai; chỉ chính chủ đổi/xóa. Link mời Workspace hiện hành có thể sao chép lại, không hạn/lượt; owner/admin tắt hoặc tạo lại, link cũ mất hiệu lực. Không dựng nhiều link hết hạn theo proposal cũ.
+- Recording: mỗi đoạn tối đa 3 tiếng từ capture bắt đầu; đủ hạn tự dừng ghi/xử lý nhưng cuộc gọi tiếp tục. Đổi/hoàn quyền host không ngắt hoặc reset thời lượng bản ghi; host mới điều khiển. READY giữ vô thời hạn; danh sách xem lại thông thường chỉ hiện READY. Chi tiết UI bắt buộc ở đợt D bên dưới, nguồn tại [recording](../product/recording.md).
 
 Đối chiếu proposal mới nhất trong các PR miền khi cần: [M1 #29](https://github.com/Lightning1507/CoLearnia/pull/29), [M2 #30](https://github.com/Lightning1507/CoLearnia/pull/30), [M3 #27](https://github.com/Lightning1507/CoLearnia/pull/27), [M4 #28](https://github.com/Lightning1507/CoLearnia/pull/28), [M5 #24](https://github.com/Lightning1507/CoLearnia/pull/24). Trạng thái PR có thể thay đổi; phần này không xác nhận các PR đã merge hoặc mọi phương án trong đó đã chốt.
 
@@ -136,7 +137,16 @@ Danh sách kênh để sử dụng chỉ hiện kênh có quyền nội dung. N�
 - Recording: host bắt đầu/dừng tại MAIN; mọi người thấy chỉ báo kể cả vào sau. Minh họa đang khởi động/đang ghi/đang xử lý/sẵn sàng/lỗi bằng dữ liệu giả; lỗi không kết thúc call. Chỉ đưa bản sẵn sàng vào luồng phát video.
 - Từ kênh LIVE, có lối tìm bản ghi theo phiên và mở video giả lập; người còn quyền kênh xem được, người mất quyền bị chặn. Ghi MAIN gồm màn hình/camera/âm thanh MAIN, không ghi nhóm riêng.
 
-Đọc proposal M3/M4/M2 mới nhất trước prompt recording, nhất là đổi host/kết thúc phiên. Chưa tự thêm quyền xóa, retention/quota, tải video hoặc giới hạn “chỉ vài phút”. Nếu đề xuất bố cục danh sách/player chưa có quyết định, ghi là đề xuất UI để team review.
+**Delta sau merge main 05/11 — đưa vào lượt D3/D4:**
+
+- Trạng thái UI phân biệt đang khởi động → đang ghi → đang dừng → đang xử lý → sẵn sàng hoặc lỗi. Đang khởi động có thể hủy/dừng; callback mô phỏng cũ không làm hiện lại “đang ghi”. Không cho bắt đầu đoạn tiếp trong cùng phiên khi đoạn trước còn xử lý/upload; thông báo lý do thay vì nút không phản hồi.
+- Mỗi đoạn tối đa **3 tiếng** tính từ khi bắt đầu ghi thực sự. Hiện thời lượng ghi, cảnh báo trước cho host; mốc cảnh báo chưa chốt, giá trị demo phải được ghi là minh họa. Đến hạn tự dừng và xử lý, **cuộc gọi vẫn tiếp tục**; không tự ghi đoạn mới. Có thể dùng tình huống demo gần hết hạn, không cần chờ 3 tiếng để review UI.
+- Đổi host hoặc host vào hỗ trợ ACTIVITY: bản ghi vẫn tiếp tục từ MAIN, không reset đồng hồ và không thu nội dung nhóm. Chỉ host hiện hành có control ghi/dừng; người bàn giao mất control. Kết thúc call ngừng ghi rồi trở về kênh, không bắt người dùng chờ video sẵn sàng mới rời được.
+- Trang Bản ghi chỉ liệt kê video **READY** cho người xem thông thường. Trạng thái đang ghi/xử lý/lỗi nằm ở ngữ cảnh phiên và người nhận phù hợp; không dựng một lịch sử lỗi nội bộ cho mọi thành viên. Chọn bản sẵn sàng mở player có phát/tạm dừng/tua và quay lại; UI mô phỏng có thể dùng clip mẫu, không coi đó là recorder đã chạy.
+- READY giữ **vô thời hạn**, không có nhãn tự hết hạn hoặc tự xóa sau vài ngày. Mất quyền kênh vẫn bị chặn. Quyền xóa thủ công, quota cụ thể và xử lý byte sau xóa Workspace/kênh còn mở: không tự thêm nút xóa hoặc giá trị giới hạn mới.
+- Không lấy bố cục/pin/âm lượng cá nhân của host làm bản ghi: khi có share MAIN, profile dùng share cùng camera MAIN hợp lệ; không share thì camera, không có hình thì nền thông báo. Chưa cần dựng trình cấu hình bố cục recording riêng.
+
+Đọc nguồn [recording hiện hành](../product/recording.md) và proposal M3/M4/M2 trước lượt này. Pipeline PlainTransport → GStreamer, MP4/H264/AAC và kho R2 riêng tư là thông tin để dev tích hợp, **không cần thêm chữ GStreamer/R2, nút chọn provider hay cấu hình codec vào giao diện người dùng**. Avatar Cloudinary công khai không làm file chat/frame/video thành công khai. Clip vài phút chỉ phục vụ demo. Bố cục danh sách/player mới vẫn là đề xuất UI để team review.
 
 **Xong khi:** có hành trình ghi → dừng → xử lý → xem lại và nhánh lỗi/quyền cơ bản, không chỉ có một nút Ghi hình trang trí.
 
