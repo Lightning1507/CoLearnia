@@ -22,6 +22,22 @@ Host chọn bắt đầu → server kiểm quyền và khả năng recorder → 
 - Kết thúc phiên chốt và ngừng đầu vào trước khi xác nhận thu quyền, sau đó có thể finalize tệp ngoài session queue. Call kết thúc không phải chờ video READY; callback finalize chỉ cập nhật đúng attempt, không mở lại phiên.
 - Hướng pipeline: capture nguồn MAIN → ghép hình/trộn tiếng → encode → lưu → phục vụ video có ACL. Công cụ/codec/bố cục và giới hạn tài nguyên cụ thể cần PoC, chưa chọn từ quyết định vòng đời này.
 
+## Nơi lưu video — cập nhật M2 ngày 04/11/2026
+
+Minh Quân 15 chọn **Cloudflare R2 riêng tư** để lưu video lâu dài. MongoDB giữ thông tin bản ghi và mã tệp trong kho; quyết định M2 mở rộng ngày 05/11/2026 dùng R2 cho cả ảnh chat, tài liệu và ảnh giữ hình. Avatar công khai vẫn ở Cloudinary, tách khỏi kho riêng tư. Đây là quyết định nơi lưu, chưa là tính năng đã chạy hoặc xác nhận capacity.
+
+M2 kiểm hạn mức và cấp đầu nhận dữ liệu trước khi M3 bắt đầu; M3 tạo video MAIN, M2 chỉ xác nhận sẵn sàng khi video đã hoàn tất và lưu R2 thành công. Khi xem, web gọi API M2; M2 kiểm quyền kênh hiện tại rồi lấy từng đoạn từ R2 để phát/tua. Không bật kho công khai hoặc trả link R2 để bỏ qua kiểm quyền. Không dùng ổ đĩa máy chủ làm kho lâu dài. M2/M3 thử contract artifactRef/commit/stored receipt theo mục bàn giao bên dưới: M2 cấp chỗ trước capture, M3 hoàn tất artifact, M2 lưu R2 và xác minh. Writer/tệp tạm có giới hạn và cleanup; không cam kết bỏ tệp tạm hoặc tự đổi pipeline M3 sang ghi thẳng R2. Chi tiết tại [proposal M2, mục 6.5](../proposals/m2-messaging-files.md#65-lưu-và-xem-lại-recording); R2 không thay bộ ghi hình của M3.
+
+## Tích hợp M2 theo schema recordings ngày 05/11/2026
+
+Theo yêu cầu Minh Quân 15, proposal M2 dùng [schema recordings bàn giao](../database/recordings-schema.md) làm thiết kế dữ liệu: thêm `recordings` và loại `files.purpose: RECORDING`. Chỉ M2 ghi hai phần; M3 gửi kết quả, M4 điều khiển theo host hiện hành. Schema hiện đã có trên main qua PR #27; hạn 3 tiếng và READY vô thời hạn theo quyết định bên dưới. Phần tích hợp R2/adapter, quota và schema/index/migration thực thi vẫn cần review/PoC, chưa là tính năng đã chạy.
+
+- Mỗi đoạn thu tối đa **3 tiếng** từ lúc capture thực sự bắt đầu; đổi host không reset hạn dừng. Đến hạn dừng input rồi hoàn tất phần đã thu. Cấu hình video đầu **MP4/H264/AAC**, còn cần PoC phát/tua, hình/tiếng và sai lệch thời lượng khi hoàn tất.
+- Video READY **giữ vô thời hạn**, không TTL hoặc tự xóa theo tuổi. Khi mất quyền hoặc xóa kênh/Workspace, chặn truy cập ngay; quyền xóa byte và chính sách sau khi cha bị xóa còn mở. Không lấy lịch 15 phút/24 giờ/7 ngày của chat/frame áp cho video.
+- Một recording chưa hoàn tất mỗi phiên, gồm cả PROCESSING: đoạn trước đang upload thì chưa ghi đoạn tiếp. PoC một slot toàn app process, gồm cả upload/verify/cleanup còn giữ tài nguyên; M3 kiểm admission, M2 báo tài nguyên đã giải phóng. Đây chưa là kết quả capacity đạt.
+- `STARTING → RECORDING → STOPPING → PROCESSING → READY`; lỗi xác định đi FAILED. Hai document recording/file chuyển READY cùng transaction sau kiểm byte đích. Mất phản hồi phải tra storedReceipt trước retry; không coi timeout là FAILED.
+- Trang Bản ghi theo kênh/phiên chỉ liệt kê READY cho người xem thông thường. M4 cấp trạng thái đang ghi/xử lý/thông báo lỗi cho đúng người trong phiên; không mở lịch sử FAILED/nội bộ cho mọi thành viên kênh.
+
 ## PoC và chi tiết kỹ thuật cần hoàn thiện
 
 ### Vòng đời đã chốt ngày 03/11/2026
@@ -40,6 +56,7 @@ Host chọn bắt đầu → server kiểm quyền và khả năng recorder → 
 - **PoC cần kiểm chứng:** pipeline PlainTransport → GStreamer, compositor/audiomixer, thêm/bớt và thu quyền nguồn động, đồng bộ RTP/RTCP và tiếng–hình; điều khiển helper, EOS/finalize, giới hạn queue. Chi tiết bố cục ô camera, plugin/version, profile codec/chất lượng, playback/seek và browser được xác minh trong PoC. Không dùng headless browser hoặc MediaRecorder làm pipeline recording hiện tại.
 - Video READY giữ vô thời hạn, mỗi đoạn tối đa 3 tiếng theo quyết định bên dưới. Còn cần thiết kế quota/disk budget, quyền xóa thủ công, xử lý video khi xóa kênh/Workspace, nơi lưu byte, danh sách/trang xem và lỗi/restart. Không tự thêm job retry bền vững hoặc phục hồi recording sau crash.
 - Vòng đời recording khi đổi host theo quyết định trên; cần thiết kế handoff nguyên tử, crash/flush và admission. Kế vị host và reconnect áp dụng nguồn lifecycle M4 tại PR #28 đã được yêu cầu đồng bộ; recorder không tự elect hoặc đặt fallback/end riêng.
+
 - Chưa cam kết capacity với recording. PoC phải đo CPU/RAM/disk/network khi cùng gọi/share/chat/nhóm/TURN; kiểm gate/quota/cleanup, không tự thêm Redis/worker pool hoặc giảm camera để đạt số lượng.
 
 ## Thời lượng và lưu trữ — chốt ngày 04/11/2026
@@ -69,7 +86,7 @@ PoC phải kiểm bật/tắt nguồn và đổi host/scope khi đang ghi, zero-
 
 ## Truy vết và phân công
 
-PB-15; FR-15-01–03; UC-LIVE-11 (ghi hình cuộc họp), UC-LIVE-12 (xem lại bản ghi). M3 chủ trì pipeline/đầu vào MAIN/UI recording; M4 cung cấp quyền host, scope và vòng đời phiên; M2 phụ trách lưu/phục vụ byte và quyền xem, phối hợp metadata với M3; M1 cung cấp quyền kênh hiện hành. Một owner schema/lifecycle phải được thống nhất trong proposal, không tạo hai kho video/file cạnh tranh.
+PB-15; FR-15-01–03; UC-LIVE-11 (ghi hình cuộc họp), UC-LIVE-12 (xem lại bản ghi). M3 chủ trì pipeline/đầu vào MAIN/UI recording; M4 cung cấp quyền host, scope và vòng đời phiên; M2 phụ trách lưu/phục vụ byte và quyền xem, phối hợp metadata với M3; M1 cung cấp quyền kênh hiện hành. M2 sở hữu schema/lifecycle lưu trữ theo bản bàn giao; M3/M4 review điểm giao, không tạo hai kho video/file cạnh tranh.
 
 ## Kiểm chứng bắt buộc
 
