@@ -17,7 +17,7 @@
 > - **ACTIVITY:** Thành viên trong nhóm cùng freeze/vẽ/resume đồng bộ trên nguồn screen share duy nhất của nhóm. Nếu đã `FROZEN`, frame tĩnh hợp lệ được bảo toàn để tiếp tục vẽ và giải thích thảo luận ngay cả khi người đang chia sẻ **đổi nguồn hoặc dừng phát**.
 > - **Quy trình Freeze 3 bước & Kiểm tra 2 pha:** Client chụp hình từ video bằng Canvas `drawImage` -> gọi `board.freeze.begin` lấy intentId (nhả mutation queue của phiên trong thời gian chờ I/O) -> upload ảnh HTTP vào Private File Service (M2) -> gọi `board.freeze.commit` xác nhận. Server kiểm tra 2 pha: (1) Pre-bind kiểm tra intent/source, (2) M2 bind `BOARD_FRAME` state `READY`, (3) Post-bind atomic re-check kiểm tra nhóm vẫn active và TIMER-01 chưa hết hạn deadline trước khi chuyển `FROZEN`. Nếu nhóm đóng/hết hạn lúc chờ M2, hủy file tạm ngay lập tức.
 > - **Dữ liệu, Phân trang & Vòng đời:** 100% in-memory trong RAM server cho `BoardRuntime` (BoardState, active intents, strokes, sequence). Tái sử dụng schema collection `files` có sẵn từ M2 (`byteSize`, `reservedBytes`, `purpose: 'FRAME'`). Giới hạn kép: ≤ 500 điểm và ≤ 16 KiB serialized JSON cho mỗi nét; lượng tử hóa tọa độ 4 chữ số thập phân. Quản lý RAM context ≤ 2.0 MiB, tối đa 500 nét active, pruning FIFO khi tombstone $> 100$. `board.sync` phân trang theo batch ≤ 50 nét / $48$ KiB kèm pending event queue. Giao thức 2 pha khi đóng nhóm (M4 gửi teardown -> M5 dọn board/RAM/file và gửi Ack -> M4 nhận Ack xong mới chuyển học viên về MAIN).
-> - **Ước lượng:** Tổng nỗ lực kỹ thuật là **12.5 ngày công** (100 giờ công phân rã thành các task con 2–8h). Lịch trình chiếm dụng sprint là **7.5 – 8.0 ngày làm việc** khi triển khai song song.
+> - **Ước lượng:** Tổng nỗ lực kỹ thuật là **12.0 ngày công** (96 giờ công phân rã thành 23 task con 2–8h). Lịch trình chiếm dụng sprint là **7.0 – 7.5 ngày làm việc** khi triển khai song song.
 
 ---
 
@@ -146,29 +146,29 @@ Xây dựng hệ thống bảng vẽ và dừng hình tương tác trực tiếp
 | **G5** | **Trở lại trực tiếp (Resume)**              | Thành viên nhóm kích hoạt resume đưa nhóm về luồng trực tiếp ngay, hủy pending intent, tăng `boardVersion`, đóng context cũ, không phát lại video trễ.                                                                                                      | FR-06-05                     |
 | **G6** | **Khử trôi nét vẽ**                         | Chuẩn hóa tọa độ về `[0, 1]` theo vùng hiển thị thực của video (loại bỏ letterbox/pillarbox); đảm bảo nét vẽ khớp chính xác trên mọi kích thước màn hình, tỷ lệ khung hình và DPR.                                                                          | FR-06-03                     |
 | **G7** | **Quản lý vòng đời & Bảo toàn Frame**       | Tự động xóa overlay MAIN khi nguồn dừng/đổi; bảo toàn frame tĩnh và cho phép vẽ tiếp khi nguồn live thay đổi trong trạng thái FROZEN; thu hồi quyền khi đổi host; thu quyền cá nhân khi rời nhóm; dọn dẹp frame/nét khi nhóm đóng qua giao thức 2 pha.      | FR-06-04, FR-06-05           |
-| **G8** | **Chụp canvas gửi chat**                    | Hỗ trợ xuất ảnh chụp màn hình canvas hiện tại kèm nét vẽ thành tệp ảnh để gửi vào chat cuộc họp (M2) dưới dạng tệp đính kèm độc lập có kiểm tra quyền.                                                                                                      | FR-06-03                     |
 
 ### 3.2 Non-goals
 
-|   Mã    | Tên giới hạn                | Nội dung loại trừ (Non-goal)                                                                                                                                                       |
-| :-----: | :-------------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **NG1** | **Không freeze tại MAIN**   | Tuyệt đối không cung cấp tính năng freeze/resume tại MAIN; mọi yêu cầu freeze tại MAIN bị server từ chối ngay lập tức.                                                             |
-| **NG2** | **Không tracking vật thể**  | Không nhận diện hoặc neo nét theo đối tượng hình ảnh, slide thuyết trình hay cuộn trang web; nét vẽ cố định trên khung tọa độ video.                                               |
-| **NG3** | **Không lưu nét vào DB**    | Không tạo collection MongoDB cho bảng vẽ hay nét vẽ; không ghi điểm vẽ xuống cơ sở dữ liệu bền vững.                                                                               |
-| **NG4** | **Không lưu trữ vĩnh viễn** | Không cung cấp tính năng lưu bài làm lâu dài (`artifact.save`), thư viện bài giảng hay export ra ngoài phiên; dữ liệu board mất khi phiên kết thúc hoặc server restart.            |
-| **NG5** | **Không công bố ra MAIN**   | Khi kết thúc thảo luận/hoạt động hoặc hết giờ TIMER-01, không tự động trình chiếu frame/nét của nhóm ra phòng chung MAIN.                                                          |
-| **NG6** | **Không công cụ hình học**  | Không hỗ trợ hình tròn, chữ nhật, mũi tên vector phức tạp, text box soạn thảo văn bản hay nhận diện chữ viết; chỉ hỗ trợ nét vẽ tự do (freehand stroke), tẩy/clear và con trỏ tạm. |
-| **NG7** | **Không freeze cá nhân**    | Không hỗ trợ chế độ dừng hình riêng cho từng cá nhân; freeze là trạng thái đồng bộ chung của cả nhóm.                                                                              |
+|   Mã    | Tên giới hạn                   | Nội dung loại trừ (Non-goal)                                                                                                                                                                                                                                         |
+| :-----: | :----------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **NG1** | **Không freeze tại MAIN**      | Tuyệt đối không cung cấp tính năng freeze/resume tại MAIN; mọi yêu cầu freeze tại MAIN bị server từ chối ngay lập tức.                                                                                                                                               |
+| **NG2** | **Không tracking vật thể**     | Không nhận diện hoặc neo nét theo đối tượng hình ảnh, slide thuyết trình hay cuộn trang web; nét vẽ cố định trên khung tọa độ video.                                                                                                                                 |
+| **NG3** | **Không lưu nét vào DB**       | Không tạo collection MongoDB cho bảng vẽ hay nét vẽ; không ghi điểm vẽ xuống cơ sở dữ liệu bền vững.                                                                                                                                                                 |
+| **NG4** | **Không lưu trữ vĩnh viễn**    | Không cung cấp tính năng lưu bài làm lâu dài (`artifact.save`), thư viện bài giảng hay export ra ngoài phiên; dữ liệu board mất khi phiên kết thúc hoặc server restart.                                                                                              |
+| **NG5** | **Không công bố ra MAIN**      | Khi kết thúc thảo luận/hoạt động hoặc hết giờ TIMER-01, không tự động trình chiếu frame/nét của nhóm ra phòng chung MAIN.                                                                                                                                            |
+| **NG6** | **Không công cụ hình học**     | Không hỗ trợ hình tròn, chữ nhật, mũi tên vector phức tạp, text box soạn thảo văn bản hay nhận diện chữ viết; chỉ hỗ trợ nét vẽ tự do (freehand stroke), tẩy/clear và con trỏ tạm.                                                                                   |
+| **NG7** | **Không freeze cá nhân**       | Không hỗ trợ chế độ dừng hình riêng cho từng cá nhân; freeze là trạng thái đồng bộ chung của cả nhóm.                                                                                                                                                                |
+| **NG8** | **Không chụp canvas gửi chat** | Không xây dựng tính năng chụp và xuất màn hình canvas kèm nét vẽ thành tệp đính kèm gửi vào chat cuộc họp (M2); người dùng có thể sử dụng các công cụ chụp màn hình sẵn có của hệ điều hành (Snipping Tool, Screenshot shortcut) để gửi ảnh vào chat nếu có nhu cầu. |
 
 ### 3.3 Truy vết yêu cầu chức năng (Traceability Matrix)
 
-| Yêu cầu chức năng (FR) | Nội dung nghiệp vụ                                           | Goal phục vụ   | Nhóm công việc WBS đảm nhiệm |
-| :--------------------- | :----------------------------------------------------------- | :------------- | :--------------------------- |
-| **FR-06-01**           | Host vẽ chỉ dẫn trực tiếp tại MAIN khi có mặt tại MAIN       | G1             | W1, W2, W3, W5, W6, W7, W9   |
-| **FR-06-02**           | Dừng hình đồng bộ trong nhóm (DISCUSSION/ACTIVITY)           | G2, G4         | W1, W4, W5, W7, W8, W9, W11  |
-| **FR-06-03**           | Vẽ cộng tác, con trỏ, chuẩn hóa tọa độ, chụp canvas gửi chat | G1, G3, G6, G8 | W1, W2, W3, W6, W7, W9, W10  |
-| **FR-06-04**           | Undo nét của mình, clear toàn bảng theo quyền, thu hồi quyền | G1, G3, G7     | W1, W5, W6, W7, W9, W11      |
-| **FR-06-05**           | Resume trở lại trực tiếp và giải phóng tài nguyên 2 pha      | G5, G7         | W1, W4, W5, W7, W8, W11, W12 |
+| Yêu cầu chức năng (FR) | Nội dung nghiệp vụ                                           | Goal phục vụ | Nhóm công việc WBS đảm nhiệm |
+| :--------------------- | :----------------------------------------------------------- | :----------- | :--------------------------- |
+| **FR-06-01**           | Host vẽ chỉ dẫn trực tiếp tại MAIN khi có mặt tại MAIN       | G1           | W1, W2, W3, W5, W6, W7, W9   |
+| **FR-06-02**           | Dừng hình đồng bộ trong nhóm (DISCUSSION/ACTIVITY)           | G2, G4       | W1, W4, W5, W7, W8, W9, W11  |
+| **FR-06-03**           | Vẽ cộng tác, con trỏ, chuẩn hóa tọa độ                       | G1, G3, G6   | W1, W2, W3, W6, W7, W9       |
+| **FR-06-04**           | Undo nét của mình, clear toàn bảng theo quyền, thu hồi quyền | G1, G3, G7   | W1, W5, W6, W7, W9, W11      |
+| **FR-06-05**           | Resume trở lại trực tiếp và giải phóng tài nguyên 2 pha      | G5, G7       | W1, W4, W5, W7, W8, W11, W12 |
 
 ---
 
@@ -326,7 +326,6 @@ stateDiagram-v2
   - `CanvasRenderer.ts`: Module vẽ Canvas 2D tối ưu hóa (`requestAnimationFrame`, path smoothing với Bezier curves, hỗ trợ vẽ nét thường và animation mờ dần cho nét tự biến mất; thuật toán đơn giản hóa điểm vẽ ≤ 500 điểm; lượng tử hóa tọa độ 4 chữ số thập phân).
   - `CoordinateNormalizer.ts`: Bộ tính toán hình học, bóc tách vùng video hiển thị thực, loại bỏ letterbox/pillarbox và chuẩn hóa tọa độ `(x, y)` về khoảng `[0.0, 1.0]`.
   - `useBoardSocket.ts`: React Hook quản lý kết nối Socket.IO của board, xử lý optimistic UI update cho nét vẽ cục bộ, retry idempotent khi mất ack, lắng nghe remote strokes, con trỏ, pending event queue và khôi phục snapshot qua `board.sync` phân trang.
-  - `CanvasExport.ts`: Công cụ chụp và xuất ảnh canvas hiện tại kèm nét vẽ để gửi vào chat cuộc họp (M2).
 - **Backend (`apps/server`):**
   - `BoardRuntime.ts`: Domain service quản lý vòng đời và trạng thái các bảng vẽ trong RAM, lưu trữ danh sách nét vẽ, bộ đệm khử trùng lặp nét vẽ (idempotency cache LRU 1.000 items), counter `mutationSequence` cho Draw/Undo/Clear, cơ chế pruning nét tombstone (tối đa 100 nét, ngân sách ≤ 2.0 MiB/context), broadcast sự kiện và snapshot phân trang.
   - `FreezeIntentManager.ts`: Bộ quản lý đặt chỗ freeze (CAS lock), sinh UUID intent, kiểm tra hạn 15 giây và giải phóng khóa khi quá hạn hoặc bị hủy.
@@ -1061,7 +1060,7 @@ Mỗi thao tác quan trọng ghi một log JSON gồm các trường:
 | Miền liên quan              | Nội dung phối hợp                                                                                                                                                                                                                    | Thay đổi breaking? | Thứ tự triển khai                                          | Đầu mối phối hợp    |
 | :-------------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :----------------- | :--------------------------------------------------------- | :------------------ |
 | **M1 (Auth & Workspace)**   | Cung cấp danh tính `userId`, kiểm tra membership hợp lệ và cơ chế revoke token/quyền tức thì khi rời Workspace.                                                                                                                      | Không              | Độc lập, dùng nền M1 sẵn có                                | M1 Owner            |
-| **M2 (Chat & Files)**       | Cung cấp HTTP Upload endpoint cho frame (`purpose: 'FRAME'`, `byteSize`, `reservedBytes`), orphan file sweeper; tiếp nhận ảnh chụp canvas để gửi vào chat cuộc họp.                                                                  | Không              | M2 cung cấp upload trước khi M5 tích hợp commit            | M2 Owner & M5 Owner |
+| **M2 (Chat & Files)**       | Cung cấp HTTP Upload endpoint cho frame (`purpose: 'FRAME'`, `byteSize`, `reservedBytes`), orphan file sweeper định kỳ dọn dẹp frame mồ côi.                                                                                         | Không              | M2 cung cấp upload trước khi M5 tích hợp commit            | M2 Owner & M5 Owner |
 | **M3 (Media & Call Shell)** | Cung cấp `MediaStream`, `sourceId`, `sourceRevision` từ Media Registry; cung cấp vùng Stage để nhúng `StageCanvasOverlay`.                                                                                                           | Không              | Cần M3 hoàn thiện khung Stage và video player              | M3 Owner & M5 Owner |
 | **M4 (Session & Groups)**   | Cung cấp trạng thái phiên, `scopeId`, danh sách nhóm, host hiện hành và vị trí host; thực hiện giao thức đóng nhóm 2 pha (M4 gửi teardown → M5 dọn và gửi Ack → M4 chuyển phòng); hỗ trợ xác thực atomic trạng thái nhóm tại commit. | Không              | M4 cung cấp event vòng đời trước khi M5 hoàn thiện cleanup | M4 Owner & M5 Owner |
 | **Packages / Contracts**    | Bổ sung schemas cho các event `board:*`, `BoardState`, `Stroke` (≤ 500 points, ≤ 16 KiB), `syncResponse` vào `@colearnia/contracts`.                                                                                                 | Không              | **Làm đầu tiên**, chặn các task server và web              | M5 Owner            |
@@ -1071,7 +1070,7 @@ Mỗi thao tác quan trọng ghi một log JSON gồm các trường:
 | Miền   | M5 cần từ miền đó                                                                                                                                                    | M5 cung cấp cho miền đó                                                                         |
 | :----- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :---------------------------------------------------------------------------------------------- |
 | **M1** | Xác thực socket, danh tính người dùng, sự kiện revoke tức thì                                                                                                        | Không                                                                                           |
-| **M2** | Endpoint upload tạm, verify file theo §3.10 (`byteSize`, `reservedBytes`), bind `BOARD_FRAME`, ACL tải file theo nhóm, sweeper định kỳ                               | Ảnh chụp canvas xuất ra như một tệp đính kèm độc lập                                            |
+| **M2** | Endpoint upload tạm, verify file theo §3.10 (`byteSize`, `reservedBytes`), bind `BOARD_FRAME`, ACL tải file theo nhóm, sweeper định kỳ                               | Không (chỉ sử dụng hạ tầng upload frame M2 cho Freeze)                                          |
 | **M3** | `sourceId`, `sourceRevision`, thông báo nguồn dừng/đổi; tham chiếu `videoElement` để chụp                                                                            | Overlay canvas gắn lên trên Video Stage                                                         |
 | **M4** | `sessionId` (ObjectId), `callGeneration`, host hiện hành, vị trí hiện tại của host (`currentLocation`), xác thực nhóm active khi commit, tín hiệu teardown đóng nhóm | Ack xác nhận đã dọn dẹp xong tài nguyên và thu quyền phòng trước khi M4 di dời học viên về MAIN |
 
@@ -1132,33 +1131,32 @@ quadrantChart
 
 ### 9.1 Danh sách nhóm công việc và task con (2–8 giờ)
 
-Toàn bộ phạm vi triển khai của Miền M5 được phân rã thành **12 nhóm công việc chính** với **24 task con cụ thể** có thời lượng từ **2 đến 8 giờ** (≤ 1.0 ngày công). Mỗi task con đều có đầu ra kiểm được (verifiable output), phụ thuộc rõ ràng và tiêu chí kiểm thử tương ứng. Kỹ sư phụ trách có trách nhiệm chủ động báo cáo nếu bị chặn (blocked) hoặc có nguy cơ vượt quá estimate.
+Toàn bộ phạm vi triển khai của Miền M5 được phân rã thành **11 nhóm công việc chính** với **23 task con cụ thể** có thời lượng từ **2 đến 8 giờ** (≤ 1.0 ngày công). Mỗi task con đều có đầu ra kiểm được (verifiable output), phụ thuộc rõ ràng và tiêu chí kiểm thử tương ứng. Kỹ sư phụ trách có trách nhiệm chủ động báo cáo nếu bị chặn (blocked) hoặc có nguy cơ vượt quá estimate.
 
-| Mã Task   | Tên công việc con                                                                   | File phụ trách / Tầng kiến trúc                         | Phụ thuộc        | Giờ (h)  | Công số (pd) | Phân loại | Đầu ra kiểm được (Verifiable Output)                                               |
-| :-------- | :---------------------------------------------------------------------------------- | :------------------------------------------------------ | :--------------- | :------: | :----------: | :-------- | :--------------------------------------------------------------------------------- |
-| **W1.1**  | Định nghĩa phong bì `boardCommandEnvelopeSchema` & Lệnh Freeze, Resume              | `packages/contracts/src/board.ts`                       | —                |    2h    |     0.25     | Dev       | Envelope schema Zod có `sessionId` ObjectId, `epoch`, `callGeneration`             |
-| **W1.2**  | Định nghĩa Schemas cho Stroke, State, Sync pagination & Error codes                 | `packages/contracts/src/board.ts`                       | —                |    2h    |     0.25     | Dev       | Schema Zod biên soạn đầy đủ, test unit contract pass 100%                          |
-| **W2.1**  | Thuật toán tách letterbox/pillarbox và tính vùng hiển thị thực của video            | `apps/web/src/modules/board/CoordinateNormalizer.ts`    | —                |    4h    |     0.50     | Dev       | Hàm `calculateRenderBox()` tính chính xác offset và render size                    |
-| **W2.2**  | Thuật toán chuẩn hóa con trỏ và lượng tử hóa tọa độ 4 chữ số thập phân              | `apps/web/src/modules/board/CoordinateNormalizer.ts`    | W2.1             |    4h    |     0.50     | Dev/Test  | Hàm `normalizePoint()` lượng tử hóa `0.xxxx`, loại bỏ dải đen; unit test 16:9, 4:3 |
-| **W3.1**  | Canvas 2D freehand rendering engine & làm mượt đường cong Bezier                    | `apps/web/src/modules/board/CanvasRenderer.ts`          | W2.2             |    6h    |     0.75     | Dev       | CanvasRenderer render mượt 60fps qua requestAnimationFrame                         |
-| **W3.2**  | Thuật toán giảm điểm ≤ 500 điểm (RDP) & Animation nét tự biến mất                   | `apps/web/src/modules/board/CanvasRenderer.ts`          | W3.1             |    6h    |     0.75     | Dev/Test  | Bộ nén điểm ≤ 500 pts (≤ 16 KiB); loop fade nét tự biến mất sau 3s                 |
-| **W4.1**  | Cài đặt `FreezeIntentManager` trong RAM: CAS lock, UUID intentId TTL 15s            | `apps/server/src/modules/board/FreezeIntentManager.ts`  | W1.1             |    4h    |     0.50     | Dev       | Cấp intent duy nhất, từ chối intent đồng thời (`CONCURRENT_FREEZE_IN_PROGRESS`)    |
-| **W4.2**  | Cơ chế tự động giải phóng khóa CAS khi quá hạn 15s hoặc bị hủy                      | `apps/server/src/modules/board/FreezeIntentManager.ts`  | W4.1             |    4h    |     0.50     | Dev/Test  | Timer tự hủy intent, nhả queue; unit test CAS race condition                       |
-| **W5.1**  | Xây dựng `BoardRuntime` state machine và counter `mutationSequence`                 | `apps/server/src/modules/board/BoardRuntime.ts`         | W1.2, W4.1       |    6h    |     0.75     | Dev       | State machine LIVE/FREEZING/FROZEN; gán sequence chung cho Draw, Undo, Clear       |
-| **W5.2**  | Cài đặt Idempotency cache (LRU 1.000 items) & Pruning tombstone (>100 nét)          | `apps/server/src/modules/board/BoardRuntime.ts`         | W5.1             |    6h    |     0.75     | Dev/Test  | Chống duplicate nét khi retry mất ack; purge FIFO tombstone; RAM ≤ 2.0 MiB         |
-| **W6.1**  | `BoardAclPolicy`: Phân quyền vẽ 3 lớp, kiểm tra Host + `currentLocation === 'MAIN'` | `apps/server/src/modules/board/BoardAclPolicy.ts`       | W5.1             |    4h    |     0.50     | Dev       | Chặn host đang ở ACTIVITY không được vẽ MAIN (`HOST_NOT_IN_MAIN`)                  |
-| **W6.2**  | `BoardAclPolicy`: Phân quyền Freeze và Clear (chủ frame trong DISCUSSION)           | `apps/server/src/modules/board/BoardAclPolicy.ts`       | W6.1             |    4h    |     0.50     | Dev/Test  | Chặn thành viên thường clear board trong DISCUSSION; unit test ACL matrix          |
-| **W7.1**  | Socket.IO Envelope Handlers, Session/Epoch validation & Event dispatching           | `apps/server/src/modules/board/BoardSocketHandler.ts`   | W1.2, W5.1, W6.1 |    4h    |     0.50     | Dev       | Tiếp nhận event `board:*`, kiểm tra Zod, từ chối socket cũ (`STALE_EPOCH`)         |
-| **W7.2**  | Cài đặt Sync Pagination (Snapshot & Delta) & Graceful kill-switch handler           | `apps/server/src/modules/board/BoardSocketHandler.ts`   | W7.1             |    4h    |     0.50     | Dev/Test  | Xử lý batch sync dừng ở 50 nét / 48 KiB; emit `board.disabled` reset về LIVE       |
-| **W8.1**  | Tích hợp upload frame HTTP với Private File Service (M2) theo baseline §3.10        | `apps/server/src/modules/board/BoardFileIntegration.ts` | W4.1, W7.1       |    4h    |     0.50     | Dev       | Tạo record `files` (`byteSize`, `reservedBytes`, `purpose: 'FRAME'`)               |
-| **W8.2**  | Kiểm tra 2 pha Pre-bind & Post-bind atomic re-check với M4 khi commit               | `apps/server/src/modules/board/BoardFileIntegration.ts` | W8.1             |    4h    |     0.50     | Dev/Test  | Hủy file STAGED ngay nếu nhóm đã đóng khi chờ M2; giao thức teardown 2 pha         |
-| **W9.1**  | Xây dựng Component `StageCanvasOverlay.tsx` gắn vào Call Stage                      | `apps/web/src/modules/board/StageCanvasOverlay.tsx`     | W1.2, W2.2, W3.1 |    6h    |     0.75     | Dev       | Overlay React phủ trên video, xử lý pointer events và resize listener              |
-| **W9.2**  | Xây dựng Hook `useBoardSocket.ts`, retry Idempotent & Pending Event Queue           | `apps/web/src/modules/board/useBoardSocket.ts`          | W9.1, W7.2       |    6h    |     0.75     | Dev/Test  | Hook đồng bộ socket, queue event khi đang sync, xử lý mất ack                      |
-| **W10.1** | Công cụ chụp canvas kèm nét xuất ảnh gửi vào chat cuộc họp (M2)                     | `apps/web/src/modules/board/CanvasExport.ts`            | W9.1             |    4h    |     0.50     | Dev/Test  | Xuất Blob `image/webp` kèm nét vẽ, gửi sang M2 dưới dạng attachment                |
-| **W11.1** | Bộ kiểm thử tự động Unit Tests (Normalizer, Runtime, Intent, AclPolicy)             | `apps/server/test/board/`, `apps/web/test/board/`       | W1–W10           |    6h    |     0.75     | Test      | 100% unit tests pass, kiểm tra edge cases và memory constraints                    |
-| **W11.2** | Bộ kiểm thử tích hợp Integration Tests (2-phase commit, sync gap, concurrent)       | `apps/server/test/board/`                               | W11.1            |    6h    |     0.75     | Test      | Kịch bản I1–I11 pass, kiểm tra race condition, đổi nguồn FROZEN, member clear deny |
-| **W12.1** | Tài liệu hướng dẫn tích hợp, Metric Prometheus dashboards & Runbook sự cố           | `docs/runbooks/`, `docs/board/`                         | W11.2            |    4h    |     0.50     | Docs      | Runbook vận hành, alert thresholds và hướng dẫn xử lý sự cố                        |
-| **Tổng**  | **Tổng hợp toàn bộ 22 task con phân rã kỹ thuật**                                   | —                                                       | —                | **100h** | **12.5 pd**  | —         | **Nỗ lực thuần: Dev 9.2 pd (73.6h) + Test & Docs 3.3 pd (26.4h)**                  |
+| Mã Task   | Tên công việc con                                                                   | File phụ trách / Tầng kiến trúc                         | Phụ thuộc        | Giờ (h) | Công số (pd) | Phân loại | Đầu ra kiểm được (Verifiable Output)                                               |
+| :-------- | :---------------------------------------------------------------------------------- | :------------------------------------------------------ | :--------------- | :-----: | :----------: | :-------- | :--------------------------------------------------------------------------------- |
+| **W1.1**  | Định nghĩa phong bì `boardCommandEnvelopeSchema` & Lệnh Freeze, Resume              | `packages/contracts/src/board.ts`                       | —                |   2h    |     0.25     | Dev       | Envelope schema Zod có `sessionId` ObjectId, `epoch`, `callGeneration`             |
+| **W1.2**  | Định nghĩa Schemas cho Stroke, State, Sync pagination & Error codes                 | `packages/contracts/src/board.ts`                       | —                |   2h    |     0.25     | Dev       | Schema Zod biên soạn đầy đủ, test unit contract pass 100%                          |
+| **W2.1**  | Thuật toán tách letterbox/pillarbox và tính vùng hiển thị thực của video            | `apps/web/src/modules/board/CoordinateNormalizer.ts`    | —                |   4h    |     0.50     | Dev       | Hàm `calculateRenderBox()` tính chính xác offset và render size                    |
+| **W2.2**  | Thuật toán chuẩn hóa con trỏ và lượng tử hóa tọa độ 4 chữ số thập phân              | `apps/web/src/modules/board/CoordinateNormalizer.ts`    | W2.1             |   4h    |     0.50     | Dev/Test  | Hàm `normalizePoint()` lượng tử hóa `0.xxxx`, loại bỏ dải đen; unit test 16:9, 4:3 |
+| **W3.1**  | Canvas 2D freehand rendering engine & làm mượt đường cong Bezier                    | `apps/web/src/modules/board/CanvasRenderer.ts`          | W2.2             |   6h    |     0.75     | Dev       | CanvasRenderer render mượt 60fps qua requestAnimationFrame                         |
+| **W3.2**  | Thuật toán giảm điểm ≤ 500 điểm (RDP) & Animation nét tự biến mất                   | `apps/web/src/modules/board/CanvasRenderer.ts`          | W3.1             |   6h    |     0.75     | Dev/Test  | Bộ nén điểm ≤ 500 pts (≤ 16 KiB); loop fade nét tự biến mất sau 3s                 |
+| **W4.1**  | Cài đặt `FreezeIntentManager` trong RAM: CAS lock, UUID intentId TTL 15s            | `apps/server/src/modules/board/FreezeIntentManager.ts`  | W1.1             |   4h    |     0.50     | Dev       | Cấp intent duy nhất, từ chối intent đồng thời (`CONCURRENT_FREEZE_IN_PROGRESS`)    |
+| **W4.2**  | Cơ chế tự động giải phóng khóa CAS khi quá hạn 15s hoặc bị hủy                      | `apps/server/src/modules/board/FreezeIntentManager.ts`  | W4.1             |   4h    |     0.50     | Dev/Test  | Timer tự hủy intent, nhả queue; unit test CAS race condition                       |
+| **W5.1**  | Xây dựng `BoardRuntime` state machine và counter `mutationSequence`                 | `apps/server/src/modules/board/BoardRuntime.ts`         | W1.2, W4.1       |   6h    |     0.75     | Dev       | State machine LIVE/FREEZING/FROZEN; gán sequence chung cho Draw, Undo, Clear       |
+| **W5.2**  | Cài đặt Idempotency cache (LRU 1.000 items) & Pruning tombstone (>100 nét)          | `apps/server/src/modules/board/BoardRuntime.ts`         | W5.1             |   6h    |     0.75     | Dev/Test  | Chống duplicate nét khi retry mất ack; purge FIFO tombstone; RAM ≤ 2.0 MiB         |
+| **W6.1**  | `BoardAclPolicy`: Phân quyền vẽ 3 lớp, kiểm tra Host + `currentLocation === 'MAIN'` | `apps/server/src/modules/board/BoardAclPolicy.ts`       | W5.1             |   4h    |     0.50     | Dev       | Chặn host đang ở ACTIVITY không được vẽ MAIN (`HOST_NOT_IN_MAIN`)                  |
+| **W6.2**  | `BoardAclPolicy`: Phân quyền Freeze và Clear (chủ frame trong DISCUSSION)           | `apps/server/src/modules/board/BoardAclPolicy.ts`       | W6.1             |   4h    |     0.50     | Dev/Test  | Chặn thành viên thường clear board trong DISCUSSION; unit test ACL matrix          |
+| **W7.1**  | Socket.IO Envelope Handlers, Session/Epoch validation & Event dispatching           | `apps/server/src/modules/board/BoardSocketHandler.ts`   | W1.2, W5.1, W6.1 |   4h    |     0.50     | Dev       | Tiếp nhận event `board:*`, kiểm tra Zod, từ chối socket cũ (`STALE_EPOCH`)         |
+| **W7.2**  | Cài đặt Sync Pagination (Snapshot & Delta) & Graceful kill-switch handler           | `apps/server/src/modules/board/BoardSocketHandler.ts`   | W7.1             |   4h    |     0.50     | Dev/Test  | Xử lý batch sync dừng ở 50 nét / 48 KiB; emit `board.disabled` reset về LIVE       |
+| **W8.1**  | Tích hợp upload frame HTTP với Private File Service (M2) theo baseline §3.10        | `apps/server/src/modules/board/BoardFileIntegration.ts` | W4.1, W7.1       |   4h    |     0.50     | Dev       | Tạo record `files` (`byteSize`, `reservedBytes`, `purpose: 'FRAME'`)               |
+| **W8.2**  | Kiểm tra 2 pha Pre-bind & Post-bind atomic re-check với M4 khi commit               | `apps/server/src/modules/board/BoardFileIntegration.ts` | W8.1             |   4h    |     0.50     | Dev/Test  | Hủy file STAGED ngay nếu nhóm đã đóng khi chờ M2; giao thức teardown 2 pha         |
+| **W9.1**  | Xây dựng Component `StageCanvasOverlay.tsx` gắn vào Call Stage                      | `apps/web/src/modules/board/StageCanvasOverlay.tsx`     | W1.2, W2.2, W3.1 |   6h    |     0.75     | Dev       | Overlay React phủ trên video, xử lý pointer events và resize listener              |
+| **W9.2**  | Xây dựng Hook `useBoardSocket.ts`, retry Idempotent & Pending Event Queue           | `apps/web/src/modules/board/useBoardSocket.ts`          | W9.1, W7.2       |   6h    |     0.75     | Dev/Test  | Hook đồng bộ socket, queue event khi đang sync, xử lý mất ack                      |
+| **W10.1** | Bộ kiểm thử tự động Unit Tests (Normalizer, Runtime, Intent, AclPolicy)             | `apps/server/test/board/`, `apps/web/test/board/`       | W1–W9            |   6h    |     0.75     | Test      | 100% unit tests pass, kiểm tra edge cases và memory constraints                    |
+| **W10.2** | Bộ kiểm thử tích hợp Integration Tests (2-phase commit, sync gap, concurrent)       | `apps/server/test/board/`                               | W10.1            |   6h    |     0.75     | Test      | Kịch bản I1–I11 pass, kiểm tra race condition, đổi nguồn FROZEN, member clear deny |
+| **W11.1** | Tài liệu hướng dẫn tích hợp, Metric Prometheus dashboards & Runbook sự cố           | `docs/runbooks/`, `docs/board/`                         | W10.2            |   4h    |     0.50     | Docs      | Runbook vận hành, alert thresholds và hướng dẫn xử lý sự cố                        |
+| **Tổng**  | **Tổng hợp toàn bộ 23 task con phân rã kỹ thuật**                                   | —                                                       | —                | **96h** | **12.0 pd**  | —         | **Nỗ lực thuần: Dev 8.7 pd (69.6h) + Test & Docs 3.3 pd (26.4h)**                  |
 
 ### 9.2 Đồ thị phụ thuộc
 
@@ -1174,24 +1172,23 @@ flowchart LR
   W7["W7 Socket Handler<br/>1.0d (8h)"]
   W8["W8 File / M4 2-Phase<br/>1.0d (8h)"]
   W9["W9 Web Overlay & Hook<br/>1.5d (12h)"]
-  W10["W10 Canvas Export<br/>0.5d (4h)"]
-  W11["W11 Test Suite<br/>1.5d (12h)"]
-  W12["W12 Docs & Runbook<br/>0.5d (4h)"]
+  W10["W10 Test Suite<br/>1.5d (12h)"]
+  W11["W11 Docs & Runbook<br/>0.5d (4h)"]
 
-  W1 --> W4 --> W5 --> W6 --> W7 --> W8 --> W11 --> W12
+  W1 --> W4 --> W5 --> W6 --> W7 --> W8 --> W10 --> W11
   W1 --> W5
   W1 --> W7
   W5 --> W7
   W4 --> W8
-  W2 --> W3 --> W9 --> W10 --> W11
+  W2 --> W3 --> W9 --> W10
   W1 --> W9
   W2 --> W9
 
   classDef crit fill:#FEE2E2,stroke:#DC2626,stroke-width:1.5px,color:#7F1D1D
   classDef norm fill:#EEF2FF,stroke:#6366F1,stroke-width:1px,color:#1E1B4B
 
-  class W1,W4,W5,W6,W7,W8,W11 crit
-  class W2,W3,W9,W10,W12 norm
+  class W1,W4,W5,W6,W7,W8,W10 crit
+  class W2,W3,W9,W11 norm
 ```
 
 ---
@@ -1200,36 +1197,36 @@ flowchart LR
 
 ### 10.1 Bảng tổng hợp ước lượng công số
 
-Bảng ước lượng được chuẩn hóa nhất quán 100% với phân rã WBS Mục 9 (tổng nỗ lực cơ bản 12.5 ngày công = 100 giờ công):
+Bảng ước lượng được chuẩn hóa nhất quán 100% với phân rã WBS Mục 9 (tổng nỗ lực cơ bản 12.0 ngày công = 96 giờ công):
 
 | Kịch bản ước lượng     | Phát triển thuần (Dev) | Kiểm thử & Tài liệu (Test/Docs) | Review & Tích hợp | Dự phòng rủi ro (Buffer) |    Tổng ngày công nỗ lực (Person-Days)    | Lịch trình dự kiến (Working Days) |
 | :--------------------- | :--------------------: | :-----------------------------: | :---------------: | :----------------------: | :---------------------------------------: | :-------------------------------: |
-| **Tốt nhất (Best)**    |         7.0 pd         |             2.0 pd              |      0.5 pd       |          0.5 pd          |                **10.0 pd**                |       **6.0 ngày làm việc**       |
-| **Dự kiến (Expected)** |       **9.2 pd**       |           **3.3 pd**            |    **0.5 pd**     |        **1.0 pd**        | **14.0 pd** _(Nỗ lực thuần: **12.5 pd**)_ |    **7.5 – 8.0 ngày làm việc**    |
-| **Xấu nhất (Worst)**   |        12.0 pd         |             4.0 pd              |      1.0 pd       |          1.5 pd          |                **18.5 pd**                |      **11.0 ngày làm việc**       |
+| **Tốt nhất (Best)**    |         6.5 pd         |             2.0 pd              |      0.5 pd       |          0.5 pd          |                **9.5 pd**                 |       **5.5 ngày làm việc**       |
+| **Dự kiến (Expected)** |       **8.7 pd**       |           **3.3 pd**            |    **0.5 pd**     |        **1.0 pd**        | **13.5 pd** _(Nỗ lực thuần: **12.0 pd**)_ |    **7.0 – 7.5 ngày làm việc**    |
+| **Xấu nhất (Worst)**   |        11.5 pd         |             4.0 pd              |      1.0 pd       |          1.5 pd          |                **18.0 pd**                |      **10.5 ngày làm việc**       |
 
 ### 10.2 Giả định và tỷ lệ độ biến động
 
 1. Đã có sẵn nền tảng Socket.IO gateway và cấu trúc phiên làm việc từ M4.
 2. Private File Service (M2) đã sẵn sàng endpoint upload tệp tạm thời theo HTTP multipart và collection `files` theo baseline §3.10.
 3. Call Stage (M3) đã cung cấp sẵn video player element để lấy tham chiếu video frame cho Web API Canvas.
-4. Tỷ lệ giữa cận trên (Worst: 18.5 pd) và cận dưới (Best: 10.0 pd) là $18.5 / 10.0 = 1.85x$ (nằm an toàn dưới ngưỡng 2.0x theo chuẩn công nghiệp cho thiết kế mức Size L).
+4. Tỷ lệ giữa cận trên (Worst: 18.5 pd) và cận dưới (Best: 10.0 pd) là $18.0 / 9.5 \approx 1.89x$ (nằm an toàn dưới ngưỡng 2.0x theo chuẩn công nghiệp cho thiết kế mức Size L).
 
 ### 10.3 Đối soát công số WBS và Lịch trình triển khai
 
 - **Khớp số học 100% giữa WBS và Estimation:**
-  - **Khối lượng công việc nỗ lực thuần (Base Technical Effort): 12.5 ngày công (100.0 giờ công).**
-    - Công việc phát triển (Dev): **9.2 ngày công** (73.6 giờ) trải dài từ W1 đến W10.
-    - Công việc kiểm thử chuyên biệt & tài liệu (Test/Docs): **3.3 ngày công** (26.4 giờ) tại W11, W12 và các phần kiểm thử con.
-  - Khi cộng thêm 0.5 pd Review/Tích hợp và 1.0 pd Dự phòng rủi ro kỹ thuật, tổng công số dự kiến là **14.0 person-days**.
+  - **Khối lượng công việc nỗ lực thuần (Base Technical Effort): 12.0 ngày công (96.0 giờ công).**
+    - Công việc phát triển (Dev): **8.7 ngày công** (69.6 giờ) trải dài từ W1 đến W9.
+    - Công việc kiểm thử chuyên biệt & tài liệu (Test/Docs): **3.3 ngày công** (26.4 giờ) tại W10, W11 và các phần kiểm thử con.
+  - Khi cộng thêm 0.5 pd Review/Tích hợp và 1.0 pd Dự phòng rủi ro kỹ thuật, tổng công số dự kiến là **13.5 person-days**.
 - **Phân định rõ Tổng ngày công nỗ lực (Effort) và Lịch trình thời gian (Lead Time / Calendar Duration):**
-  - **Nếu 1 kỹ sư thực hiện tuần tự (Single-engineer):** Lịch trình chiếm dụng sprint kéo dài đúng **12.5 – 14.0 ngày làm việc**.
+  - **Nếu 1 kỹ sư thực hiện tuần tự (Single-engineer):** Lịch trình chiếm dụng sprint kéo dài đúng **12.0 – 13.5 ngày làm việc**.
   - **Nếu 2 kỹ sư triển khai song song (Parallel execution):**
     - Sau khi hoàn thành W1 (Contracts - 0.5d):
-      - Kỹ sư Frontend đảm nhiệm: W2 (1.0d) → W3 (1.5d) → W9 (1.5d) → W10 (0.5d) = **4.5 ngày làm việc**.
+      - Kỹ sư Frontend đảm nhiệm: W2 (1.0d) → W3 (1.5d) → W9 (1.5d) = **4.0 ngày làm việc**.
       - Kỹ sư Backend đảm nhiệm: W4 (1.0d) → W5 (1.5d) → W6 (1.0d) → W7 (1.0d) → W8 (1.0d) = **5.5 ngày làm việc**.
-      - Hai nhánh hoàn thành tại mốc ngày thứ 6.0, sau đó cả hai cùng phối hợp thực hiện kiểm thử tích hợp W11 (1.5d) và hoàn thiện Runbook W12 (0.5d).
-    - Do đó, thời gian hoàn thành thực tế của sprint đạt **7.5 – 8.0 ngày làm việc**, giúp rút ngắn thời gian giao hàng (Time-to-Market) mà không làm sai lệch tổng công số nỗ lực cần chi trả.
+      - Nhánh Frontend xong sau 4.0d, nhánh Backend xong sau 5.5d; sau đó cả hai cùng phối hợp thực hiện kiểm thử tích hợp W10 (1.5d) và hoàn thiện Runbook W11 (0.5d).
+    - Do đó, thời gian hoàn thành thực tế của sprint đạt **7.0 – 7.5 ngày làm việc**, giúp rút ngắn thời gian giao hàng (Time-to-Market) mà không làm sai lệch tổng công số nỗ lực cần chi trả.
 
 ---
 
