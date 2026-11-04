@@ -1,6 +1,6 @@
 # Phòng chung và hai chế độ nhóm trong LIVE
 
-**Trạng thái:** thiết kế đã điều chỉnh theo xác nhận người dùng ngày 27/10, cập nhật TIMER-01 ngày 29/10 và vòng đời request/duration ngày 01/11/2026, baseline v2.3; chưa có code nghiệp vụ. Nguồn cho GRP-01/02, LIVE-03, BOARD-01/FREEZE-01, HELP-01 và TIMER-01. Các chi tiết được đánh dấu **chưa chốt** không được suy thành quyết định implementation.
+**Trạng thái:** thiết kế đích, cập nhật quyết định ngày 04/11/2026: DISCUSSION không giữ membership khi mất kết nối; ACTIVITY được tự vào lại đúng nhóm đã phân; không có host điều chuyển người. Chưa có code nghiệp vụ. Nguồn cho GRP-01/02, LIVE-03, BOARD-01/FREEZE-01, HELP-01 và TIMER-01. Các chi tiết được đánh dấu **chưa chốt** không được suy thành quyết định implementation.
 
 ## Ba bối cảnh
 
@@ -27,13 +27,14 @@ MAIN và mỗi ACTIVITY có một nguồn share đang hoạt động riêng, kh�
 - Nhóm vừa được tạo hợp lệ nhưng chưa có ai vào được giữ để chờ tham gia. Danh sách hợp lệ khác với số người thực sự đang trong nhóm.
 - Khi nhóm còn người, người thuộc danh sách hợp lệ có thể chủ động vào lại sau khi về MAIN, nếu nhóm còn mở, phase và quyền hiện tại còn hợp lệ. Không tự chuyển người trở lại.
 - Sau khi nhóm đã có người tham gia, người cuối cùng **chủ động** về MAIN hoặc rời cuộc họp thì hệ thống tự kết thúc DISCUSSION. Thu quyền chat/board/media, hủy intent và dọn frame/nét theo luồng đóng nhóm; bỏ nút Vào nhóm của toàn bộ roster, kể cả người chưa từng vào. Muốn trao đổi tiếp cần yêu cầu mới và được hệ thống tạo khi hợp lệ; không mở lại bằng ID/roster cũ.
-- Mất mạng không được coi ngay là chủ động rời. Giữ phân biệt reconnect/grace theo [live session](live-session.md); quyết định này không tự đặt timeout hay chốt cách xử lý nhóm rỗng do sự cố sau grace.
-- UI ghi số người đang trong nhóm; nếu hiển thị roster thì ghi riêng số người trong danh sách hợp lệ. Quy tắc tự đóng khi người cuối cùng chủ động rời chỉ áp DISCUSSION, không kết thúc ACTIVITY hoặc hủy deadline của lượt.
+- Khi server phát hiện disconnect hoặc control lease hết hạn, thu membership và quyền DISCUSSION của người đó ngay, không chờ reconnect grace của cuộc gọi. Kết nối lại về MAIN; nếu nhóm còn mở/còn người thì người trong roster hợp lệ có thể chủ động vào lại. Nếu nhóm từng có người mà không còn ai sau disconnect/leave thì đóng ngay và dọn toàn context; không phục hồi bằng roster cũ. Chưa ai từng vào thì nhóm vẫn chờ.
+- UI ghi số người đang trong nhóm; nếu hiển thị roster thì ghi riêng số người trong danh sách hợp lệ. Quy tắc nhóm rỗng tự đóng chỉ áp DISCUSSION, không kết thúc ACTIVITY hoặc hủy deadline của lượt. Reconnect grace của cuộc gọi vẫn theo [live session](live-session.md).
 
 ## Nhóm hoạt động do host tổ chức — GRP-01/02
 
 - Host tạo nhóm ACTIVITY và phân thành viên; người chưa phân vẫn ở MAIN. A và B làm việc độc lập. Mọi thành viên đang ở nhóm có thể bấm **Chia sẻ màn hình** ngay, không gửi yêu cầu cho host và không cần host cấp share grant riêng.
 - Host không tự nghe/xem mọi nhóm. Host chỉ vào hỗ trợ nhóm ACTIVITY có thông báo và chỉ được đọc/nhận nội dung nhóm đang hỗ trợ. Khi sang nhóm khác, thu quyền nhóm cũ trước.
+- Thành viên tự về MAIN có thể bấm vào lại đúng ACTIVITY đã được phân nếu round/nhóm còn mở và quyền còn hợp lệ. Không tự chọn nhóm khác; danh sách phân công được giữ riêng với membership hiện diện. Không có thao tác host điều chuyển thành viên khi lượt đang chạy; chỉ chỉnh draft trước start. Host không có kiểu tham gia ACTIVITY như thành viên thường: mọi lần vào nhóm của host dùng `host.help.enter`, rời dùng `host.help.leave`; không đưa host hiện hành vào draft phân nhóm thành viên.
 - Người ở ACTIVITY không tự nhận screen, mic/camera host hoặc announcement audio từ MAIN. Host trong nhóm hỗ trợ được xem/nghe trong scope hỗ trợ; không dùng role host để cấp đường nhận xuyên scope thường trực.
 - Mỗi ACTIVITY có tối đa một người/nguồn screen đang hoạt động; screen audio nếu hỗ trợ đi kèm nguồn đó. Người khác phải chờ nguồn hiện tại dừng, không giành/tắt share của bạn chỉ bằng bấm share. Hai nhóm A/B có thể share đồng thời độc lập.
 - Server giữ chỗ nguồn theo group một cách nguyên tử để xử lý hai cú bấm cùng lúc. Đây là kiểm tra tài nguyên/ACL tự động, **không phải xin host duyệt**. Khi nguồn bận, UI báo người đang share; nếu request tự tạo vẫn phải bị chặn.
