@@ -63,3 +63,5 @@ MAIN giữ overlay/nét trong RAM, không freeze/không file FRAME; chỉ board 
 Thiết kế 13 collection hiện có chưa bao phủ đầy đủ recording. Theo [recording](../product/recording.md), cần metadata gắn phiên/kênh, trạng thái xử lý, tham chiếu byte, người khởi tạo/thời gian và thông tin phục vụ cleanup/quota. Video byte ở kho tệp, không nhúng MongoDB. Collection riêng hay mở rộng file metadata, field/index và migration do proposal M2–M3 thống nhất; chưa tạo collection thứ 14 hoặc schema runnable.
 
 DISCUSSION không còn request chờ host; E11 là thao tác tạo được kiểm hợp lệ ngay trong runtime, không collection xét duyệt. ACTIVITY thêm random preview vào cấu hình hiện có, chưa cần thực thể mới.
+
+Chi tiết delta recording để M2 review tại [schema recordings và mở rộng files](recordings-schema.md): field, index, CAS/transaction, receipt, quota và cleanup. Đây là đề xuất thiết kế, chưa thêm collection/index hoặc chạy migration.

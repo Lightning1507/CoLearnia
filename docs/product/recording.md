@@ -12,7 +12,7 @@
 
 ## Luồng và kết quả
 
-Host chọn bắt đầu → server kiểm quyền và khả năng recorder → thông báo đang ghi → thu nguồn MAIN → host dừng hoặc phiên kết thúc → hoàn tất/xử lý tệp → video sẵn sàng để thành viên còn quyền xem. Không báo đã ghi khi capture chưa khởi động hoặc đã lỗi; chưa xử lý xong không hiển thị video là sẵn sàng. Lỗi ghi/lưu cần thông báo và không làm kết thúc cuộc gọi đang hoạt động. Dừng/đóng phải giải phóng tài nguyên và không nhân job/tệp khi retry.
+Host chọn bắt đầu → server kiểm quyền và khả năng recorder → thông báo đang ghi → thu nguồn MAIN → host dừng, đoạn đủ 3 tiếng hoặc phiên kết thúc → hoàn tất/xử lý tệp → video sẵn sàng để thành viên còn quyền xem. Không báo đã ghi khi capture chưa khởi động hoặc đã lỗi; chưa xử lý xong không hiển thị video là sẵn sàng. Lỗi ghi/lưu cần thông báo và không làm kết thúc cuộc gọi đang hoạt động. Dừng/đóng phải giải phóng tài nguyên và không nhân job/tệp khi retry.
 
 ## PoC và phần chưa chốt
 
@@ -22,17 +22,30 @@ Host chọn bắt đầu → server kiểm quyền và khả năng recorder → 
 - Recording gắn với phiên MAIN, độc lập với người bấm ghi. Chuyển DISCUSSION/ACTIVITY hoặc host vào hỗ trợ không dừng recording và không đưa media riêng của nhóm vào bản ghi.
 - Chuyển/hoàn quyền host hợp lệ không dừng recording; host hiện hành có quyền dừng, host cũ không còn quyền điều khiển. Người bắt đầu ghi đã bàn giao host rồi rời LIVE hoặc mất kết nối không tự làm dừng bản ghi nếu phiên còn hoạt động; quay lại nhận trạng thái hiện hành, không cần bấm Record để nối tiếp.
 - Host chưa bàn giao mà chủ động rời vẫn kết thúc phiên cho mọi người theo [live session](live-session.md#83-chuyển-host-và-host-mất-mạng), nên recording dừng theo phiên. Đóng tab/mất mạng theo disconnect/control lease/grace, không coi ngay là chủ động kết thúc. Phiên kết thúc do hết người theo lifecycle cũng dừng recording; không thêm bộ đếm người/nhánh kết thúc phiên riêng trong recorder.
-- Bấm Dừng hoặc kết thúc phiên thì chốt đầu vào và hoàn tất video. Sau khi dừng, lần Record mới tạo recording ID/tệp mới; retry cùng ý định không tạo đoạn mới. Recorder lỗi vẫn báo lỗi/cleanup, không tự mở bản ghi mới.
-- Bố cục ghi khi có share MAIN: nội dung trình chiếu ở vùng chính, camera người đang nói tại MAIN ở ô bên cạnh; người nói tắt camera thì dùng ảnh đại diện. Ghép thành một video, độc lập layout/pin/viewport/volume cá nhân. Audio trộn tất cả mic đang phát hợp lệ và screen audio MAIN, không chỉ tiếng người đang hiện hình. PoC còn cần chốt thuật toán chọn/chuyển người nói, tỷ lệ/kích thước, hiển thị khi không có share hoặc không ai nói, overlay và thông số encode.
-- Không áp giới hạn 8 giờ của Google Meet. Giới hạn thời lượng/quota cần chọn theo số đo và ngân sách storage/tài nguyên trước vận hành. Đây là quyết định hành vi cho CoLearnia, không tuyên bố sao chép toàn bộ tính năng hoặc kiến trúc nội bộ của Meet.
+- Bấm Dừng, đoạn đủ 3 tiếng hoặc kết thúc phiên thì chốt đầu vào và hoàn tất video. Sau khi dừng, lần Record mới tạo recording ID/tệp mới; retry cùng ý định không tạo đoạn mới. Recorder lỗi vẫn báo lỗi/cleanup, không tự mở bản ghi mới.
+- Bố cục profile PoC cập nhật 04/11 theo #28: có share MAIN thì share vùng lớn cùng các ô camera MAIN hợp lệ; không share dùng lưới camera, không có hình dùng nền thông báo. Xếp ô ổn định theo participant, độc lập pin/viewport/volume cá nhân và không chỉ chọn camera người nói. Audio trộn mọi mic MAIN/screen audio hợp lệ. Profile thử H.264/AAC MP4 720p/15 fps; số input, xếp ô/ảnh đại diện, overlay và plugin/encode phải kiểm qua PoC, chưa là capacity đạt.
+- Mỗi đoạn ghi tối đa 3 tiếng theo quyết định 04/11 bên dưới, không áp giới hạn 8 giờ của Google Meet. Quota và ngân sách storage/tài nguyên vẫn cần review theo máy; không tuyên bố sao chép kiến trúc nội bộ của Meet.
 
 ### Phần cần kiểm chứng và thiết kế
 
 - Demo clip vài phút để kiểm chứng ghi → dừng → xử lý → lưu → xem lại đúng quyền; đây không phải giới hạn thời lượng sản phẩm.
-- **PoC cần kiểm chứng:** pipeline PlainTransport → GStreamer, compositor/audiomixer, thêm/bớt và thu quyền nguồn động, đồng bộ RTP/RTCP và tiếng–hình; điều khiển helper, EOS/finalize, giới hạn queue. Cần chốt chi tiết bố cục/người nói, plugin/version, codec/chất lượng, định dạng playback/seek và hỗ trợ browser. Không dùng headless browser hoặc MediaRecorder làm pipeline recording hiện tại.
-- Cần thiết kế dung lượng/quota, thời gian lưu/xóa và quyền xóa, nơi lưu byte, danh sách/trang xem, hành vi khi hết dung lượng, restart hoặc ghi gián đoạn. Chưa tự chọn giá trị, không mặc định giữ vĩnh viễn hoặc có job retry bền vững.
-- Vòng đời recording khi đổi host theo quyết định trên; cần thiết kế handoff nguyên tử, crash/flush và admission. Các nhánh không có ứng viên host hoặc host tạm tiếp tục mất mạng vẫn theo điểm mở của live-session; không tự chốt fallback bằng recorder.
+- **PoC cần kiểm chứng:** pipeline PlainTransport → GStreamer, compositor/audiomixer, thêm/bớt và thu quyền nguồn động, đồng bộ RTP/RTCP và tiếng–hình; điều khiển helper, EOS/finalize, giới hạn queue. Chi tiết bố cục ô camera, plugin/version, profile codec/chất lượng, playback/seek và browser được xác minh trong PoC. Không dùng headless browser hoặc MediaRecorder làm pipeline recording hiện tại.
+- Video READY giữ vô thời hạn, mỗi đoạn tối đa 3 tiếng theo quyết định bên dưới. Còn cần thiết kế quota/disk budget, quyền xóa thủ công, xử lý video khi xóa kênh/Workspace, nơi lưu byte, danh sách/trang xem và lỗi/restart. Không tự thêm job retry bền vững hoặc phục hồi recording sau crash.
+- Vòng đời recording khi đổi host theo quyết định trên; cần thiết kế handoff nguyên tử, crash/flush và admission. Kế vị host và reconnect áp dụng nguồn lifecycle M4 tại PR #28 đã được yêu cầu đồng bộ; recorder không tự elect hoặc đặt fallback/end riêng.
 - Chưa cam kết capacity với recording. PoC phải đo CPU/RAM/disk/network khi cùng gọi/share/chat/nhóm/TURN; kiểm gate/quota/cleanup, không tự thêm Redis/worker pool hoặc giảm camera để đạt số lượng.
+
+## Thời lượng và lưu trữ — chốt ngày 04/11/2026
+
+- Mỗi đoạn ghi tối đa **3 tiếng (10.800 giây)** từ lúc capture thực sự bắt đầu; không tính từ click. Đổi host, đổi scope hoặc reconnect không reset thời lượng.
+- Server báo trước cho host hiện hành, mốc cảnh báo cụ thể thiết kế trong UI task. Đến hạn tự ngừng input và hoàn tất video, cuộc gọi tiếp tục. Host chủ động ghi đoạn mới khi admission cho phép; không tự nối đoạn hoặc tự Record lại. Stop/end/deadline lặp hoặc đến muộn không nhân tệp và không dừng đoạn mới.
+- Video **READY giữ vô thời hạn**, không tự xóa theo tuổi, không TTL hoặc sweeper xóa video READY chỉ vì đã cũ. Quyền xem vẫn theo membership/channel access hiện hành; giữ byte lâu dài không cấp quyền đọc.
+- Tệp tạm, upload bỏ dở và attempt recording lỗi/hủy vẫn cleanup theo lifecycle sau xác minh writer/ref/commit; chính sách giữ READY không giữ mọi tệp tạm vô hạn. Không tự công bố clip dở READY.
+- Quota/disk không đủ phải từ chối bắt đầu hoặc báo lỗi ghi đúng lifecycle; không tự xóa video READY cũ để lấy chỗ. Mức quota cụ thể, quyền xóa thủ công và xử lý video khi xóa kênh/Workspace **còn cần chốt riêng**; không suy retention vô thời hạn thành quyền xóa hoặc tự purge parent.
+- Clip demo vài phút không chứng minh ghi ổn định 3 tiếng. Cần kiểm deadline bằng fake clock và soak ghi thật đủ 3 tiếng cùng sync/resource/disk/finalize trước công bố khả năng đạt; timeout finalize của clip PoC ngắn chưa là SLA cho bản ghi dài.
+
+## Bàn giao và storage adapter
+
+M3 finalize artifact tạm, M2 lưu qua adapter kho private không phụ thuộc nhà cung cấp, xác minh byte/media metadata và commit metadata rồi mới READY. Finalize local không đủ để báo video đã lưu. Retry/read-back đúng operation/recording/attempt, budget transfer tách encoder finalize; chỉ dọn artifact tạm sau stored receipt bền hoặc nhánh lỗi/hủy đã đối soát refs/writer. M2 cung cấp content/Range có ACL hiện hành và hủy stream khi revoke; không public URL hoặc dùng URL ký sống lâu thay quyền kênh. Provider do M2 cấu hình phía server, không là contract M3/FE. Thiết kế interface và ca kiểm tại [proposal M3 mục 6.3.1](../proposals/m3-media.md#631-contract-bàn-giao-video-m3m2-không-phụ-thuộc-nhà-cung-cấp); chưa có adapter hoặc bằng chứng upload/playback thật.
 
 ## Truy vết và phân công
 
