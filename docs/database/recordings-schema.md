@@ -4,6 +4,8 @@
 
 Nguồn đã đối chiếu: [model](model.md), [collection design §2, §3.10–3.12](collection-design.md), [integrity §2–5](integrity-and-migrations.md), [lifecycle](lifecycle.md), [UC-LIVE-11–12](uc-data-map.md#uc-recording--dữ-liệu-mới), [recording](../product/recording.md), [contract M3–M2](../proposals/m3-media.md#631-contract-bàn-giao-video-m3m2-không-phụ-thuộc-nhà-cung-cấp). Host/join/socket theo mốc PR #28 được ghi ở đầu proposal M3. Các nguồn DB cũ chưa có recording và vẫn ghi retention/schema mở; quyết định 3 tiếng/READY vô thời hạn tại nguồn recording là đầu vào mới của delta này.
 
+**Cấu hình kho của M2:** kho đích lâu dài là Cloudflare R2 riêng tư; avatar vẫn ở Cloudinary. Provider chỉ cấu hình phía backend, không đổi contract M3/FE. Artifact/tệp tạm thuộc quản lý M2, có hạn mức và cleanup; không dùng ổ đĩa máy chủ làm kho lâu dài.
+
 ## 1. Phương án đề nghị
 
 Thêm collection `recordings` cho quá trình ghi; mở rộng `files` bằng variant `purpose: 'RECORDING'` cho tài nguyên byte. Một recording là một đoạn ghi và có một file tài nguyên; retry transfer cùng attempt không tạo file mới. Một phiên có nhiều đoạn, không nhúng mảng recording trong liveSessions. Không dùng ATTACHMENT/FRAME hoặc conversation chat làm đường vòng lưu video.

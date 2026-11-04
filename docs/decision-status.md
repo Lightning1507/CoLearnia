@@ -2,6 +2,14 @@
 
 **Cập nhật 04/11/2026.** Đây là mục lục trạng thái, không là bản sao quy tắc nghiệp vụ. [Technical plan v2.3](technical-plan.md) và nguồn chi tiết theo miền là baseline; research/archive/ADR Proposed không tự ghi đè quyết định. Source/evidence cho biết phần đã chạy, thiết kế cho biết đích cần triển khai.
 
+## Cập nhật lưu video ngày 04/11/2026
+
+Minh Quân 15 (M2) chọn **Cloudflare R2 riêng tư** cho video ngày 04/11; mở rộng ngày **05/11/2026** cho ảnh chat, tài liệu và ảnh giữ hình. Không dùng ổ đĩa máy chủ làm kho tệp lâu dài; avatar công khai tiếp tục ở Cloudinary. API M2 vẫn kiểm quyền hiện tại khi đọc/phát/tua. Cách ghi video thẳng lên R2 hay cần tệp tạm phải thử cùng M3; quota/chi phí, lỗi mạng, dọn phần bỏ dở và tích hợp chưa được kiểm chứng. Nguồn: [recording](product/recording.md#nơi-lưu-video--cập-nhật-m2-ngày-04112026), [proposal M2](proposals/m2-messaging-files.md#5-high-level-design).
+
+## Đồng bộ thiết kế recordings ngày 05/11/2026
+
+Theo yêu cầu Minh Quân 15, [proposal M2](proposals/m2-messaging-files.md#65-lưu-và-xem-lại-recording) nhận [schema M3 bàn giao](database/recordings-schema.md): recording tối đa 3 tiếng, profile MP4/H264/AAC, READY giữ vô thời hạn, một nonterminal/phiên và PoC một slot toàn process. `recordings` và `files: RECORDING` do M2 cập nhật, READY commit cùng nhau; danh sách xem lại chỉ READY. Main 7c4320f (PR #27) đã đưa proposal M3/schema vào repo và xác nhận hạn 3 tiếng/READY vô thời hạn. Quota, quyền xóa thủ công và xử lý khi xóa kênh/Workspace vẫn mở; tích hợp R2 của M2 còn cần review/PoC. Chưa tạo schema/index/migration hoặc kiểm pipeline/capacity. Hạn mức byte, bản tạm/lỗi, quyền xóa sau parent deletion và adapter ghi R2 vẫn cần review/PoC. Nguồn nghiệp vụ đồng bộ tại [recording](product/recording.md).
+
 ## Cách hiểu trạng thái
 
 - **Đã chốt:** làm theo nguồn; thay scope/quyền cần review thay đổi.
@@ -32,7 +40,7 @@ Chi tiết implementation thông thường được chọn/review trong task đ�
 
 | Chủ đề            | Đã có                                                                                                                                                        | Còn cần thực hiện                                                                                                                                                                                          |
 | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Database          | MongoDB/Mongoose; thiết kế trước recording: 46 UC →16 khái niệm→13 collection                                                                                | Recording là delta chưa chốt metadata/schema/index/migration; các thiết kế cũ không chứng minh đã bao phủ scope mới. [Model](database/model.md)                                                            |
+| Database          | MongoDB/Mongoose; thiết kế trước recording: 46 UC →16 khái niệm→13 collection                                                                                | Recording có [delta đề xuất](database/recordings-schema.md), chưa triển khai schema/index/migration; các thiết kế cũ không chứng minh đã bao phủ scope mới. [Model](database/model.md)                     |
 | DB so với runtime | Auth/quyền/chat/file metadata bền; nhóm/request/round/board/nét/media ở RAM, byte ngoài DB                                                                   | Bootstrap/sweeper và restore phải kiểm; không phục hồi phiên sau restart. [Lifecycle](database/lifecycle.md)                                                                                               |
 | Capacity          | Giữ gate chức năng 5; thử 10 → 25 trước, 50 nếu đạt; 100 không bắt buộc. Một app process, một mediasoup worker, Router/LIVE; Mongo local Docker rs0 một node | Chưa profile đạt; cần queue/pool/gate/quota budget hữu hạn và tải kết hợp. Không tự thêm Redis/multiapp/sharding. [Capacity](capacity.md)                                                                  |
 | Media             | mediasoup v3 chọn cho PoC, scaffold có Opus/VP8/native worker                                                                                                | ADR-001 còn Proposed; chưa chứng minh mic/camera/share/TURN/isolation/reconnect hoặc capacity. [ADR](adr/001-media-foundation.md)                                                                          |

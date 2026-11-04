@@ -1,5 +1,7 @@
 # Bước 1 — Truy vết Use Case và dữ liệu
 
+**Cập nhật recording ngày 05/11/2026:** phần 13 collection trước recording giữ làm baseline cũ; delta `recordings` và `files: RECORDING` theo [schema bàn giao](recordings-schema.md), đã được proposal M2 nhận làm thiết kế. Main 7c4320f (PR #27) đã nhận schema/đề xuất M3 và chốt tối đa 3 tiếng/đoạn, READY giữ vô thời hạn; profile MP4/H264/AAC cần PoC; quota, bản tạm/lỗi và xóa byte sau parent deletion còn cần review. Các ghi chú recording “chưa có field/index” bên dưới phản ánh mốc trước delta; chưa có schema/index/migration thực thi hoặc test sản phẩm đạt.
+
 **Trạng thái:** bản phân tích để nhóm review, ngày 01/11/2026. Hoàn thành phạm vi bước 1–2 theo yêu cầu: truy vết UC và mô hình nghiệp vụ; field/collection và index đích đã được cụ thể hóa ở bước 4–5; chưa có schema executable, migration hay thay đổi code từ đợt tài liệu. MongoDB/Mongoose vẫn là hướng đã chọn. Reviewer nghiệp vụ: người dùng/nhóm; chưa gán thành viên cụ thể hoặc tạo Issue thay nhóm.
 
 Nguồn: [danh mục UC hiện hành](../product/use-case-catalog.md), [6 hồ sơ trọng tâm](../product/use-cases/README.md), các nguồn product theo miền bên dưới. [Model khung](model.md) và [lifecycle](lifecycle.md) là các ràng buộc thiết kế đã có; bảng này giải thích nguồn gốc dữ liệu, không tự thay baseline. [Mô hình nghiệp vụ bước 2](conceptual-model.md) định nghĩa E01–E16 và các quan hệ được dùng trong bảng.
