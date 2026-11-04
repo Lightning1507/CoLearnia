@@ -13,7 +13,9 @@ Người tiếp nhận đọc thêm [hướng dẫn bàn giao](figma-handoff.md)
 - [Brief và các prompt đã dùng](figma-make-brief.md): hướng thị giác và lịch sử yêu cầu; không chạy lại nguyên prompt cũ. Dùng quy tắc mới/lộ trình trong [bàn giao](figma-handoff.md) và kết quả hiện hành bên dưới để chọn việc tiếp theo.
 - Nguồn nghiệp vụ: [Workspace](../product/workspace-channels.md), [messaging](../product/messaging.md), [LIVE](../product/live-session.md), [nhóm](../product/group-modes.md), [board](../product/board-collaboration.md), [recording](../product/recording.md).
 
-**Lưu ý về quyết định mới:** ngày 04–05/11, người phụ trách xác nhận hướng của team: thay host tạm ngay khi server phát hiện mất kết nối; DISCUSSION đã có người tự đóng khi không còn ai kết nối; ACTIVITY cho thành viên vào lại đúng nhóm khi lượt còn mở và bỏ điều chuyển trong lượt. Một số nguồn ở checkout hiện tại còn mô tả cũ. Các mục dưới ghi rõ đích cần áp dụng theo xác nhận này; không coi prototype hoặc bản tài liệu cũ là quyết định thay thế.
+**Lưu ý về quyết định mới:** ngày 04–05/11, người phụ trách xác nhận hướng của team: thay host tạm ngay khi server phát hiện mất kết nối; DISCUSSION đã có người tự đóng khi không còn ai kết nối; ACTIVITY cho thành viên vào lại đúng nhóm khi lượt còn mở và bỏ điều chuyển trong lượt. Các quy tắc này đã có trong nguồn product sau merge main ngày 05/11; prompt lịch sử không ghi đè nguồn hiện hành.
+
+**Đối chiếu sau merge main 05/11:** recording đã chốt mỗi đoạn tối đa 3 tiếng, READY giữ vô thời hạn, đổi host vẫn ghi tiếp và danh sách xem lại chỉ READY. Kế hoạch UI đã cập nhật tại [bàn giao, đợt D](figma-handoff.md). Đây là kết quả đối chiếu tài liệu, **chưa gửi Make hoặc kiểm lại Figma**; kết quả preview ở mục 4 vẫn là lần kiểm gần nhất.
 
 ## 2. Cách hiểu trạng thái
 
@@ -129,7 +131,7 @@ Ngày 05/11/2026, thao tác trên preview Make. Không gửi thêm prompt hoặc
 - Share: nguồn trống/mình share/người khác share; hủy chọn màn hình; dừng/đổi nguồn xóa overlay LIVE. Đây là mô phỏng UI, không thay PoC media.
 - Chat: Everyone đúng phòng, Host đúng người, text/ảnh và layout khi mở panel; không rò nháp/lịch sử riêng khi đổi host/phòng. Ca nháp text hỗ trợ A → MAIN thuộc lượt kiểm trước, chưa kiểm lại đầy đủ sau prompt sửa 6 điểm.
 - Host: chuyển quyền trực tiếp; rời khi còn host kết thúc cho mọi người; hủy xác nhận không kết thúc.
-- Recording: bổ sung/kiểm riêng nút host ghi/dừng, chỉ báo mọi người, xử lý/sẵn sàng/lỗi và nơi xem video. Chỉ MAIN; không tự chọn quota/retention/quyền xóa.
+- Recording: làm theo delta đợt D trong bàn giao: chỉ MAIN, host hiện hành điều khiển, mỗi đoạn tối đa 3 tiếng, đổi host vẫn ghi tiếp, call end không chờ video READY; danh sách xem lại chỉ READY, giữ vô thời hạn. Quota/quyền xóa còn mở; chưa kiểm các trạng thái này trên Figma.
 - Workspace và các màn M1/M2 còn lại: kiểm hiện có trước khi bổ sung, tránh dựng trùng. Đối chiếu hồ sơ/avatar/đổi mật khẩu, lời mời và quản trị theo nguồn hiện hành.
 - Bố cục desktop 1440×900 và 1280×800: mở panel vẫn đọc được share/chat và dùng được mic/camera/rời. Chưa nghiệm thu responsive từ lượt kiểm này.
 
