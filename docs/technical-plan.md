@@ -148,6 +148,8 @@ REST `/api/v1`; Zod validate ở biên. Cookie auth `HttpOnly; Secure; SameSite=
 
 `GET /auth/csrf` cấp token bootstrap gắn cookie CSRF có chữ ký để form đăng ký/đăng nhập hoạt động trước auth; server kiểm chữ ký, Origin và token gửi lại. Sau login rotate auth/CSRF, trả token mới cho header HTTP/socket handshake; không đưa session secret vào client. Cookie CSRF và cookie auth có mục đích riêng.
 
+Làm rõ ngày 03/11/2026: register thành công cũng thiết lập phiên mới và rotate CSRF như login. Đi từ link mời thì quay lại lời mời sau xác thực, người dùng xác nhận rồi server kiểm lại hiệu lực để cấp membership; không tự accept trong register/login. Luồng Workspace theo [nguồn nghiệp vụ](product/workspace-channels.md).
+
 ```ts
 // REST
 { data: {}, requestId: 'uuid' }
@@ -183,7 +185,6 @@ HTTP: 400 malformed, 401 chưa/hết auth, 403 sai quyền, 404 không thấy t�
 | GET, PATCH, DELETE /workspaces/:wid | Member đọc; owner/admin sửa tên; owner xóa |
 | GET /workspaces/:wid/members | Member hợp lệ |
 | PATCH, DELETE /workspaces/:wid/members/:uid | Owner đổi admin/member; owner/admin loại member; admin không sửa/xóa owner/admin khác |
-| POST /workspaces/:wid/owner-transfer | Owner → target member; transaction |
 | POST /workspaces/:wid/invitations; DELETE /invitations/:iid | Owner/admin tạo/thu link |
 | POST /invitations/accept | Token trong body; transaction, không log |
 | GET, POST /workspaces/:wid/channels | Filter access WORKSPACE/PRIVATE; owner/admin tạo; xem quyền PRIVATE tại messaging |
@@ -248,7 +249,7 @@ Workspace shell có general/kênh, danh sách DM của chính mình và panel th
 
 RoomPage có nguồn hợp lệ theo MAIN/DISCUSSION/ACTIVITY hoặc frame đã freeze của nhóm hiện tại (MAIN không freeze), camera tiles, danh sách người, chat, scope badge, mic/camera/share/volume/board controls. Hiển thị rõ “MIC trong nhóm / toàn phòng / đang hỗ trợ” và “hình đã dừng, tiếng vẫn trực tiếp”. Mọi chuyển phạm vi công bố phải nhìn thấy được. Chat/panel chuyển tab không unmount call controller.
 
-Không tạo màn hình quiz/library hoặc đồng hồ ngoài countdown TIMER-01, hoặc hai ứng dụng độc lập cho phòng nhóm và lớp học. Chưa yêu cầu avatar upload để hoàn thành Workspace; ảnh gửi chat/tệp vẫn thuộc scope.
+Không tạo màn hình quiz/library hoặc đồng hồ ngoài countdown TIMER-01, hoặc hai ứng dụng độc lập cho phòng nhóm và lớp học. Cập nhật 03/11: PROFILE-01 gồm sửa tên hiển thị/avatar và đổi mật khẩu hiện tại; quên mật khẩu để sau MVP. Cập nhật 04/11: avatar lưu Cloudinary, công khai qua URL; chỉ chính chủ thay/xóa. M2 phối hợp upload và cleanup. Quyền ảnh/file chat và video cuộc họp giữ nguyên.
 
 ### 12.2. Repository
 
@@ -346,8 +347,8 @@ Thu ít nhất 20 mẫu cho thao tác lặp Q-01/Q-03/Q-04/Q-06, báo p50/p95 v�
 
 | ID | Phạm vi | Ca quan trọng | Owner/reviewer |
 |---|---|---|---|
-| T-01 | Auth/Workspace | Sai Workspace/channel, tự nâng role, transfer owner, hết auth khi socket mở | A/C |
-| T-02 | DB concurrency | Invitation maxUses, join channel, rollback Workspace/general, DM đồng thời, message/reply dedupe và reply count | A/E |
+| T-01 | Auth/Workspace | Sai Workspace/channel, tự nâng role, đổi ADMIN/MEMBER đúng quyền, hết auth khi socket mở | A/C |
+| T-02 | DB concurrency | Invitation một link hiện hành, tắt/tạo lại đồng thời accept, join channel, rollback Workspace/general, DM đồng thời, message/reply dedupe và reply count | A/E |
 | T-03 | Camera/mic/share | Hai mạng, device denied, MAIN tranh lease/browser Stop; DISCUSSION deny screen; ACTIVITY member tự share, cùng nhóm chỉ một nguồn, hai nhóm độc lập, nguồn bận không giành | B/D |
 | T-04 | Publish/consume | Giả nguồn/owner/transport/grant; Consumer ready sau revoke; duplicate receive | B/C |
 | T-05 | Group modes/isolation | Create hợp lệ tạo DISCUSSION tự động, roster chưa cấp private tới khi join; phase ACTIVITY chặn create/join; random preview không cấp scope; ACTIVITY không nhận MAIN; host help chỉ ACTIVITY; leave/revoke không lộ nội dung | C/B |
@@ -436,7 +437,7 @@ Tuần tính từ kickoff, chưa gắn ngày khi chưa có lịch bắt đầu. 
 | Ngày 1–3 | Auth/membership skeleton, replica set | Mic/screen/camera tối thiểu hai mạng, TURN | Session/group policy, move/revoke | Freeze frame chung thử, audio tiếp tục | HTTPS/staging/Compose, evidence | Gate nền media; hợp đồng nền |
 | Cuối tuần 1 | Auth + Workspace/channel API/UI skeleton | Media registry/lobby cơ bản | Host từ lúc bắt đầu phiên, group skeleton | Canvas/board version, freeze contract | Chat skeleton, CI | Join qua Workspace trên staging, core policy tests |
 | Tuần 2 | Invitation/member/file/chat ACL | Mic/camera/share lease hoàn chỉnh, cleanup | Groups/host tools, isolation/reconcile, help skeleton | Pen/cursor/undo, freeze/resume tích hợp, audio graph | Chat kênh bền, file composer, reconnect skeleton | Lát cắt kênh/tệp UC-01 và phần chính UC-02; hai group đúng scope |
-| Tuần 3 | Kick/owner transfer/transactions hoàn thiện | Recovery, pending consumer races, share ownership | Chat Everyone/Host, help, về MAIN, transfer host | Volume/ducking, frame races, cleanup board nhóm | DM/thread tích hợp, REC, E2E UC-01/02/03 | Toàn scope có luồng thật; khóa thêm tính năng |
+| Tuần 3 | Kick/role/transactions hoàn thiện | Recovery, pending consumer races, share ownership | Chat Everyone/Host, help, về MAIN, transfer host | Volume/ducking, frame races, cleanup board nhóm | DM/thread tích hợp, REC, E2E UC-01/02/03 | Toàn scope có luồng thật; khóa thêm tính năng |
 | Tuần 4 | API/file negative tests, fix | Browser/network/resource/load tests, fix | Revoke/group/host races, fix | Board/chat scope/audio tests, UX lỗi | Bug triage, deploy SHA, evidence | Release candidate đủ DoD, blocker = 0 |
 | Tuần 5 | Data/permission report | Media explanation | Domain/policy explanation | Freeze/audio explanation | Restore/rollback/runbook/demo script | Production hardening, tài liệu, rehearsal |
 | Tuần 6 nếu có | Cả nhóm sửa lỗi và diễn tập; không mở scope mới | | | | | Bảo vệ và bàn giao |
@@ -530,7 +531,7 @@ Dự toán tách compute, egress, file storage, TURN relay path và backup. Tín
 
 ### 18.2. Quy tắc thay đổi
 
-Được tự đơn giản hóa trong mức đã chốt: layout, animation, avatar, cấu hình codec/bitrate, camera pagination, cách undo nguyên nét và công cụ vận hành tối thiểu. Không tự cắt tài khoản/Workspace/chat/tệp, camera, hai group mode, freeze/vẽ cơ bản, chat cuộc họp/help/về MAIN, TIMER-01, volume hoặc reconnect.
+Được tự đơn giản hóa trong mức đã chốt: layout, animation, cách trình bày avatar (không bỏ chức năng cập nhật/xóa), cấu hình codec/bitrate, camera pagination, cách undo nguyên nét và công cụ vận hành tối thiểu. Không tự cắt tài khoản/Workspace/chat/tệp, camera, hai group mode, freeze/vẽ cơ bản, chat cuộc họp/help/về MAIN, TIMER-01, volume hoặc reconnect.
 
 Nếu cần đổi chức năng chính/SFU/lịch: ghi vấn đề, bằng chứng, lựa chọn, chi phí, ảnh hưởng UC/test; nhóm xác nhận và cập nhật version/scope. Không giảm kiểm quyền, dùng video giả thay cuộc gọi hoặc đặt gain=0 để che nguồn không nên nhận. Lát cắt học tự do và moderated là thứ tự xây, không là quyền bỏ lát cắt sau.
 
@@ -600,3 +601,5 @@ Quyết định này thay cách hiểu host có thể vào hỗ trợ mọi lo�
 RECORD-01 theo [nguồn nghiệp vụ](product/recording.md): host điều khiển ghi màn hình/camera/âm thanh MAIN; lưu theo phiên để thành viên còn quyền kênh xem. Không ghi nhóm riêng hoặc chuyển recorder theo host hỗ trợ. Chưa có implementation hoặc benchmark. Proposal M3 chủ trì, M4 cung cấp host/scope/lifecycle, M2 lưu/phục vụ byte/ACL, M1 quyền kênh.
 
 Cần chọn capture/composition/encode, bố cục/số camera/codec và cách phát, trạng thái xử lý, idempotency, cleanup khi stop/end/error/restart, quota/retention/quyền xóa. Delta collection/index theo [schema recordings bàn giao](database/recordings-schema.md) đã có trên main 7c4320f qua PR #27: tối đa 3 tiếng/đoạn, READY giữ vô thời hạn; profile MP4/H264/AAC cần PoC, quota và quyền xóa sau parent deletion còn mở; chưa có thư viện/topology đã kiểm chứng hoặc schema executable. Không coi recorder là participant được nghe mọi scope. Không giữ queue/mutex phiên khi chờ encode/lưu file; task phải thiết kế gate tài nguyên và giao diện cleanup. Đo CPU/RAM/disk/network cùng media/chat/board/TURN trước khi chốt capacity; PoC clip vài phút không là giới hạn thời lượng sản phẩm. REC-01 vẫn là reconnect, không dùng mã đó cho recording.
+
+Cập nhật scope 03/11/2026: chuyển owner Workspace không thuộc MVP; người tạo giữ OWNER và có thể cấp ADMIN. Không triển khai route owner-transfer; chuyển host cuộc họp không bị ảnh hưởng. Nguồn: [scope](product/scope.md).

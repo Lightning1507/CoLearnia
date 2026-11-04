@@ -4,7 +4,7 @@
 
 ## Cơ sở và nguyên tắc
 
-Dựa trên [55 FR](functional-requirements.md), [backlog](backlog-draft.md) và [ranh giới trạng thái trong kiến trúc](../architecture.md). Một người dự kiến phụ trách một miền xuyên FE–BE–dữ liệu/kiểm thử, tự chuẩn bị proposal, API/contract dự kiến, task sơ bộ và estimate. Người phụ trách chính chịu trách nhiệm đầu ra của miền, không có nghĩa tự làm mọi phần tích hợp mà không cần bên khác.
+Dựa trên [57 FR](functional-requirements.md), [backlog](backlog-draft.md) và [ranh giới trạng thái trong kiến trúc](../architecture.md). Một người dự kiến phụ trách một miền xuyên FE–BE–dữ liệu/kiểm thử, tự chuẩn bị proposal, API/contract dự kiến, task sơ bộ và estimate. Người phụ trách chính chịu trách nhiệm đầu ra của miền, không có nghĩa tự làm mọi phần tích hợp mà không cần bên khác.
 
 Các miền là phân chia công việc trong cùng ứng dụng/monorepo, không phải 5 microservice, 5 database hoặc 5 kiến trúc tự chọn. Dùng chung technical plan, contracts, MongoDB và quy tắc quyền. Test/review do từng miền chịu; không có một người chỉ làm tester hoặc ghép toàn bộ dự án vào cuối kỳ.
 
@@ -14,17 +14,17 @@ Khung thời gian người dùng hiện đề nghị là **6–7 tuần**, phầ
 
 | Miền                                          | Kết quả chịu trách nhiệm chính                                                                   | FR chính                                                        | Số FR |
 | --------------------------------------------- | ------------------------------------------------------------------------------------------------ | --------------------------------------------------------------- | ----- |
-| **M1 · Tài khoản, Workspace và quyền kênh**   | Người dùng đăng nhập, tạo/vào Workspace, quản lý thành viên và kênh đúng quyền                   | FR-01-01–03; FR-02-01–08; FR-03-01–04                           | 15    |
+| **M1 · Tài khoản, Workspace và quyền kênh**   | Người dùng đăng nhập, tạo/vào Workspace, quản lý thành viên và kênh đúng quyền                   | FR-01-01–06; FR-02-01–07; FR-03-01–04                           | 17    |
 | **M2 · Hội thoại, tin nhắn và tệp**           | Chat TEXT/DM/thread/cuộc họp, file và xem lại video đúng quyền                                   | FR-04-01–04; FR-09-01–02; FR-12-01–02; FR-13-01–02; FR-15-03    | 11    |
 | **M3 · Trải nghiệm cuộc gọi, media và audio** | Lobby/call/mic/camera/share/audio và pipeline recording MAIN                                     | FR-05-01–05; FR-08-01–02; FR-15-01–02                           | 9     |
 | **M4 · Vòng đời phiên, host và nhóm**         | Session/host, DISCUSSION/ACTIVITY, hỗ trợ, deadline, chuyển phòng và đồng bộ quyền khi reconnect | FR-07-01–06/08–09; FR-09-03; FR-10-01; FR-11-01–03; FR-14-01–02 | 15    |
 | **M5 · Board, freeze và vẽ**                  | Host vẽ LIVE tại MAIN; nhóm cùng freeze/vẽ/resume đúng nguồn và context                          | FR-06-01–05                                                     | 5     |
 
-**55/55 FR có một miền phụ trách chính.** Các phần tích hợp có người phối hợp bên dưới, không đếm lại thành FR mới. Số FR chỉ kiểm độ phủ, không dùng để chia đều effort. Các miền hiện là phương án để thảo luận, chưa thể nói 5 người đã cân tải.
+**57/57 FR có một miền phụ trách chính.** Các phần tích hợp có người phối hợp bên dưới, không đếm lại thành FR mới. Số FR chỉ kiểm độ phủ, không dùng để chia đều effort. Các miền hiện là phương án để thảo luận, chưa thể nói 5 người đã cân tải.
 
 ### M1 · Tài khoản, Workspace và quyền kênh
 
-- **Phần sản phẩm:** form đăng ký/đăng nhập, khôi phục trạng thái đăng nhập/đăng xuất; danh sách Workspace, tạo/đổi tên/xóa; invitation; thành viên/role/owner transfer; tạo/đổi tên/xóa TEXT/LIVE và quản lý PRIVATE. UI Workspace/sidebar và các màn quản trị thuộc miền này; nội dung hội thoại do M2, vùng cuộc gọi do M3.
+- **Phần sản phẩm:** form đăng ký/đăng nhập, hồ sơ tên hiển thị/avatar và đổi mật khẩu, khôi phục trạng thái đăng nhập/đăng xuất; danh sách Workspace, tạo/đổi tên/xóa; invitation; thành viên/role; tạo/đổi tên/xóa TEXT/LIVE và quản lý PRIVATE. UI Workspace/sidebar và các màn quản trị thuộc miền này; nội dung hội thoại do M2, vùng cuộc gọi do M3.
 - **Trạng thái/dữ liệu:** danh tính, phiên xác thực, Workspace, membership, invitation, channel và PRIVATE access theo thiết kế DB. Sở hữu cách kiểm quyền Workspace/kênh, không sở hữu quyền nghe mọi nhóm vì có admin.
 - **Cần cung cấp:** contract danh tính/phiên; tra quyền membership/channel hiện hành; luồng thu quyền khi logout/kick/gỡ PRIVATE/xóa; ngữ cảnh kênh để M2/M3 mở đúng khu vực.
 - **Cần nhận:** cách tạo conversation CHANNEL từ M2 trong transaction tạo general; cách chặn/dọn tài nguyên đang mở từ M2/M4 (M4 phối hợp M3/M5). Thành công CRUD chưa đủ nếu nội dung/media cũ vẫn được cấp sau revoke.
@@ -167,7 +167,11 @@ Giữ 5 miền là phương án ban đầu; sau khi người thật review propo
 - M4 cập nhật FR-07-03/04: DISCUSSION tự tạo khi hợp lệ, không host xét/hủy pending; FR-07-05 thêm random preview/chỉnh trước start.
 - M3 chủ trì recording MAIN, sở hữu FR-15-01/02: capture/compose/encode, trạng thái và hoàn tất bản ghi; phối hợp M4 về quyền host/scope và kết thúc phiên.
 - M2 sở hữu FR-15-03: danh sách/xem lại theo phiên/kênh, lưu/phục vụ byte đúng ACL; M1 cung cấp quyền hiện hành. M2–M3 thống nhất một owner metadata/schema, file lifecycle và lỗi/quota; không tách thành hai hệ lưu trữ.
-- Tổng 55 FR: M1 15, M2 11, M3 9, M4 15, M5 5. Recording tăng tải M3/M2/M4; cần estimate lại và PoC sớm. Chưa gán tên người hoặc cam kết cân tải.
+- Tổng 57 FR: M1 17, M2 11, M3 9, M4 15, M5 5. Recording tăng tải M3/M2/M4; cần estimate lại và PoC sớm. Chưa gán tên người hoặc cam kết cân tải.
 - Điểm giao recording cần ghi trong proposal: tập nguồn MAIN hiện hành, host hỗ trợ nhóm không bị ghi, control theo host hiện tại, chuyển trạng thái, quyền xem, lỗi storage/encode, cleanup và tải kết hợp. Demo clip vài phút; hướng pipeline/vòng đời theo quyết định 04/11; công cụ/quota/retention/quyền xóa cần PoC/contract.
 
 Nguồn [recording](recording.md); không tự chọn thư viện hay thêm Redis/worker pool từ task tài liệu.
+
+### Bổ sung hồ sơ ngày 03/11/2026
+
+FR-01-04–06 do M1 phụ trách chính; M2 cung cấp nền file avatar và cleanup, không nhận thêm FR chính. Cập nhật 04/11: avatar lưu Cloudinary, công khai qua URL; chỉ chính chủ thay/xóa. M1 lưu metadata trên User, M2 phối hợp upload đã xác minh và cleanup; không dùng scope tin nhắn. Tổng hiện hành 57 FR: M1 17, M2 11, M3 9, M4 15, M5 5; cần tính thêm effort hỗ trợ M2 trong proposal của M2.

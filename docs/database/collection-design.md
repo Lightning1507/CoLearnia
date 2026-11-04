@@ -40,8 +40,8 @@ Các giá trị enum bên dưới là **đích thiết kế**, chưa phải sche
 | ------------------- | -------------------------------- | ------------------------------------------------ |
 | users               | E01 · ACC-01/02                  | Không nhúng Workspace/membership                 |
 | authSessions        | Hỗ trợ ACC-02/03                 | userId, độc lập từng phiên xác thực              |
-| workspaces          | E02 · WS-01/03/04/11             | ownerId; không mảng member/channel               |
-| memberships         | E03 · WS-07/09/10/11             | workspaceId + userId, role và incarnation        |
+| workspaces          | E02 · WS-01/03/04                | ownerId; không mảng member/channel               |
+| memberships         | E03 · WS-07/09/10                | workspaceId + userId, role và incarnation        |
 | invitations         | E04 · WS-05/06/07                | workspaceId, người tạo; không mảng người đã nhận |
 | channels            | E05 · WS-12/13/14                | workspaceId; không mảng quyền/tin nhắn           |
 | channelAccessGrants | Quan hệ E05–E03 · WS-15          | channelId + membershipId + incarnation           |
@@ -63,7 +63,15 @@ E11 Request, E12 Group, E13 Round, E14 Board và E16 Stroke vẫn thuộc RAM; E
 | displayName     | String bắt buộc          | Tên hiển thị hiện tại, không snapshot lặp vào từng tin                 |
 | status          | ACTIVE / DISABLED        | Hiệu lực xác thực theo baseline; không bổ sung màn hình khóa tài khoản |
 
-Không thêm avatar/profile settings hoặc chức năng đổi email/password từ thiết kế này. Thư viện/hash parameters vẫn chờ task auth; không ghi giá trị giả vào schema.
+Cập nhật 04/11: avatar lưu Cloudinary, công khai qua URL; chỉ chính chủ được thay/xóa. Đề xuất bổ sung field `avatar` vào User (chưa triển khai Mongoose schema):
+
+| Field            | Kiểu / điều kiện                    | Ý nghĩa                                                                        |
+| ---------------- | ----------------------------------- | ------------------------------------------------------------------------------ |
+| avatar           | Object hoặc null                    | `null` khi chưa có hoặc đã xóa ảnh                                             |
+| avatar.publicId  | String bắt buộc khi có avatar       | Định danh Cloudinary để quản lý/thay/xóa ảnh; không dùng URL làm định danh xóa |
+| avatar.secureUrl | String HTTPS bắt buộc khi có avatar | URL ảnh Cloudinary công khai để hiển thị; HTTPS không thay kiểm quyền          |
+
+Đề xuất nhúng metadata nhỏ trên User, không tạo collection avatar hoặc bắt buộc dùng files CHAT/FRAME. Backend chỉ nhận metadata của lượt upload đã xác minh đúng chủ; không nhận URL/publicId tùy ý từ client. M1/M2 review luồng upload, định dạng/giới hạn, xử lý đồng thời và dọn ảnh cũ trước T18. Không có nhu cầu truy vấn theo avatar trong M1 hiện tại nên chưa đề xuất index riêng. Đổi mật khẩu vẫn thu tất cả phiên; thư viện/tham số hash chờ task auth. Nguồn: [PROFILE-01](../product/workspace-channels.md).
 
 ### 3.2. authSessions
 
@@ -85,7 +93,7 @@ Không lưu socket IDs/media objects. Revoke phải lan tới runtime do phiên 
 | revision  | Int ≥0           | Phiên bản mutation của Workspace/owner                             |
 | deletedAt | Date hoặc null   | Tombstone khóa truy cập; không là restore feature                  |
 
-Không unique ownerId trên toàn collection. Tạo Workspace/general/membership/conversation và transfer owner phải nhất quán theo lifecycle; index/transaction thực thi ở bước 5.
+Không unique ownerId trên toàn collection. Tạo Workspace/general/membership/conversation phải nhất quán theo lifecycle; index/transaction thực thi ở bước 5.
 
 ### 3.4. memberships
 
@@ -99,22 +107,25 @@ Không unique ownerId trên toàn collection. Tạo Workspace/general/membership
 | joinedAt            | Date                   | Lần gia nhập hiện tại; rejoin cập nhật               |
 | removedAt           | Date hoặc null         | Được gán khi bị loại; rejoin đặt null                |
 
-Mọi thay đổi role/status, kick và rejoin đều tăng revision bằng CAS; đổi role/transfer owner tăng revision, **không tăng incarnation** và không tự làm mất PRIVATE hợp lệ. Người đã ACTIVE nhận lời mời lại không tăng incarnation hoặc tốn lượt. User/Workspace không hợp lệ vẫn chặn truy cập dù status ACTIVE.
+Mọi thay đổi role/status, kick và rejoin đều tăng revision bằng CAS; đổi role tăng revision, **không tăng incarnation** và không tự làm mất PRIVATE hợp lệ. Người đã ACTIVE nhận lời mời lại không tăng incarnation hoặc tạo membership mới. User/Workspace không hợp lệ vẫn chặn truy cập dù status ACTIVE.
 
 Không nhúng membershipIds vào User. Tombstone membership phải còn đủ để phân biệt các lần gia nhập, không xóa rồi tạo lại cùng version làm grant cũ sống lại; kế hoạch purge Workspace sẽ xử lý refs đồng bộ.
 
 ### 3.5. invitations
 
-| Field                        | Kiểu / điều kiện      | Ý nghĩa                                         |
-| ---------------------------- | --------------------- | ----------------------------------------------- |
-| workspaceId, createdByUserId | Id → workspaces/users | Phạm vi và actor phát hành                      |
-| tokenHash                    | String, private       | Tra link mà không lưu token raw                 |
-| expiresAt                    | Date                  | Hết hạn kiểm server                             |
-| revokedAt                    | Date hoặc null        | Thu hồi chặn nhận mới                           |
-| maxUses                      | Int >0                | Giới hạn lượt của link theo baseline            |
-| uses                         | Int ≥0                | Lượt nhận thành công, không tính user đã ACTIVE |
+Quyết định 04/11/2026: một document cho link hiện hành của mỗi Workspace; tối đa một link được bật. Link không hết hạn, không giới hạn lượt và owner/admin sao chép lại được. Tạo lại thay token; tắt hoặc tạo lại không loại thành viên hiện có.
 
-Hết hạn/hết lượt là trạng thái suy từ field, không giữ enum EXPIRED có thể lệch thời gian. Không giới hạn link vào đúng một email hoặc thêm lịch sử người nhận nếu chưa có nhu cầu UC. Retry/concurrency nhận lời mời thiết kế ở bước 5.
+| Field           | Kiểu / điều kiện        | Ý nghĩa                                        |
+| --------------- | ----------------------- | ---------------------------------------------- |
+| workspaceId     | Id → workspaces, unique | Một cấu hình link mời/Workspace                |
+| createdByUserId | Id → users              | Người tạo link đầu tiên                        |
+| tokenHash       | String, private, unique | Xác minh token hiện hành; cập nhật khi tạo lại |
+| enabled         | Boolean                 | Tắt thì không nhận lượt gia nhập mới           |
+| revision        | Int ≥0                  | Tăng khi tạo lại/tắt; từ chối thao tác stale   |
+
+Tắt/tạo lại link nhận `expectedRevision` từ lần đọc invitation; cập nhật có điều kiện theo revision dưới Workspace gate và tăng revision khi có thay đổi. Yêu cầu cũ bị conflict, không được tắt hoặc thay link mới hơn. Retry cùng requestId không áp dụng lại thao tác; tắt link đã tắt tại đúng revision hiện hành không làm tăng revision.
+
+**Thiết kế chưa hoàn tất:** tokenHash không thể khôi phục link. M1 cần review cách lưu/tái tạo token an toàn để sao chép lại, field bổ sung và quản lý khóa trước schema/contract. Không giữ expiresAt/maxUses/uses từ thiết kế cũ; không TTL lời mời. createdAt/updatedAt theo quy ước chung. Không thêm lịch sử link hoặc gắn một email nhận trong MVP.
 
 ### 3.6. channels
 
@@ -315,3 +326,5 @@ Giữ field/13 collection hiện tại. [Capacity](../capacity.md) chọn 25 là
 RECORD-01 / UC-LIVE-11–12 / FR-15-01–03 bổ sung metadata bản ghi gắn LiveSession/kênh, trạng thái ghi/xử lý/sẵn sàng/lỗi ở mức hành vi, tham chiếu video byte và cleanup. Video thuộc kho tệp; không nhúng byte vào MongoDB hoặc tái dùng FRAME/attachment để vượt ACL. Xem [recording](../product/recording.md) và [model](model.md). 13 collection/16 khái niệm cũ mô tả phạm vi trước recording, chưa là thiết kế recording hoàn tất; chưa chốt field/index/migration mới.
 
 Quyền xem kiểm membership và channel access hiện tại, kể cả PRIVATE, không dựa vào participant cũ; xóa kênh/Workspace và thu quyền phải được tính trong lifecycle. Stop/end hoàn tất hoặc báo lỗi, dọn tài nguyên/tệp dở dang; quota/retention/quyền xóa và xử lý restart còn chờ proposal. DISCUSSION tạo hợp lệ ngay, không trạng thái host xét/hủy pending; random preview chỉ là cấu hình ACTIVITY, không tự chuyển người.
+
+Owner transfer Workspace không triển khai trong MVP theo scope 03/11; không cho endpoint đổi role tạo/hủy OWNER. Giữ invariant một owner ở luồng tạo và bảo vệ owner khỏi kick.

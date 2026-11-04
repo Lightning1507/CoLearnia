@@ -4,7 +4,7 @@
 
 ## Kết quả review mức mục tiêu
 
-Bản đầu có 53 mục ứng viên, sau đó thêm WS-15. Hiện hành sau kickoff: **43 UC nghiệp vụ + 3 truy cập chung**, 8 mã gộp và UC-GRP-03/07 ngừng áp dụng (56 mã truy vết). Bỏ xét duyệt DISCUSSION, thêm LIVE-11/12 recording; không tái dùng mã cũ. Các dòng Giữ/Truy cập chung là UC hiện hành, các dòng gộp/ngừng không là oval độc lập.
+Bản đầu có 53 mục ứng viên, sau đó thêm WS-15. Hiện hành sau kickoff: **42 UC nghiệp vụ + 5 UC tài khoản/truy cập chung**, 8 mã gộp; UC-GRP-03/07 và UC-WS-11 ngừng áp dụng (58 mã truy vết). Bỏ xét duyệt DISCUSSION, thêm LIVE-11/12 recording; ngày 03/11 bổ sung ACC-04/05 hồ sơ/đổi mật khẩu; không tái dùng mã cũ. Các dòng Giữ/Truy cập chung là UC hiện hành, các dòng gộp/ngừng không là oval độc lập.
 
 ## Quy ước
 
@@ -18,33 +18,35 @@ Bản đầu có 53 mục ứng viên, sau đó thêm WS-15. Hiện hành sau ki
 
 Nguồn: [Scope AUTH-01](scope.md), [tài khoản](workspace-channels.md).
 
-| Mã        | UC đề xuất        | Actor | Điều kiện chính          | Kết quả người dùng                                                         | Quyết định review                   |
-| --------- | ----------------- | ----- | ------------------------ | -------------------------------------------------------------------------- | ----------------------------------- |
-| UC-ACC-01 | Đăng ký tài khoản | A-00  | Thông tin đăng ký hợp lệ | Có tài khoản để truy cập hệ thống                                          | Truy cập chung, không phân rã riêng |
-| UC-ACC-02 | Đăng nhập         | A-00  | Có tài khoản hợp lệ      | Thiết lập phiên truy cập hợp lệ                                            | Truy cập chung, không phân rã riêng |
-| UC-ACC-03 | Đăng xuất         | A-00  | Có phiên truy cập        | Kết thúc phiên truy cập liên quan; thu truy cập socket/media theo baseline | Truy cập chung, không phân rã riêng |
+| Mã        | UC đề xuất              | Actor | Điều kiện chính                            | Kết quả người dùng                                                         | Quyết định review                      |
+| --------- | ----------------------- | ----- | ------------------------------------------ | -------------------------------------------------------------------------- | -------------------------------------- |
+| UC-ACC-01 | Đăng ký tài khoản       | A-00  | Thông tin đăng ký hợp lệ                   | Có tài khoản và phiên đăng nhập; từ link mời quay lại để xác nhận tham gia | Truy cập chung, không phân rã riêng    |
+| UC-ACC-02 | Đăng nhập               | A-00  | Có tài khoản hợp lệ                        | Thiết lập phiên truy cập hợp lệ                                            | Truy cập chung, không phân rã riêng    |
+| UC-ACC-03 | Đăng xuất               | A-00  | Có phiên truy cập                          | Kết thúc phiên truy cập liên quan; thu truy cập socket/media theo baseline | Truy cập chung, không phân rã riêng    |
+| UC-ACC-04 | Chỉnh sửa hồ sơ cá nhân | A-00  | Đã đăng nhập, chỉ hồ sơ của mình           | Tên hiển thị/avatar được cập nhật; có thể bỏ avatar                        | Bổ sung theo PROFILE-01, chưa vẽ Astah |
+| UC-ACC-05 | Đổi mật khẩu            | A-00  | Phiên hợp lệ và xác minh mật khẩu hiện tại | Mật khẩu mới có hiệu lực, thu tất cả phiên và yêu cầu đăng nhập lại        | Bổ sung theo PROFILE-01, chưa vẽ Astah |
 
 ## TQ-02 · Tổ chức không gian học tập
 
 Nguồn: [Scope WS-01/02/03, CH-01](scope.md), [quyền tại plan 10.2](../technical-plan.md#102-rest-chính), [general](messaging.md).
 
-| Mã       | UC đề xuất                     | Actor     | Điều kiện chính                                                                 | Kết quả người dùng                                                                                                 | Quyết định review |
-| -------- | ------------------------------ | --------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ | ----------------- |
-| UC-WS-01 | Tạo Workspace                  | A-00      | Đã đăng nhập                                                                    | Có Workspace, owner membership và general TEXT đồng thời                                                           | Giữ UC độc lập    |
-| UC-WS-02 | Xem các Workspace của mình     | A-00      | Đã đăng nhập                                                                    | Xem danh sách và mở Workspace còn quyền                                                                            | Giữ UC độc lập    |
-| UC-WS-03 | Đổi tên Workspace              | A-04/A-05 | Còn quyền quản trị Workspace đích                                               | Tên Workspace được cập nhật                                                                                        | Giữ UC độc lập    |
-| UC-WS-04 | Xóa Workspace                  | A-05      | Là owner hiện tại                                                               | Workspace ngừng truy cập; các tài nguyên liên quan được thu theo lifecycle                                         | Giữ UC độc lập    |
-| UC-WS-05 | Tạo lời mời tham gia Workspace | A-04/A-05 | Còn quyền tạo lời mời                                                           | Có link mời với hạn dùng và giới hạn theo baseline                                                                 | Giữ UC độc lập    |
-| UC-WS-06 | Thu hồi lời mời Workspace      | A-04/A-05 | Có lời mời thuộc Workspace được quản lý                                         | Link không còn dùng để tham gia                                                                                    | Giữ UC độc lập    |
-| UC-WS-07 | Tham gia Workspace qua lời mời | A-00      | Có lời mời còn hợp lệ                                                           | Có membership, không tạo trùng khi thực hiện lại                                                                   | Giữ UC độc lập    |
-| UC-WS-08 | Xem thành viên Workspace       | A-03      | Có membership hiện hành                                                         | Xem danh sách thành viên trong Workspace                                                                           | Giữ UC độc lập    |
-| UC-WS-09 | Thay đổi vai trò thành viên    | A-05      | Là owner; đích đủ điều kiện                                                     | Cập nhật admin/member; không hạ owner bằng thao tác này                                                            | Giữ UC độc lập    |
-| UC-WS-10 | Loại thành viên khỏi Workspace | A-04/A-05 | Đích trong quyền quản lý; admin không loại owner/admin khác                     | Thu membership và truy cập liên quan                                                                               | Giữ UC độc lập    |
-| UC-WS-11 | Chuyển quyền owner Workspace   | A-05      | Đích là thành viên hợp lệ                                                       | Một owner mới, không có thời điểm hai owner có quyền                                                               | Giữ UC độc lập    |
-| UC-WS-12 | Tạo kênh học tập               | A-04/A-05 | Còn quyền quản lý kênh                                                          | Có kênh TEXT hoặc LIVE với phạm vi truy cập theo baseline                                                          | Giữ UC độc lập    |
-| UC-WS-13 | Đổi tên kênh học tập           | A-04/A-05 | Kênh tồn tại trong Workspace được quản lý                                       | Tên mới; không đổi loại TEXT/LIVE                                                                                  | Giữ UC độc lập    |
-| UC-WS-14 | Xóa kênh học tập               | A-04/A-05 | Kênh thuộc Workspace được quản lý                                               | Kênh ngừng truy cập, đóng phiên/tài nguyên liên quan                                                               | Giữ UC độc lập    |
-| UC-WS-15 | Quản lý quyền truy cập kênh    | A-04/A-05 | Kênh PRIVATE thuộc Workspace được quản lý; người được thêm có membership hợp lệ | Thêm/gỡ danh sách truy cập; rejoin Workspace cần cấp lại PRIVATE; thu quyền khi gỡ, không đổi loại hoặc accessMode | Giữ UC độc lập    |
+| Mã       | UC đề xuất                     | Actor     | Điều kiện chính                                                                 | Kết quả người dùng                                                                                                 | Quyết định review               |
+| -------- | ------------------------------ | --------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ | ------------------------------- |
+| UC-WS-01 | Tạo Workspace                  | A-00      | Đã đăng nhập                                                                    | Có Workspace, owner membership và general TEXT đồng thời                                                           | Giữ UC độc lập                  |
+| UC-WS-02 | Xem các Workspace của mình     | A-00      | Đã đăng nhập                                                                    | Xem danh sách và mở Workspace còn quyền                                                                            | Giữ UC độc lập                  |
+| UC-WS-03 | Đổi tên Workspace              | A-04/A-05 | Còn quyền quản trị Workspace đích                                               | Tên Workspace được cập nhật                                                                                        | Giữ UC độc lập                  |
+| UC-WS-04 | Xóa Workspace                  | A-05      | Là owner hiện tại                                                               | Workspace ngừng truy cập; các tài nguyên liên quan được thu theo lifecycle                                         | Giữ UC độc lập                  |
+| UC-WS-05 | Tạo lời mời tham gia Workspace | A-04/A-05 | Còn quyền quản lý link mời                                                      | Tạo/sao chép lại/tạo lại một link hiện hành; không hạn hoặc giới hạn lượt; tạo lại vô hiệu link cũ                 | Giữ mã UC; bao gồm quản lý link |
+| UC-WS-06 | Thu hồi link mời Workspace     | A-04/A-05 | Còn quyền quản lý link mời                                                      | Link bị tắt, không nhận thành viên mới; thành viên đã tham gia không bị loại                                       | Giữ UC độc lập                  |
+| UC-WS-07 | Tham gia Workspace qua lời mời | A-00      | Có lời mời còn hợp lệ                                                           | Có membership, không tạo trùng khi thực hiện lại                                                                   | Giữ UC độc lập                  |
+| UC-WS-08 | Xem thành viên Workspace       | A-03      | Có membership hiện hành                                                         | Xem danh sách thành viên trong Workspace                                                                           | Giữ UC độc lập                  |
+| UC-WS-09 | Thay đổi vai trò thành viên    | A-05      | Là owner; đích đủ điều kiện                                                     | Cập nhật admin/member; không hạ owner bằng thao tác này                                                            | Giữ UC độc lập                  |
+| UC-WS-10 | Loại thành viên khỏi Workspace | A-04/A-05 | Đích trong quyền quản lý; admin không loại owner/admin khác                     | Thu membership và truy cập liên quan                                                                               | Giữ UC độc lập                  |
+| UC-WS-11 | Chuyển quyền owner Workspace   | A-05      | Không áp dụng MVP từ 03/11/2026                                                 | Người tạo giữ OWNER, có thể cấp ADMIN hỗ trợ                                                                       | Ngừng áp dụng, giữ mã lịch sử   |
+| UC-WS-12 | Tạo kênh học tập               | A-04/A-05 | Còn quyền quản lý kênh                                                          | Có kênh TEXT hoặc LIVE với phạm vi truy cập theo baseline                                                          | Giữ UC độc lập                  |
+| UC-WS-13 | Đổi tên kênh học tập           | A-04/A-05 | Kênh tồn tại trong Workspace được quản lý                                       | Tên mới; không đổi loại TEXT/LIVE                                                                                  | Giữ UC độc lập                  |
+| UC-WS-14 | Xóa kênh học tập               | A-04/A-05 | Kênh thuộc Workspace được quản lý                                               | Kênh ngừng truy cập, đóng phiên/tài nguyên liên quan                                                               | Giữ UC độc lập                  |
+| UC-WS-15 | Quản lý quyền truy cập kênh    | A-04/A-05 | Kênh PRIVATE thuộc Workspace được quản lý; người được thêm có membership hợp lệ | Thêm/gỡ danh sách truy cập; rejoin Workspace cần cấp lại PRIVATE; thu quyền khi gỡ, không đổi loại hoặc accessMode | Giữ UC độc lập                  |
 
 ## TQ-03 · Trao đổi trong Workspace
 
@@ -173,4 +175,4 @@ UC-GRP-09 có hai nhánh một/tất cả DISCUSSION; GRP-10 đã gộp, không 
 | UC-LIVE-11 | Ghi hình cuộc họp        | A-07  | Host hiện hành bắt đầu/dừng ghi MAIN và theo dõi xử lý; không ghi nhóm riêng | Giữ UC độc lập, bắt đầu/dừng là cùng mục tiêu |
 | UC-LIVE-12 | Xem lại bản ghi cuộc họp | A-03  | Video sẵn sàng, còn membership/quyền kênh LIVE gốc                           | Giữ UC độc lập                                |
 
-Random là phương án của UC-GRP-05 chuẩn bị ACTIVITY, không thêm UC random độc lập. UC-GRP-03/07 ngừng áp dụng, không tái dùng mã; tổng hiện hành 43 UC nghiệp vụ + 3 truy cập chung (bỏ một UC xét duyệt, thêm hai recording), 8 mục gộp và hai mã ngừng áp dụng. Nguồn: [recording](recording.md), [group modes](group-modes.md).
+Random là phương án của UC-GRP-05 chuẩn bị ACTIVITY, không thêm UC riêng. Sau các cập nhật 03/11, hiện hành 42 UC nghiệp vụ + 5 UC tài khoản/truy cập chung, 8 mã gộp, 3 mã ngừng (GRP-03/07/WS-11); tổng 58 mã truy vết. Recording theo [nguồn](recording.md), nhóm theo [group modes](group-modes.md), hồ sơ/owner theo [Workspace](workspace-channels.md).
