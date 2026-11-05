@@ -8,6 +8,8 @@
 >
 > Phạm vi có 11 yêu cầu chức năng chính của M2 và phần phối hợp avatar FR-01-05 do M1 phụ trách chính. WBS giữ 12 nhóm T1–T12, tách task con 2–8 giờ theo đầu ra để giao việc và theo dõi phụ thuộc. Task và ước lượng ở cuối dùng để team thảo luận, chưa phải lịch cam kết. Proposal này mô tả cách làm, chưa triển khai chức năng hoặc thay cấu trúc dữ liệu thực tế.
 
+**Phối hợp và lập kế hoạch:** xem [quy ước chung của 5 proposal](README.md#quy-ước-chung-trước-khi-lập-sprint). Phân biệt task của bên cung cấp, task tích hợp của bên dùng và ca kiểm chung; không cộng lại cùng một đầu ra hoặc coi estimate là lịch cam kết.
+
 ## 1. Context
 
 CoLearnia có hai nhu cầu trao đổi khác nhau. Ngoài giờ học, thành viên nhắn tin và gửi tài liệu trong Workspace. Trong buổi học, họ cần nói chuyện bằng tin nhắn với phòng hiện tại hoặc hỏi riêng host. Hai phần có thể dùng chung cách lưu tin và tệp, nhưng không có cùng quyền đọc và thời gian lưu.
@@ -16,7 +18,7 @@ Ví dụ: rời cuộc gọi không làm mất lịch sử DM. Ngược lại, m
 
 Theo [phân chia miền](../product/delivery-domains.md), M2 phụ trách chat, tệp và xem lại bản ghi. Yêu cầu nghiệm thu lấy từ [FR/AC](../product/functional-requirements.md), [messaging](../product/messaging.md), [chat họp và hỗ trợ](../product/groups-media-policy.md), [recording](../product/recording.md). Thiết kế dùng chung theo [kiến trúc](../architecture.md), [dữ liệu](../database/collection-design.md), [vòng đời dữ liệu](../database/lifecycle.md), [quy tắc nhất quán](../database/integrity-and-migrations.md) và [sức chứa](../capacity.md).
 
-Phần avatar đối chiếu với [proposal M1 tại commit 8243a8d](https://github.com/Lightning1507/CoLearnia/blob/8243a8d63f1f1e7f865468dfb3ff0bc2d7108269/docs/proposals/m1-workspace-auth.md): avatar lưu Cloudinary, URL công khai; chỉ chính chủ được thay/xóa. M1 làm giao diện và lưu thông tin ảnh trên User; M2 cung cấp upload đã kiểm tra và cleanup, tức dọn ảnh bỏ dở/không còn dùng. Một số nguồn trong checkout này còn ghi chưa yêu cầu avatar; phần bổ sung dưới đây là đầu ra phối hợp theo review M1, cần đồng bộ nguồn chung trước code phụ thuộc, chưa sửa baseline hoặc schema thực thi trong lượt này.
+Phần avatar đối chiếu với [proposal M1 tại commit 8243a8d](https://github.com/Lightning1507/CoLearnia/blob/8243a8d63f1f1e7f865468dfb3ff0bc2d7108269/docs/proposals/m1-workspace-auth.md): avatar lưu Cloudinary, URL công khai; chỉ chính chủ được thay/xóa. M1 làm giao diện và lưu thông tin ảnh trên User; M2 cung cấp upload đã kiểm tra và cleanup, tức dọn ảnh bỏ dở/không còn dùng. Nghiệp vụ avatar đã được cập nhật tại nguồn PROFILE-01. Proposal này cụ thể hóa phần M2 cung cấp; contract upload/cleanup vẫn cần M1–M2 review trước code phụ thuộc, chưa có schema thực thi.
 
 Source hiện có mới là bộ khung: web có màn trạng thái, server có các đường kiểm tra hoạt động, kết nối realtime chưa cho vào khi chưa có xác thực. Chưa có màn chat, xử lý tin nhắn, upload/download hoặc trang xem lại video. Các thiết kế trong tài liệu chưa chứng minh các chức năng này đã chạy.
 
@@ -90,6 +92,8 @@ flowchart LR
 **Quyết định cập nhật ngày 05/11/2026 của Minh Quân 15:** dùng Cloudflare R2 cho toàn bộ tệp riêng tư M2: ảnh chat, tài liệu đính kèm, ảnh giữ hình và video. R2 là kho tệp trên hạ tầng Cloudflare, tách khỏi máy chủ chạy ứng dụng. MongoDB chỉ giữ tin nhắn và thông tin quản lý tệp; avatar công khai tiếp tục ở Cloudinary. Không dùng ổ đĩa máy chủ để lưu tệp lâu dài. Việc có cần tệp tạm trong lúc ghi/xử lý video sẽ được M2 và M3 kiểm chứng trước triển khai, không cam kết bỏ mọi thao tác ổ đĩa. Đây là quyết định thiết kế, chưa là bằng chứng tích hợp đã chạy.
 
 Avatar là nhánh riêng: ảnh nằm trên Cloudinary công khai, M1 lưu thông tin đã được M2 xác minh trên User. URL avatar cho phép đọc công khai, kể cả sau khi rời Workspace; không áp cách đọc này cho tệp chat/video. Không đưa nội dung video vào MongoDB hoặc gửi tệp qua Socket.IO. Socket.IO báo tin mới; HTTP truyền lịch sử và nội dung tệp.
+
+M2 sở hữu danh sách Bản ghi và component trình phát video (play/pause/seek/loading/error); M3 nhúng hoặc mở component này từ call shell, không viết trình phát thứ hai. T9.6 làm component và API phát; T9.9 nối R2; ca M3 T15.5 chỉ kiểm phần tích hợp trong shell.
 
 Giao diện dùng chung ô soạn tin, danh sách tin, phần đính kèm và thông báo lỗi. TEXT có thêm panel thread; DM có danh sách riêng; chat họp nằm trong khung cuộc gọi M3. M2 không dựng thêm một trang gọi khác.
 
@@ -362,8 +366,8 @@ Các đường dẫn dùng tiền tố `/api/v1`. Tên có trong plan tiếp t�
 | `message.send`                                                              | Gửi tin qua kết nối realtime                                                                    | Dùng cùng xử lý với REST; chat họp phải kiểm phòng/host dự kiến còn đúng.                                                      |
 | Đề xuất: `conversation.subscribe`, `conversation.unsubscribe`               | Đăng ký nhận trước khi tải history; ack có subscriptionId, syncToken, mốc H và context hiện tại | Auth/ACL trước đăng ký; ranh giới commit H theo Q9, revoke thu cả buffer/lượt tải bù.                                          |
 | Đề xuất: `message.created`, `conversation.invalidated`                      | Báo tin mới hoặc yêu cầu bỏ nội dung không còn quyền                                            | Chỉ gửi cho đúng người; dữ liệu từ phòng cũ không được mở lại.                                                                 |
-| Đề xuất: `GET /channels/:cid/recordings?before=...&limit=...`               | Danh sách video READY của mọi phiên trong kênh LIVE, mới nhất theo readyAt/ID                   | Còn membership và quyền kênh hiện tại; có phân trang, không cần sessionId.                                                     |
-| Đề xuất: `GET /sessions/:sid/recordings?before=...&limit=...`               | Danh sách video READY của một phiên theo createdAt/ID                                           | Xác minh phiên thuộc kênh mà người xem còn quyền; phiên có thể đã kết thúc.                                                    |
+| Đề xuất: `GET /channels/:cid/recordings?cursor=...&limit=...`               | Danh sách video READY của mọi phiên trong kênh LIVE, mới nhất theo readyAt/ID                   | Còn membership và quyền kênh hiện tại; có phân trang, không cần sessionId.                                                     |
+| Đề xuất: `GET /sessions/:sid/recordings?cursor=...&limit=...`               | Danh sách video READY của một phiên theo createdAt/ID                                           | Xác minh phiên thuộc kênh mà người xem còn quyền; phiên có thể đã kết thúc.                                                    |
 | Đề xuất: `GET /recordings/:rid/content`                                     | Phát/tua nội dung một video                                                                     | Kiểm quyền kênh mỗi request, kể cả Range; chỉ mở khi video sẵn sàng.                                                           |
 | Đề xuất nội bộ M1 → M2: upload/xác nhận sử dụng/dọn avatar                  | Trả thông tin Cloudinary đã xác minh và xử lý ảnh không còn dùng                                | Actor từ auth, chỉ chính chủ; không nhận URL/publicId tùy ý làm bằng chứng sở hữu. Không dùng endpoint tệp chat để đổi avatar. |
 

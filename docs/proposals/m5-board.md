@@ -1,23 +1,23 @@
 # Thiết kế hệ thống Bảng vẽ, Dừng hình và Chú thích trực tiếp (Board, Freeze & Drawing) — Miền M5 (BOARD-01, BOARD-02, BOARD-05, FREEZE-01)
 
-| Thuộc tính                | Giá trị                                                                                   |
-| :------------------------ | :---------------------------------------------------------------------------------------- |
-| **Trạng thái**            | Bản nháp (Đã cập nhật theo review PR #24 ngày 04/11)                                      |
-| **Tác giả**               | Domain M5 Owner                                                                           |
-| **Kích thước**            | L (Lớn)                                                                                   |
-| **Ước lượng nỗ lực**      | **12.5 ngày công nỗ lực** (Dev 9.2 pd + Test/Docs 3.3 pd; tổng có buffer: 14.0 pd)        |
-| **Lịch trình dự kiến**    | **7.5 – 8.0 ngày làm việc** (khi bố trí 2 kỹ sư Frontend và Backend triển khai song song) |
-| **Yêu cầu chức năng phủ** | FR-06-01 đến FR-06-05 (PB-06)                                                             |
-| **Các tầng bị tác động**  | `packages/contracts`, `apps/server`, `apps/web`                                           |
+| Thuộc tính                | Giá trị                                                                                                 |
+| :------------------------ | :------------------------------------------------------------------------------------------------------ |
+| **Trạng thái**            | Bản nháp (Đã cập nhật theo review PR #24 ngày 04/11)                                                    |
+| **Tác giả**               | Domain M5 Owner                                                                                         |
+| **Kích thước**            | L (Lớn)                                                                                                 |
+| **Ước lượng nỗ lực**      | **106 giờ cơ sở**; thêm 4 giờ review tích hợp và 8 giờ dự phòng tạm tính = **118 giờ (14.75 pd)**       |
+| **Lịch trình dự kiến**    | Chưa chốt; tính theo giờ thực có của người phụ trách và phụ thuộc M2/M3/M4, không mặc định có hai kỹ sư |
+| **Yêu cầu chức năng phủ** | FR-06-01 đến FR-06-05 (PB-06)                                                                           |
+| **Các tầng bị tác động**  | `packages/contracts`, `apps/server`, `apps/web`                                                         |
 
 > **TL;DR** — Miền M5 cung cấp tính năng vẽ chỉ dẫn trực tiếp (live overlay annotation) tại phòng chung MAIN và môi trường dừng hình / vẽ thảo luận đồng bộ (collaborative freeze & canvas drawing) cho các nhóm DISCUSSION và ACTIVITY trong phiên LiveSession.
 >
 > - **MAIN:** Tuyệt đối không freeze/resume. Chỉ host hiện hành ở MAIN và **đang có mặt tại phòng MAIN** (`currentLocation === 'MAIN'`) mới được vẽ trực tiếp trên nguồn video chia sẻ bất kỳ tại MAIN (người tham gia khác chỉ xem). Host đang hỗ trợ ACTIVITY không được đồng thời vẽ tại MAIN. Hỗ trợ bút, bảng màu, con trỏ tạm, undo nét của chính mình, clear toàn bộ nét có xác nhận; tùy chọn nét thường hoặc nét tự biến mất (vanishing strokes). Đổi hoặc dừng nguồn MAIN tự động xóa overlay; chuyển host thu hồi quyền vẽ/clear cũ.
-> - **DISCUSSION:** Thành viên trong nhóm cùng freeze/vẽ/resume đồng bộ trên frame ảnh tĩnh chụp từ bài giảng MAIN được kế thừa; cấm share riêng; chỉ tác động phạm vi nhóm thảo luận; luồng âm thanh tiếp tục bình thường; không có luồng host vào hỗ trợ (thắc mắc qua chat riêng với host ở MAIN). Quyền clear khi FROZEN chỉ thuộc về chủ frame còn trong scope; thành viên khác không được xóa bảng của người khác.
+> - **DISCUSSION:** Thành viên trong nhóm cùng freeze/vẽ/resume đồng bộ trên frame ảnh tĩnh chụp từ bài giảng MAIN được kế thừa; cấm share riêng; chỉ tác động phạm vi nhóm thảo luận; luồng âm thanh tiếp tục theo policy; không có luồng host vào hỗ trợ (thắc mắc qua chat riêng với host ở MAIN). Quyền clear khi FROZEN chỉ thuộc về chủ frame còn trong scope; thành viên khác không được xóa bảng của người khác.
 > - **ACTIVITY:** Thành viên trong nhóm cùng freeze/vẽ/resume đồng bộ trên nguồn screen share duy nhất của nhóm. Nếu đã `FROZEN`, frame tĩnh hợp lệ được bảo toàn để tiếp tục vẽ và giải thích thảo luận ngay cả khi người đang chia sẻ **đổi nguồn hoặc dừng phát**.
-> - **Quy trình Freeze 3 bước & Kiểm tra 2 pha:** Client chụp hình từ video bằng Canvas `drawImage` -> gọi `board.freeze.begin` lấy intentId (nhả mutation queue của phiên trong thời gian chờ I/O) -> upload ảnh HTTP vào Private File Service (M2) -> gọi `board.freeze.commit` xác nhận. Server kiểm tra 2 pha: (1) Pre-bind kiểm tra intent/source, (2) M2 bind `BOARD_FRAME` state `READY`, (3) Post-bind atomic re-check kiểm tra nhóm vẫn active và TIMER-01 chưa hết hạn deadline trước khi chuyển `FROZEN`. Nếu nhóm đóng/hết hạn lúc chờ M2, hủy file tạm ngay lập tức.
-> - **Dữ liệu, Phân trang & Vòng đời:** 100% in-memory trong RAM server cho `BoardRuntime` (BoardState, active intents, strokes, sequence). Tái sử dụng schema collection `files` có sẵn từ M2 (`byteSize`, `reservedBytes`, `purpose: 'FRAME'`). Giới hạn kép: ≤ 500 điểm và ≤ 16 KiB serialized JSON cho mỗi nét; lượng tử hóa tọa độ 4 chữ số thập phân. Quản lý RAM context ≤ 2.0 MiB, tối đa 500 nét active, pruning FIFO khi tombstone $> 100$. `board.sync` phân trang theo batch ≤ 50 nét / $48$ KiB kèm pending event queue. Giao thức 2 pha khi đóng nhóm (M4 gửi teardown -> M5 dọn board/RAM/file và gửi Ack -> M4 nhận Ack xong mới chuyển học viên về MAIN).
-> - **Ước lượng:** Tổng nỗ lực kỹ thuật là **12.0 ngày công** (96 giờ công phân rã thành 23 task con 2–8h). Lịch trình chiếm dụng sprint là **7.0 – 7.5 ngày làm việc** khi triển khai song song.
+> - **Quy trình Freeze 3 bước & Kiểm tra 2 pha:** Client gọi `board.freeze.begin` -> chụp hình từ video bằng Canvas `drawImage` lấy intentId (nhả mutation queue của phiên trong thời gian chờ I/O) -> upload ảnh HTTP vào Private File Service (M2) -> gọi `board.freeze.commit` xác nhận. Server kiểm tra 2 pha: (1) Pre-bind kiểm tra intent/source, (2) M2 bind `BOARD_FRAME` state `READY`, (3) Post-bind atomic re-check kiểm tra nhóm vẫn active và TIMER-01 chưa hết hạn deadline trước khi chuyển `FROZEN`. Nếu nhóm đóng/hết hạn lúc chờ M2, hủy file tạm ngay lập tức.
+> - **Dữ liệu, Phân trang & Vòng đời:** 100% in-memory trong RAM server cho `BoardRuntime` (BoardState, active intents, strokes, sequence). Tái sử dụng thiết kế collection `files` do M2 sở hữu (`byteSize`, `reservedBytes`, `purpose: 'FRAME'`). Giới hạn đề xuất: ≤ 500 điểm và gói JSON đầy đủ ≤ 16 KiB cho mỗi nét; lượng tử hóa tọa độ 4 chữ số thập phân. Quản lý RAM context ≤ 2.0 MiB, tối đa 500 nét active, pruning FIFO khi tombstone $> 100$. `board.sync` phân trang theo batch ≤ 50 nét / $16$ KiB kèm pending event queue. Giao thức 2 pha khi đóng nhóm (M4 gửi teardown -> M5 thu quyền/hủy pending và trả cleanup result; M2 dọn byte sau -> M4 nhận Ack xong mới chuyển học viên về MAIN).
+> - **Ước lượng:** 23 task con, 2–8 giờ/task, tổng 106 giờ cơ sở; 118 giờ gồm review tích hợp và dự phòng tạm tính. Chưa cam kết ngày hoàn thành; xem mục 10.
 
 ---
 
@@ -70,6 +70,8 @@
 
 ---
 
+**Phối hợp và lập kế hoạch:** xem [quy ước chung của 5 proposal](README.md#quy-ước-chung-trước-khi-lập-sprint). Phân biệt task của bên cung cấp, task tích hợp của bên dùng và ca kiểm chung; không cộng lại cùng một đầu ra hoặc coi estimate là lịch cam kết.
+
 ## 1. Context
 
 Trong nền tảng học tập trực tuyến CoLearnia, trải nghiệm tương tác thị giác trong các buổi học trực tiếp (LiveSession) đòi hỏi sự kết hợp chặt chẽ giữa giảng viên và người học ở từng ngữ cảnh phòng họp.
@@ -84,17 +86,17 @@ Trong nền tảng học tập trực tuyến CoLearnia, trải nghiệm tương
 
 ### 1.2 Hiện trạng mã nguồn và kiến trúc
 
-| Hạng mục             | Hiện trạng                                                            | Ghi chú kỹ thuật                                               |
-| :------------------- | :-------------------------------------------------------------------- | :------------------------------------------------------------- |
-| **Monorepo**         | Tổ chức bằng `pnpm`                                                   | Quản lý đa gói packages & apps                                 |
-| **Backend**          | Express + Socket.IO (`apps/server`)                                   | Xử lý logic nghiệp vụ và signaling thời gian thực              |
-| **Frontend**         | React + Vite + Canvas (`apps/web`)                                    | Giao diện tương tác và render đồ họa                           |
-| **Hợp đồng chung**   | `packages/contracts`                                                  | Định nghĩa Zod schemas dùng chung cho FE/BE                    |
-| **Media WebRTC**     | mediasoup SFU worker                                                  | Truyền phát luồng âm thanh và video                            |
-| **Cơ sở dữ liệu**    | MongoDB replica set                                                   | Lưu trữ dữ liệu cấu trúc bền vững                              |
-| **Mã nghiệp vụ M5**  | Chưa có                                                               | Hiện tại scaffold chỉ có khung vỏ ứng dụng và media worker mẫu |
-| **Dữ liệu bền vững** | Đã chốt **13 collection** tại [mô hình dữ liệu](../database/model.md) | Tuyệt đối không tạo thêm collection mới cho board/strokes      |
-| **Dữ liệu realtime** | Trạng thái phiên, nhóm, bảng vẽ nằm trong **RAM server**              | Quản lý theo [vòng đời dữ liệu](../database/lifecycle.md)      |
+| Hạng mục             | Hiện trạng                                                                                | Ghi chú kỹ thuật                                               |
+| :------------------- | :---------------------------------------------------------------------------------------- | :------------------------------------------------------------- |
+| **Monorepo**         | Tổ chức bằng `pnpm`                                                                       | Quản lý đa gói packages & apps                                 |
+| **Backend**          | Express + Socket.IO (`apps/server`)                                                       | Xử lý logic nghiệp vụ và signaling thời gian thực              |
+| **Frontend**         | React + Vite + Canvas (`apps/web`)                                                        | Giao diện tương tác và render đồ họa                           |
+| **Hợp đồng chung**   | `packages/contracts`                                                                      | Định nghĩa Zod schemas dùng chung cho FE/BE                    |
+| **Media WebRTC**     | mediasoup SFU worker                                                                      | Truyền phát luồng âm thanh và video                            |
+| **Cơ sở dữ liệu**    | MongoDB replica set                                                                       | Lưu trữ dữ liệu cấu trúc bền vững                              |
+| **Mã nghiệp vụ M5**  | Chưa có                                                                                   | Hiện tại scaffold chỉ có khung vỏ ứng dụng và media worker mẫu |
+| **Dữ liệu bền vững** | Đã chốt 13 collection nền và delta recordings tại [mô hình dữ liệu](../database/model.md) | Tuyệt đối không tạo thêm collection mới cho board/strokes      |
+| **Dữ liệu realtime** | Trạng thái phiên, nhóm, bảng vẽ nằm trong **RAM server**                                  | Quản lý theo [vòng đời dữ liệu](../database/lifecycle.md)      |
 
 ### 1.3 Các quyết định nền tảng đã chốt (Baseline)
 
@@ -128,7 +130,7 @@ Xây dựng hệ thống bảng vẽ và dừng hình tương tác trực tiếp
 | **O1** | Cung cấp overlay vẽ trực tiếp tại phòng chung MAIN dành riêng cho host hiện hành khi đang ở MAIN  | Phản hồi nét vẽ cục bộ dưới 50ms; đồng bộ tới người xem qua Socket.IO; xóa overlay khi nguồn chia sẻ đổi/dừng; từ chối nếu host đang ở phòng khác.                                            |
 | **O2** | Cho phép thành viên trong nhóm DISCUSSION và ACTIVITY thực hiện dừng hình đồng bộ một frame video | Cả nhóm chuyển sang `FROZEN`, quan sát cùng một frame tĩnh đồng nhất; luồng âm thanh tiếp tục hoạt động; khi đã dừng hình, đổi/dừng nguồn live bên dưới không làm gián đoạn nét vẽ.           |
 | **O3** | Cho phép thành viên trong nhóm cùng vẽ, đánh dấu đồng thời trên frame tĩnh                        | Hỗ trợ vẽ đa người dùng, con trỏ thời gian thực (throttle 20Hz), undo nét của chính mình và clear toàn bộ theo quyền (chỉ chủ frame khi FROZEN trong DISCUSSION; không có luồng host hỗ trợ). |
-| **O4** | Đảm bảo tính nhất quán và an toàn tuyệt đối về phân quyền, tương tranh và vòng đời                | Khóa CAS cho freeze intent, nhả queue phiên trong thời gian upload, kiểm tra 2 pha atomic trước và sau khi bind file M2, thu hồi quyền 2 pha phối hợp M4 trước khi chuyển phòng.              |
+| **O4** | Đảm bảo tính nhất quán và đúng phân quyền về phân quyền, tương tranh và vòng đời                  | Khóa CAS cho freeze intent, nhả queue phiên trong thời gian upload, kiểm tra 2 pha atomic trước và sau khi bind file M2, thu hồi quyền 2 pha phối hợp M4 trước khi chuyển phòng.              |
 | **O5** | Resume đưa nhóm về luồng trực tiếp mượt mà; giải phóng tài nguyên triệt để                        | Trở lại video trực tiếp ngay lập tức, không xem lại video trễ; không còn frame hoặc nét mồ côi khi đóng nhóm hoặc tắt tính năng.                                                              |
 
 ---
@@ -149,16 +151,16 @@ Xây dựng hệ thống bảng vẽ và dừng hình tương tác trực tiếp
 
 ### 3.2 Non-goals
 
-|   Mã    | Tên giới hạn                   | Nội dung loại trừ (Non-goal)                                                                                                                                                                                                                                         |
-| :-----: | :----------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **NG1** | **Không freeze tại MAIN**      | Tuyệt đối không cung cấp tính năng freeze/resume tại MAIN; mọi yêu cầu freeze tại MAIN bị server từ chối ngay lập tức.                                                                                                                                               |
-| **NG2** | **Không tracking vật thể**     | Không nhận diện hoặc neo nét theo đối tượng hình ảnh, slide thuyết trình hay cuộn trang web; nét vẽ cố định trên khung tọa độ video.                                                                                                                                 |
-| **NG3** | **Không lưu nét vào DB**       | Không tạo collection MongoDB cho bảng vẽ hay nét vẽ; không ghi điểm vẽ xuống cơ sở dữ liệu bền vững.                                                                                                                                                                 |
-| **NG4** | **Không lưu trữ vĩnh viễn**    | Không cung cấp tính năng lưu bài làm lâu dài (`artifact.save`), thư viện bài giảng hay export ra ngoài phiên; dữ liệu board mất khi phiên kết thúc hoặc server restart.                                                                                              |
-| **NG5** | **Không công bố ra MAIN**      | Khi kết thúc thảo luận/hoạt động hoặc hết giờ TIMER-01, không tự động trình chiếu frame/nét của nhóm ra phòng chung MAIN.                                                                                                                                            |
-| **NG6** | **Không công cụ hình học**     | Không hỗ trợ hình tròn, chữ nhật, mũi tên vector phức tạp, text box soạn thảo văn bản hay nhận diện chữ viết; chỉ hỗ trợ nét vẽ tự do (freehand stroke), tẩy/clear và con trỏ tạm.                                                                                   |
-| **NG7** | **Không freeze cá nhân**       | Không hỗ trợ chế độ dừng hình riêng cho từng cá nhân; freeze là trạng thái đồng bộ chung của cả nhóm.                                                                                                                                                                |
-| **NG8** | **Không chụp canvas gửi chat** | Không xây dựng tính năng chụp và xuất màn hình canvas kèm nét vẽ thành tệp đính kèm gửi vào chat cuộc họp (M2); người dùng có thể sử dụng các công cụ chụp màn hình sẵn có của hệ điều hành (Snipping Tool, Screenshot shortcut) để gửi ảnh vào chat nếu có nhu cầu. |
+|   Mã    | Tên giới hạn                    | Nội dung loại trừ (Non-goal)                                                                                                                                                                                                  |
+| :-----: | :------------------------------ | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **NG1** | **Không freeze tại MAIN**       | Tuyệt đối không cung cấp tính năng freeze/resume tại MAIN; mọi yêu cầu freeze tại MAIN bị server từ chối ngay lập tức.                                                                                                        |
+| **NG2** | **Không tracking vật thể**      | Không nhận diện hoặc neo nét theo đối tượng hình ảnh, slide thuyết trình hay cuộn trang web; nét vẽ cố định trên khung tọa độ video.                                                                                          |
+| **NG3** | **Không lưu nét vào DB**        | Không tạo collection MongoDB cho bảng vẽ hay nét vẽ; không ghi điểm vẽ xuống cơ sở dữ liệu bền vững.                                                                                                                          |
+| **NG4** | **Không lưu trữ vĩnh viễn**     | Không cung cấp tính năng lưu bài làm lâu dài (`artifact.save`), thư viện bài giảng hay export ra ngoài phiên; dữ liệu board mất khi phiên kết thúc hoặc server restart.                                                       |
+| **NG5** | **Không công bố ra MAIN**       | Khi kết thúc thảo luận/hoạt động hoặc hết giờ TIMER-01, không tự động trình chiếu frame/nét của nhóm ra phòng chung MAIN.                                                                                                     |
+| **NG6** | **Không công cụ hình học**      | Không hỗ trợ hình tròn, chữ nhật, mũi tên vector phức tạp, text box soạn thảo văn bản hay nhận diện chữ viết; chỉ hỗ trợ nét vẽ tự do (freehand stroke), tẩy/clear và con trỏ tạm.                                            |
+| **NG7** | **Không freeze cá nhân**        | Không hỗ trợ chế độ dừng hình riêng cho từng cá nhân; freeze là trạng thái đồng bộ chung của cả nhóm.                                                                                                                         |
+| **NG8** | **Không xuất thư viện bài làm** | Không thêm export lâu dài hoặc thư viện bài làm. M5 vẫn cung cấp ảnh chụp canvas hiện hành khi actor có quyền; M2 upload/gửi như attachment mới với ACL của đích chat, không đổi binding hoặc quyền của file FRAME đang dùng. |
 
 ### 3.3 Truy vết yêu cầu chức năng (Traceability Matrix)
 
@@ -174,15 +176,15 @@ Xây dựng hệ thống bảng vẽ và dừng hình tương tác trực tiếp
 
 ## 4. Open questions và assumptions
 
-|   #   | Câu hỏi mở / Giả định                                                                        | Tại sao quan trọng                                                                                        | Người phụ trách            | Cần chốt trước         | Trạng thái hiện tại & Đề xuất                                                                                                                                                                                                                                                              |
-| :---: | :------------------------------------------------------------------------------------------- | :-------------------------------------------------------------------------------------------------------- | :------------------------- | :--------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **1** | **Thời gian tồn tại (TTL) và hiệu ứng mờ dần (fade) của nét tự biến mất (vanishing stroke)** | Ảnh hưởng trực tiếp đến trải nghiệm giảng dạy của host tại MAIN và animation phía client.                 | UI/UX Designer & M5 Owner  | Sprint UI Review       | **Chưa chốt**. Baseline quy định không tự bịa số giây cố định. Giải pháp đề xuất: Tham số hóa cấu hình ở client (dự kiến default 3.0s, fade trong 1.0s) cho tới khi thống nhất sản phẩm.                                                                                                   |
-| **2** | **Định dạng và giới hạn kích thước tệp ảnh frame tĩnh khi upload**                           | Ảnh hưởng đến băng thông upload của client, dung lượng Private File Service (M2) và tốc độ tải của peers. | M5 Owner phối hợp M2 Owner | Review Contract M2–M5  | **Giả định**: Chụp canvas dưới dạng `image/webp` (fallback `image/jpeg`), chất lượng 0.85, độ phân giải chụp mặc định tối đa 1920x1080 (hoặc theo video track gốc), dung lượng khống chế ≤ 2.0 MiB/frame; quota phiên tối đa 20 MiB theo baseline. Giới hạn cứng phía server là 2560x1440. |
-| **3** | **Xử lý hiện tượng khung hình đen khi chụp video remote chưa giải mã xong**                  | Tránh trường hợp client chụp phải frame đen hoặc frame rỗng khi vừa bắt đầu freeze.                       | M5 Owner & M3 Owner        | Tích hợp Client Canvas | **Giả định**: Client kiểm tra `videoElement.readyState >= 2` và `videoWidth > 0` trước khi capture. Nếu frame đen hoàn toàn do video track chưa render, hiển thị toast cảnh báo người dùng thử lại; không coi mọi ảnh đen là lỗi mạng.                                                     |
-| **4** | **Giới hạn số điểm, byte serialize và phân trang sync** _(Đề xuất chờ xác nhận)_             | Cân bằng giữa độ mượt của nét vẽ và trần 32 KiB của WebSocket frame.                                      | M5 Owner                   | Performance Testing    | **Đề xuất kỹ thuật**: Giới hạn tối đa **500 điểm** VÀ tối đa **16 KiB** JSON thô cho mỗi nét commit; lượng tử hóa tọa độ 4 chữ số thập phân. `board.sync` phân trang theo batch dừng khi đạt **50 nét** hoặc **48 KiB**; hàng đợi pending queue cho concurrent mutations.                  |
-| **5** | **Cơ chế khôi phục khi mất gói tin nét vẽ (sequence gap recovery)**                          | Đảm bảo tính toàn vẹn của bảng vẽ khi mạng gián đoạn nhẹ mà không cần kết nối lại toàn bộ phiên.          | M5 Owner                   | Implementation         | **Đã thiết kế**: Gán `mutationSequence` đơn điệu tăng dần cho mọi thao tác (Draw, Undo, Clear); nếu client phát hiện sequence không liên tục (gap), client tự động gửi `board.sync(mode: 'DELTA')` để bù đắp.                                                                              |
-| **6** | **Đối soát công số nỗ lực WBS (12.5 pd) và Lịch trình triển khai**                           | Tránh hiểu nhầm giữa tổng ngày công (person-days) và thời gian hoàn thành sprint (calendar duration).     | M5 Owner                   | Estimation Review      | **Đã làm rõ**: Tổng nỗ lực kỹ thuật phân rã từ task con 2–8h là **12.5 ngày công** (Dev 9.2 pd + Test & Docs 3.3 pd). Khi bố trí 2 kỹ sư làm việc song song (FE và BE), lịch trình thực tế đạt **7.5 – 8.0 ngày làm việc** (xem Mục 10.3).                                                 |
-| **7** | **Thống nhất tên trường file ở bước commit (`fileId`)**                                      | Tránh lệch tên giữa contract Zod và sequence diagram triển khai.                                          | M5 Owner & M2 Owner        | Review Contract M2–M5  | **Đã chuẩn hóa**: Thống nhất dùng `fileId` trong toàn bộ Zod contract, API và sơ đồ tuần tự (giá trị chính là ID tệp tạm do M2 trả về sau upload).                                                                                                                                         |
+|   #   | Câu hỏi mở / Giả định                                                                        | Tại sao quan trọng                                                                                        | Người phụ trách            | Cần chốt trước          | Trạng thái hiện tại & Đề xuất                                                                                                                                                                                                                                                                                                                                  |
+| :---: | :------------------------------------------------------------------------------------------- | :-------------------------------------------------------------------------------------------------------- | :------------------------- | :---------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **1** | **Thời gian tồn tại (TTL) và hiệu ứng mờ dần (fade) của nét tự biến mất (vanishing stroke)** | Ảnh hưởng trực tiếp đến trải nghiệm giảng dạy của host tại MAIN và animation phía client.                 | UI/UX Designer & M5 Owner  | Sprint UI Review        | **Chưa chốt**. Baseline quy định không tự bịa số giây cố định. Giải pháp đề xuất: Tham số hóa và review thời gian/fade trước W3.2; prototype phải ghi rõ giá trị thử. Không đưa 3 giây hoặc một giá trị thử thành tiêu chí sản phẩm đã chốt; server/client dùng cùng mốc hết hạn được thống nhất.                                                              |
+| **2** | **Định dạng và giới hạn kích thước tệp ảnh frame tĩnh khi upload**                           | Ảnh hưởng đến băng thông upload của client, dung lượng Private File Service (M2) và tốc độ tải của peers. | M5 Owner phối hợp M2 Owner | Review Contract M2–M5   | **Đề xuất định dạng cần M2 review**: Chụp canvas dưới dạng `image/webp` (fallback `image/jpeg`), chất lượng 0.85, độ phân giải chụp mặc định tối đa 1920x1080 (hoặc theo video track gốc), dung lượng khống chế ≤ 2.0 MiB/frame; quota phiên tối đa 20 MiB theo baseline. Server giữ giới hạn frame 1920×1080 như M2/baseline; không tự mở rộng lên 2560×1440. |
+| **3** | **Xử lý hiện tượng khung hình đen khi chụp video remote chưa giải mã xong**                  | Tránh trường hợp client chụp phải frame đen hoặc frame rỗng khi vừa bắt đầu freeze.                       | M5 Owner & M3 Owner        | Tích hợp Client Canvas  | **Giả định**: Client kiểm tra `videoElement.readyState >= 2` và `videoWidth > 0` trước khi capture. Nếu chưa có frame giải mã hoặc kích thước chưa sẵn sàng, báo chờ nguồn rồi thử lại. Không dùng màu đen để kết luận ảnh lỗi; slide đen hợp lệ vẫn được chụp.                                                                                                |
+| **4** | **Giới hạn số điểm, byte serialize và phân trang sync** _(Đề xuất chờ xác nhận)_             | Cân bằng giữa độ mượt của nét vẽ và trần 32 KiB của WebSocket frame.                                      | M5 Owner                   | Trước W1/W7; đo lại PoC | **Đề xuất kỹ thuật**: Giới hạn tối đa **500 điểm** VÀ tối đa **16 KiB** JSON thô cho mỗi nét commit; lượng tử hóa tọa độ 4 chữ số thập phân. `board.sync` phân trang theo batch dừng khi đạt **50 nét** hoặc trần **16 KiB kể cả envelope**; hàng đợi pending queue cho concurrent mutations.                                                                  |
+| **5** | **Cơ chế khôi phục khi mất gói tin nét vẽ (sequence gap recovery)**                          | Đảm bảo tính toàn vẹn của bảng vẽ khi mạng gián đoạn nhẹ mà không cần kết nối lại toàn bộ phiên.          | M5 Owner                   | Implementation          | **Đề xuất cần review**: Draw/Undo/Clear có sequence. Bản đầu dùng snapshot đầy đủ có phân trang/budget để khôi phục khi gap; DELTA chưa có log/replay contract nên chưa đưa vào schema hoặc AC triển khai.                                                                                                                                                     |
+| **6** | **Đối soát giờ WBS và nguồn lực thực tế**                                                    | Tránh hiểu nhầm giữa tổng ngày công (person-days) và thời gian hoàn thành sprint (calendar duration).     | M5 Owner                   | Estimation Review       | **Đã đối soát số học**: Bảng task có 23 dòng, 106 giờ cơ sở; cộng review tích hợp/dự phòng thành 118 giờ. Chưa gán người hỗ trợ hoặc suy lịch từ hai kỹ sư song song; xem mục 10.                                                                                                                                                                              |
+| **7** | **Thống nhất tên trường file ở bước commit (`fileId`)**                                      | Tránh lệch tên giữa contract Zod và sequence diagram triển khai.                                          | M5 Owner & M2 Owner        | Review Contract M2–M5   | **Đã chuẩn hóa**: Thống nhất dùng `fileId` trong các ví dụ contract và sơ đồ của proposal; schema thực thi còn cần review (giá trị chính là ID tệp tạm do M2 trả về sau upload).                                                                                                                                                                               |
 
 ---
 
@@ -205,7 +207,7 @@ flowchart LR
   UI --> SocketClient[Board Socket Client]
   UI --> FileUploader[HTTP File Uploader M2]
   SocketClient <-->|Socket.IO events| SocketHandler[BoardSocketHandler Express + Socket.IO]
-  FileUploader -->|HTTP POST /api/files/upload| FileSvc[M2: Private File Service]
+  FileUploader -->|HTTP POST /api/v1/sessions/:sid/freeze-frames| FileSvc[M2: Private File Service]
   M1[M1: Auth & Channel Access] --> Acl[BoardAclPolicy: Phân quyền 3 lớp & Vị trí]
   SocketHandler --> Acl
   Acl --> BoardRT[RAM: BoardRuntime in-memory]
@@ -214,23 +216,23 @@ flowchart LR
   BoardRT <--> M3[M3: Media Registry & sourceRevision]
   BoardRT -.->|Verify & Bind frame| FileSvc
   FileSvc --> MongoFiles[(MongoDB: files collection E08/E15)]
-  FileSvc --> DiskStore[(Private Disk Storage: Frame WebP bytes)]
+  FileSvc --> DiskStore[(R2 private: Frame bytes do M2 quản lý)]
 ```
 
 ### Cách đọc sơ đồ
 
-Mỗi ô đại diện cho một thành phần phần mềm; mũi tên thể hiện hướng trao đổi dữ liệu và điều phối giữa các module trong backend và frontend. Sơ đồ thể hiện rõ sự phân định ranh giới: Canvas rendering trên Web Client, Socket.IO điều phối thời gian thực, toàn bộ nét vẽ và trạng thái bảng chạy 100% trong RAM server, còn frame ảnh tĩnh lưu trữ trên Disk và quản lý metadata qua collection \`files\` của M2.
+Mỗi ô đại diện cho một thành phần phần mềm; mũi tên thể hiện hướng trao đổi dữ liệu và điều phối giữa các module trong backend và frontend. Sơ đồ thể hiện rõ sự phân định ranh giới: Canvas rendering trên Web Client, Socket.IO điều phối thời gian thực, toàn bộ nét vẽ và trạng thái bảng chạy 100% trong RAM server, còn frame ảnh tĩnh lưu trữ trên R2 riêng tư qua M2 và quản lý metadata qua collection `files` của M2.
 
-| Thành phần trong hình                          | Trách nhiệm chính                                                                                                                                                  |
-| :--------------------------------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| \`StageCanvasOverlay\` (Web Client)            | Lớp canvas React phủ trên video player của M3, lắng nghe pointer event, chuẩn hóa tọa độ và render 60fps qua \`requestAnimationFrame\`.                            |
-| \`BoardSocketClient\` & \`HTTP File Uploader\` | Phân tách hai luồng truyền tải: Socket.IO trao đổi lệnh/nét vẽ kích thước nhỏ (≤ 16 KiB); HTTP POST tải byte ảnh tĩnh lớn lên Private File Service (M2).           |
-| \`BoardSocketHandler\` (Express + Socket.IO)   | Điểm tiếp nhận Socket.IO server, kiểm tra envelope, xác thực schema Zod, bắt lỗi và định tuyến tới các service nội bộ.                                             |
-| \`BoardAclPolicy\`                             | Kiểm tra phân quyền 3 lớp: Quyền Workspace → Quyền Session → Quyền Scope/Action; kiểm tra vị trí Host (\`currentLocation === 'MAIN'\`) và quyền clear trong nhóm.  |
-| \`BoardRuntime\` (RAM in-memory)               | Quản lý máy trạng thái board (\`LIVE\`, \`FREEZING\`, \`FROZEN\`), lưu trữ strokes, counter \`mutationSequence\`, cache chống trùng LRU và dọn dẹp tombstone FIFO. |
-| \`FreezeIntentManager\` (RAM in-memory)        | Quản lý khóa CAS cho các yêu cầu dừng hình, cấp \`intentId\` TTL 15s, nhả mutation queue của phiên trong suốt thời gian client upload ảnh.                         |
-| Miền phối hợp (M1, M3, M4)                     | M1 cung cấp danh tính và quyền kênh; M3 cung cấp \`sourceRevision\` video; M4 điều phối vòng đời phiên, nhóm và deadline TIMER-01.                                 |
-| M2 Private File Service & Storage              | Tiếp nhận file ảnh nhị phân qua HTTP, lưu trữ trên Private Disk Storage và quản lý metadata trong MongoDB collection \`files\` theo baseline §3.10.                |
+| Thành phần trong hình                      | Trách nhiệm chính                                                                                                                                               |
+| :----------------------------------------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `StageCanvasOverlay` (Web Client)          | Lớp canvas React phủ trên video player của M3, lắng nghe pointer event, chuẩn hóa tọa độ và render 60fps qua `requestAnimationFrame`.                           |
+| `BoardSocketClient` & `HTTP File Uploader` | Phân tách hai luồng truyền tải: Socket.IO trao đổi lệnh/nét vẽ kích thước nhỏ (≤ 16 KiB); HTTP POST tải byte ảnh tĩnh lớn lên Private File Service (M2).        |
+| `BoardSocketHandler` (Express + Socket.IO) | Điểm tiếp nhận Socket.IO server, kiểm tra envelope, xác thực schema Zod, bắt lỗi và định tuyến tới các service nội bộ.                                          |
+| `BoardAclPolicy`                           | Kiểm tra phân quyền 3 lớp: Quyền Workspace → Quyền Session → Quyền Scope/Action; kiểm tra vị trí Host (`currentLocation === 'MAIN'`) và quyền clear trong nhóm. |
+| `BoardRuntime` (RAM in-memory)             | Quản lý máy trạng thái board (`LIVE`, `FREEZING`, `FROZEN`), lưu trữ strokes, counter `mutationSequence`, cache chống trùng LRU và dọn dẹp tombstone FIFO.      |
+| `FreezeIntentManager` (RAM in-memory)      | Quản lý khóa CAS cho các yêu cầu dừng hình, cấp `intentId` TTL 15s, nhả mutation queue của phiên trong suốt thời gian client upload ảnh.                        |
+| Miền phối hợp (M1, M3, M4)                 | M1 cung cấp danh tính và quyền kênh; M3 cung cấp `sourceRevision` video; M4 điều phối vòng đời phiên, nhóm và deadline TIMER-01.                                |
+| M2 Private File Service & Storage          | Tiếp nhận file ảnh nhị phân qua HTTP, lưu trữ trên R2 riêng tư và quản lý metadata trong MongoDB collection `files` theo baseline §3.10.                        |
 
 ### 5.3 Máy trạng thái của Board
 
@@ -270,7 +272,7 @@ stateDiagram-v2
 | :------------ | :--------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------ | :------------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **LIVE**      | `board.freeze.begin`               | Thuộc nhóm; scope không phải MAIN; có nguồn video active; `boardVersion` và `sourceRevision` khớp; chưa có intent nào đang chờ                                | **FREEZING**   | Tạo FreezeIntent `PENDING` (TTL 15s, CAS lock); gán `activeIntentId`; nhả mutation queue của phiên; phát `board.state.updated`                                                                      |
 | **FREEZING**  | `board.freeze.commit`              | Đúng actor xin intent; intent còn hạn; `sourceRevision` không đổi; tệp upload hợp lệ; **Post-bind check: nhóm vẫn đang ACTIVE và TIMER-01 chưa hết deadline** | **FROZEN**     | Bind file `BOARD_FRAME`, state `READY`; gán `frameId`; intent `COMMITTED`; phát `board.state.updated` kèm `frameId` và `frameUrl`                                                                   |
-| **FREEZING**  | `board.freeze.commit`              | Nhóm đã đóng hoặc TIMER-01 hết giờ trong lúc upload hoặc lúc chờ M2 bind file                                                                                 | **HỦY**        | Trả về `GROUP_CLOSED` / `CONTEXT_EXPIRED`; hủy intent; phát lệnh sang M2 đặt lịch xóa file tạm ngay; giải phóng runtime                                                                             |
+| **FREEZING**  | `board.freeze.commit`              | Nhóm đã đóng hoặc TIMER-01 hết giờ trong lúc upload hoặc lúc chờ M2 bind file                                                                                 | **HỦY**        | Trả về `GROUP_CLOSED` / `CONTEXT_EXPIRED`; hủy intent; phát lệnh sang M2 release ref qua M2 và lên lịch dọn an toàn; giải phóng runtime                                                             |
 | **FREEZING**  | Quá hạn 15 giây                    | Không nhận được `freeze.commit`                                                                                                                               | **LIVE**       | Intent `EXPIRED`; giải phóng khóa CAS; gỡ `activeIntentId`; đặt lịch xóa file STAGED; phát `board.state.updated`                                                                                    |
 | **FREEZING**  | `board.freeze.commit`              | `sourceRevision` đã đổi trong lúc upload                                                                                                                      | **LIVE**       | Trả lỗi `SOURCE_CHANGED`; intent `CANCELLED`; đặt lịch xóa file tạm; phát `board.state.updated` đưa nhóm về LIVE                                                                                    |
 | **FREEZING**  | `board.resume`                     | Thành viên nhóm hợp lệ                                                                                                                                        | **LIVE**       | Hủy intent đang chờ; tăng `boardVersion`; phát `board.state.updated`                                                                                                                                |
@@ -280,10 +282,10 @@ stateDiagram-v2
 
 ### 5.5 Entrypoints và lý do lựa chọn
 
-| Entrypoint                   | Công nghệ / Giao thức | Lý do lựa chọn kiến trúc                                                                                                                                                                                                                                                                                              |
-| :--------------------------- | :-------------------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **`board:*` events**         | Socket.IO WebSocket   | Tương tác vẽ và con trỏ đòi hỏi độ trễ cực thấp (<50ms). Socket.IO cho phép broadcast sự kiện ngay lập tức tới các peers trong cùng room `scopeId`, gán `mutationSequence` đơn điệu cho Draw/Undo/Clear, hỗ trợ retry idempotent khi mất Ack.                                                                         |
-| **`POST /api/files/upload`** | HTTP Multipart (M2)   | Ảnh chụp frame tĩnh có dung lượng từ vài trăm KB đến 2 MB. Nếu truyền byte nhị phân qua WebSocket signaling sẽ gây tắc nghẽn hàng đợi (head-of-line blocking), làm gián đoạn các gói tin điều khiển phiên họp và nét vẽ thời gian thực. Tách luồng upload ảnh sang HTTP bảo đảm băng thông signaling luôn thông suốt. |
+| Entrypoint                                     | Công nghệ / Giao thức | Lý do lựa chọn kiến trúc                                                                                                                                                                                                                                                                                              |
+| :--------------------------------------------- | :-------------------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`board:*` events**                           | Socket.IO WebSocket   | Tương tác vẽ và con trỏ đòi hỏi độ trễ cực thấp (<50ms). Socket.IO cho phép broadcast sự kiện ngay lập tức tới các peers trong cùng room `scopeId`, gán `mutationSequence` đơn điệu cho Draw/Undo/Clear, hỗ trợ retry idempotent khi mất Ack.                                                                         |
+| **`POST /api/v1/sessions/:sid/freeze-frames`** | HTTP Multipart (M2)   | Ảnh chụp frame tĩnh có dung lượng từ vài trăm KB đến 2 MB. Nếu truyền byte nhị phân qua WebSocket signaling sẽ gây tắc nghẽn hàng đợi (head-of-line blocking), làm gián đoạn các gói tin điều khiển phiên họp và nét vẽ thời gian thực. Tách luồng upload ảnh sang HTTP bảo đảm băng thông signaling luôn thông suốt. |
 
 ### 5.6 Các thành phần bị tác động
 
@@ -305,8 +307,8 @@ stateDiagram-v2
 
 | Phương án đề xuất                              | Đánh giá kỹ thuật                                                                                                                                                                                                                                                | Quyết định & Lý do                                                                                                                                                                       |
 | :--------------------------------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **1. Lưu toàn bộ nét vẽ vào MongoDB**          | Một phiên thảo luận có thể sinh ra hàng chục nghìn điểm vẽ mỗi phút. Việc ghi từng nét hoặc từng điểm vào MongoDB sẽ làm tê liệt I/O cơ sở dữ liệu, phá vỡ baseline kiến trúc 13 collection và vi phạm nguyên tắc vòng đời.                                      | **Bác bỏ**. Toàn bộ nét vẽ được lưu trữ trong RAM `BoardRuntime`, phục vụ đồng bộ tức thời và snapshot khi socket reconnect ngắn hạn. Khi phiên kết thúc, RAM được giải phóng hoàn toàn. |
-| **2. Truyền frame ảnh qua WebRTC DataChannel** | mediasoup SFU trong scaffold được thiết kế tối ưu cho Media Stream (Audio/Video). Mở thêm DataChannel cho từng client để truyền ảnh tĩnh dung lượng lớn làm tăng độ phức tạp của media worker, khó kiểm soát quota và khó áp dụng phân quyền tải tệp thống nhất. | **Bác bỏ**. Tận dụng Private File Service (M2) sẵn có để lưu trữ byte và kiểm tra quyền tải theo ACL của nhóm.                                                                           |
+| **1. Lưu toàn bộ nét vẽ vào MongoDB**          | Một phiên thảo luận có thể sinh ra hàng chục nghìn điểm vẽ mỗi phút. Việc ghi từng nét hoặc từng điểm vào MongoDB làm tăng tải ghi không cần thiết cho thiết kế hiện tại, không khớp lựa chọn runtime và vòng đời board của dự án.                               | **Bác bỏ**. Toàn bộ nét vẽ được lưu trữ trong RAM `BoardRuntime`, phục vụ đồng bộ tức thời và snapshot khi socket reconnect ngắn hạn. Khi phiên kết thúc, RAM được giải phóng hoàn toàn. |
+| **2. Truyền frame ảnh qua WebRTC DataChannel** | mediasoup SFU trong scaffold được thiết kế tối ưu cho Media Stream (Audio/Video). Mở thêm DataChannel cho từng client để truyền ảnh tĩnh dung lượng lớn làm tăng độ phức tạp của media worker, khó kiểm soát quota và khó áp dụng phân quyền tải tệp thống nhất. | **Bác bỏ**. Tận dụng Private File Service do M2 sẽ cung cấp để lưu trữ byte và kiểm tra quyền tải theo ACL của nhóm.                                                                     |
 | **3. Lưu tọa độ pixel tuyệt đối**              | Kích thước cửa sổ trình duyệt và độ phân giải màn hình của mỗi người dùng là hoàn toàn khác nhau. Lưu tọa độ tuyệt đối sẽ khiến nét vẽ bị lệch hoàn toàn khi hiển thị trên các màn hình khác nhau.                                                               | **Bác bỏ**. Bắt buộc sử dụng hệ tọa độ chuẩn hóa tương đối `[0, 1]` trên khung hình gốc của video.                                                                                       |
 
 ---
@@ -315,19 +317,19 @@ stateDiagram-v2
 
 ### 6.1 Cơ sở dữ liệu và Cấu trúc lưu trữ (Database & Ownership)
 
-Miền M5 tuân thủ nghiêm ngặt nguyên tắc **không tạo collection mới** trong MongoDB (bảo toàn nguyên vẹn 13 collection đã chốt của baseline). Toàn bộ nét vẽ (\`strokes\`), máy trạng thái (\`BoardState\`), active intents (\`FreezeIntent\`), con trỏ laser và số thứ tự đồng bộ (\`mutationSequence\`) đều được quản lý **100% trong bộ nhớ RAM server (\`BoardRuntime\`)**, hoàn toàn không lưu trữ xuống cơ sở dữ liệu bền vững.
+Miền M5 tuân thủ nghiêm ngặt nguyên tắc **không tạo collection mới** trong MongoDB (không tạo collection board/strokes; delta recordings do M2 quản lý riêng). Toàn bộ nét vẽ (`strokes`), máy trạng thái (`BoardState`), active intents (`FreezeIntent`), con trỏ laser và số thứ tự đồng bộ (`mutationSequence`) đều được quản lý **100% trong bộ nhớ RAM server (`BoardRuntime`)**, hoàn toàn không lưu trữ xuống cơ sở dữ liệu bền vững.
 
-Duy nhất tệp ảnh chụp frame tĩnh dừng hình trong nhóm DISCUSSION và ACTIVITY được ủy quyền lưu trữ qua Private File Service (M2) bằng cách tái sử dụng collection \`files\` (E08/E15) theo đúng đặc tả [docs/database/collection-design.md §3.10](../database/collection-design.md).
+Duy nhất tệp ảnh chụp frame tĩnh dừng hình trong nhóm DISCUSSION và ACTIVITY được ủy quyền lưu trữ qua Private File Service (M2) bằng cách tái sử dụng collection `files` (E08/E15) theo đúng đặc tả [docs/database/collection-design.md §3.10](../database/collection-design.md).
 
 #### 6.1.1 Bảng phân bổ lưu trữ dữ liệu
 
-| Nơi lưu / Collection              | Bản chất kỹ thuật & Dữ liệu quản lý                                                                                                                                                                                                                                                                                                                  | Điều kiện toàn vẹn & Query/Index sử dụng                                                                                                                                                                                                                                                                                      |
-| :-------------------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **\`files\` (MongoDB)**           | Lưu metadata tệp ảnh chụp frame dừng hình (\`purpose: 'FRAME'\`). Chỉ thuộc phạm vi \`DISCUSSION\` hoặc \`ACTIVITY\` (\`groupId\` bắt buộc; phòng MAIN tuyệt đối không có frame). Document lưu \`byteSize\`, \`reservedBytes: 2097152\`, \`dimensions\`, \`originalName: null\`, trạng thái chuyển tiếp \`STAGED\` → \`READY\` → \`DELETE_PENDING\`. | **Query / Index baseline §3.10:**<br/>- \`ix_files_scope_frame\`: \`{ "scope.sessionId": 1, "scope.groupId": 1, purpose: 1, state: 1 }\`<br/>- \`ix_files_cleanup\`: \`{ state: 1, cleanupAfter: 1 }\`<br/>- \`uq_files_binding_intent\`: \`{ "binding.kind": 1, "binding.intentId": 1 }\` (unique sparse chống trùng intent) |
-| **Kho tệp riêng (Disk Storage)**  | Lưu trữ dữ liệu byte nhị phân của tệp ảnh tĩnh (\`image/webp\` hoặc \`image/jpeg\`). Tệp được lưu trong thư mục private, tuyệt đối không tạo URL công khai; mọi yêu cầu tải đều phải kiểm tra quyền thành viên nhóm qua API HTTP streaming.                                                                                                          | Đường dẫn vật lý private theo \`storageKey\`:\`workspaces/:wid/sessions/:sid/frames/:frameId.webp\`. Tự động dọn dẹp khi nhận tín hiệu xóa từ M2 sweeper.                                                                                                                                                                     |
-| **Bộ nhớ RAM (\`BoardRuntime\`)** | Lưu trữ in-memory 100% nét vẽ hoạt động, nét vẽ xóa mềm (tombstone), vị trí con trỏ tạm, khóa CAS freeze intent và counter \`mutationSequence\`. Giải phóng hoàn toàn khi đóng nhóm hoặc kết thúc phiên họp.                                                                                                                                         | Cấu trúc dữ liệu \`Map<scopeId, BoardRuntime>\` trong RAM tiến trình Node.js; không persist xuống database; khống chế dung lượng ≤ 2.0 MiB/context.                                                                                                                                                                           |
+| Nơi lưu / Collection            | Bản chất kỹ thuật & Dữ liệu quản lý                                                                                                                                                                                                                                                                                            | Điều kiện toàn vẹn & Query/Index sử dụng                                                                                                                                                                                                                                                                          |
+| :------------------------------ | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`files` (MongoDB)**           | Lưu metadata tệp ảnh chụp frame dừng hình (`purpose: 'FRAME'`). Chỉ thuộc phạm vi `DISCUSSION` hoặc `ACTIVITY` (`groupId` bắt buộc; phòng MAIN tuyệt đối không có frame). Document lưu `byteSize`, `reservedBytes: 2097152`, `dimensions`, `originalName: null`, trạng thái chuyển tiếp `STAGED` → `READY` → `DELETE_PENDING`. | **Query / Index baseline §3.10:**<br/>- `ix_files_scope_frame`: `{ "scope.sessionId": 1, "scope.groupId": 1, purpose: 1, state: 1 }`<br/>- `ix_files_cleanup`: `{ state: 1, cleanupAfter: 1 }`<br/>- `uq_files_binding_intent`: `{ "binding.kind": 1, "binding.intentId": 1 }` (unique sparse chống trùng intent) |
+| **Kho tệp riêng (R2 qua M2)**   | Lưu trữ dữ liệu byte nhị phân của tệp ảnh tĩnh (`image/webp` hoặc `image/jpeg`). Tệp nằm trong bucket riêng tư do M2 quản lý, không trả URL R2 công khai hoặc link ký trực tiếp cho client; mọi yêu cầu tải đều phải kiểm tra quyền thành viên nhóm qua API HTTP streaming.                                                    | Object key nội bộ do M2 cấp, ví dụ `storageKey`:`workspaces/:wid/sessions/:sid/frames/:frameId.webp`. Tự động dọn dẹp khi nhận tín hiệu xóa từ M2 sweeper.                                                                                                                                                        |
+| **Bộ nhớ RAM (`BoardRuntime`)** | Lưu trữ in-memory 100% nét vẽ hoạt động, nét vẽ xóa mềm (tombstone), vị trí con trỏ tạm, khóa CAS freeze intent và counter `mutationSequence`. Giải phóng hoàn toàn khi đóng nhóm hoặc kết thúc phiên họp.                                                                                                                     | Cấu trúc dữ liệu `Map<scopeId, BoardRuntime>` trong RAM tiến trình Node.js; không persist xuống database; khống chế dung lượng ≤ 2.0 MiB/context.                                                                                                                                                                 |
 
-#### 6.1.2 Vòng đời tệp ảnh dừng hình trong collection \`files\`
+#### 6.1.2 Vòng đời tệp ảnh dừng hình trong collection `files`
 
 ```mermaid
 stateDiagram-v2
@@ -336,12 +338,12 @@ stateDiagram-v2
   STAGED --> READY: board.freeze.commit hợp lệ (vượt qua 2 pha atomic check), bind BOARD_FRAME
   STAGED --> DELETE_PENDING: Intent hết hạn (15s), đổi nguồn khi upload hoặc nhóm đóng khi chờ M2
   READY --> DELETE_PENDING: Nhóm Resume hoặc nhóm đóng (hết giờ TIMER-01), đặt lịch cleanupAfter
-  DELETE_PENDING --> [*]: Sweeper M2 định kỳ xóa byte đĩa và metadata
+  DELETE_PENDING --> [*]: Sweeper M2 định kỳ xóa byte R2 và metadata
 ```
 
 #### 6.1.3 Cấu trúc BSON Document mẫu trong collection `files`
 
-Cấu trúc document khớp chính xác 100% với baseline `collection-design.md` §3.10:
+Document dưới đây minh họa dữ liệu JSON; ObjectId và Date được chuyển sang BSON khi lưu. M2 sở hữu schema/validator/index thực tế và review theo `collection-design.md` §3.10:
 
 ```json
 {
@@ -358,10 +360,10 @@ Cấu trúc document khớp chính xác 100% với baseline `collection-design.m
   "state": "READY",
   "scope": {
     "sessionId": "6545f1b2c8a1e2001f3d4005",
-    "epoch": "epoch-91a2b3c4",
-    "boardId": "board-scope-group-01",
+    "epoch": "7d6a6f24-9b68-4f90-b752-46b91f40ab12",
+    "boardId": "7d6a6f24-9b68-4f90-b752-46b91f40ab14",
     "contextVersion": 1,
-    "groupId": "6545f1b2c8a1e2001f3d4009"
+    "groupId": "7d6a6f24-9b68-4f90-b752-46b91f40ab13"
   },
   "authorization": {
     "memberships": [
@@ -371,7 +373,7 @@ Cấu trúc document khớp chính xác 100% với baseline `collection-design.m
   },
   "binding": {
     "kind": "BOARD_FRAME",
-    "intentId": "intent-f47ac10b-58cc-4372-a567-0e02b2c3d479"
+    "intentId": "f47ac10b-58cc-4372-a567-0e02b2c3d479"
   },
   "expiresAt": null,
   "cleanupAfter": null,
@@ -390,15 +392,17 @@ export type BoardStatus = 'LIVE' | 'FREEZING' | 'FROZEN';
 export interface BoardState {
   id: string; // RuntimeId UUID
   sessionId: string; // LiveSession ID (ObjectId 24 ký tự)
-  scopeId: string; // MAIN scope ID hoặc Group ID (ObjectId 24 ký tự)
+  scopeId: string; // MAIN hoặc groupId UUID từ M4; không phải ObjectId
   scopeType: 'MAIN' | 'DISCUSSION' | 'ACTIVITY';
   version: number; // Tăng mỗi khi resume hoặc đổi context
   status: BoardStatus; // MAIN luôn luôn là 'LIVE'
   sourceScopeId: string; // MAIN cho DISCUSSION; Group scope cho ACTIVITY
-  sourceId: string | null; // ID của producer/stream màn hình đang share
+  sourceId: string | null; // Logical source ID do M3 cấp
+  sourceGeneration: number; // Đời nguồn do M3 cấp, khác contextVersion
   sourceRevision: number; // Phiên bản của nguồn video từ M3
   frameId: string | null; // ID tệp frame tĩnh trong files collection (khi FROZEN)
-  frameUrl: string | null; // URL có chữ ký/kiểm tra quyền để client tải frame
+  frameOwnerParticipantId: string | null; // Actor freeze đã commit; kiểm còn quyền trước clear
+  frameUrl: string | null; // API content của M2 có kiểm quyền; không URL R2 trực tiếp
   mutationSequence: number; // Counter tăng đơn điệu cho mọi thao tác Draw, Undo, Clear
   activeIntentId: string | null; // IntentId đang trong quá trình freeze (khi FREEZING)
   createdAt: number;
@@ -413,6 +417,7 @@ export interface Stroke {
   frameId: string | null; // Gắn với frame cụ thể nếu vẽ trong trạng thái FROZEN
   sourceScopeId: string;
   sourceId: string | null;
+  sourceGeneration: number;
   sourceRevision: number;
   authorParticipantId: string; // Server gán từ session token, không tin client
   points: Array<{ x: number; y: number }>; // Tọa độ chuẩn hóa 0.0 .. 1.0 (tối đa 500 điểm, làm tròn 4 chữ số thập phân)
@@ -449,7 +454,7 @@ flowchart TD
   subgraph M2Storage ["Ha tang luu tru tep Private File Service (M2)"]
     direction TB
     FileDoc["MongoDB files Document (Muc 3.10)<br/>_id, workspaceId, uploaderId<br/>purpose: FRAME<br/>state: STAGED / READY / DELETE_PENDING<br/>byteSize, reservedBytes: 2 MiB<br/>dimensions: 1920x1080"]
-    DiskFile["Private Disk Storage<br/>Byte nhi phan anh WebP/JPEG<br/>Luu private theo storageKey<br/>Truy cap qua ACL thanh vien nhom"]
+    DiskFile["R2 private qua M2<br/>Byte nhi phan anh frame<br/>Object key noi bo<br/>Truy cap qua ACL thanh vien nhom"]
 
     FileDoc --- DiskFile
   end
@@ -485,37 +490,47 @@ Mọi lệnh mutation từ Client gửi lên Server đều được đóng gói 
   sessionId: string; // ObjectId chuỗi 24 ký tự
   epoch: string; // UUID chuỗi kết nối
   callGeneration: number; // Thế hệ cuộc gọi từ M4
-  scopeId: string; // MAIN hoặc groupId
+  requestId: string; // UUID nhận diện ý định
+  audienceEpoch: number; // Đời quyền nhận do M4 cấp
+  scopeId: string; // MAIN hoặc groupId UUID từ M4
   contextVersion: number; // Phiên bản context hiện tại của board
 }
 ```
 
-| Tên sự kiện / Command | Hướng           | Dữ liệu gửi (Payload)                                                     | Phản hồi (Ack / Broadcast)                                                                                           | Xử lý lỗi / Error codes                                                                                                                                                          |
-| :-------------------- | :-------------- | :------------------------------------------------------------------------ | :------------------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `board.freeze.begin`  | Client → Server | `{ ...envelope, boardVersion, sourceRevision }`                           | Ack: `{ intentId, expiresAt, uploadUrl }`<br/>Broadcast: `board.state.updated` (`status: 'FREEZING'`)                | `NOT_IN_GROUP`, `FREEZE_NOT_ALLOWED_IN_MAIN`, `NO_ACTIVE_SOURCE`, `CONCURRENT_FREEZE_IN_PROGRESS`, `STALE_REVISION`                                                              |
-| `board.freeze.commit` | Client → Server | `{ ...envelope, intentId, fileId, dimensions: { width, height } }`        | Ack: `{ success: true, frameId }`<br/>Broadcast: `board.state.updated` (`status: 'FROZEN'`, `frameId`)               | `INTENT_EXPIRED`, `INTENT_INVALID`, `SOURCE_CHANGED`, `FILE_NOT_FOUND`, `INVALID_DIMENSIONS`, `GROUP_CLOSED`, `TIMER_EXPIRED`                                                    |
-| `board.resume`        | Client → Server | `{ ...envelope, boardVersion }`                                           | Ack: `{ success: true, newVersion }`<br/>Broadcast: `board.state.updated` (`status: 'LIVE'`)                         | `NOT_IN_GROUP`, `NOT_FROZEN`, `STALE_VERSION`, `PERMISSION_DENIED`                                                                                                               |
-| `board.stroke.draw`   | Client → Server | `{ ...envelope, strokeId, points, color, width, isVanishing }`            | Ack: `{ strokeId, sequence, isDuplicate?: boolean }`<br/>Broadcast: `board.stroke.added` (`{ stroke, sequence }`)    | `PERMISSION_DENIED`, `NOT_HOST`, `HOST_NOT_IN_MAIN`, `INVALID_CONTEXT`, `STALE_EPOCH`, `PAYLOAD_TOO_LARGE`, `INVALID_COORDINATES`, `MEMORY_LIMIT_EXCEEDED`, `STROKE_ID_CONFLICT` |
-| `board.stroke.undo`   | Client → Server | `{ ...envelope, strokeId }`                                               | Ack: `{ success: true, sequence }`<br/>Broadcast: `board.stroke.undone` (`{ strokeId, sequence }`)                   | `STROKE_NOT_FOUND`, `NOT_STROKE_AUTHOR`, `CONTEXT_EXPIRED`                                                                                                                       |
-| `board.clear`         | Client → Server | `{ ...envelope }`                                                         | Ack: `{ success: true, sequence }`<br/>Broadcast: `board.cleared` (`{ scopeId, contextVersion, sequence, reason? }`) | `PERMISSION_DENIED`, `NOT_AUTHORIZED_TO_CLEAR`, `CONTEXT_EXPIRED`                                                                                                                |
-| `board.cursor`        | Client → Server | `{ scopeId, x, y, isDrawing, color }`                                     | Không ack; Broadcast: `board.cursor.moved` (throttle 20Hz)                                                           | Bỏ qua nếu sai scope (loss-tolerant)                                                                                                                                             |
-| `board.sync`          | Client → Server | `{ scopeId, mode: 'SNAPSHOT' \| 'DELTA', page?, limit?, sinceSequence? }` | Ack: `{ state: BoardState, activeStrokes: Stroke[], page, totalPages, hasMore, snapshotSequence }`                   | `SCOPE_NOT_FOUND`, `PERMISSION_DENIED`                                                                                                                                           |
+| Tên sự kiện / Command | Hướng           | Dữ liệu gửi (Payload)                                                       | Phản hồi (Ack / Broadcast)                                                                                           | Xử lý lỗi / Error codes                                                                                                                                                          |
+| :-------------------- | :-------------- | :-------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `board.freeze.begin`  | Client → Server | `{ ...envelope, boardVersion, sourceRevision }`                             | Ack: `{ intentId, expiresAt, uploadUrl }`<br/>Broadcast: `board.state.updated` (`status: 'FREEZING'`)                | `NOT_IN_GROUP`, `FREEZE_NOT_ALLOWED_IN_MAIN`, `NO_ACTIVE_SOURCE`, `CONCURRENT_FREEZE_IN_PROGRESS`, `STALE_REVISION`                                                              |
+| `board.freeze.commit` | Client → Server | `{ ...envelope, intentId, fileId, dimensions: { width, height } }`          | Ack: `{ success: true, frameId }`<br/>Broadcast: `board.state.updated` (`status: 'FROZEN'`, `frameId`)               | `INTENT_EXPIRED`, `INTENT_INVALID`, `SOURCE_CHANGED`, `FILE_NOT_FOUND`, `INVALID_DIMENSIONS`, `GROUP_CLOSED`, `TIMER_EXPIRED`                                                    |
+| `board.resume`        | Client → Server | `{ ...envelope, boardVersion }`                                             | Ack: `{ success: true, newVersion }`<br/>Broadcast: `board.state.updated` (`status: 'LIVE'`)                         | `NOT_IN_GROUP`, `NOT_FROZEN`, `STALE_VERSION`, `PERMISSION_DENIED`                                                                                                               |
+| `board.stroke.draw`   | Client → Server | `{ ...envelope, strokeId, points, color, width, isVanishing }`              | Ack: `{ strokeId, sequence, isDuplicate?: boolean }`<br/>Broadcast: `board.stroke.added` (`{ stroke, sequence }`)    | `PERMISSION_DENIED`, `NOT_HOST`, `HOST_NOT_IN_MAIN`, `INVALID_CONTEXT`, `STALE_EPOCH`, `PAYLOAD_TOO_LARGE`, `INVALID_COORDINATES`, `MEMORY_LIMIT_EXCEEDED`, `STROKE_ID_CONFLICT` |
+| `board.stroke.undo`   | Client → Server | `{ ...envelope, strokeId }`                                                 | Ack: `{ success: true, sequence }`<br/>Broadcast: `board.stroke.undone` (`{ strokeId, sequence }`)                   | `STROKE_NOT_FOUND`, `NOT_STROKE_AUTHOR`, `CONTEXT_EXPIRED`                                                                                                                       |
+| `board.clear`         | Client → Server | `{ ...envelope }`                                                           | Ack: `{ success: true, sequence }`<br/>Broadcast: `board.cleared` (`{ scopeId, contextVersion, sequence, reason? }`) | `PERMISSION_DENIED`, `NOT_AUTHORIZED_TO_CLEAR`, `CONTEXT_EXPIRED`                                                                                                                |
+| `board.cursor`        | Client → Server | `{ scopeId, x, y, isDrawing, color }`                                       | Không ack; Broadcast: `board.cursor.moved` (throttle 20Hz)                                                           | Bỏ qua nếu sai scope (loss-tolerant)                                                                                                                                             |
+| `board.sync`          | Client → Server | `{ ...context, requestId, mode: 'SNAPSHOT', snapshotId?, cursor?, limit? }` | Ack result: `{ state, activeStrokes, snapshotId, nextCursor, hasMore, snapshotSequence }`                            | `SCOPE_NOT_FOUND`, `PERMISSION_DENIED`                                                                                                                                           |
+
+**Ack chung:** dùng `{ data: { status, result }, requestId }` hoặc `{ error: { code, message }, requestId }` theo convention M4. Các ô Ack trong bảng là nội dung result, không là response wrapper khác. Mã lỗi board đặc thù cần review với catalog chung; chưa tự thay tên toàn bộ mã hoặc coi schema mẫu đã xử lý hết.
+
+**Context và envelope cần review với M4 trước W1/W7:** mutation có requestId UUID, sessionId/epoch/callGeneration, audienceEpoch, scopeId, boardId/contextVersion và payload strict. Actor/role/deadline lấy từ server. scopeId dùng MAIN hoặc groupId UUID, participantId là ObjectId; sourceId/generation/revision lấy M3. Không dùng sourceRevision thay sourceGeneration hoặc quyền nhóm. Các ví dụ Zod ở Appendix mới là phần schema, chưa phải contract đầy đủ/export hoặc bằng chứng ACL.
+
+Cursor/sync cũng kiểm auth, ownership, audience và scope hiện hành; không miễn kiểm vì không mutation. Event gửi đúng audience kèm context/version; client bỏ callback/event từ audience cũ sau A → MAIN → A hoặc khi host đổi. Room Socket.IO chỉ phục vụ phân phối, không là quyền. M5 trả cleanup result chung theo M4: permissionRevoked/pendingInvalidated/cleanupPending; không đợi xóa byte R2 hay browser ack mới xác nhận thu quyền.
+
+**Snapshot bản đầu:** server chụp state/strokes bất biến tại sequence S dưới điều phối ngắn và đăng ký event đúng audience, rồi nhả queue. Cấp snapshotId/cursor opaque, mọi trang cùng context/S; không phân trang bằng offset trên mảng đang đổi. Chia phần tối đa 16 KiB cả envelope và 50 nét/phần; kiểm byte trước thêm nét. FE chỉ áp sau đủ các phần, gộp event sau S theo sequence; ack nét của chính mình cũng tham gia đối soát sequence. Gap, timeout, hết buffer, thiếu phần hoặc context đổi thì bỏ lượt cũ và snapshot lại có giới hạn. Dùng trần snapshot/buffer/retry M4 làm profile chung trước PoC, không có hàng đợi event vô hạn. Chỉ bật DELTA sau khi có log, retention và điều kiện fallback được review; bản này không estimate một cơ chế replay riêng.
 
 #### 6.2.2 Danh mục sự kiện Server phát xuống Client (Broadcast Events)
 
-| Tên sự kiện           | Khi nào phát ra                                                                   | Dữ liệu kèm theo (Payload)                                                           | Phạm vi nhận (Room)                                                              |
-| :-------------------- | :-------------------------------------------------------------------------------- | :----------------------------------------------------------------------------------- | :------------------------------------------------------------------------------- |
-| `board.state.updated` | Mọi chuyển trạng thái (`FREEZING`, `FROZEN`, `LIVE`) hoặc tăng version            | `BoardState` đã cập nhật; khi FROZEN kèm theo `frameId` và `frameUrl`                | Toàn bộ thành viên trong room `scopeId`                                          |
-| `board.stroke.added`  | Nét vẽ mới vừa được commit thành công vào RAM                                     | `{ stroke: Stroke, sequence: number }`                                               | Toàn bộ thành viên trong room `scopeId` (trừ người gửi nếu đã render optimistic) |
-| `board.stroke.undone` | Nét vẽ được hoàn tác (undo) thành công                                            | `{ strokeId: string, sequence: number }`                                             | Toàn bộ thành viên trong room `scopeId`                                          |
-| `board.cleared`       | Toàn bộ nét bị xóa bởi người có quyền, hoặc overlay MAIN bị xóa do đổi/dừng nguồn | `{ scopeId: string, contextVersion: number, sequence: number, reason?: string }`     | Toàn bộ thành viên trong room `scopeId`                                          |
-| `board.cursor.moved`  | Tọa độ con trỏ của peer di chuyển (đã throttle)                                   | `{ participantId: string, x: number, y: number, isDrawing: boolean, color: string }` | Toàn bộ thành viên trong room `scopeId` (trừ chính người gửi)                    |
-| `board.disabled`      | Tính năng bảng vẽ bị tắt qua feature flag khẩn cấp                                | `{ scopeId: string, resetToLive: true }`                                             | Toàn bộ thành viên trong phiên họp                                               |
+| Tên sự kiện           | Khi nào phát ra                                                                   | Dữ liệu kèm theo (Payload)                                                           | Phạm vi nhận (Room)                                                                        |
+| :-------------------- | :-------------------------------------------------------------------------------- | :----------------------------------------------------------------------------------- | :----------------------------------------------------------------------------------------- |
+| `board.state.updated` | Mọi chuyển trạng thái (`FREEZING`, `FROZEN`, `LIVE`) hoặc tăng version            | `BoardState` đã cập nhật; khi FROZEN kèm theo `frameId` và `frameUrl`                | Audience còn quyền do M4 xác nhận trong `scopeId`                                          |
+| `board.stroke.added`  | Nét vẽ mới vừa được commit thành công vào RAM                                     | `{ stroke: Stroke, sequence: number }`                                               | Audience còn quyền do M4 xác nhận trong `scopeId` (trừ người gửi nếu đã render optimistic) |
+| `board.stroke.undone` | Nét vẽ được hoàn tác (undo) thành công                                            | `{ strokeId: string, sequence: number }`                                             | Audience còn quyền do M4 xác nhận trong `scopeId`                                          |
+| `board.cleared`       | Toàn bộ nét bị xóa bởi người có quyền, hoặc overlay MAIN bị xóa do đổi/dừng nguồn | `{ scopeId: string, contextVersion: number, sequence: number, reason?: string }`     | Audience còn quyền do M4 xác nhận trong `scopeId`                                          |
+| `board.cursor.moved`  | Tọa độ con trỏ của peer di chuyển (đã throttle)                                   | `{ participantId: string, x: number, y: number, isDrawing: boolean, color: string }` | Audience còn quyền do M4 xác nhận trong `scopeId` (trừ chính người gửi)                    |
+| `board.disabled`      | Tính năng bảng vẽ bị tắt qua feature flag khẩn cấp                                | `{ scopeId: string, resetToLive: true }`                                             | Toàn bộ thành viên trong phiên họp                                                         |
 
 #### 6.2.3 Quy tắc xử lý chung cho mọi lệnh (Pipeline Rules)
 
 1. **Feature flag check:** Kiểm tra `feature.board.enabled`. Nếu tắt, từ chối ngay lập tức mà không làm ảnh hưởng luồng media.
-2. **Schema & Limit validation:** Kiểm tra payload bằng Zod schema tương ứng. Giới hạn số điểm ≤ 500 điểm VÀ kích thước JSON serialize ≤ 16 KiB. Nếu vượt ngưỡng, trả về `PAYLOAD_TOO_LARGE`.
+2. **Schema & Limit validation:** Kiểm tra payload bằng Zod schema tương ứng. Giới hạn số điểm ≤ 500 điểm VÀ kích thước JSON của command/event/đơn vị snapshot chứa nét, kể cả envelope, ≤ 16 KiB. Nếu vượt ngưỡng, trả về `PAYLOAD_TOO_LARGE`.
 3. **Session authentication & Epoch check:** Xác thực socket connection; trích xuất `participantId` từ session token của server; kiểm tra `sessionId` (ObjectId) và `epoch` khớp với phiên hiện tại.
 4. **Phân quyền 3 lớp & Vị trí hiện tại:** Kiểm tra quyền theo ma trận tại Mục 6.3. Nếu vẽ tại MAIN, bắt buộc kiểm tra `role === 'HOST'` VÀ `currentLocation === 'MAIN'`.
 5. **Idempotency check (Chống mất Ack):** Đối chiếu `strokeId` trong cache LRU 1.000 items:
@@ -524,7 +539,7 @@ Mọi lệnh mutation từ Client gửi lên Server đều được đóng gói 
    - Nếu nét quá cũ đã bị prune khỏi RAM: từ chối với `STALE_MUTATION`.
 6. **Phiên bản & Tương tranh:** Kiểm tra `boardVersion` và `contextVersion` khớp với trạng thái hiện tại. (Lưu ý: khi `status === 'FROZEN'`, không từ chối nét vẽ khi `sourceRevision` của nguồn live thay đổi).
 7. **Thực thi trong runtime & Pruning:** Cập nhật `BoardRuntime` trong RAM, tăng `mutationSequence` tuần tự. Nếu nét tombstone $> 100$, thực hiện pruning FIFO để giải phóng RAM context ≤ 2.0 MiB.
-8. **Broadcast & Observability:** Phát broadcast tới room `scopeId`, ghi structured log và cập nhật Prometheus metric.
+8. **Broadcast & Observability:** Phát tới audience còn quyền của `scopeId`, ghi structured log và cập nhật Prometheus metric.
 
 ---
 
@@ -550,7 +565,7 @@ sequenceDiagram
   Note over C,F: Buoc 2: Chup va upload anh tinh
   C->>C: Chup frame tu video bang Canvas drawImage()
   C->>C: Nen thanh Blob image/webp
-  C->>F: HTTP POST /api/files/upload (intentId, scope.groupId)
+  C->>F: HTTP POST /api/v1/sessions/:sid/freeze-frames (intentId, scope.groupId)
   F->>F: Luu byte, tao file record (state: STAGED, reservedBytes: 2MiB)
   F-->>C: Tra ve fileId
 
@@ -562,7 +577,7 @@ sequenceDiagram
   S->>M4: Kiem tra lai trang thai nhom (ACTIVE / TIMER chua het deadline)
   alt Nhom da dong hoac het gio TIMER-01 trong luc upload/bind
     S-->>C: Error(GROUP_CLOSED / TIMER_EXPIRED)
-    S->>F: Dat lich xoa file STAGED/READY ngay lap tuc (DELETE_PENDING)
+    S->>F: Release ref dung intent qua M2, len lich don file khong con dung
     S->>S: Huy FreezeIntent, khong chuyen sang FROZEN
   else Nguon video da thay doi trong luc upload
     S-->>C: Error(SOURCE_CHANGED)
@@ -622,7 +637,7 @@ sequenceDiagram
     S-->>C: Ack(strokeId, sequence, isDuplicate: true)
   else Net ve moi hop le (<= 500 diem, <= 16 KiB)
     S->>S: Kiem tra quyen (MAIN kiem ca role Host va currentLocation === 'MAIN')
-    S->>S: Gan authorParticipantId = session.user.id
+    S->>S: Gan authorParticipantId = participantId do M4 cap
     S->>S: Tang mutationSequence, luu Stroke vao RAM
     S-->>C: Ack(strokeId, sequence)
     S-)P: board.stroke.added(stroke, sequence)
@@ -759,23 +774,23 @@ Giả sử Container có kích thước $1280 \times 720$ (tỷ lệ 16:9), ngu�
 > [!NOTE]
 > Các tham số giới hạn kỹ thuật dưới đây là **đề xuất kỹ thuật của Miền M5** nhằm khống chế an toàn tải socket và RAM server, đang chờ kiểm chứng tải thực tế và phê duyệt chính thức trong Sprint Review.
 
-| Tham số cấu hình                              | Giá trị giới hạn                          | Cơ sở kỹ thuật và hành vi khi vượt ngưỡng                                                                                      |
-| :-------------------------------------------- | :---------------------------------------- | :----------------------------------------------------------------------------------------------------------------------------- |
-| **Số điểm tối đa mỗi nét**                    | **500 điểm** _(đề xuất M5)_               | Đảm bảo tính toán đường cong mượt; client giảm điểm trước khi commit.                                                          |
-| **Dung lượng serialize nét vẽ**               | Tối đa **16 KiB / stroke** _(đề xuất M5)_ | Kiểm tra kích thước payload JSON thô. Vượt quá 16 KiB từ chối `PAYLOAD_TOO_LARGE` (an toàn dưới trần 32 KiB của socket frame). |
-| **Lượng tử hóa tọa độ**                       | Tối đa **4 chữ số thập phân**             | Giữ tọa độ dạng `0.xxxx`, mỗi điểm chiếm 23 bytes JSON thay vì 50+ bytes float.                                                |
-| **Độ dày nét vẽ**                             | 1 đến 20 pixel (quy chuẩn)                | Kiểm tra nghiêm ngặt tại Zod schema.                                                                                           |
-| **Số nét hoạt động (Active)**                 | Tối đa **500 nét**                        | Ngăn chặn quá tải bộ nhớ. Vượt quá từ chối vẽ thêm.                                                                            |
-| **Số nét Tombstone (Undo)**                   | Tối đa **100 nét** _(đề xuất M5)_         | Thuật toán pruning tự động purge FIFO nét tombstone cũ nhất khi vượt 100 nét, chống rò rỉ RAM khi undo spam.                   |
-| **Ngân sách bộ nhớ RAM Context**              | Tối đa **2.0 MiB / board** _(đề xuất M5)_ | Bảo vệ RAM server. Vượt quá từ chối nhận nét mới (`MEMORY_LIMIT_EXCEEDED`).                                                    |
-| **Dung lượng tệp frame ảnh tĩnh**             | Tối đa **2.0 MiB / ảnh**                  | Khống chế tại Private File Service M2 (`reservedBytes: 2097152`). Quá dung lượng từ chối upload.                               |
-| **Độ phân giải frame (Giới hạn cứng Server)** | Tối đa 2560x1440                          | Trả về `INVALID_DIMENSIONS` nếu vượt quá.                                                                                      |
-| **Độ phân giải chụp mặc định (Client)**       | Tối đa 1920x1080                          | Client tự động scale về 1080p trước khi nén để tiết kiệm băng thông.                                                           |
-| **Định dạng tệp frame**                       | `image/webp` (fallback `image/jpeg`)      | Tối ưu dung lượng và tốc độ nén Canvas.                                                                                        |
-| **Quota frame theo phiên**                    | Tối đa **20 MiB / phiên**                 | Khống chế tại M2; vượt quota báo lỗi không thể dừng hình thêm.                                                                 |
-| **Thời hạn Freeze Intent (TTL)**              | **15 giây**                               | CAS lock tự giải phóng sau 15 giây nếu client không commit; dọn tệp dở dang.                                                   |
-| **Tần suất con trỏ (Cursor Throttle)**        | Tối đa 20 gói/giây (50ms/gói)             | Client throttle trước khi gửi; server drop gói thừa (loss-tolerant).                                                           |
-| **Gói tin Snapshot Sync (`board.sync`)**      | Tối đa **50 nét** HOẶC **48 KiB** / batch | Tiêu chí kép: dừng khi đạt 50 nét hoặc 48 KiB JSON để giữ response ≤ 64 KiB.                                                   |
+| Tham số cấu hình                              | Giá trị giới hạn                          | Cơ sở kỹ thuật và hành vi khi vượt ngưỡng                                                                                                                                       |
+| :-------------------------------------------- | :---------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Số điểm tối đa mỗi nét**                    | **500 điểm** _(đề xuất M5)_               | Đảm bảo tính toán đường cong mượt; client giảm điểm trước khi commit.                                                                                                           |
+| **Dung lượng serialize nét vẽ**               | Tối đa **16 KiB / stroke** _(đề xuất M5)_ | Kiểm cả command/event và đơn vị snapshot chứa nét với envelope đầy đủ. Vượt quá 16 KiB từ chối `PAYLOAD_TOO_LARGE` (an toàn dưới trần 32 KiB của socket frame).                 |
+| **Lượng tử hóa tọa độ**                       | Tối đa **4 chữ số thập phân**             | Giữ tọa độ dạng `0.xxxx`, mỗi điểm chiếm 23 bytes JSON thay vì 50+ bytes float.                                                                                                 |
+| **Độ dày nét vẽ**                             | 1 đến 20 pixel (quy chuẩn)                | Kiểm tra nghiêm ngặt tại Zod schema.                                                                                                                                            |
+| **Số nét hoạt động (Active)**                 | Tối đa **500 nét**                        | Ngăn chặn quá tải bộ nhớ. Vượt quá từ chối vẽ thêm.                                                                                                                             |
+| **Số nét Tombstone (Undo)**                   | Tối đa **100 nét** _(đề xuất M5)_         | Thuật toán pruning tự động purge FIFO nét tombstone cũ nhất khi vượt 100 nét, chống rò rỉ RAM khi undo spam.                                                                    |
+| **Ngân sách bộ nhớ RAM Context**              | Tối đa **2.0 MiB / board** _(đề xuất M5)_ | Bảo vệ RAM server. Vượt quá từ chối nhận nét mới (`MEMORY_LIMIT_EXCEEDED`).                                                                                                     |
+| **Dung lượng tệp frame ảnh tĩnh**             | Tối đa **2.0 MiB / ảnh**                  | Khống chế tại Private File Service M2 (`reservedBytes: 2097152`). Quá dung lượng từ chối upload.                                                                                |
+| **Độ phân giải frame (Giới hạn cứng Server)** | Tối đa 1920x1080                          | Trả về `INVALID_DIMENSIONS` nếu vượt quá.                                                                                                                                       |
+| **Độ phân giải chụp mặc định (Client)**       | Tối đa 1920x1080                          | Client tự động scale về 1080p trước khi nén để tiết kiệm băng thông.                                                                                                            |
+| **Định dạng tệp frame**                       | `image/webp` (fallback `image/jpeg`)      | Tối ưu dung lượng và tốc độ nén Canvas.                                                                                                                                         |
+| **Quota frame theo phiên**                    | Tối đa **20 MiB / phiên**                 | Khống chế tại M2; vượt quota báo lỗi không thể dừng hình thêm.                                                                                                                  |
+| **Thời hạn Freeze Intent (TTL)**              | **15 giây**                               | CAS lock tự giải phóng sau 15 giây nếu client không commit; dọn tệp dở dang.                                                                                                    |
+| **Tần suất con trỏ (Cursor Throttle)**        | Tối đa 20 gói/giây (50ms/gói)             | Client throttle trước khi gửi; server drop gói thừa (loss-tolerant).                                                                                                            |
+| **Gói tin Snapshot Sync (`board.sync`)**      | Tối đa **50 nét** HOẶC **16 KiB** / batch | Tiêu chí kép: dừng khi đạt 50 nét hoặc 16 KiB JSON kể cả envelope; dừng trước ngưỡng 16 KiB. Một nét phải đủ chỗ trong envelope, không coi 16 KiB phần points là 16 KiB cả gói. |
 
 ---
 
@@ -800,7 +815,8 @@ Giả sử Container có kích thước $1280 \times 720$ (tỷ lệ 16:9), ngu�
 
 ```mermaid
 flowchart LR
-  R1["Socket Reconnect"] --> R2["Gui board.sync(scopeId, mode: 'SNAPSHOT')"]
+  R1["Socket Reconnect"] --> M4["M1 xac thuc; M4 resume/resync quyen hien tai"]
+ M4 --> R2["Gui board.sync theo context M4 moi"]
   R2 --> R3{"Scope va quyen con hop le?"}
   R3 -- "Khong" --> R4["SCOPE_NOT_FOUND / PERMISSION_DENIED<br/>Go overlay, thoat room"]
   R3 -- "Co" --> R5{"state.version thay doi?"}
@@ -818,10 +834,10 @@ flowchart LR
 
 #### 6.7.1 Feature Flags & Graceful Kill-Switch
 
-| Feature Flag                      | Mặc định             | Phạm vi áp dụng | Mục đích sử dụng                                                                                                                                                                       |
-| :-------------------------------- | :------------------- | :-------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `feature.board.enabled`           | `true` (dev/staging) | Toàn hệ thống   | Bật/tắt toàn bộ tính năng bảng vẽ và dừng hình. Khi tắt, server chủ động emit `board.disabled`, chuyển mọi nhóm FROZEN về LIVE mượt mà, dọn file tạm; sau đó mới từ chối mutation mới. |
-| `feature.board.vanishing_strokes` | `true`               | Client & Server | Bật/tắt chế độ nét tự biến mất cho host tại MAIN.                                                                                                                                      |
+| Feature Flag                      | Mặc định             | Phạm vi áp dụng | Mục đích sử dụng                                                                                                                                                             |
+| :-------------------------------- | :------------------- | :-------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `feature.board.enabled`           | `true` (dev/staging) | Toàn hệ thống   | Bật/tắt toàn bộ tính năng bảng vẽ và dừng hình. Khi tắt, chặn mutation/hủy pending trước; thu overlay, reset nhóm về LIVE, phát event đúng audience và release frame qua M2. |
+| `feature.board.vanishing_strokes` | `true`               | Client & Server | Bật/tắt chế độ nét tự biến mất cho host tại MAIN.                                                                                                                            |
 
 #### 6.7.2 Structured Logs
 
@@ -861,10 +877,10 @@ Mỗi thao tác quan trọng ghi một log JSON gồm các trường:
 
 - Khi cần tắt tính năng khẩn cấp: Tắt feature flag `feature.board.enabled = false`.
 - **Quy trình tắt êm ái (Graceful teardown):**
-  1. Server quét toàn bộ board context đang ở `FROZEN` hoặc `FREEZING`, hủy pending intent, reset trạng thái về `LIVE`, gỡ bỏ `frameId` và đặt lịch dọn dẹp tệp ảnh trong M2.
+  1. Server dựng barrier từ chối mutation mới và vô hiệu pending trước, rồi quét toàn bộ context LIVE/FROZEN/FREEZING, hủy pending intent, reset trạng thái về `LIVE`, gỡ bỏ `frameId` và đặt lịch dọn dẹp tệp ảnh trong M2.
   2. Server phát sự kiện `board.disabled` tới tất cả client đang kết nối.
   3. Client tự động gỡ bỏ lớp hiển thị ảnh tĩnh, đưa người học trở lại xem luồng video WebRTC trực tiếp hiện tại, đồng thời ẩn toàn bộ thanh công cụ vẽ trên giao diện.
-  4. Server kích hoạt cổng từ chối (reject gate) với các lệnh mutation tiếp theo.
+  4. Giữ reject gate đã đặt, nhả refs qua M2 và đối soát cleanup; callback muộn không được bật lại board.
 - Không cần rollback schema database vì không có bảng/collection mới nào được tạo trong MongoDB.
 
 ---
@@ -882,40 +898,40 @@ Mỗi thao tác quan trọng ghi một log JSON gồm các trường:
 
 #### 6.8.2 Datastore & File Integration Tests
 
-|   Mã   | Kịch bản kiểm thử                         | Kết quả mong đợi                                                                                 |
-| :----: | :---------------------------------------- | :----------------------------------------------------------------------------------------------- |
-| **D1** | Upload frame ảnh tĩnh                     | Tạo record trong `files` với `purpose: 'FRAME'`, `byteSize`, `reservedBytes`, `state: 'STAGED'`. |
-| **D2** | Commit dừng hình hợp lệ                   | Chuyển file sang `state: 'READY'`, gắn binding `BOARD_FRAME`.                                    |
-| **D3** | Commit khi nhóm đã đóng (Post-bind check) | Bị từ chối (`GROUP_CLOSED`), tệp `STAGED` bị đặt lịch xóa ngay lập tức.                          |
-| **D4** | Intent hết hạn hoặc bị hủy                | Sweeper tự động dọn dẹp tệp frame mồ côi.                                                        |
-| **D5** | Tải frame bởi người ngoài nhóm            | Bị từ chối truy cập theo ACL nhóm của Private File Service.                                      |
+|   Mã   | Kịch bản kiểm thử                         | Kết quả mong đợi                                                                                   |
+| :----: | :---------------------------------------- | :------------------------------------------------------------------------------------------------- |
+| **D1** | Upload frame ảnh tĩnh                     | Tạo record trong `files` với `purpose: 'FRAME'`, `byteSize`, `reservedBytes`, `state: 'STAGED'`.   |
+| **D2** | Commit dừng hình hợp lệ                   | Chuyển file sang `state: 'READY'`, gắn binding `BOARD_FRAME`.                                      |
+| **D3** | Commit khi nhóm đã đóng (Post-bind check) | Bị từ chối (`GROUP_CLOSED`), file STAGED/READY chưa được dùng được release qua M2 và lên lịch dọn. |
+| **D4** | Intent hết hạn hoặc bị hủy                | Sweeper tự động dọn dẹp tệp frame mồ côi.                                                          |
+| **D5** | Tải frame bởi người ngoài nhóm            | Bị từ chối truy cập theo ACL nhóm của Private File Service.                                        |
 
 #### 6.8.3 Integration Tests (Socket.IO & Lifecycle)
 
-|   Mã    | Kịch bản kiểm thử                                                                                      | Kết quả mong đợi                                                                            |
-| :-----: | :----------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------ |
-| **I1**  | **MAIN Host Draw:** Host vẽ tại MAIN khi đang ở MAIN                                                   | Nét vẽ được đồng bộ tức thì tới tất cả participant tại MAIN.                                |
-| **I2**  | **MAIN Host Elsewhere Deny:** Host đang ở ACTIVITY gửi lệnh vẽ tại MAIN                                | Server từ chối với mã lỗi `HOST_NOT_IN_MAIN`.                                               |
-| **I3**  | **MAIN Member Deny:** Thành viên thường gửi event vẽ tại MAIN                                          | Server từ chối với mã lỗi `PERMISSION_DENIED`.                                              |
-| **I4**  | **MAIN Freeze Deny:** Bất kỳ ai (kể cả host) gửi `freeze.begin` tại MAIN                               | Server từ chối với mã lỗi `FREEZE_NOT_ALLOWED_IN_MAIN`.                                     |
-| **I5**  | **Group Freeze Race:** Hai thành viên trong nhóm cùng bấm freeze đồng thời                             | Chỉ 1 người nhận được intent thành công; người thứ 2 nhận `CONCURRENT_FREEZE_IN_PROGRESS`.  |
-| **I6**  | **FROZEN Live Source Change:** Nguồn live thay đổi khi nhóm đang FROZEN                                | Nhóm vẫn giữ nguyên frame và tiếp tục vẽ bình thường trên frame tĩnh.                       |
-| **I7**  | **Lost Ack Retry (Idempotency):** Client gửi lại `board.stroke.draw` cùng `strokeId`                   | Server trả về Ack cũ (`isDuplicate: true`), không tạo nét trùng lặp, không broadcast thêm.  |
-| **I8**  | **Group Close 2-Phase Cleanup:** M4 đóng nhóm hoặc hết giờ TIMER-01                                    | M5 dọn sạch context/RAM/file, gửi Ack cho M4; M4 nhận Ack xong mới chuyển học viên về MAIN. |
-| **I9**  | **Kill-Switch Graceful:** Tắt feature flag `feature.board.enabled`                                     | Nhóm đang FROZEN tự động chuyển về video trực tiếp mượt mà, UI ẩn nút.                      |
-| **I10** | **Sync Pagination & Concurrent Events:** Bảng có 120 nét, client kéo 3 trang sync trong khi có nét mới | Nhận đủ 120 nét theo 3 trang, replay nét mới từ queue đúng thứ tự sequence.                 |
-| **I11** | **DISCUSSION Member Clear Deny:** Thành viên thường cố xóa bảng trong DISCUSSION                       | Server từ chối với mã lỗi `NOT_AUTHORIZED_TO_CLEAR`.                                        |
+|   Mã    | Kịch bản kiểm thử                                                                                      | Kết quả mong đợi                                                                                                             |
+| :-----: | :----------------------------------------------------------------------------------------------------- | :--------------------------------------------------------------------------------------------------------------------------- |
+| **I1**  | **MAIN Host Draw:** Host vẽ tại MAIN khi đang ở MAIN                                                   | Nét vẽ được đồng bộ tức thì tới tất cả participant tại MAIN.                                                                 |
+| **I2**  | **MAIN Host Elsewhere Deny:** Host đang ở ACTIVITY gửi lệnh vẽ tại MAIN                                | Server từ chối với mã lỗi `HOST_NOT_IN_MAIN`.                                                                                |
+| **I3**  | **MAIN Member Deny:** Thành viên thường gửi event vẽ tại MAIN                                          | Server từ chối với mã lỗi `PERMISSION_DENIED`.                                                                               |
+| **I4**  | **MAIN Freeze Deny:** Bất kỳ ai (kể cả host) gửi `freeze.begin` tại MAIN                               | Server từ chối với mã lỗi `FREEZE_NOT_ALLOWED_IN_MAIN`.                                                                      |
+| **I5**  | **Group Freeze Race:** Hai thành viên trong nhóm cùng bấm freeze đồng thời                             | Chỉ 1 người nhận được intent thành công; người thứ 2 nhận `CONCURRENT_FREEZE_IN_PROGRESS`.                                   |
+| **I6**  | **FROZEN Live Source Change:** Nguồn live thay đổi khi nhóm đang FROZEN                                | Nhóm vẫn giữ nguyên frame và tiếp tục vẽ bình thường trên frame tĩnh.                                                        |
+| **I7**  | **Lost Ack Retry (Idempotency):** Client gửi lại `board.stroke.draw` cùng `strokeId`                   | Server trả về Ack cũ (`isDuplicate: true`), không tạo nét trùng lặp, không broadcast thêm.                                   |
+| **I8**  | **Group Close 2-Phase Cleanup:** M4 đóng nhóm hoặc hết giờ TIMER-01                                    | M5 thu quyền/hủy pending context, gửi kết quả cleanup cho M4; M2 dọn byte sau; M4 nhận Ack xong mới chuyển học viên về MAIN. |
+| **I9**  | **Kill-Switch Graceful:** Tắt feature flag `feature.board.enabled`                                     | Nhóm đang FROZEN tự động chuyển về video trực tiếp mượt mà, UI ẩn nút.                                                       |
+| **I10** | **Sync Pagination & Concurrent Events:** Bảng có 120 nét, client kéo 3 trang sync trong khi có nét mới | Nhận đủ 120 nét theo 3 trang, replay nét mới từ queue đúng thứ tự sequence.                                                  |
+| **I11** | **DISCUSSION Member Clear Deny:** Thành viên thường cố xóa bảng trong DISCUSSION                       | Server từ chối với mã lỗi `NOT_AUTHORIZED_TO_CLEAR`.                                                                         |
 
 #### 6.8.4 Self-test Matrix (Thủ công / E2E)
 
-| Loại kịch bản       | Thao tác thực hiện                                          | Kết quả quan sát thực tế                                               |
-| :------------------ | :---------------------------------------------------------- | :--------------------------------------------------------------------- |
-| **Thành công**      | Host vẽ tại MAIN khi đang ở MAIN                            | Nét hiển thị tức thì trên client học viên.                             |
-| **Thành công**      | Nhóm 3 người bấm dừng hình đồng bộ                          | 1 người chụp, 3 người cùng thấy 1 frame và cùng vẽ lên frame đó.       |
-| **Đổi nguồn live**  | Người share đổi cửa sổ chia sẻ khi nhóm đang dừng hình      | Frame tĩnh không đổi, học viên tiếp tục vẽ bình thường.                |
-| **Trường hợp rỗng** | Mở nhóm chưa có ai chia sẻ màn hình, bấm freeze             | Hiển thị thông báo "Chưa có nguồn chia sẻ để dừng hình".               |
-| **Lỗi mạng**        | Tắt mạng client trong khi đang upload frame ảnh             | Sau 15 giây server tự động hủy intent và đưa nhóm về trạng thái LIVE.  |
-| **Resize**          | Thay đổi kích thước cửa sổ khi đang có nét vẽ trên màn hình | Nét vẽ bám dính chính xác 100% vào nội dung video, không bị trôi lệch. |
+| Loại kịch bản       | Thao tác thực hiện                                          | Kết quả quan sát thực tế                                                                          |
+| :------------------ | :---------------------------------------------------------- | :------------------------------------------------------------------------------------------------ |
+| **Thành công**      | Host vẽ tại MAIN khi đang ở MAIN                            | Nét hiển thị tức thì trên client học viên.                                                        |
+| **Thành công**      | Nhóm 3 người bấm dừng hình đồng bộ                          | 1 người chụp, 3 người cùng thấy 1 frame và cùng vẽ lên frame đó.                                  |
+| **Đổi nguồn live**  | Người share đổi cửa sổ chia sẻ khi nhóm đang dừng hình      | Frame tĩnh không đổi, học viên tiếp tục vẽ bình thường.                                           |
+| **Trường hợp rỗng** | Mở nhóm chưa có ai chia sẻ màn hình, bấm freeze             | Hiển thị thông báo "Chưa có nguồn chia sẻ để dừng hình".                                          |
+| **Lỗi mạng**        | Tắt mạng client trong khi đang upload frame ảnh             | Sau 15 giây server tự động hủy intent và đưa nhóm về trạng thái LIVE.                             |
+| **Resize**          | Thay đổi kích thước cửa sổ khi đang có nét vẽ trên màn hình | Nét vẽ khớp trong sai số kiểm được qua fixture resize/DPR vào nội dung video, không bị trôi lệch. |
 
 #### 6.8.5 Tiêu chí nghiệm thu theo FR
 
@@ -931,22 +947,22 @@ Mỗi thao tác quan trọng ghi một log JSON gồm các trường:
 
 ## 7. Ảnh hưởng tới các miền khác
 
-| Miền liên quan              | Nội dung phối hợp                                                                                                                                                                                                                    | Thay đổi breaking? | Thứ tự triển khai                                          | Đầu mối phối hợp    |
-| :-------------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :----------------- | :--------------------------------------------------------- | :------------------ |
-| **M1 (Auth & Workspace)**   | Cung cấp danh tính `userId`, kiểm tra membership hợp lệ và cơ chế revoke token/quyền tức thì khi rời Workspace.                                                                                                                      | Không              | Độc lập, dùng nền M1 sẵn có                                | M1 Owner            |
-| **M2 (Chat & Files)**       | Cung cấp HTTP Upload endpoint cho frame (`purpose: 'FRAME'`, `byteSize`, `reservedBytes`), orphan file sweeper định kỳ dọn dẹp frame mồ côi.                                                                                         | Không              | M2 cung cấp upload trước khi M5 tích hợp commit            | M2 Owner & M5 Owner |
-| **M3 (Media & Call Shell)** | Cung cấp `MediaStream`, `sourceId`, `sourceRevision` từ Media Registry; cung cấp vùng Stage để nhúng `StageCanvasOverlay`.                                                                                                           | Không              | Cần M3 hoàn thiện khung Stage và video player              | M3 Owner & M5 Owner |
-| **M4 (Session & Groups)**   | Cung cấp trạng thái phiên, `scopeId`, danh sách nhóm, host hiện hành và vị trí host; thực hiện giao thức đóng nhóm 2 pha (M4 gửi teardown → M5 dọn và gửi Ack → M4 chuyển phòng); hỗ trợ xác thực atomic trạng thái nhóm tại commit. | Không              | M4 cung cấp event vòng đời trước khi M5 hoàn thiện cleanup | M4 Owner & M5 Owner |
-| **Packages / Contracts**    | Bổ sung schemas cho các event `board:*`, `BoardState`, `Stroke` (≤ 500 points, ≤ 16 KiB), `syncResponse` vào `@colearnia/contracts`.                                                                                                 | Không              | **Làm đầu tiên**, chặn các task server và web              | M5 Owner            |
+| Miền liên quan              | Nội dung phối hợp                                                                                                                                                                                                                    | Thay đổi breaking? | Thứ tự triển khai                                                                   | Đầu mối phối hợp    |
+| :-------------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :----------------- | :---------------------------------------------------------------------------------- | :------------------ |
+| **M1 (Auth & Workspace)**   | Cung cấp danh tính `userId`, kiểm tra membership hợp lệ và cơ chế revoke token/quyền tức thì khi rời Workspace.                                                                                                                      | Không              | Theo contract auth/access M1; fixture trước, tích hợp thật sau                      | M1 Owner            |
+| **M2 (Chat & Files)**       | Cung cấp HTTP Upload endpoint cho frame (`purpose: 'FRAME'`, `byteSize`, `reservedBytes`), orphan file sweeper định kỳ dọn dẹp frame mồ côi.                                                                                         | Không              | M2 cung cấp upload trước khi M5 tích hợp commit                                     | M2 Owner & M5 Owner |
+| **M3 (Media & Call Shell)** | Cung cấp `MediaStream`, `sourceId`, `sourceRevision` từ Media Registry; cung cấp vùng Stage để nhúng `StageCanvasOverlay`.                                                                                                           | Không              | Cần M3 hoàn thiện khung Stage và video player                                       | M3 Owner & M5 Owner |
+| **M4 (Session & Groups)**   | Cung cấp trạng thái phiên, `scopeId`, danh sách nhóm, host hiện hành và vị trí host; thực hiện giao thức đóng nhóm 2 pha (M4 gửi teardown → M5 dọn và gửi Ack → M4 chuyển phòng); hỗ trợ xác thực atomic trạng thái nhóm tại commit. | Không              | M4 cung cấp event vòng đời trước khi M5 hoàn thiện cleanup                          | M4 Owner & M5 Owner |
+| **Packages / Contracts**    | Bổ sung schemas cho các event `board:*`, `BoardState`, `Stroke` (≤ 500 points, ≤ 16 KiB), `syncResponse` vào `@colearnia/contracts`.                                                                                                 | Không              | Review phần giao trước consumer; normalizer/renderer có thể làm với fixture độc lập | M5 Owner            |
 
 ### 7.1 Hợp đồng kỳ vọng với từng miền
 
-| Miền   | M5 cần từ miền đó                                                                                                                                                    | M5 cung cấp cho miền đó                                                                         |
-| :----- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :---------------------------------------------------------------------------------------------- |
-| **M1** | Xác thực socket, danh tính người dùng, sự kiện revoke tức thì                                                                                                        | Không                                                                                           |
-| **M2** | Endpoint upload tạm, verify file theo §3.10 (`byteSize`, `reservedBytes`), bind `BOARD_FRAME`, ACL tải file theo nhóm, sweeper định kỳ                               | Không (chỉ sử dụng hạ tầng upload frame M2 cho Freeze)                                          |
-| **M3** | `sourceId`, `sourceRevision`, thông báo nguồn dừng/đổi; tham chiếu `videoElement` để chụp                                                                            | Overlay canvas gắn lên trên Video Stage                                                         |
-| **M4** | `sessionId` (ObjectId), `callGeneration`, host hiện hành, vị trí hiện tại của host (`currentLocation`), xác thực nhóm active khi commit, tín hiệu teardown đóng nhóm | Ack xác nhận đã dọn dẹp xong tài nguyên và thu quyền phòng trước khi M4 di dời học viên về MAIN |
+| Miền   | M5 cần từ miền đó                                                                                                                                                    | M5 cung cấp cho miền đó                                                                                   |
+| :----- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :-------------------------------------------------------------------------------------------------------- |
+| **M1** | Xác thực socket, danh tính người dùng, sự kiện revoke tức thì                                                                                                        | Không                                                                                                     |
+| **M2** | Endpoint upload tạm, verify file theo §3.10 (`byteSize`, `reservedBytes`), bind `BOARD_FRAME`, ACL tải file theo nhóm, sweeper định kỳ                               | Intent/ref hợp lệ, release ref và ảnh canvas mới để M2 gửi attachment                                     |
+| **M3** | `sourceId`, `sourceRevision`, thông báo nguồn dừng/đổi; tham chiếu `videoElement` để chụp                                                                            | Overlay canvas gắn lên trên Video Stage                                                                   |
+| **M4** | `sessionId` (ObjectId), `callGeneration`, host hiện hành, vị trí hiện tại của host (`currentLocation`), xác thực nhóm active khi commit, tín hiệu teardown đóng nhóm | Cleanup result xác nhận thu quyền/hủy pending trước khi M4 commit chuyển scope; dọn byte theo M2 phía sau |
 
 ---
 
@@ -966,9 +982,9 @@ Mỗi thao tác quan trọng ghi một log JSON gồm các trường:
 | :----: | :------------------------------------------------------------------------------------------------------------------------------------------- | :--------- | :--------- | :------------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **R1** | **Xung đột tranh chấp dừng hình (Freeze Race Condition):** Hai thành viên cùng bấm dừng hình tại một thời điểm làm ghi đè trạng thái.        | Trung bình | Cao        | **Cao**        | Sử dụng cơ chế CAS (Compare-And-Swap) với `FreezeIntentManager` trong RAM server: chỉ intent đầu tiên được cấp phát, các request đến sau bị từ chối ngay lập tức.       |
 | **R2** | **Trôi lệch nét vẽ khi thay đổi kích thước cửa sổ (Letterbox drift):** Nét vẽ bị trượt khỏi vị trí hình ảnh đối tượng.                       | Cao        | Cao        | **Cao**        | Bắt buộc bóc tách vùng video thực tế bằng thuật toán `CoordinateNormalizer`, chuẩn hóa toàn bộ tọa độ về tỷ lệ tương đối `[0.0, 1.0]` trước khi truyền đi hoặc lưu trữ. |
-| **R3** | **Tắc nghẽn Socket.IO do kích thước nét vẽ hoặc sync quá lớn:** Nét vẽ 2.000 điểm vượt trần 32 KiB hoặc sync hàng trăm nét làm nghẽn socket. | Cao        | Cao        | **Cao**        | Giới hạn kép: ≤ 500 điểm VÀ ≤ 16 KiB JSON thô; lượng tử hóa 4 chữ số thập phân; `board.sync` phân trang dừng ở 50 nét hoặc 48 KiB (≤ 64 KiB response).                  |
+| **R3** | **Tắc nghẽn Socket.IO do kích thước nét vẽ hoặc sync quá lớn:** Nét vẽ 2.000 điểm vượt trần 32 KiB hoặc sync hàng trăm nét làm nghẽn socket. | Cao        | Cao        | **Cao**        | Giới hạn kép: ≤ 500 điểm VÀ ≤ 16 KiB JSON thô; lượng tử hóa 4 chữ số thập phân; `board.sync` phân trang dừng ở 50 nét hoặc 16 KiB (≤ 16 KiB response).                  |
 | **R4** | **Rò rỉ bộ nhớ RAM do tích tụ nét vẽ và undo liên tục:** Người dùng vẽ và undo spam liên tục làm RAM phình to dù active ít.                  | Trung bình | Cao        | **Cao**        | Giới hạn tối đa 500 nét active, 100 nét tombstone; tự động purge FIFO nét tombstone cũ; khống chế ngân sách RAM ≤ 2.0 MiB/context.                                      |
-| **R5** | **Nhóm đã đóng nhưng commit dừng hình vẫn lọt vào:** Client upload xong mới commit khi nhóm đã hết giờ.                                      | Trung bình | Trung bình | **Trung bình** | Kiểm tra 2 pha: Pre-bind và Post-bind atomic re-check với M4 sau khi M2 hoàn tất; từ chối `GROUP_CLOSED` và xóa file tạm ngay nếu nhóm đã đóng.                         |
+| **R5** | **Nhóm đã đóng nhưng commit dừng hình vẫn lọt vào:** Client upload xong mới commit khi nhóm đã hết giờ.                                      | Trung bình | Trung bình | **Trung bình** | Kiểm tra 2 pha: Pre-bind và Post-bind atomic re-check với M4 sau khi M2 hoàn tất; từ chối `GROUP_CLOSED` và release ref qua M2 nếu nhóm đã đóng, dọn byte phía sau.     |
 | **R6** | **Mất Ack khiến client gửi lại trùng nét vẽ (Duplicate Stroke):** Mạng chập chờn gây nhân đôi nét vẽ trên canvas.                            | Trung bình | Trung bình | **Trung bình** | Cơ chế Idempotency cache trong BoardRuntime (LRU 1.000 items): nếu nhận cùng `strokeId` khớp author/context/payload, trả về ngay Ack cũ mà không tạo thêm nét mới.      |
 | **R7** | **Tắt feature flag làm treo màn hình học viên:** Tắt cờ chặn socket khiến nhóm FROZEN không thể resume.                                      | Trung bình | Cao        | **Cao**        | Graceful kill-switch: server broadcast `board.disabled`, tự động reset board FROZEN về LIVE để client chuyển về video trực tiếp trước khi đóng cổng.                    |
 
@@ -1007,30 +1023,36 @@ quadrantChart
 
 Toàn bộ phạm vi triển khai của Miền M5 được phân rã thành **11 nhóm công việc chính** với **23 task con cụ thể** có thời lượng từ **2 đến 8 giờ** (≤ 1.0 ngày công). Mỗi task con đều có đầu ra kiểm được (verifiable output), phụ thuộc rõ ràng và tiêu chí kiểm thử tương ứng. Kỹ sư phụ trách có trách nhiệm chủ động báo cáo nếu bị chặn (blocked) hoặc có nguy cơ vượt quá estimate.
 
-| Mã Task   | Tên công việc con                                                                   | File phụ trách / Tầng kiến trúc                         | Phụ thuộc        | Giờ (h) | Công số (pd) | Phân loại | Đầu ra kiểm được (Verifiable Output)                                               |
-| :-------- | :---------------------------------------------------------------------------------- | :------------------------------------------------------ | :--------------- | :-----: | :----------: | :-------- | :--------------------------------------------------------------------------------- |
-| **W1.1**  | Định nghĩa phong bì `boardCommandEnvelopeSchema` & Lệnh Freeze, Resume              | `packages/contracts/src/board.ts`                       | —                |   2h    |     0.25     | Dev       | Envelope schema Zod có `sessionId` ObjectId, `epoch`, `callGeneration`             |
-| **W1.2**  | Định nghĩa Schemas cho Stroke, State, Sync pagination & Error codes                 | `packages/contracts/src/board.ts`                       | —                |   2h    |     0.25     | Dev       | Schema Zod biên soạn đầy đủ, test unit contract pass 100%                          |
-| **W2.1**  | Thuật toán tách letterbox/pillarbox và tính vùng hiển thị thực của video            | `apps/web/src/modules/board/CoordinateNormalizer.ts`    | —                |   4h    |     0.50     | Dev       | Hàm `calculateRenderBox()` tính chính xác offset và render size                    |
-| **W2.2**  | Thuật toán chuẩn hóa con trỏ và lượng tử hóa tọa độ 4 chữ số thập phân              | `apps/web/src/modules/board/CoordinateNormalizer.ts`    | W2.1             |   4h    |     0.50     | Dev/Test  | Hàm `normalizePoint()` lượng tử hóa `0.xxxx`, loại bỏ dải đen; unit test 16:9, 4:3 |
-| **W3.1**  | Canvas 2D freehand rendering engine & làm mượt đường cong Bezier                    | `apps/web/src/modules/board/CanvasRenderer.ts`          | W2.2             |   6h    |     0.75     | Dev       | CanvasRenderer render mượt 60fps qua requestAnimationFrame                         |
-| **W3.2**  | Thuật toán giảm điểm ≤ 500 điểm (RDP) & Animation nét tự biến mất                   | `apps/web/src/modules/board/CanvasRenderer.ts`          | W3.1             |   6h    |     0.75     | Dev/Test  | Bộ nén điểm ≤ 500 pts (≤ 16 KiB); loop fade nét tự biến mất sau 3s                 |
-| **W4.1**  | Cài đặt `FreezeIntentManager` trong RAM: CAS lock, UUID intentId TTL 15s            | `apps/server/src/modules/board/FreezeIntentManager.ts`  | W1.1             |   4h    |     0.50     | Dev       | Cấp intent duy nhất, từ chối intent đồng thời (`CONCURRENT_FREEZE_IN_PROGRESS`)    |
-| **W4.2**  | Cơ chế tự động giải phóng khóa CAS khi quá hạn 15s hoặc bị hủy                      | `apps/server/src/modules/board/FreezeIntentManager.ts`  | W4.1             |   4h    |     0.50     | Dev/Test  | Timer tự hủy intent, nhả queue; unit test CAS race condition                       |
-| **W5.1**  | Xây dựng `BoardRuntime` state machine và counter `mutationSequence`                 | `apps/server/src/modules/board/BoardRuntime.ts`         | W1.2, W4.1       |   6h    |     0.75     | Dev       | State machine LIVE/FREEZING/FROZEN; gán sequence chung cho Draw, Undo, Clear       |
-| **W5.2**  | Cài đặt Idempotency cache (LRU 1.000 items) & Pruning tombstone (>100 nét)          | `apps/server/src/modules/board/BoardRuntime.ts`         | W5.1             |   6h    |     0.75     | Dev/Test  | Chống duplicate nét khi retry mất ack; purge FIFO tombstone; RAM ≤ 2.0 MiB         |
-| **W6.1**  | `BoardAclPolicy`: Phân quyền vẽ 3 lớp, kiểm tra Host + `currentLocation === 'MAIN'` | `apps/server/src/modules/board/BoardAclPolicy.ts`       | W5.1             |   4h    |     0.50     | Dev       | Chặn host đang ở ACTIVITY không được vẽ MAIN (`HOST_NOT_IN_MAIN`)                  |
-| **W6.2**  | `BoardAclPolicy`: Phân quyền Freeze và Clear (chủ frame trong DISCUSSION)           | `apps/server/src/modules/board/BoardAclPolicy.ts`       | W6.1             |   4h    |     0.50     | Dev/Test  | Chặn thành viên thường clear board trong DISCUSSION; unit test ACL matrix          |
-| **W7.1**  | Socket.IO Envelope Handlers, Session/Epoch validation & Event dispatching           | `apps/server/src/modules/board/BoardSocketHandler.ts`   | W1.2, W5.1, W6.1 |   4h    |     0.50     | Dev       | Tiếp nhận event `board:*`, kiểm tra Zod, từ chối socket cũ (`STALE_EPOCH`)         |
-| **W7.2**  | Cài đặt Sync Pagination (Snapshot & Delta) & Graceful kill-switch handler           | `apps/server/src/modules/board/BoardSocketHandler.ts`   | W7.1             |   4h    |     0.50     | Dev/Test  | Xử lý batch sync dừng ở 50 nét / 48 KiB; emit `board.disabled` reset về LIVE       |
-| **W8.1**  | Tích hợp upload frame HTTP với Private File Service (M2) theo baseline §3.10        | `apps/server/src/modules/board/BoardFileIntegration.ts` | W4.1, W7.1       |   4h    |     0.50     | Dev       | Tạo record `files` (`byteSize`, `reservedBytes`, `purpose: 'FRAME'`)               |
-| **W8.2**  | Kiểm tra 2 pha Pre-bind & Post-bind atomic re-check với M4 khi commit               | `apps/server/src/modules/board/BoardFileIntegration.ts` | W8.1             |   4h    |     0.50     | Dev/Test  | Hủy file STAGED ngay nếu nhóm đã đóng khi chờ M2; giao thức teardown 2 pha         |
-| **W9.1**  | Xây dựng Component `StageCanvasOverlay.tsx` gắn vào Call Stage                      | `apps/web/src/modules/board/StageCanvasOverlay.tsx`     | W1.2, W2.2, W3.1 |   6h    |     0.75     | Dev       | Overlay React phủ trên video, xử lý pointer events và resize listener              |
-| **W9.2**  | Xây dựng Hook `useBoardSocket.ts`, retry Idempotent & Pending Event Queue           | `apps/web/src/modules/board/useBoardSocket.ts`          | W9.1, W7.2       |   6h    |     0.75     | Dev/Test  | Hook đồng bộ socket, queue event khi đang sync, xử lý mất ack                      |
-| **W10.1** | Bộ kiểm thử tự động Unit Tests (Normalizer, Runtime, Intent, AclPolicy)             | `apps/server/test/board/`, `apps/web/test/board/`       | W1–W9            |   6h    |     0.75     | Test      | 100% unit tests pass, kiểm tra edge cases và memory constraints                    |
-| **W10.2** | Bộ kiểm thử tích hợp Integration Tests (2-phase commit, sync gap, concurrent)       | `apps/server/test/board/`                               | W10.1            |   6h    |     0.75     | Test      | Kịch bản I1–I11 pass, kiểm tra race condition, đổi nguồn FROZEN, member clear deny |
-| **W11.1** | Tài liệu hướng dẫn tích hợp, Metric Prometheus dashboards & Runbook sự cố           | `docs/runbooks/`, `docs/board/`                         | W10.2            |   4h    |     0.50     | Docs      | Runbook vận hành, alert thresholds và hướng dẫn xử lý sự cố                        |
-| **Tổng**  | **Tổng hợp toàn bộ 23 task con phân rã kỹ thuật**                                   | —                                                       | —                | **96h** | **12.0 pd**  | —         | **Nỗ lực thuần: Dev 8.7 pd (69.6h) + Test & Docs 3.3 pd (26.4h)**                  |
+| Mã Task   | Tên công việc con                                                                             | File phụ trách / Tầng kiến trúc                         | Phụ thuộc                                  | Giờ (h)  | Công số (pd) | Phân loại | Đầu ra kiểm được (Verifiable Output)                                                                     |
+| :-------- | :-------------------------------------------------------------------------------------------- | :------------------------------------------------------ | :----------------------------------------- | :------: | :----------: | :-------- | :------------------------------------------------------------------------------------------------------- |
+| **W1.1**  | Định nghĩa phong bì `boardCommandEnvelopeSchema` & Lệnh Freeze, Resume                        | `packages/contracts/src/board.ts`                       | —                                          |    2h    |     0.25     | Dev       | Envelope schema Zod có `sessionId` ObjectId, `epoch`, `callGeneration`                                   |
+| **W1.2**  | Định nghĩa Schemas cho Stroke, State, Sync pagination & Error codes                           | `packages/contracts/src/board.ts`                       | —                                          |    2h    |     0.25     | Dev       | Schema Zod biên soạn đầy đủ, Ca hợp lệ/sai schema và byte budget đã chạy                                 |
+| **W2.1**  | Thuật toán tách letterbox/pillarbox và tính vùng hiển thị thực của video                      | `apps/web/src/modules/board/CoordinateNormalizer.ts`    | —                                          |    4h    |     0.50     | Dev       | Hàm `calculateRenderBox()` tính chính xác offset và render size                                          |
+| **W2.2**  | Thuật toán chuẩn hóa con trỏ và lượng tử hóa tọa độ 4 chữ số thập phân                        | `apps/web/src/modules/board/CoordinateNormalizer.ts`    | W2.1                                       |    4h    |     0.50     | Dev/Test  | Hàm `normalizePoint()` lượng tử hóa `0.xxxx`, loại bỏ dải đen; unit test 16:9, 4:3                       |
+| **W3.1**  | Canvas 2D freehand rendering engine & làm mượt đường cong Bezier                              | `apps/web/src/modules/board/CanvasRenderer.ts`          | W2.2                                       |    6h    |     0.75     | Dev       | CanvasRenderer render mượt 60fps qua requestAnimationFrame                                               |
+| **W3.2**  | Thuật toán giảm điểm ≤ 500 điểm (RDP) & Animation nét tự biến mất                             | `apps/web/src/modules/board/CanvasRenderer.ts`          | W3.1                                       |    6h    |     0.75     | Dev/Test  | Bộ nén điểm ≤ 500 pts (≤ 16 KiB); Loop fade theo cấu hình được review, không chốt cứng 3 giây            |
+| **W4.1**  | Cài đặt `FreezeIntentManager` trong RAM: CAS lock, UUID intentId TTL 15s                      | `apps/server/src/modules/board/FreezeIntentManager.ts`  | W1.1                                       |    4h    |     0.50     | Dev       | Cấp intent duy nhất, từ chối intent đồng thời (`CONCURRENT_FREEZE_IN_PROGRESS`)                          |
+| **W4.2**  | Cơ chế tự động giải phóng khóa CAS khi quá hạn 15s hoặc bị hủy                                | `apps/server/src/modules/board/FreezeIntentManager.ts`  | W4.1                                       |    4h    |     0.50     | Dev/Test  | Timer tự hủy intent, nhả queue; unit test CAS race condition                                             |
+| **W5.1**  | Xây dựng `BoardRuntime` state machine và counter `mutationSequence`                           | `apps/server/src/modules/board/BoardRuntime.ts`         | W1.2, W4.1                                 |    6h    |     0.75     | Dev       | State machine LIVE/FREEZING/FROZEN; gán sequence chung cho Draw, Undo, Clear                             |
+| **W5.2**  | Cài đặt Idempotency cache (LRU 1.000 items) & Pruning tombstone (>100 nét)                    | `apps/server/src/modules/board/BoardRuntime.ts`         | W5.1                                       |    6h    |     0.75     | Dev/Test  | Chống duplicate nét khi retry mất ack; purge FIFO tombstone; RAM ≤ 2.0 MiB                               |
+| **W6.1**  | `BoardAclPolicy`: Phân quyền vẽ 3 lớp, kiểm tra Host + `currentLocation === 'MAIN'`           | `apps/server/src/modules/board/BoardAclPolicy.ts`       | W5.1                                       |    4h    |     0.50     | Dev       | Chặn host đang ở ACTIVITY không được vẽ MAIN (`HOST_NOT_IN_MAIN`)                                        |
+| **W6.2**  | `BoardAclPolicy`: Phân quyền Freeze và Clear (chủ frame trong DISCUSSION)                     | `apps/server/src/modules/board/BoardAclPolicy.ts`       | W6.1                                       |    4h    |     0.50     | Dev/Test  | Chặn thành viên thường clear board trong DISCUSSION; unit test ACL matrix                                |
+| **W7.1**  | Socket.IO Envelope Handlers, Session/Epoch validation & Event dispatching                     | `apps/server/src/modules/board/BoardSocketHandler.ts`   | W1.2, W5.1, W6.1                           |    4h    |     0.50     | Dev       | Tiếp nhận event `board:*`, kiểm tra Zod, từ chối socket cũ (`STALE_EPOCH`)                               |
+| **W7.2**  | Cài đặt Sync Pagination (Snapshot có giới hạn) & Graceful kill-switch handler                 | `apps/server/src/modules/board/BoardSocketHandler.ts`   | W7.1                                       |    4h    |     0.50     | Dev/Test  | Xử lý batch sync dừng ở 50 nét / 16 KiB; emit `board.disabled` reset về LIVE                             |
+| **W8.1**  | Tích hợp upload frame HTTP với Private File Service (M2) theo baseline §3.10                  | `apps/server/src/modules/board/BoardFileIntegration.ts` | W4.1, W7.1                                 |    4h    |     0.50     | Dev       | Gọi M2 tạo STAGED/bind/release đúng intent; M2 sở hữu record files và R2                                 |
+| **W8.2**  | Kiểm tra 2 pha Pre-bind & Post-bind atomic re-check với M4 khi commit                         | `apps/server/src/modules/board/BoardFileIntegration.ts` | W8.1                                       |    4h    |     0.50     | Dev/Test  | Hủy file STAGED ngay nếu nhóm đã đóng khi chờ M2; giao thức teardown 2 pha                               |
+| **W9.1**  | Xây dựng Component `StageCanvasOverlay.tsx` gắn vào Call Stage                                | `apps/web/src/modules/board/StageCanvasOverlay.tsx`     | W1.2, W2.2, W3.1                           |    6h    |     0.75     | Dev       | Overlay React phủ trên video, xử lý pointer events và resize listener                                    |
+| **W9.2**  | Xây dựng Hook `useBoardSocket.ts`, retry Idempotent & Pending Event Queue                     | `apps/web/src/modules/board/useBoardSocket.ts`          | W9.1, W7.2                                 |    6h    |     0.75     | Dev/Test  | Hook đồng bộ socket, queue event khi đang sync, xử lý mất ack                                            |
+| **W9.3**  | Toolbar bút/màu, nét thường/tạm MAIN, undo/clear có xác nhận, freeze/resume và trạng thái lỗi | `apps/web/src/modules/board/`                           | W9.2, W6.2; M4 projection                  |    4h    |     0.50     | Dev/Test  | Nút đúng role/scope; MAIN không freeze; mất quyền tắt thao tác, giữ nguồn media                          |
+| **W9.4**  | Chụp canvas hiện hành và nối gửi ảnh qua M2                                                   | `apps/web/src/modules/board/` + M2 attachment port      | W9.2; M2 T3.3/T5.5; contract ảnh/đích chat |    6h    |     0.75     | Dev/Test  | Chụp đúng hình+nét có quyền, tạo attachment mới; lỗi/đổi scope không gửi sai đích hoặc đổi binding FRAME |
+| **W10.1** | Bộ kiểm thử tự động Unit Tests (Normalizer, Runtime, Intent, AclPolicy)                       | `apps/server/test/board/`, `apps/web/test/board/`       | W1–W9                                      |    6h    |     0.75     | Test      | Các ca unit liên quan đã chạy và có kết quả, kiểm tra edge cases và memory constraints                   |
+| **W10.2** | Bộ kiểm thử tích hợp Integration Tests (2-phase commit, sync gap, concurrent)                 | `apps/server/test/board/`                               | W10.1                                      |    6h    |     0.75     | Test      | Kịch bản I1–I11 pass, kiểm tra race condition, đổi nguồn FROZEN, member clear deny                       |
+| **W11.1** | Tài liệu hướng dẫn tích hợp, Metric Prometheus dashboards & Runbook sự cố                     | `docs/runbooks/`, `docs/board/`                         | W10.2                                      |    4h    |     0.50     | Docs      | Runbook vận hành, alert thresholds và hướng dẫn xử lý sự cố                                              |
+| **Tổng**  | **Tổng hợp 23 task con (21 cũ + W9.3/W9.4)**                                                  | —                                                       | —                                          | **106h** | **13.25 pd** | —         | **Giờ cơ sở gồm triển khai và kiểm gần thay đổi; không cộng test lần hai**                               |
+
+W9.4 dùng API attachment M2 T3.3/T5.5 để gửi ảnh mới; M2 T7.4 kiểm tích hợp với ảnh do M5 cung cấp, không là điều kiện phải hoàn tất trước W9.4 để tránh phụ thuộc vòng.
+
+W9.3/W9.4 bổ sung đầu ra còn thiếu trong bảng cũ; giờ là đề xuất để review. W1 cần M2/M3/M4 review interface; W6 cần policy/context M4; W8 cần M2 upload/bind/release thật và M4 deadline; W9 cần stage tối thiểu M3. Các dependency nội bộ trong bảng không thay những điều kiện liên miền này. Task fixture có thể chạy trước; W10 tích hợp chỉ nghiệm thu khi provider thật sẵn sàng. M5 không tự ghi model `files` trong W8.
 
 ### 9.2 Đồ thị phụ thuộc
 
@@ -1044,7 +1066,7 @@ flowchart LR
   W6["W6 Acl Policy<br/>1.0d (8h)"]
   W7["W7 Socket Handler<br/>1.0d (8h)"]
   W8["W8 File / M4 2-Phase<br/>1.0d (8h)"]
-  W9["W9 Web Overlay & Hook<br/>1.5d (12h)"]
+  W9["W9 Web Overlay, Toolbar, Capture<br/>2.75d (22h)"]
   W10["W10 Test Suite<br/>1.5d (12h)"]
   W11["W11 Docs & Runbook<br/>0.5d (4h)"]
 
@@ -1062,40 +1084,29 @@ flowchart LR
 
 ## 10. Estimation
 
-### 10.1 Bảng tổng hợp ước lượng công số
+### 10.1 Bảng tổng hợp giờ
 
-Bảng ước lượng được chuẩn hóa nhất quán 100% với phân rã WBS Mục 9 (tổng nỗ lực cơ bản 12.0 ngày công = 96 giờ công):
+| Thành phần                                        |  Giờ M5 | Ngày công 8 giờ |
+| ------------------------------------------------- | ------: | --------------: |
+| 23 task con W1–W11, gồm code và kiểm gần thay đổi |     106 |           13.25 |
+| Review tích hợp/bàn giao bổ sung                  |       4 |             0.5 |
+| Dự phòng tạm tính, cần review sau luồng đầu       |       8 |               1 |
+| **Tổng dự kiến**                                  | **118** |       **14.75** |
 
-| Kịch bản ước lượng     | Phát triển thuần (Dev) | Kiểm thử & Tài liệu (Test/Docs) | Review & Tích hợp | Dự phòng rủi ro (Buffer) |    Tổng ngày công nỗ lực (Person-Days)    | Lịch trình dự kiến (Working Days) |
-| :--------------------- | :--------------------: | :-----------------------------: | :---------------: | :----------------------: | :---------------------------------------: | :-------------------------------: |
-| **Tốt nhất (Best)**    |         6.5 pd         |             2.0 pd              |      0.5 pd       |          0.5 pd          |                **9.5 pd**                 |       **5.5 ngày làm việc**       |
-| **Dự kiến (Expected)** |       **8.7 pd**       |           **3.3 pd**            |    **0.5 pd**     |        **1.0 pd**        | **13.5 pd** _(Nỗ lực thuần: **12.0 pd**)_ |    **7.0 – 7.5 ngày làm việc**    |
-| **Xấu nhất (Worst)**   |        11.5 pd         |             4.0 pd              |      1.0 pd       |          1.5 pd          |                **18.0 pd**                |      **10.5 ngày làm việc**       |
+Bản trước có 21 dòng task thực tế, cộng 96 giờ dù ghi 23. Bản này bổ sung W9.3 (toolbar 4 giờ) và W9.4 (chụp canvas gửi attachment qua M2, 6 giờ) theo phạm vi đã có; tổng mới 23 task/106 giờ. Đây là estimate đề xuất, không là cam kết hoàn tất. Không giữ tỷ lệ Dev/Test theo phần trăm hoặc các kịch bản cũ khi chưa tính lại.
 
-### 10.2 Giả định và tỷ lệ độ biến động
+### 10.2 Giả định và phần cần kiểm lại
 
-1. Đã có sẵn nền tảng Socket.IO gateway và cấu trúc phiên làm việc từ M4.
-2. Private File Service (M2) đã sẵn sàng endpoint upload tệp tạm thời theo HTTP multipart và collection `files` theo baseline §3.10.
-3. Call Stage (M3) đã cung cấp sẵn video player element để lấy tham chiếu video frame cho Web API Canvas.
-4. Tỷ lệ giữa cận trên (Worst: 18.5 pd) và cận dưới (Best: 10.0 pd) là $18.0 / 9.5 \approx 1.89x$ (nằm an toàn dưới ngưỡng 2.0x theo chuẩn công nghiệp cho thiết kế mức Size L).
+- M1 cung cấp xác thực/quyền; M4 cung cấp context, audience, host, deadline và cleanup contract; M3 có stage/video handle/source lifecycle; M2 có upload/bind/content/release frame trên R2 riêng tư.
+- Có thể làm normalizer/renderer và fixture độc lập trước. Mock chỉ kiểm logic; không nghiệm thu freeze/resync/revoke thật trước khi provider sẵn sàng.
+- W1/W7/W8/W9 cần hai bên review contract, đặc biệt context/sequence/snapshot, release frame và ảnh gửi chat. Nếu thử nghiệm làm đổi thiết kế hoặc effort, cập nhật task trước khi cam kết.
+- W9.3/W9.4 là ngân sách bổ sung sơ bộ. 8 giờ dự phòng không chứng minh đủ cho mọi lỗi tích hợp hoặc tối ưu. Không tự chốt thời gian fade, đổi scope hay hạ kiểm quyền để vừa estimate.
 
-### 10.3 Đối soát công số WBS và Lịch trình triển khai
+### 10.3 Nguồn lực và lịch
 
-- **Khớp số học 100% giữa WBS và Estimation:**
-  - **Khối lượng công việc nỗ lực thuần (Base Technical Effort): 12.0 ngày công (96.0 giờ công).**
-    - Công việc phát triển (Dev): **8.7 ngày công** (69.6 giờ) trải dài từ W1 đến W9.
-    - Công việc kiểm thử chuyên biệt & tài liệu (Test/Docs): **3.3 ngày công** (26.4 giờ) tại W10, W11 và các phần kiểm thử con.
-  - Khi cộng thêm 0.5 pd Review/Tích hợp và 1.0 pd Dự phòng rủi ro kỹ thuật, tổng công số dự kiến là **13.5 person-days**.
-- **Phân định rõ Tổng ngày công nỗ lực (Effort) và Lịch trình thời gian (Lead Time / Calendar Duration):**
-  - **Nếu 1 kỹ sư thực hiện tuần tự (Single-engineer):** Lịch trình chiếm dụng sprint kéo dài đúng **12.0 – 13.5 ngày làm việc**.
-  - **Nếu 2 kỹ sư triển khai song song (Parallel execution):**
-    - Sau khi hoàn thành W1 (Contracts - 0.5d):
-      - Kỹ sư Frontend đảm nhiệm: W2 (1.0d) → W3 (1.5d) → W9 (1.5d) = **4.0 ngày làm việc**.
-      - Kỹ sư Backend đảm nhiệm: W4 (1.0d) → W5 (1.5d) → W6 (1.0d) → W7 (1.0d) → W8 (1.0d) = **5.5 ngày làm việc**.
-      - Nhánh Frontend xong sau 4.0d, nhánh Backend xong sau 5.5d; sau đó cả hai cùng phối hợp thực hiện kiểm thử tích hợp W10 (1.5d) và hoàn thiện Runbook W11 (0.5d).
-    - Do đó, thời gian hoàn thành thực tế của sprint đạt **7.0 – 7.5 ngày làm việc**, giúp rút ngắn thời gian giao hàng (Time-to-Market) mà không làm sai lệch tổng công số nỗ lực cần chi trả.
+Một ngày công là 8 giờ tập trung, không mặc định bằng một ngày lịch của sinh viên. 118 giờ tương đương khoảng 5.9 tuần ở 20 giờ/tuần hoặc 3.7 tuần ở 32 giờ/tuần, chưa tính chờ provider/reviewer. Chưa gán người hỗ trợ nên không dùng giả định hai kỹ sư FE/BE để hứa lịch 7–8 ngày.
 
----
+Mỗi task 2–8 giờ cần vừa số giờ thực có trong ngày; người có 4 giờ/ngày phải tách tiếp task 6–8 giờ theo đầu ra trước nhận việc. Khi blocked hoặc có nguy cơ vượt estimate, báo ngay: phần đã xong/đã kiểm, phụ thuộc và người cần hỗ trợ, giờ đã dùng và ước lượng còn lại. Không chờ daily hoặc tự chuyển hạn sang hôm sau. Task Done có đầu ra và ca kiểm/review tương ứng; hoàn tất timebox không tự là feature đã đạt.
 
 ## Appendix
 
@@ -1117,7 +1128,9 @@ export const pointSchema = z.object({
 export const boardCommandEnvelopeSchema = z.object({
   sessionId: objectIdSchema,
   epoch: z.string().uuid(),
-  callGeneration: z.number().int().nonnegative(),
+  callGeneration: z.number().int().positive(),
+  requestId: z.string().uuid(),
+  audienceEpoch: z.number().int().nonnegative(),
   scopeId: z.string(),
   contextVersion: z.number().int().nonnegative(),
 });
@@ -1149,8 +1162,8 @@ export const freezeCommitInputSchema = boardCommandEnvelopeSchema.extend({
   intentId: z.string().uuid(),
   fileId: z.string(),
   dimensions: z.object({
-    width: z.number().int().positive().max(2560),
-    height: z.number().int().positive().max(1440),
+    width: z.number().int().positive().max(1920),
+    height: z.number().int().positive().max(1080),
   }),
 });
 
@@ -1172,20 +1185,18 @@ export const strokeUndoInputSchema = boardCommandEnvelopeSchema.extend({
 
 export const boardClearInputSchema = boardCommandEnvelopeSchema;
 
-export const cursorInputSchema = z.object({
-  scopeId: z.string(),
+export const cursorInputSchema = boardCommandEnvelopeSchema.extend({
   x: z.number().min(0).max(1),
   y: z.number().min(0).max(1),
   isDrawing: z.boolean(),
   color: z.string().regex(/^#[0-9A-Fa-f]{6}$/),
 });
 
-export const syncInputSchema = z.object({
-  scopeId: z.string(),
-  mode: z.enum(['SNAPSHOT', 'DELTA']),
-  page: z.number().int().positive().optional(),
+export const syncInputSchema = boardCommandEnvelopeSchema.extend({
+  mode: z.literal('SNAPSHOT'),
+  snapshotId: z.string().uuid().optional(),
+  cursor: z.string().max(512).optional(),
   limit: z.number().int().positive().max(50).default(50),
-  sinceSequence: z.number().int().nonnegative().optional(),
 });
 ```
 
@@ -1221,7 +1232,7 @@ export const syncInputSchema = z.object({
 | `STALE_MUTATION`        | Lệnh retry gửi lên quá muộn sau khi context đã kết thúc hoặc nét đã bị prune khỏi RAM.            | Bỏ qua mutation, gọi `board.sync` để nhận snapshot mới.        |
 | `INTENT_INVALID`        | Intent không tồn tại, không thuộc người gọi, hoặc đã kết thúc.                                    | Đưa về trạng thái LIVE và đồng bộ lại.                         |
 | `FILE_NOT_FOUND`        | Tệp tải lên không tồn tại trong Private File Service hoặc sai intent.                             | Cho phép người dùng thử lại quy trình freeze từ đầu.           |
-| `INVALID_DIMENSIONS`    | Kích thước frame vượt quá giới hạn cứng (2560x1440).                                              | Tự động resize ảnh chụp và thử lại.                            |
+| `INVALID_DIMENSIONS`    | Kích thước frame vượt quá giới hạn cứng (1920x1080).                                              | Tự động resize ảnh chụp và thử lại.                            |
 | `NOT_FROZEN`            | Gửi lệnh resume khi board không ở trạng thái FROZEN/FREEZING.                                     | Bỏ qua lệnh và đồng bộ lại state từ server.                    |
 | `NOT_HOST`              | Người vẽ tại MAIN không phải là host của phiên họp.                                               | Vô hiệu hóa công cụ vẽ tại phòng MAIN.                         |
 | `INVALID_CONTEXT`       | Context không hợp lệ hoặc phiên họp không còn hoạt động.                                          | Đồng bộ lại hoặc đóng overlay canvas.                          |

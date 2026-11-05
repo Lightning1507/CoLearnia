@@ -8,6 +8,8 @@ Ngày: 03/11/2026. Reviewer: chờ phân công; M2 và M4 cần cùng review nh�
 > Triển khai trong repository hiện có với React, Express, Socket.IO, Zod và MongoDB/Mongoose. M1 phụ trách bảy collection; phối hợp M2 tạo phần hội thoại của kênh `general` trong cùng transaction và M4 thu quyền các kết nối LIVE đang mở.
 > WBS có 53 task con, mỗi task 2–8 giờ; tổng 268 giờ cơ sở và 32 giờ dự phòng tạm tính, tương đương 37.5 ngày công. Chưa phải cam kết lịch; cần review effort theo năng lực và số giờ thực có. Công M2–M5 cung cấp và công PM tính riêng.
 
+**Phối hợp và lập kế hoạch:** xem [quy ước chung của 5 proposal](README.md#quy-ước-chung-trước-khi-lập-sprint). Phân biệt task của bên cung cấp, task tích hợp của bên dùng và ca kiểm chung; không cộng lại cùng một đầu ra hoặc coi estimate là lịch cam kết.
+
 ## 1. Context
 
 Các miền chat, file, LIVE và board cần dùng chung cách xác thực tài khoản và kiểm tra quyền. Chỉ hoàn thành các thao tác tạo/xem/sửa/xóa là chưa đủ: khi quyền bị thu, người dùng cũng phải ngừng sử dụng được những kết nối và tài nguyên đang mở.

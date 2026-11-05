@@ -10,6 +10,8 @@ Các điểm tích hợp với auth, chat/tệp, media và board cần được 
 >
 > Dữ liệu phiên dài hạn lưu trong MongoDB; quyền và nhóm đang hoạt động được quản lý trong bộ nhớ server. Triển khai từ luồng MAIN, sau đó tích hợp nhóm, deadline và phục hồi kết nối. Ước lượng sơ bộ: **29 ngày công**, khoảng **20–42**, gồm phát triển, kiểm thử, review và dự phòng; phân tích mốc 4 tuần tại mục 10.
 
+**Phối hợp và lập kế hoạch:** xem [quy ước chung của 5 proposal](README.md#quy-ước-chung-trước-khi-lập-sprint). Phân biệt task của bên cung cấp, task tích hợp của bên dùng và ca kiểm chung; không cộng lại cùng một đầu ra hoặc coi estimate là lịch cam kết.
+
 ## 1. Context
 
 CoLearnia có Workspace/kênh lâu dài và LiveSession có thời điểm bắt đầu/kết thúc. Trong phiên, MAIN là phòng chung; DISCUSSION kế thừa bài giảng nhưng trao đổi riêng; ACTIVITY là các nhóm độc lập trong một lượt có deadline chung. Thay đổi nhóm/host/quyền có thể xảy ra khi upload, tạo Consumer hoặc reconnect vẫn đang chờ.
@@ -71,9 +73,9 @@ M4 sở hữu **15 FR chính**; FR-07-07 điều chuyển thành viên ngừng �
 | Q4  | Đề xuất cleanup result, cancel/late completion và deadline/retry tại B.2; không giữ gate/queue khi chờ I/O                                                                                                     | M2/M3/M5–M4           | T1.2/T3 và fixture                          |
 | Q5  | Có profile queue/in-flight/heartbeat/payload/cache hữu hạn tại B.3, dùng PoC để điều chỉnh; chưa là capacity/SLA đạt                                                                                           | M4, các miền tích hợp | Trước bật handler/PoC                       |
 | Q6  | Đã chốt: tự vào lại đúng ACTIVITY đã phân còn mở; không vào nhóm khác, không host điều chuyển; host chỉ vào bằng help, không join như thành viên                                                               | M4, M3/M2/M5          | Áp dụng draft/join/help và ca deny          |
-| Q7  | Vòng đời đã chốt; đề xuất server recorder mediasoup/GStreamer và profile PoC theo nguồn recording. Chính sách lưu/xóa/quota video chưa thống nhất, không tự chọn                                               | M3/M2/M4              | T8/PoC; chính sách trước bật video sản phẩm |
+| Q7  | Vòng đời đã chốt; đề xuất server recorder mediasoup/GStreamer và profile PoC theo nguồn recording. Đã chốt 3 tiếng/đoạn, READY giữ vô thời hạn; quota, quyền xóa và xử lý khi xóa cha còn mở                   | M3/M2/M4              | T8/PoC; chính sách trước bật video sản phẩm |
 
-Q1/Q2/Q6 và vòng đời recording tại Q7 đã xác nhận. Q3/Q4/Q5 và kỹ thuật Q7 là đề xuất triển khai có cấu hình khởi đầu tại Appendix B, cần các bên dùng review và PoC; phần sản phẩm chưa thống nhất là chính sách lưu/xóa/quota video. Thiết kế giữ một process Node, một worker mediasoup và một Router/LiveSession.
+Q1/Q2/Q6 và vòng đời recording tại Q7 đã xác nhận. Q3/Q4/Q5 và kỹ thuật Q7 là đề xuất triển khai có cấu hình khởi đầu tại Appendix B, cần các bên dùng review và PoC; phần sản phẩm còn mở là quota, quyền xóa và xử lý video khi xóa kênh/Workspace. Thiết kế giữ một process Node, một worker mediasoup và một Router/LiveSession.
 
 Các mốc thời gian đã có trong [live session](../product/live-session.md) và [group modes](../product/group-modes.md):
 
@@ -536,6 +538,8 @@ Danh sách video sau buổi học phải tìm được từ kênh, không buộc
 
 ### 6.4 Frontend và resync
 
+M4 sở hữu luồng và component xác nhận takeover/end; M3 nhúng vào shell và nối trạng thái/cleanup controller. Task M4 T10.3 làm hộp thoại và hành vi xác nhận; M3 T14.1 kiểm/thực thi phần media, không viết lại UI đó.
+
 M4 cung cấp component/panel host/nhóm trong màn hình cuộc gọi chung: tạo DISCUSSION, Vào nhóm, roster/count hiện diện, danh sách ACTIVITY/preview random, duration/countdown, chuyển host, hỗ trợ, Về phòng chung và kết thúc phiên. Mỗi action hiển thị trạng thái đang xử lý hoặc lỗi; giao diện chỉ đổi scope sau projection xác nhận từ server.
 
 Session projection giữ trong state render; track/transport/audio và CallController thuộc M3, không bị unmount khi mở panel M4/M2 hoặc đổi trang Workspace/kênh. M4 không tự tạo socket/transport hay sở hữu track trong từng panel. Countdown hiển thị từ deadline + mốc giờ server, không gửi lệnh close theo bộ đếm của từng client. M3 hiển thị thiết bị/audience theo state đã xác nhận; người về MAIN được pause mic, camera đang bật đổi audience với thông báo, người vốn ở MAIN không bị reset. Đích chat/upload cũ bị vô hiệu khi scope/host đổi; chỉ mở đích mới theo context đã xác nhận.
@@ -774,7 +778,7 @@ Các giả định chính: auth/access và adapter tối thiểu có sớm; cont
 
 ### A. Nội dung cần chốt trong buổi review
 
-1. Kiểm Q1/Q2/Q6 và recording lifecycle đã chốt; chỉ chính sách lưu/xóa/quota video còn cần quyết định sản phẩm.
+1. Kiểm Q1/Q2/Q6 và recording lifecycle đã chốt; chỉ quota, quyền xóa và xử lý video khi xóa kênh/Workspace còn cần quyết định sản phẩm.
 2. M1–M4: authSessionId/access stamps, revoke đúng phạm vi, cleanup không deadlock, metadata migration và typed IDs.
 3. M3–M4: join/takeover, scope/audio/host, pending resources, help, signaling lease; Q7 cần PoC công cụ/codec và contract recorder theo vòng đời đã chốt.
 4. M2/M5–M4: đích chat khi đổi host/scope, thu stream/event, freeze sau bind, cleanup người rời so với đóng context; M2 làm đầu mối tìm video theo kênh.
@@ -820,13 +824,13 @@ Limiter command theo baseline 20 lệnh nhạy cảm/10 giây/user; heartbeat/cu
 
 #### B.4 Recording và phần còn mở — Q7
 
-Hướng PoC tại [recording](../product/recording.md): mediasoup PlainTransport/Consumer nội bộ → GStreamer compositor/audiomixer → H.264/AAC MP4 → M2 storage/ACL. Khởi đầu 720p/15 fps; phải kiểm nguồn động, zero-input, handoff, scope isolation, tiếng-hình và playback. Thông số chất lượng là profile thử, không quyết định quota/retention/quyền xóa.
+Hướng PoC tại [recording](../product/recording.md): mediasoup PlainTransport/Consumer nội bộ → GStreamer compositor/audiomixer → H.264/AAC MP4 → M2 storage/ACL. Khởi đầu 720p/15 fps; phải kiểm nguồn động, zero-input, handoff, scope isolation, tiếng-hình và playback. Thông số chất lượng là profile thử, không tự quyết định quota/quyền xóa. Mỗi đoạn tối đa 3 tiếng từ capture thực sự bắt đầu; READY giữ vô thời hạn theo nguồn recording.
 
-M4 chỉ nhận descriptor `{ recordingId, attemptId, generation, revision, state, inputStoppedAt? }`; không nhận process handle/storage path trên FE. M3 sở hữu registry attempt/helper và callback nguồn; M2 là đầu mối metadata/file đề xuất, state READY chỉ do một luồng finalize sau kiểm tệp quyết định. Hai phía review schema/index trước migration, không tạo kho metadata thứ hai trong M4.
+M4 chỉ nhận descriptor `{ recordingId, attemptId, generation, revision, state, inputStoppedAt? }`; không nhận process handle/storage path trên FE. M3 sở hữu registry attempt/helper và callback nguồn; M2 là đầu mối metadata/file, state READY chỉ do một luồng finalize sau kiểm tệp quyết định. Hai phía review schema/index trước migration, không tạo kho metadata thứ hai trong M4.
 
 Deadline thử: capture-ready **15 giây**, input-stopped **5 giây**, finalize **60 giây** cho clip PoC. Hết input-stop budget phải đóng quyền nhận nguồn/Consumer/transport đúng đời và xác minh; helper còn flush không được nhận nguồn mới. Finalize quá hạn giữ trạng thái chưa READY/đối soát, không tự xóa byte hoặc công bố video lỗi. Không giữ mutation queue chờ các mốc này, không retry start bằng attempt mới chỉ vì mất ack. Chỉ khởi động recorder trong storage test có admission/disk budget cụ thể ghi ở evidence; chưa bật recording sản phẩm trước khi chính sách storage được thống nhất.
 
-**Chưa thống nhất:** video giữ bao lâu, ai được xóa, quota/dung lượng và hành vi hết chỗ. Những điểm này là quyết định sản phẩm còn mở; cấu hình kỹ thuật/PoC không thay câu trả lời. Không áp tự xóa video READY hay giữ vĩnh viễn theo mặc định.
+**Đã chốt:** mỗi đoạn tối đa 3 tiếng; server dừng input khi tới hạn, call tiếp tục; đổi host không reset deadline. Video READY giữ vô thời hạn, không TTL hoặc tự xóa theo tuổi. Thiếu quota không xóa READY cũ để lấy chỗ. **Còn mở:** hạn mức cụ thể, quyền xóa thủ công, chính sách byte khi xóa kênh/Workspace và thời hạn tệp tạm/lỗi. M2 lưu lâu dài trên R2 riêng tư; M3/M2 kiểm pipeline và artifact tạm qua PoC. M4 điều phối deadline/host và nhận trạng thái, không ghi repository recording riêng.
 
 #### B.5 Ca kiểm bắt buộc trước dùng profile
 
