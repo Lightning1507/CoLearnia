@@ -26,7 +26,15 @@ Proposal là thiết kế để thảo luận; việc mở PR hoặc merge tài 
 
 ## Quy ước chung trước khi lập sprint
 
-Cập nhật 05/11/2026 để đọc chéo 5 proposal. Các bảng dưới thống nhất trách nhiệm và cách đọc estimate; không là bảng trạng thái, phân công hỗ trợ hoặc cam kết sprint. Nghiệp vụ lấy từ nguồn product, đặc biệt [recording](../product/recording.md), [board](../product/board-collaboration.md) và [phân miền](../product/delivery-domains.md). Merge proposal không tự nghiệm thu code hoặc chốt mọi thông số kỹ thuật.
+Cập nhật 05/11/2026 để đọc chéo 5 proposal. Bước tổng hợp thực thi nằm tại [WBS và điểm giao giữa 5 miền](../planning/task-consolidation.md): PM chốt trách nhiệm và thứ tự; không chờ một vòng team duyệt toàn bộ kế hoạch. Review PR/contract vẫn giữ theo quy trình. Các bảng dưới thống nhất trách nhiệm và cách đọc estimate; không là bảng trạng thái, phân công hỗ trợ hoặc cam kết sprint. Nghiệp vụ lấy từ nguồn product, đặc biệt [recording](../product/recording.md), [board](../product/board-collaboration.md) và [phân miền](../product/delivery-domains.md). Merge proposal không tự nghiệm thu code hoặc chốt mọi thông số kỹ thuật.
+
+### Kế hoạch thực thi sau proposal
+
+PM đã chốt [khung ba milestone](../planning/milestones-and-sprints.md) và [Sprint 1](../planning/sprint-1.md). Sprint 1 chỉ rõ người thực hiện hỗ trợ khác miền, reviewer và dependency tối thiểu; owner miền giữ trách nhiệm thiết kế. Estimate WBS không tự là lịch hoặc assignee. Sprint 2–3 còn là dự kiến, điều chỉnh theo kết quả tích hợp/PoC.
+
+### Quy ước API/backend
+
+Dùng [quy ước API chung](../contracts/api-conventions.md) và [bảng mã lỗi](../contracts/error-codes.md) khi chuyển proposal sang task implementation. Bảng endpoint/payload trong từng proposal vẫn là thiết kế dự kiến; cập nhật schema của task sắp làm cùng consumer trước code phụ thuộc. Không tự chọn response hoặc tên lỗi khác cho cùng ý nghĩa; không chờ thiết kế hết API các sprint sau.
 
 ### Một đầu ra, một đầu mối
 
@@ -54,13 +62,13 @@ Cập nhật 05/11/2026 để đọc chéo 5 proposal. Các bảng dưới thố
 
 ### Đọc WBS và estimate
 
-| Miền                        | Task con thực tế | Giờ cơ sở theo dòng task | Phần ngoài cơ sở                                        | Tổng dự kiến |
-| --------------------------- | ---------------: | -----------------------: | ------------------------------------------------------- | -----------: |
-| [M1](m1-workspace-auth.md)  |               53 |                      268 | 32 giờ dự phòng                                         |          300 |
-| [M2](m2-messaging-files.md) |               60 |                      290 | 54 giờ dự phòng                                         |          344 |
-| [M3](m3-media.md)           |               60 |                      288 | 24 giờ review/runbook/rollout bổ sung + 72 giờ dự phòng |          384 |
-| [M4](m4-session-groups.md)  |               41 |                      200 | 32 giờ dự phòng                                         |          232 |
-| [M5](m5-board.md)           |               23 |                      106 | 4 giờ review tích hợp + 8 giờ dự phòng                  |          118 |
+| Miền                        | Task con thực tế | Giờ cơ sở theo dòng task | Phần ngoài cơ sở | Tổng dự kiến |
+| --------------------------- | ---------------: | -----------------------: | ---------------- | -----------: |
+| [M1](m1-workspace-auth.md)  |               56 |                      268 | 32 giờ dự phòng  |          300 |
+| [M2](m2-messaging-files.md) |               60 |                      290 | 54 giờ dự phòng  |          344 |
+| [M3](m3-media.md)           |               66 |                      312 | 72 giờ dự phòng  |          384 |
+| [M4](m4-session-groups.md)  |               41 |                      200 | 32 giờ dự phòng  |          232 |
+| [M5](m5-board.md)           |               24 |                      110 | 8 giờ dự phòng   |          118 |
 
 Giờ cơ sở đã có kiểm gần thay đổi; không cộng thêm một tỷ lệ test/review chung lần nữa. Ca kiểm xuyên miền trong nhiều proposal là công riêng của từng bên chuẩn bị/tích hợp, không mặc định là nhiều buổi test độc lập; khi lập sprint phải chỉ rõ ai làm đầu ra nào, ai tham gia và giờ của từng người. Chưa có cơ sở cộng thêm buffer cấp team chồng lên mọi buffer miền.
 
@@ -69,7 +77,7 @@ Giờ cơ sở đã có kiểm gần thay đổi; không cộng thêm một tỷ
 - Task khảo sát/PoC có timebox: kết thúc bằng bằng chứng/kết luận/blocker; chưa đạt thì review task tiếp, không tự xem là feature Done. Ngân sách sau PoC còn tạm phải ước lượng lại trước cam kết.
 - Provider và consumer có thể bắt đầu từ interface/fixture nhỏ đã review, không buộc chờ trọn miền. Nghiệm thu sản phẩm cần provider thật. Các phụ thuộc ghi quá rộng theo nhóm trong WBS phải thu về task con trước giao việc.
 - Báo ngay khi blocked hoặc có nguy cơ vượt estimate: đầu ra/kiểm đã có, giờ đã dùng, phần còn lại, tác động và người cần hỗ trợ. Không chờ hết ngày/daily mới báo hoặc tự đổi hạn.
-- Lập sprint sau khi xác nhận giờ thực có, đầu mối môi trường và điểm giao. Các lịch 4 tuần cũ chỉ để đối chiếu, không là cam kết mới cho mốc báo cáo khoảng 6 tuần. Jira giữ task/trạng thái; PR giữ review/bằng chứng, không tạo bảng trạng thái song song trong proposal.
+- PM xác nhận team ưu tiên dự án và đủ thời gian; lập sprint sau khi rõ đầu mối môi trường và điểm giao, vẫn tính công review/tích hợp và công PM. Các lịch 4 tuần cũ chỉ để đối chiếu, không là cam kết mới cho mốc báo cáo khoảng 6 tuần. Jira giữ task/trạng thái; PR giữ review/bằng chứng, không tạo bảng trạng thái song song trong proposal.
 
 ### Điểm cần đóng trước task phụ thuộc
 
