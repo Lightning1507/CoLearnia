@@ -2,13 +2,15 @@
 
 **Ngày bàn giao: 05/11/2026.** Tài liệu dành cho thành viên tiếp tục bản Figma Make hiện tại. Mục tiêu là hoàn thiện các màn và hành trình MVP để team thống nhất giao diện, sau đó triển khai vào ứng dụng. Đây chưa phải nghiệm thu phần mềm chạy thật.
 
+**Kết luận sau rà tổng thể:** chưa hoàn thiện toàn diện. Các luồng chính đã có, nhưng còn nhánh nghiệp vụ thiếu và nhiều ca chưa kiểm. Bắt đầu bằng **current-state mục 19 → các lượt R1–R6 ở mục 5.1 bên dưới**. A1–E3 là kế hoạch gốc đã thực hiện một phần/đã có bằng chứng, không phải lệnh dựng lại toàn bộ. Chưa có xác nhận team duyệt cuối; chưa publish các chỉnh sửa mới.
+
 ### Đọc nhanh cho Codex đã có context dự án
 
 Người tiếp nhận cũng dùng Codex và đã có context nghiệp vụ. Không cần học lại toàn bộ dự án hoặc đọc lại cả thư mục `docs`:
 
-1. Đọc **mục 2** và phần **“Những thay đổi mới phải giữ khi đọc nguồn cũ” ở mục 3** của tài liệu này.
-2. Đọc **mục 4–6 của [current-state](figma-current-state.md)** để biết ca đã kiểm và phần còn lại tại thời điểm bàn giao.
-3. Chọn lượt ở **bảng A1–E3, mục 5**; chỉ mở nguồn nghiệp vụ liên quan nếu cần kiểm lại quy tắc. Brief chỉ cần đọc phần phong cách khi thêm màn/component mới; prompt lịch sử không phải danh sách việc tiếp theo.
+1. Đọc **mục 2**, phần **“Những thay đổi mới phải giữ khi đọc nguồn cũ” ở mục 3** và **mục 5.1** của tài liệu này.
+2. Đọc **mục 19 của [current-state](figma-current-state.md)**: tổng kết, độ phủ toàn bộ FR, phát hiện từ mã, ca chưa kiểm và điều kiện khép UI. Mục 6 là tóm tắt ưu tiên; mục 8–18 chỉ mở khi cần bằng chứng của ca cụ thể.
+3. Bắt đầu **R1**, rồi R2–R6; không chạy lại A1–E3. Brief chỉ dùng tham khảo phong cách; prompt lịch sử không phải danh sách việc tiếp theo.
 4. Làm theo quy trình review **mục 9**. **Mục 10** để tra khi browser gặp sự cố, không phải thủ tục bắt buộc trước mọi lần mở preview.
 
 **Phân vai ba file:** tài liệu này giữ cách làm/lộ trình; `figma-current-state.md` giữ hiện trạng và kết quả kiểm; `figma-make-brief.md` giữ hướng thị giác/lịch sử prompt. Quy tắc sản phẩm vẫn lấy ở nguồn nghiệp vụ cùng các quyết định đã xác nhận bên dưới. UI sinh ra và lời Make báo hoàn tất không tự thay các nguồn đó.
@@ -18,9 +20,9 @@ Người tiếp nhận cũng dùng Codex và đã có context nghiệp vụ. Kh�
 Mở các nguồn theo thứ tự sau:
 
 1. Đọc [onboarding mục 1–4](../team-onboarding.md) để hiểu CoLearnia và ba bối cảnh học.
-2. Đọc [hiện trạng Figma](figma-current-state.md), đặc biệt mục 4–6: kết quả vừa kiểm, lỗi còn lại và phần chưa kiểm.
+2. Đọc [hiện trạng Figma](figma-current-state.md), đặc biệt mục 19: kết luận hiện hành, phần đã làm và phần còn thiếu; mục 4 là lịch sử lượt kiểm cũ.
 3. Mở [file Make đang dùng](https://www.figma.com/make/4ATlhcdwYqUYUlcRgB9jCn/D%E1%BB%B1ng-Workspace-v%C3%A0-Chat-CoLearnia). Tiếp tục trong file này; không dựng lại ứng dụng từ đầu.
-4. Xem lộ trình ở mục 5 dưới đây, chọn một đợt và đọc nguồn nghiệp vụ tương ứng ở mục 3.
+4. Xem thứ tự tiếp tục R1–R6 ở mục 5.1 dưới đây và đọc nguồn nghiệp vụ tương ứng ở mục 3.
 5. Kiểm tra màn đó đã có chưa, rồi mới gửi prompt sửa hoặc bổ sung.
 
 **Quyền file:** người phụ trách đã mời bạn tiếp nhận vào file và cấp quyền edit. Không cần yêu cầu mời lại nếu mở/sửa được; chỉ báo nếu tài khoản đang dùng thực tế bị chặn. Quyền edit không xác nhận tài khoản có credit Make hoặc quyền publish.
@@ -37,6 +39,8 @@ Nếu người nhận đã được giao triển khai một đợt, phần tóm 
 
 ## 2. Hiện tại đã tới đâu?
 
+**Cập nhật sau các lượt A–E ngày 05/11:** đã thêm auth/Workspace/invite/profile, quản trị kênh/thành viên và recording mô phỏng; đã chạy một hành trình xuyên suốt. Card mới nhất là v14 (B2+B3); do hết AI credit, các lượt C/D/E sửa trực tiếp trong code editor và kiểm preview tải mới. F05 đã bổ sung sửa mic ở nhánh disconnect khi đang hỗ trợ ngoài roster. Người phụ trách đã chốt mỗi ACTIVITY cần ít nhất một thành viên trước start. Xem [hiện trạng mục 10–18](figma-current-state.md#10-lượt-a3--chat-và-deadline-05112026) để biết ca đạt/chưa kiểm và hạn chế picker; không chạy lại các prompt từ đầu.
+
 Đây là tóm tắt để nhận việc; bằng chứng từng ca nằm tại [bản ghi hiện trạng](figma-current-state.md), không nhân bản toàn bộ kết quả vào đây.
 
 | Khu vực            | Đã có / đã kiểm                                                                                          | Việc tiếp theo                                                      |
@@ -44,16 +48,18 @@ Nếu người nhận đã được giao triển khai một đợt, phần tóm 
 | Workspace/chat     | Có sidebar, TEXT, PRIVATE, DM, thread, ảnh/file và tình huống gửi lỗi                                    | Kiểm lại tương tác và quyền; bổ sung màn quản trị nếu thiếu         |
 | Lobby/MAIN         | Vào phòng được; camera mặc định tắt trên preview; share stage, camera, chat và điều khiển cuộc gọi đã có | Kiểm share, chat, chuyển host, rời/kết thúc và các trạng thái nguồn |
 | DISCUSSION         | Tạo ngay không duyệt, tự bấm vào; disconnect người cuối đóng nhóm; còn người thì vào lại được            | Kiểm board và ca chủ động rời sau thay đổi mới                      |
-| ACTIVITY           | Chọn người/số nhóm, random và sửa preview; host không bị phân nhóm; hỗ trợ, về sớm/vào lại đã thử        | Kiểm countdown tự chạy, board và các tương tác khi đổi host         |
-| Host tạm           | Chuyển tên/nhãn ngay và hoàn quyền host gốc đã thử                                                       | **Còn lỗi quyền UI F05**, mô tả bên dưới                            |
-| Recording          | Chưa thấy điều khiển ở MAIN đã mở                                                                        | Kiểm có sẵn ở đâu chưa; bổ sung luồng ghi/xem lại bằng mô phỏng     |
-| Tài khoản/quản trị | Chưa kiểm đủ đăng ký, hồ sơ, lời mời, Workspace, thành viên, PRIVATE                                     | Kiểm hiện có trước, rồi bổ sung theo M1                             |
+| ACTIVITY           | Chọn người/số nhóm, random và sửa preview; host không bị phân nhóm; hỗ trợ, về sớm/vào lại đã thử        | Countdown 1 phút và mất help đã thử; xem E2 mục 18                  |
+| Host tạm           | Chuyển tên/nhãn ngay và hoàn quyền host gốc đã thử                                                       | A1/E2 đã kiểm; xem current-state mục 8 và 18                        |
+| Recording          | Đã có control/trạng thái MAIN và danh sách/player mô phỏng, xem current-state mục 17–18                  | Review luồng mô phỏng; chưa có video/media/storage thật             |
+| Tài khoản/quản trị | Đã thêm/kiểm luồng chính B/C; ảnh/tệp/avatar và các nhánh còn thiếu xem current-state                    | Kiểm picker/avatar và các ca quản trị còn thiếu                     |
 
-**Lỗi cần xử lý đầu tiên — F05:** từ demo Member, cho Lan Chi mất kết nối → Gia Khoa làm host tạm → Gia Khoa mất kết nối → Minh Anh, tức người đang thao tác, làm host tạm. UI hiện ghi tên/badge host tạm nhưng vẫn ghi “Bạn là thành viên”, không có công cụ vẽ và tổ chức ACTIVITY. Quyền hiển thị phải lấy theo host hiện hành, không chỉ theo lựa chọn Member/Host trong công cụ demo. Khi mất quyền phải thu lại các thao tác tương ứng.
+**Lỗi F05 tại thời điểm bàn giao v8 — đã sửa các ca A1 ở v9/v10:** từ demo Member, cho Lan Chi mất kết nối → Gia Khoa làm host tạm → Gia Khoa mất kết nối → Minh Anh, tức người đang thao tác, làm host tạm. UI hiện ghi tên/badge host tạm nhưng vẫn ghi “Bạn là thành viên”, không có công cụ vẽ và tổ chức ACTIVITY. Quyền hiển thị phải lấy theo host hiện hành, không chỉ theo lựa chọn Member/Host trong công cụ demo. Khi mất quyền phải thu lại các thao tác tương ứng.
 
 Tên/thứ tự trên là ca đã quan sát, không phải quy tắc chọn người kế vị. Nếu demo chọn ngẫu nhiên khác, dùng tình huống phù hợp để chính người xem trở thành host tạm rồi kiểm control; không sửa random thành chuỗi tên cố định để tái hiện ca thử.
 
-Các ca đạt chỉ là prototype: chưa chứng minh media cách ly, lưu tệp, auth, ACL hoặc recording thật. Nút demo hết giờ đã thử; chưa chờ countdown đủ 15 phút. Không dựng lại những luồng đã đạt chỉ vì chưa có backend.
+Các lượt C/D/E là sửa code trực tiếp sau v14, đã tải lại preview và đối chiếu nguồn trong editor. Không restore v14 khi bàn giao. Các nút thử hiện nằm trong menu **Tình huống demo**. Danh sách ca chưa kiểm và kết quả check cuối ở mục E3 trong current-state.
+
+Các ca đạt chỉ là prototype: chưa chứng minh media cách ly, lưu tệp, auth, ACL hoặc recording thật. Đã thử countdown thật bằng lượt 1 phút trong A3/E2; chưa chờ đủ 15 phút. Không dựng lại những luồng đã đạt chỉ vì chưa có backend.
 
 ## 3. Đọc tài liệu nào, vào lúc nào?
 
@@ -103,7 +109,9 @@ Nếu gặp mâu thuẫn khác, ghi rõ hai nguồn và hỏi người phụ tr�
 - Không thêm quiz, thư viện bài làm, search/reaction/AI summary, đổi theme hay công cụ vẽ mở rộng chỉ vì ảnh Slack/Meet có. Không tự cắt camera, chat, nhóm hoặc recording để gọi UI hoàn tất.
 - Công cụ đổi vai trò/mất mạng/hết giờ phục vụ demo phải nằm ngoài điều khiển sản phẩm. Dữ liệu giả không được gọi là kết nối/lưu/ghi hình thật.
 
-## 5. Lộ trình tới bản UI hoàn chỉnh
+## 5. Lộ trình gốc A–E và cách tiếp tục
+
+Các đợt A–E dưới đây giữ phạm vi thiết kế ban đầu, không biểu thị tất cả đã đạt. Tiến độ hiện hành lấy ở current-state mục 19; công việc tiếp theo ở mục 5.1. Không dùng mốc kế hoạch cũ để tự giảm scope hoặc báo hoàn tất.
 
 Đây là thứ tự đề xuất, không phải estimate hoặc sprint đã cam kết. Mục tiêu ban đầu là hoàn thiện trong ngày 05/11 để bắt đầu triển khai 06/11; người nhận cần báo phần làm được và phần còn thiếu theo thời gian/credit thực có. Không đánh dấu đủ chỉ để kịp mốc.
 
@@ -185,6 +193,23 @@ Các mã A1–E3 dưới đây chỉ giúp chỉ tới lượt làm trong bàn g
 
 Trước mỗi lượt, người nhận ghi ba dòng: **sẽ làm gì — cần nguồn/quyết định nào — kiểm bằng hành trình nào**. Kết thúc lượt, ghi đạt/cần sửa/chưa kiểm và chọn lượt tiếp theo. Nếu bị thiếu nguồn hoặc quyết định, chuyển sang phần độc lập có thể làm; không tự thiết kế thay nghiệp vụ còn mở.
 
+### 5.1. Các lượt tiếp theo sau rà tổng thể
+
+Đây là thứ tự khép khoảng trống prototype, không là sprint/estimate hoặc bảng trạng thái cạnh tranh với GitHub Issues. Một lượt có thể tách nhỏ; giữ một kết quả kiểm được mỗi lần chỉnh. **Đọc 19.4 để phân biệt phát hiện từ mã với lỗi đã tái hiện.** Lượt rà tổng thể chỉ đọc nguồn/Figma và cập nhật tài liệu; chưa sửa các phát hiện mới.
+
+| Lượt                                         | Việc người nhận làm                                                                                                                                                       | Nguồn và đầu ra cần có                                                                                                        | Cách kiểm trước bàn giao                                                                                                                                                                       |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| R1 — Khép lỗi nghiệp vụ có nguy cơ sai luồng | Tái hiện chat người trong DISCUSSION gửi host MAIN và chiều trả lời; kiểm hai LIVE khi đang gọi. Sửa lọc private theo đúng cặp/quyền, điều hướng không giả vào phòng khác | FR-09-02; policy 8.1; LIVE 6.1/FR-05-02. Ghi bước lỗi trước/sau, không mở chat nhóm cho host hoặc tự end call                 | Tin riêng đúng người qua hai phòng, Everyone vẫn riêng; host mới không nhận lịch sử cũ. Bấm LIVE khác không âm thầm đưa về call cũ dưới kỳ vọng phòng mới; chuyển/Hủy có kết quả rõ theo nguồn |
+| R2 — Bổ sung luồng còn thiếu                 | Ưu tiên hướng dẫn chung; ACTIVITY bắt đầu lỗi một phần/đang hủy; tải lịch sử kênh/DM/thread theo trang                                                                    | FR-08-02; group modes phần Hai giai đoạn; FR-04-03/12-01/13-01. State mô phỏng rõ, không backend mới                          | Announcement chỉ MAIN/DISCUSSION và restore mức nghe cũ; start lỗi thu lượt dở/về MAIN/không hồi DISCUSSION; lịch sử nhiều trang có chờ/lỗi/hết, không lẫn reply/kênh                          |
+| R3 — Thu quyền và phục hồi                   | Hết hạn phiên, quyền đổi khi reconnect, kết quả thao tác chưa rõ, phiên ended/restart; quản trị ngoài PRIVATE và re-add; host chính thức/tạm, hết ứng viên                | FR-01-02/03/06, FR-03-04, FR-07-09, FR-11. Đọc nhánh chi tiết LIVE trước thiết kế. Đã có banner không đồng nghĩa đã có resync | Thu quyền khi mở dialog/thread/file/call/player; offline bị kick không mở lại private; không hồi nhóm/thiết bị/đích cũ; Hủy end giữ call. Báo phần chưa thể mô phỏng thay vì tự chọn nghiệp vụ |
+| R4 — Tệp, avatar và ca quản trị còn lại      | Thử picker bằng dữ liệu giả; ảnh/file TEXT/DM/thread, chỉ ảnh chat họp; avatar Lưu/Hủy/lỗi/xóa; copy/link cũ, gỡ Admin, Hủy loại; hoàn thiện lỗi player/PROCESSING        | Current-state 19.5, nguồn M1/M2/recording. Nếu picker vẫn chặn, mô tả blocker và cần người kiểm thao tác; không giả đạt       | Upload lỗi giữ ảnh cũ; retry không trùng; file đúng đích; mất quyền đóng preview; host cũ/member không ghi; thư viện chỉ READY, không đưa FAILED nội bộ ra chung                               |
+| R5 — Rà trình bày và hồi quy cuối            | Tên/danh sách dài, loading/rỗng/lỗi, nhãn/focus/bàn phím; auth/invite/dialog/call mở panel/thư viện ở hai desktop; chạy hành trình team                                   | Handoff mục 7/9, current-state 19.5. Giữ phong cách, không dựng lại layout hoặc tự mở scope mobile                            | Nút/ô soạn không bị che; chữ dễ hiểu; call control vẫn dùng được; chạy một hành trình liên tục sau tất cả sửa, ghi ảnh và giới hạn                                                             |
+| R6 — Team review và bàn giao FE              | Tổng hợp bản cuối, quyết định còn mở, state giả và contract cần thay; giữ code sau v14; cập nhật public khi được giao publish                                             | Current-state 19.7 và workflow repo. Ghi bản team đã duyệt, không tự nhận đã chốt                                             | Mở lại preview mới; nếu publish thì thử public riêng. Người FE biết màn/interaction/state/error/quyền nào phải triển khai và phần nào chưa chốt                                                |
+
+**Thao tác với bản Make hiện tại:** prompt đã bị khóa do hết credit ở lần kiểm gần nhất; code editor vẫn sửa được. Sao lưu nguồn hiện tại trước chỉnh, giữ cùng file, tự kiểm preview chạy thực thay lớp cached. Không restore v14 vì sẽ mất C/D/E. Không cần mua credit hoặc nhập lại app. Không dùng file backup trong máy người bàn giao làm phụ thuộc bắt buộc: nguồn tiếp nhận nằm trong code editor của file Make.
+
+**Hai quyết định không hỏi lại:** helper ngoài roster mất host → MAIN/mic tắt/camera giữ; mỗi nhóm ACTIVITY phải có ít nhất một thành viên hợp lệ trước start. Mốc fade nét, cảnh báo recording, giới hạn upload hoặc thông số giảm tiếng còn mở thì chỉ dùng minh họa có nhãn hoặc hỏi trước khi chốt. Nghiệp vụ đã có nguồn rõ thì làm theo nguồn, không hỏi lại để trì hoãn.
+
 ## 6. Cách viết và gửi prompt
 
 ### Một lượt làm một mục tiêu kiểm được
@@ -204,6 +229,8 @@ Bạn tiếp tục hoàn thiện UI prototype CoLearnia, không triển khai bac
 - docs/ui/figma-current-state.md: hiện trạng và bằng chứng gần nhất.
 - docs/ui/figma-make-brief.md: phong cách và lịch sử prompt; không dùng nguyên prompt cũ.
 Chọn nguồn nghiệp vụ theo đợt đang làm, không nạp toàn bộ lịch sử.
+Ưu tiên current-state mục 19 và handoff mục 5.1; A–E là lịch sử phạm vi,
+không phải yêu cầu chạy lại. Bản hiện tại có sửa code trực tiếp sau v14; không restore v14.
 
 Trước khi sửa, tóm tắt phần hiện có, phần chưa kiểm, đợt tiếp theo và mâu thuẫn nguồn nếu có.
 Tôi đã có context nghiệp vụ và quyền edit file; không yêu cầu onboarding/mời lại nếu không bị chặn thực tế.
@@ -215,10 +242,11 @@ Review theo mục 9; nếu browser lỗi, làm theo mục 10, kiểm công cụ 
 Sau mỗi lượt, kiểm preview và cập nhật current-state, phân biệt đã thấy/đã thử/chưa kiểm.
 Không coi prototype là bằng chứng auth/media/ACL/recording thật đã chạy.
 
-Việc được giao trong lượt này: [đọc và đề xuất / soạn prompt / triển khai đợt cụ thể; có được gửi Make không].
+Việc được giao trong lượt này: tiếp tục R1, tái hiện trước khi sửa; sau đó cập nhật
+current-state với kết quả/ảnh/ca chưa kiểm. Giữ cùng file Make, không publish/commit/push.
 ```
 
-Thay dòng cuối bằng yêu cầu thực tế trước khi gửi Codex, không để nguyên các lựa chọn trong ngoặc vuông. Người dùng đã giao rõ phạm vi bằng tin nhắn thì Codex dùng phạm vi đó, không bắt nhập lại theo mẫu.
+Có thể thay ba dòng cuối bằng lượt được giao thực tế. Người dùng đã giao rõ phạm vi bằng tin nhắn thì Codex dùng phạm vi đó, không bắt nhập lại theo mẫu. Prompt này dành cho Codex đọc repo; khi gửi vào Make cần trích ngắn quy tắc và bước lỗi vì Make không tự đọc tài liệu local.
 
 ### Mẫu prompt gửi vào Make
 

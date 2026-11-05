@@ -1,5 +1,7 @@
 # CoLearnia — brief dựng draft bằng Figma Make
 
+**Tiếp nhận sau rà tổng thể 05/11:** đọc [mục lục UI](README.md), current-state **mục 19** và handoff **mục 5.1 (R1–R6)**. UI chưa hoàn thiện toàn diện; code hiện tại có chỉnh trực tiếp sau v14. Brief này không phải lệnh dựng lại hoặc danh sách việc còn thiếu.
+
 Hiện trạng màn hình, kết quả kiểm preview và các lỗi cần sửa được ghi tại [Figma — hiện trạng và bàn giao](figma-current-state.md). Cập nhật bản ghi đó sau mỗi lượt sửa; các prompt dưới đây giữ vai trò lịch sử dựng và tham khảo.
 
 Thành viên tiếp tục công việc dùng [hướng dẫn bàn giao UI](figma-handoff.md) để chọn đợt, đọc nguồn và viết prompt mới. Không chạy lại các prompt lịch sử để dựng lại ứng dụng.
