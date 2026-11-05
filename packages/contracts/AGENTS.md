@@ -1,5 +1,7 @@
 # Contracts
 
+- Dùng [quy ước API/backend](../../docs/contracts/api-conventions.md) và [bảng mã lỗi](../../docs/contracts/error-codes.md); error envelope chung cho HTTP/socket, code mới phải có semantics/status và consumer review. Schema không lọc được nội dung bí mật bên trong message; adapter vẫn phải tạo lỗi an toàn.
+
 - Nguồn: [quy ước contracts](../../docs/contracts/README.md), nghiệp vụ qua [mục lục](../../docs/README.md).
 - Zod schema ở biên, types suy từ schema; schema không tự cấp ACL. Payload/ack/event phải có cùng tên và semantics ở hai bên.
 - Không import web/server internals, Mongoose hoặc runtime mediasoup. Package chia sẻ không chứa secret/config server hoặc I/O nghiệp vụ.

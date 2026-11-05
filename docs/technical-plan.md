@@ -144,6 +144,8 @@ Nguồn chi tiết: [collections, index và trạng thái runtime](database/mode
 
 ### 10.1. Quy ước chung
 
+Quy ước hiện hành ngày 05/11/2026: [API/backend](contracts/api-conventions.md) và [bảng mã lỗi](contracts/error-codes.md). Các ví dụ dưới đã đồng bộ envelope; schema từng endpoint/command chốt trong task với consumer.
+
 REST `/api/v1`; Zod validate ở biên. Cookie auth `HttpOnly; Secure; SameSite=Lax`, CSRF token+Origin cho mutation và socket handshake; actor lấy từ auth session. API không trả raw Mongoose error. Session hết hạn/logout thu socket và media, không chỉ clear UI.
 
 `GET /auth/csrf` cấp token bootstrap gắn cookie CSRF có chữ ký để form đăng ký/đăng nhập hoạt động trước auth; server kiểm chữ ký, Origin và token gửi lại. Sau login rotate auth/CSRF, trả token mới cho header HTTP/socket handshake; không đưa session secret vào client. Cookie CSRF và cookie auth có mục đích riêng.
@@ -160,8 +162,8 @@ Làm rõ ngày 03/11/2026: register thành công cũng thiết lập phiên mớ
   callGeneration: 3, expectedPolicyRevision: 18, payload: {}
 }
 // Ack
-{ ok: true, requestId: 'uuid', policyRevision: 19, data: {} }
-{ ok: false, requestId: 'uuid', error: { code: 'STALE_STATE', message: '...' } }
+{ data: { policyRevision: 19 }, requestId: 'uuid' }
+{ error: { code: 'CONFLICT', message: '...' }, requestId: 'uuid' }
 // Server -> client: chỉ audience được phép
 {
   eventId: 'uuid', sessionId: '...', epoch: '...',
@@ -169,11 +171,11 @@ Làm rõ ngày 03/11/2026: register thành công cũng thiết lập phiên mớ
 }
 ```
 
-Policy mutation yêu cầu expectedPolicyRevision; board dùng contextVersion/strokeSequence riêng; chat không bắt gửi policy revision cho mỗi tin nhưng luôn kiểm ACL. Ack nghĩa server đã xử lý, không bảo đảm mọi peer đã render. Client nhận STALE_STATE resync trước khi yêu cầu lại; không tự phát lại mic/share hoặc gửi tin tới đích đã stale.
+Policy mutation yêu cầu expectedPolicyRevision; board dùng contextVersion/strokeSequence riêng; chat không bắt gửi policy revision cho mỗi tin nhưng luôn kiểm ACL. Ack nghĩa server đã xử lý, không bảo đảm mọi peer đã render. Client nhận CONFLICT do revision cũ thì resync trước khi yêu cầu lại; không tự phát lại mic/share hoặc gửi tin tới đích đã stale.
 
 Idempotency key gồm actor+operation+scope+requestId và payload hash. Cùng ID khác payload trả conflict. Trước trả kết quả cũ vẫn kiểm quyền; không trả ticket/file/private data đã mất quyền. Cache runtime khởi đầu 10 phút, tối đa 10.000 kết quả/app, loại ticket đã consume khỏi khả năng dùng lại. Message dedupe bền theo DB. Retry quá cache phải lấy state trước, không tự coi thao tác chưa chạy.
 
-HTTP: 400 malformed, 401 chưa/hết auth, 403 sai quyền, 404 không thấy tài nguyên, 409 conflict/stale/busy, 413 quá dung lượng, 429 quota. Error codes chính: `STALE_STATE`, `SOURCE_CHANGED`, `INTENT_EXPIRED`, `SHARE_BUSY`, `CALL_ALREADY_ACTIVE`, `FORBIDDEN`, `QUOTA_EXCEEDED`, `SESSION_ENDED`, `HOST_BUSY`, `MEDIA_UNAVAILABLE`.
+HTTP status/mã chung theo [bảng mã lỗi](contracts/error-codes.md): 409 cho conflict/revision cũ, 413 vượt byte, 429 giới hạn tốc độ; không dùng 429 cho mọi quota. Các mã riêng như SOURCE_CHANGED, INTENT_EXPIRED, SHARE_BUSY, CALL_ALREADY_ACTIVE, QUOTA_EXCEEDED, SESSION_ENDED, HOST_BUSY và MEDIA_UNAVAILABLE cần contract miền xác định nghĩa/status/cách xử lý trước implementation.
 
 ### 10.2. REST chính
 
