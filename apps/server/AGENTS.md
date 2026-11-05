@@ -1,5 +1,7 @@
 # Server
 
+- API/backend theo [quy ước chung](../../docs/contracts/api-conventions.md) và [mã lỗi](../../docs/contracts/error-codes.md): route mỏng, service/policy dùng chung cho HTTP/socket; giữ envelope hiện có, không trả lỗi DB thô. Contract từng task có ví dụ success/deny/stale và consumer review.
+
 - Đọc [kiến trúc](../../docs/architecture.md), [quyền nhóm](../../docs/product/groups-media-policy.md), [model](../../docs/database/model.md) và [lifecycle](../../docs/database/lifecycle.md) theo task.
 - REST/socket validate/auth rồi gọi cùng application service; không tạo hai bản policy hoặc tin actorId/groupId/source từ client.
 - Chat kênh/DM/thread theo [messaging](../../docs/product/messaging.md): general tạo nguyên tử cùng Workspace, DIRECT unique cặp trong Workspace, thread giữ ACL kênh; admin không tự đọc DM. Kiểm file/event/history như kiểm gửi tin.

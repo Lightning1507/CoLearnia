@@ -10,6 +10,10 @@ Minh Quân 15 (M2) chọn **Cloudflare R2 riêng tư** cho video ngày 04/11; m�
 
 Theo yêu cầu Minh Quân 15, [proposal M2](proposals/m2-messaging-files.md#65-lưu-và-xem-lại-recording) nhận [schema M3 bàn giao](database/recordings-schema.md): recording tối đa 3 tiếng, profile MP4/H264/AAC, READY giữ vô thời hạn, một nonterminal/phiên và PoC một slot toàn process. `recordings` và `files: RECORDING` do M2 cập nhật, READY commit cùng nhau; danh sách xem lại chỉ READY. Main 7c4320f (PR #27) đã đưa proposal M3/schema vào repo và xác nhận hạn 3 tiếng/READY vô thời hạn. Quota, quyền xóa thủ công và xử lý khi xóa kênh/Workspace vẫn mở; tích hợp R2 của M2 còn cần review/PoC. Chưa tạo schema/index/migration hoặc kiểm pipeline/capacity. Hạn mức byte, bản tạm/lỗi, quyền xóa sau parent deletion và adapter ghi R2 vẫn cần review/PoC. Nguồn nghiệp vụ đồng bộ tại [recording](product/recording.md).
 
+## Quy ước API/backend ngày 05/11/2026
+
+Đã chuẩn hóa [quy ước giao tiếp và backend](contracts/api-conventions.md), [mã lỗi chung](contracts/error-codes.md), schema response/ack và hằng status trong contracts. Năm proposal cùng technical plan đã đồng bộ envelope và các tên lỗi trùng nghĩa. Middleware lỗi nghiệp vụ, auth/CSRF, payload và lỗi riêng từng miền vẫn cần triển khai/review theo task; không coi quy ước là endpoint đã chạy.
+
 ## Cách hiểu trạng thái
 
 - **Đã chốt:** làm theo nguồn; thay scope/quyền cần review thay đổi.

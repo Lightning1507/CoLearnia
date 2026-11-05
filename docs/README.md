@@ -14,6 +14,12 @@
 
 **Tiếp tục UI hoặc bàn giao Figma:** dùng [hướng dẫn bàn giao và lộ trình hoàn thiện UI](ui/figma-handoff.md), cùng [hiện trạng Figma và các luồng đã kiểm](ui/figma-current-state.md). Bản bàn giao chỉ cách đọc nguồn, chia đợt, viết prompt và nghiệm thu; bản hiện trạng ghi kết quả thực tế.
 
+**Sprint/milestone:** khung [3 sprint ×2 tuần](planning/milestones-and-sprints.md) và [Sprint 1: task, ưu tiên và phụ thuộc](planning/sprint-1.md). Có 80 task chính, 6 task mở rộng; Jira giữ trạng thái và assignee thực tế.
+
+**Chuẩn bị task Jira:** xem [tổng hợp WBS và điểm giao giữa 5 miền](planning/task-consolidation.md). Có 247 task sau rà soát, đầu mối cung cấp/tích hợp/review và các việc nền cần làm rõ; chưa là sprint hoặc bảng trạng thái. PM chốt kế hoạch, PR vẫn cần review.
+
+**Viết API/backend:** dùng [quy ước chung](contracts/api-conventions.md) và [mã lỗi](contracts/error-codes.md); schema từng miền chốt theo task với consumer.
+
 **Chuẩn bị proposal:** xem [nơi nộp và hướng dẫn review](proposals/README.md), dùng [proposal mẫu](templates/feature-proposal-sample.md).
 
 | Công việc                                           | Nguồn chính                                                                                                                                                          |
