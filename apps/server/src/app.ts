@@ -3,7 +3,7 @@ import express from 'express';
 import type { ErrorRequestHandler } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
-import { systemStatusSchema } from '@colearnia/contracts';
+import { commonErrorHttpStatus, systemStatusSchema } from '@colearnia/contracts';
 import type { SystemStatus } from '@colearnia/contracts';
 import type { AppConfig } from './config/env.js';
 import { logger } from './lib/logger.js';
@@ -36,7 +36,7 @@ export function createApp(config: AppConfig, getStatus: () => SystemStatus) {
 
   // No placeholder auth/workspace/media endpoints: feature modules will register verified handlers.
   app.use((_req, res) => {
-    res.status(404).json({
+    res.status(commonErrorHttpStatus.NOT_FOUND).json({
       error: { code: 'NOT_FOUND', message: 'Không tìm thấy đường dẫn.' },
       requestId: res.locals.requestId,
     });
@@ -44,7 +44,7 @@ export function createApp(config: AppConfig, getStatus: () => SystemStatus) {
 
   const handleError: ErrorRequestHandler = (error: unknown, _req, res, _next) => {
     if (error instanceof SyntaxError && 'body' in error) {
-      res.status(400).json({
+      res.status(commonErrorHttpStatus.INVALID_JSON).json({
         error: { code: 'INVALID_JSON', message: 'Nội dung JSON không hợp lệ.' },
         requestId: res.locals.requestId,
       });
@@ -56,14 +56,14 @@ export function createApp(config: AppConfig, getStatus: () => SystemStatus) {
       'type' in error &&
       error.type === 'entity.too.large';
     if (tooLarge) {
-      res.status(413).json({
+      res.status(commonErrorHttpStatus.PAYLOAD_TOO_LARGE).json({
         error: { code: 'PAYLOAD_TOO_LARGE', message: 'Nội dung gửi vượt giới hạn.' },
         requestId: res.locals.requestId,
       });
       return;
     }
     logger.error({ requestId: res.locals.requestId }, 'Request failed');
-    res.status(500).json({
+    res.status(commonErrorHttpStatus.INTERNAL_ERROR).json({
       error: { code: 'INTERNAL_ERROR', message: 'Có lỗi xử lý yêu cầu.' },
       requestId: res.locals.requestId,
     });
