@@ -1,0 +1,154 @@
+import { describe, expect, it } from 'vitest';
+import {
+  liveAccessRevocationSchema,
+  liveContextResultSchema,
+  sessionCleanupRequestSchema,
+  sessionCleanupResultSchema,
+} from './session-context.js';
+
+const sessionId = '1'.repeat(24);
+const participantId = '2'.repeat(24);
+const epoch = '10000000-0000-4000-8000-000000000001';
+const groupId = '10000000-0000-4000-8000-000000000002';
+
+const liveContext = {
+  auth: {
+    userId: '3'.repeat(24),
+    authSessionId: '4'.repeat(24),
+    expiresAt: '2026-11-07T12:30:00Z',
+  },
+  access: {
+    workspaceId: '5'.repeat(24),
+    channelId: '6'.repeat(24),
+    channelType: 'LIVE',
+    membershipId: '7'.repeat(24),
+    membershipIncarnation: 1,
+    membershipRevision: 0,
+    channelRevision: 0,
+    canReadContent: true,
+  },
+  sessionId,
+  participantId,
+  epoch,
+  callGeneration: 2,
+  role: 'MEMBER',
+  scope: { type: 'MAIN' },
+  audienceEpoch: 4,
+  policyRevision: 9,
+} as const;
+
+const cleanupIdentity = {
+  operationId: '10000000-0000-4000-8000-000000000003',
+  transitionToken: '10000000-0000-4000-8000-000000000004',
+  sessionId,
+  epoch,
+  callGeneration: 2,
+  target: { type: 'PARTICIPANT_SCOPE', participantId, scope: { type: 'MAIN' }, audienceEpoch: 4 },
+} as const;
+
+describe('session context and cleanup contracts', () => {
+  it('accepts a server-resolved LIVE context and confirmed revocation with deferred physical cleanup', () => {
+    const resolved = { ok: true, context: liveContext };
+    expect(liveContextResultSchema.parse(resolved)).toEqual(resolved);
+    expect(
+      sessionCleanupRequestSchema.safeParse({ ...cleanupIdentity, reason: 'SCOPE_CHANGED' })
+        .success,
+    ).toBe(true);
+    const result = {
+      ...cleanupIdentity,
+      outcome: { permissionRevoked: true, pendingInvalidated: true, cleanupPending: true },
+    };
+    expect(sessionCleanupResultSchema.parse(result)).toEqual(result);
+  });
+
+  it('accepts a deny response without exposing the caller context', () => {
+    const denied = { ok: false, errorCode: 'FORBIDDEN' };
+    expect(liveContextResultSchema.parse(denied)).toEqual(denied);
+    expect(liveContextResultSchema.safeParse({ ...denied, context: liveContext }).success).toBe(
+      false,
+    );
+    expect(
+      liveContextResultSchema.safeParse({
+        ok: true,
+        context: { ...liveContext, access: { ...liveContext.access, canReadContent: false } },
+      }).success,
+    ).toBe(false);
+  });
+
+  it('represents a timeout as unresolved cleanup and rejects conflicting success flags', () => {
+    const timeout = {
+      ...cleanupIdentity,
+      outcome: {
+        permissionRevoked: false,
+        pendingInvalidated: false,
+        cleanupPending: true,
+        errorCode: 'DEPENDENCY_UNAVAILABLE',
+        retryable: true,
+      },
+    };
+    expect(sessionCleanupResultSchema.parse(timeout)).toEqual(timeout);
+    expect(
+      sessionCleanupResultSchema.safeParse({
+        ...timeout,
+        outcome: { ...timeout.outcome, cleanupPending: false },
+      }).success,
+    ).toBe(false);
+    expect(
+      sessionCleanupResultSchema.safeParse({
+        ...cleanupIdentity,
+        outcome: { permissionRevoked: true, pendingInvalidated: false, cleanupPending: false },
+      }).success,
+    ).toBe(false);
+  });
+
+  it('requires an ownership generation for participant cleanup and an audience for scope cleanup of a participant', () => {
+    const { callGeneration, ...unbound } = cleanupIdentity;
+    expect(
+      sessionCleanupRequestSchema.safeParse({ ...unbound, reason: 'SCOPE_CHANGED' }).success,
+    ).toBe(false);
+    expect(
+      sessionCleanupRequestSchema.safeParse({
+        ...unbound,
+        callGeneration,
+        target: { type: 'PARTICIPANT_SCOPE', participantId, scope: { type: 'MAIN' } },
+        reason: 'SCOPE_CHANGED',
+      }).success,
+    ).toBe(false);
+    expect(
+      sessionCleanupRequestSchema.safeParse({
+        ...unbound,
+        target: { type: 'SCOPE', scope: { type: 'GROUP', groupId } },
+        reason: 'SCOPE_CLOSED',
+      }).success,
+    ).toBe(true);
+  });
+
+  it('requires a round and deadline for ACTIVITY and excludes raw credentials from context', () => {
+    const activity = { ...liveContext, scope: { type: 'GROUP', groupId, mode: 'ACTIVITY' } };
+    expect(liveContextResultSchema.safeParse({ ok: true, context: activity }).success).toBe(false);
+    expect(
+      liveContextResultSchema.safeParse({
+        ok: true,
+        context: { ...liveContext, auth: { ...liveContext.auth, cookie: 'fake-cookie' } },
+      }).success,
+    ).toBe(false);
+  });
+
+  it('limits membership revocation to the exact incarnation and refuses unrelated fields', () => {
+    const revoke = {
+      kind: 'WORKSPACE_MEMBERSHIP',
+      operationId: cleanupIdentity.operationId,
+      revision: 4,
+      workspaceId: liveContext.access.workspaceId,
+      userId: liveContext.auth.userId,
+      membershipId: liveContext.access.membershipId,
+    };
+    expect(liveAccessRevocationSchema.safeParse(revoke).success).toBe(false);
+    const target = { ...revoke, membershipIncarnation: 1 };
+    expect(liveAccessRevocationSchema.parse(target)).toEqual(target);
+    expect(
+      liveAccessRevocationSchema.safeParse({ ...target, channelId: liveContext.access.channelId })
+        .success,
+    ).toBe(false);
+  });
+});
