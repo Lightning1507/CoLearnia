@@ -1,0 +1,1429 @@
+﻿Issue key,Summary,Description
+SCRUM-13,"[M1-T1.2] Thống nhất contract Workspace, kênh và interface M2/M4","Mục tiêu
+Thống nhất contract Workspace/kênh và các hàm phối hợp với M2/M4; dùng PRIVATE thay enum scaffold cũ.
+
+Phạm vi
+Cập nhật schema Zod PRIVATE/ObjectId và thống nhất các hàm M2/M4 sử dụng.
+
+Tiêu chí hoàn thành
+• Schema và ví dụ sử dụng qua kiểm tra ở phía gọi.
+• M2/M4 xác nhận interface cần dùng; kết quả review và điểm còn mở được ghi lại.
+
+Phụ thuộc / phối hợp
+• Phụ thuộc: Không chờ task khác; kiểm điều kiện môi trường/contract trong kế hoạch Sprint 1.
+• Reviewer: M4.
+
+Tham chiếu
+• Thiết kế và WBS M1-T1.2: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m1-workspace-auth.md#L448
+• Phân công và phụ thuộc Sprint 1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L129
+"
+SCRUM-14,"[M2-T1.1] Thống nhất interface danh tính, general và thu quyền","Mục tiêu
+Thống nhất cách nhận danh tính, tạo general và kiểm/thu quyền giữa M2 với M1/M4.
+
+Phạm vi
+Chốt identity, tạo general, quyền/thu quyền, giới hạn handler và thứ tự khóa chung.
+
+Tiêu chí hoàn thành
+• Có input/output, lỗi và thứ tự khóa cho các bên sử dụng.
+• Có giới hạn xử lý handler và ví dụ thu quyền không phục hồi quyền cũ; M1 review kết quả.
+
+Phụ thuộc / phối hợp
+• Phụ thuộc: Không chờ task khác; kiểm điều kiện môi trường/contract trong kế hoạch Sprint 1.
+• Reviewer: M1.
+
+Tham chiếu
+• Thiết kế và WBS M2-T1.1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m2-messaging-files.md#L513
+• Phân công và phụ thuộc Sprint 1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L150
+"
+SCRUM-15,[M1-T2.4] Cung cấp kết nối và transaction MongoDB dùng chung,"Mục tiêu
+Cung cấp connection và transaction session để M1/M2 cùng ghi dữ liệu trong một transaction.
+
+Phạm vi
+Cho M1/M2 dùng cùng connection/transaction session; kiểm trước index/migration trên DB riêng và ghi cách rollback.
+
+Tiêu chí hoàn thành
+• DB test thực hiện được commit và rollback.
+• M2 dùng được cùng connection/session.
+• Có kết quả kiểm index/migration và cách rollback; rollback Workspace/general kiểm riêng ở M1-T6.2.
+
+Phụ thuộc / phối hợp
+• Phụ thuộc: M2-T1.1.
+• Reviewer: M4.
+
+Tham chiếu
+• Thiết kế và WBS M1-T2.4: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m1-workspace-auth.md#L458
+• Phân công và phụ thuộc Sprint 1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L130
+"
+SCRUM-16,"[M1-T2.1] Tạo model và index tài khoản, phiên đăng nhập","Mục tiêu
+Lưu tài khoản và phiên đăng nhập bằng model, validation và index đúng thiết kế M1.
+
+Phạm vi
+Tạo model, index và validation cho User/authSession theo thiết kế M1.
+
+Tiêu chí hoàn thành
+• Kiểm email trùng, phiên hết hạn và dữ liệu không hợp lệ trên DB test.
+• Ghi kết quả kiểm các ràng buộc của model/index.
+
+Phụ thuộc / phối hợp
+• Phụ thuộc: M1-T1.1, M1-T2.4.
+• Reviewer: M1.
+
+Tham chiếu
+• Thiết kế và WBS M1-T2.1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m1-workspace-auth.md#L455
+• Phân công và phụ thuộc Sprint 1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L148
+"
+SCRUM-17,[M1-T3.1] Đo thử thư viện và cấu hình băm mật khẩu,"Mục tiêu
+Đo thử thư viện băm mật khẩu và giới hạn tác vụ trước khi chọn cấu hình dùng cho đăng ký/đăng nhập.
+
+Phạm vi
+Thử thư viện băm mật khẩu cùng giới hạn số tác vụ để đề xuất cấu hình.
+
+Tiêu chí hoàn thành
+• Ghi CPU, RAM, thời gian xử lý và cấu hình đã thử.
+• Có đề xuất cấu hình để review, nêu giới hạn hoặc việc cần thử tiếp.
+
+Phụ thuộc / phối hợp
+• Phụ thuộc: Không chờ task khác; kiểm điều kiện môi trường/contract trong kế hoạch Sprint 1.
+• Reviewer: M1.
+
+Tham chiếu
+• Thiết kế và WBS M1-T3.1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m1-workspace-auth.md#L464
+• Phân công và phụ thuộc Sprint 1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L149
+"
+SCRUM-18,[M1-T3.2] Triển khai đăng ký tài khoản và cấp phiên,"Mục tiêu
+Cho phép đăng ký tài khoản và tự đăng nhập bằng phiên mới khi đăng ký thành công.
+
+Phạm vi
+Tạo tài khoản, cấp phiên và tự đăng nhập khi đăng ký thành công.
+
+Tiêu chí hoàn thành
+• Đăng ký hợp lệ tạo tài khoản và phiên mới.
+• Email trùng hoặc input lỗi trả kết quả đúng contract.
+
+Phụ thuộc / phối hợp
+• Phụ thuộc: M1-T1.1, M1-T2.1, M1-T2.4, M1-T3.1.
+• Reviewer: M4.
+
+Tham chiếu
+• Thiết kế và WBS M1-T3.2: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m1-workspace-auth.md#L465
+• Phân công và phụ thuộc Sprint 1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L131
+"
+SCRUM-19,[M1-T5.2] Triển khai cơ chế điều phối thao tác User/Workspace,"Mục tiêu
+Cung cấp cơ chế điều phối thao tác theo User/Workspace để các miền tuân thủ cùng thứ tự khóa.
+
+Phạm vi
+Cung cấp interface dùng chung và giữ thứ tự khóa theo baseline.
+
+Tiêu chí hoàn thành
+• Kiểm thao tác đồng thời theo đúng thứ tự khóa.
+• Khóa được nhả khi lỗi; interface có thể dùng chung giữa các miền.
+
+Phụ thuộc / phối hợp
+• Phụ thuộc: M1-T1.1, M1-T1.2.
+• Reviewer: M4.
+
+Tham chiếu
+• Thiết kế và WBS M1-T5.2: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m1-workspace-auth.md#L482
+• Phân công và phụ thuộc Sprint 1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L137
+"
+SCRUM-20,[M1-T3.3] Triển khai đăng nhập và cấp phiên mới,"Mục tiêu
+Cho phép đăng nhập bằng mật khẩu, có giới hạn thử và không cấp phiên từ mật khẩu cũ trong lúc đổi mật khẩu.
+
+Phạm vi
+Xác minh mật khẩu, giới hạn số lần thử và phối hợp khóa User với đổi mật khẩu.
+
+Tiêu chí hoàn thành
+• Đăng nhập hợp lệ cấp phiên mới; thông tin sai trả thông báo chung.
+• Kiểm giới hạn thử và không cấp phiên từ mật khẩu cũ trong lúc đổi mật khẩu.
+
+Phụ thuộc / phối hợp
+• Phụ thuộc: M1-T3.2, M1-T5.2.
+• Reviewer: M4.
+
+Tham chiếu
+• Thiết kế và WBS M1-T3.3: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m1-workspace-auth.md#L466
+• Phân công và phụ thuộc Sprint 1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L132
+"
+SCRUM-21,[M1-T4.4] Triển khai xác thực phiên HTTP và CSRF,"Mục tiêu
+Cung cấp cách xác thực phiên HTTP, lấy phiên hiện tại và kiểm CSRF dùng chung cho các route.
+
+Phạm vi
+Viết middleware đọc/kiểm phiên, API lấy phiên hiện tại và cấp/kiểm CSRF.
+
+Tiêu chí hoàn thành
+• Phiên hợp lệ được đọc theo contract.
+• Kiểm cookie hết hạn, giả mạo, CSRF và lỗi xác thực.
+
+Phụ thuộc / phối hợp
+• Phụ thuộc: M1-T3.2, M1-T2.1.
+• Reviewer: M4.
+
+Tham chiếu
+• Thiết kế và WBS M1-T4.4: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m1-workspace-auth.md#L472
+• Phân công và phụ thuộc Sprint 1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L133
+"
+SCRUM-22,"[M4-T1.1] Định nghĩa schema ID, lệnh và phản hồi phiên họp","Mục tiêu
+Thống nhất kiểu ID và dữ liệu lệnh/phản hồi của phiên họp để FE/BE dùng đúng schema.
+
+Phạm vi
+Cung cấp typed IDs cùng command/ack/error và ví dụ schema.
+
+Tiêu chí hoàn thành
+• ObjectId/UUID được dùng đúng loại.
+• Field giả hoặc sai kiểu bị từ chối trong ca kiểm schema.
+
+Phụ thuộc / phối hợp
+• Phụ thuộc: Không chờ task khác; kiểm điều kiện môi trường/contract trong kế hoạch Sprint 1.
+• Reviewer: M3.
+
+Tham chiếu
+• Thiết kế và WBS M4-T1.1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m4-session-groups.md#L703
+• Phân công và phụ thuộc Sprint 1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L197
+"
+SCRUM-23,"[M4-T1.2] Thống nhất contract xác thực, context và cleanup phiên","Mục tiêu
+Thống nhất contract auth/context/cleanup, giới hạn control/snapshot và thứ tự khóa với các miền dùng chung.
+
+Phạm vi
+Chốt giới hạn control/snapshot và thứ tự khóa với các bên dùng contract.
+
+Tiêu chí hoàn thành
+• Fixture có ca thành công, từ chối và timeout.
+• Các bên dùng contract review thứ tự khóa và giới hạn xử lý.
+
+Phụ thuộc / phối hợp
+• Phụ thuộc: M4-T1.1.
+• Reviewer: M3.
+
+Tham chiếu
+• Thiết kế và WBS M4-T1.2: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m4-session-groups.md#L704
+• Phân công và phụ thuộc Sprint 1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L198
+"
+SCRUM-24,[M1-T4.2] Triển khai xác thực Socket.IO bằng cookie session,"Mục tiêu
+Xác thực Socket.IO bằng cùng phiên đăng nhập với HTTP; từ chối kết nối không hợp lệ.
+
+Phạm vi
+Socket dùng cùng phiên với HTTP; kiểm Origin và CSRF theo contract.
+
+Tiêu chí hoàn thành
+• Phiên hợp lệ xác thực được socket.
+• Origin, CSRF hoặc phiên không hợp lệ bị từ chối.
+
+Phụ thuộc / phối hợp
+• Phụ thuộc: M1-T4.4, M4-T1.2.
+• Reviewer: M4.
+
+Tham chiếu
+• Thiết kế và WBS M1-T4.2: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m1-workspace-auth.md#L474
+• Phân công và phụ thuộc Sprint 1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L134
+"
+SCRUM-25,"[M1-T4.1] Dựng giao diện đăng ký, đăng nhập và khôi phục phiên","Mục tiêu
+Hoàn thiện giao diện đăng ký/đăng nhập và khôi phục trạng thái đăng nhập khi tải lại trang.
+
+Phạm vi
+Nối form đăng ký/đăng nhập với API phiên hiện tại và xử lý tải lại trang.
+
+Tiêu chí hoàn thành
+• Có thể đăng ký/đăng nhập và khôi phục trạng thái khi tải lại.
+• Kiểm cookie/CSRF và hiển thị thông báo lỗi đúng contract.
+
+Phụ thuộc / phối hợp
+• Phụ thuộc: M1-T3.3, M1-T4.4.
+• Reviewer: M1.
+
+Tham chiếu
+• Thiết kế và WBS M1-T4.1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m1-workspace-auth.md#L473
+• Phân công và phụ thuộc Sprint 1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L218
+"
+SCRUM-26,[M1-T2.3] Tạo model kênh và quyền truy cập PRIVATE,"Mục tiêu
+Lưu kênh và quyền PRIVATE, bảo đảm quyền gắn đúng lần gia nhập Workspace.
+
+Phạm vi
+Tạo model, index và validation cho kênh và PRIVATE grant.
+
+Tiêu chí hoàn thành
+• Grant gắn đúng lần gia nhập Workspace.
+• Dữ liệu vi phạm ràng buộc unique bị từ chối.
+
+Phụ thuộc / phối hợp
+• Phụ thuộc: M1-T1.2, M1-T2.4.
+• Reviewer: M1.
+
+Tham chiếu
+• Thiết kế và WBS M1-T2.3: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m1-workspace-auth.md#L457
+• Phân công và phụ thuộc Sprint 1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L195
+"
+SCRUM-27,[M1-T5.1] Triển khai policy quyền Workspace và kênh dùng chung,"Mục tiêu
+Cung cấp policy dùng chung để kiểm membership, role và quyền truy cập kênh ở server.
+
+Phạm vi
+Kiểm membership, role và channel access bằng cùng policy ở server.
+
+Tiêu chí hoàn thành
+• Quyết định quyền dựa trên membership/role/channel access hiện hành.
+• Bảng ca cho phép và từ chối có kết quả kiểm.
+
+Phụ thuộc / phối hợp
+• Phụ thuộc: M1-T2.3, M1-T1.2.
+• Reviewer: M4.
+
+Tham chiếu
+• Thiết kế và WBS M1-T5.1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m1-workspace-auth.md#L481
+• Phân công và phụ thuộc Sprint 1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L136
+"
+SCRUM-28,[M1-T5.3] Triển khai điều phối thu quyền và đóng tài nguyên,"Mục tiêu
+Chặn truy cập và điều phối thu tài nguyên đúng phạm vi khi quyền mất hiệu lực.
+
+Phạm vi
+Chặn truy cập, gọi adapter thu tài nguyên đúng phạm vi và kiểm lỗi bằng adapter giả.
+
+Tiêu chí hoàn thành
+• Chặn truy cập và gọi đúng adapter theo phạm vi bị thu quyền.
+• Cleanup lỗi không tự cấp lại quyền; có kết quả kiểm bằng adapter giả.
+
+Phụ thuộc / phối hợp
+• Phụ thuộc: M1-T5.1, M1-T5.2, M4-T1.2.
+• Reviewer: M4.
+
+Tham chiếu
+• Thiết kế và WBS M1-T5.3: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m1-workspace-auth.md#L483
+• Phân công và phụ thuộc Sprint 1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L138
+"
+SCRUM-29,[M1-T4.3] Triển khai đăng xuất và xử lý phiên hết hạn,"Mục tiêu
+Thu phiên khi đăng xuất hoặc hết hạn, cập nhật UI và gọi hàm đóng các kết nối liên quan.
+
+Phạm vi
+Thu phiên, cập nhật UI và gọi adapter đóng kết nối; kiểm adapter giả trong task này.
+
+Tiêu chí hoàn thành
+• Đăng xuất/hết hạn làm phiên mất hiệu lực và cập nhật UI.
+• Adapter được gọi để đóng kết nối liên quan.
+• Ghi kết quả kiểm bằng adapter giả; tích hợp thật kiểm riêng ở M1-T15.2.
+
+Phụ thuộc / phối hợp
+• Phụ thuộc: M1-T4.1, M1-T4.2, M1-T5.3.
+• Reviewer: M4.
+
+Tham chiếu
+• Thiết kế và WBS M1-T4.3: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m1-workspace-auth.md#L475
+• Phân công và phụ thuộc Sprint 1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L135
+"
+SCRUM-30,"[M1-T2.2] Tạo model Workspace, thành viên và link mời","Mục tiêu
+Lưu Workspace, thành viên và link mời với các ràng buộc đã thống nhất.
+
+Phạm vi
+Tạo model, index và validation cho Workspace, membership, invitation.
+
+Tiêu chí hoàn thành
+• Kiểm ràng buộc OWNER và membership theo thiết kế.
+• Kiểm mỗi Workspace chỉ có một link mời hiện hành.
+
+Phụ thuộc / phối hợp
+• Phụ thuộc: M1-T1.2, M1-T2.4.
+• Reviewer: M1.
+
+Tham chiếu
+• Thiết kế và WBS M1-T2.2: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m1-workspace-auth.md#L456
+• Phân công và phụ thuộc Sprint 1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L194
+"
+SCRUM-31,[M2-T2.1] Tạo model conversation và hàm tạo general,"Mục tiêu
+Cung cấp model conversation và hàm tạo conversation CHANNEL cho general, dùng chung transaction với M1.
+
+Phạm vi
+Tạo model conversation chung và factory CHANNEL cho general.
+
+Tiêu chí hoàn thành
+• M1/M2 dùng cùng connection/dbSession.
+• Lỗi được chèn vào ca kiểm không để Workspace/general/conversation dở dang.
+
+Phụ thuộc / phối hợp
+• Phụ thuộc: M2-T1.1, M1-T2.4.
+• Reviewer: M1.
+
+Tham chiếu
+• Thiết kế và WBS M2-T2.1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m2-messaging-files.md#L524
+• Phân công và phụ thuộc Sprint 1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L155
+"
+SCRUM-32,[M1-T6.1] Triển khai tạo Workspace và general trong cùng transaction,"Mục tiêu
+Tạo Workspace cùng OWNER, general và conversation trong một transaction với M2.
+
+Phạm vi
+Tạo Workspace, OWNER, general và conversation cùng transaction với M2.
+
+Tiêu chí hoàn thành
+• Ca thành công tạo đủ các đối tượng liên quan.
+• Các thao tác M1/M2 dùng cùng transaction; kiểm rollback/retry ở M1-T6.2.
+
+Phụ thuộc / phối hợp
+• Phụ thuộc: M1-T2.2, M1-T2.3, M1-T5.1, M1-T5.2, M2-T2.1.
+• Reviewer: M4.
+
+Tham chiếu
+• Thiết kế và WBS M1-T6.1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m1-workspace-auth.md#L490
+• Phân công và phụ thuộc Sprint 1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L139
+"
+SCRUM-33,[M1-T6.2] Kiểm thử rollback và yêu cầu tạo Workspace lặp,"Mục tiêu
+Kiểm luồng tạo Workspace khi lỗi hoặc yêu cầu lặp, bảo đảm không để dữ liệu dở dang.
+
+Phạm vi
+Thử lỗi, rollback, retry và yêu cầu tạo lặp trên luồng M1-T6.1.
+
+Tiêu chí hoàn thành
+• Không còn Workspace hoặc conversation dở dang khi tạo lỗi.
+• Retry/yêu cầu lặp không tạo dữ liệu trùng theo contract.
+
+Phụ thuộc / phối hợp
+• Phụ thuộc: M1-T6.1.
+• Reviewer: M4.
+
+Tham chiếu
+• Thiết kế và WBS M1-T6.2: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m1-workspace-auth.md#L491
+• Phân công và phụ thuộc Sprint 1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L140
+"
+SCRUM-34,"[M1-T7.1] Triển khai API và giao diện chọn, tạo Workspace","Mục tiêu
+Cho người dùng xem, tạo và mở những Workspace mình có quyền; xử lý cả trường hợp chưa có Workspace.
+
+Phạm vi
+Liệt kê Workspace có quyền và cho người dùng chọn/tạo/mở từ UI.
+
+Tiêu chí hoàn thành
+• Luồng chọn/tạo/mở dùng đúng danh sách có quyền.
+• Kiểm người dùng chưa có Workspace, lỗi tạo và truy cập trái quyền.
+
+Phụ thuộc / phối hợp
+• Phụ thuộc: M1-T4.1, M1-T6.2, M1-T5.1.
+• Reviewer: M1.
+
+Tham chiếu
+• Thiết kế và WBS M1-T7.1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m1-workspace-auth.md#L499
+• Phân công và phụ thuộc Sprint 1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L219
+"
+SCRUM-35,[M1-T10.1] Triển khai API và form tạo kênh TEXT/LIVE,"Mục tiêu
+Cho owner/admin tạo kênh TEXT/LIVE; kênh TEXT được tạo cùng conversation của M2.
+
+Phạm vi
+Tạo kênh theo type/accessMode; tạo conversation cho TEXT cùng M2.
+
+Tiêu chí hoàn thành
+• Owner/admin tạo được kênh; người không có quyền bị từ chối.
+• TEXT có conversation tương ứng; lỗi tạo được rollback.
+
+Phụ thuộc / phối hợp
+• Phụ thuộc: M1-T7.1, M1-T5.2, M2-T2.1.
+• Reviewer: M4.
+
+Tham chiếu
+• Thiết kế và WBS M1-T10.1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m1-workspace-auth.md#L523
+• Phân công và phụ thuộc Sprint 1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L141
+"
+SCRUM-36,[M1-T10.2] Triển khai danh sách kênh và giao diện quản trị,"Mục tiêu
+Hiển thị danh sách kênh dùng được và danh sách phục vụ quản trị theo đúng quyền của từng người.
+
+Phạm vi
+Tách API list nội dung và list quản trị; nối sidebar/màn quản trị có phân trang.
+
+Tiêu chí hoàn thành
+• Kiểm phân trang và kênh người dùng không có quyền.
+• Quyền owner/admin không làm lộ nội dung PRIVATE qua list quản trị.
+
+Phụ thuộc / phối hợp
+• Phụ thuộc: M1-T10.1.
+• Reviewer: M4.
+
+Tham chiếu
+• Thiết kế và WBS M1-T10.2: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m1-workspace-auth.md#L524
+• Phân công và phụ thuộc Sprint 1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L142
+"
+SCRUM-37,[M2-T1.2] Thống nhất interface ghi và hoàn tất video với M3,"Mục tiêu
+Thống nhất các hàm reserve/writer/finalize/fail của luồng ghi video với M3, làm rõ bên ghi byte và bên cập nhật trạng thái.
+
+Phạm vi
+Review các hàm reserve/writer/finalize/fail cùng M3.
+
+Tiêu chí hoàn thành
+• Hai bên xác nhận mã start/attempt và trách nhiệm ghi byte.
+• Ghi bên báo trạng thái khi hết disk hoặc hủy; có kết quả review.
+
+Phụ thuộc / phối hợp
+• Phụ thuộc: Không chờ task khác; kiểm điều kiện môi trường/contract trong kế hoạch Sprint 1.
+• Reviewer: M1.
+
+Tham chiếu
+• Thiết kế và WBS M2-T1.2: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m2-messaging-files.md#L514
+• Phân công và phụ thuộc Sprint 1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L151
+"
+SCRUM-38,[M2-T1.3] Thử cơ chế đồng bộ subscribe và lịch sử tin nhắn,"Mục tiêu
+Thử cơ chế đồng bộ subscribe/history để không bỏ sót tin nhắn khi tải lịch sử nhiều trang.
+
+Phạm vi
+Thử checkpoint theo commit, tin đến khi subscribe/history và lịch sử nhiều trang.
+
+Tiêu chí hoàn thành
+• Kiểm commit lệch thứ tự, tin đến giữa subscribe/history và lịch sử hơn hai trang.
+• Ghi cơ chế mốc hoặc delta cần review; nếu chưa đạt, báo blocker trong timebox.
+
+Phụ thuộc / phối hợp
+• Phụ thuộc: M2-T1.1, M1-T2.4.
+• Reviewer: M1.
+
+Tham chiếu
+• Thiết kế và WBS M2-T1.3: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m2-messaging-files.md#L515
+• Phân công và phụ thuộc Sprint 1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L152
+"
+SCRUM-39,[M2-T1.4] Thử thư viện kiểm và xử lý file trên runtime dự án,"Mục tiêu
+Thử Busboy/file-type/sharp trên runtime của dự án để đánh giá hướng kiểm và xử lý file.
+
+Phạm vi
+Thử Busboy/file-type/sharp để đề xuất hướng xử lý file.
+
+Tiêu chí hoàn thành
+• Ghi version, RAM và thời gian xử lý đã thử.
+• Kiểm file giả, vượt dung lượng/số pixel và hủy stream.
+• Có kết luận lựa chọn hoặc việc cần thử tiếp.
+
+Phụ thuộc / phối hợp
+• Phụ thuộc: Không chờ task khác; kiểm điều kiện môi trường/contract trong kế hoạch Sprint 1.
+• Reviewer: M1.
+
+Tham chiếu
+• Thiết kế và WBS M2-T1.4: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m2-messaging-files.md#L516
+• Phân công và phụ thuộc Sprint 1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L153
+"
+SCRUM-40,"[M2-T1.6] Định nghĩa schema gửi tin, lịch sử và subscribe","Mục tiêu
+Cung cấp schema strict và ví dụ cho gửi tin, đọc lịch sử, subscribe; ưu tiên contract text để FE/BE làm sớm.
+
+Phạm vi
+Viết schema strict cùng fixture cho send/history/subscribe; tách text khỏi ảnh/avatar/recorder.
+
+Tiêu chí hoàn thành
+• Kiểm dữ liệu hợp lệ, lỗi schema, quyền, dữ liệu cũ và cursor theo contract.
+• Phần text dùng được độc lập để các bên triển khai sớm; schema không thay kiểm quyền ở server.
+
+Phụ thuộc / phối hợp
+• Phụ thuộc: M2-T1.1, M2-T1.3.
+• Reviewer: M1.
+
+Tham chiếu
+• Thiết kế và WBS M2-T1.6: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m2-messaging-files.md#L518
+• Phân công và phụ thuộc Sprint 1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L154
+"
+SCRUM-41,[M2-T2.2] Tạo model tin nhắn TEXT và index lịch sử,"Mục tiêu
+Lưu tin nhắn gốc TEXT, có khóa chống gửi lặp và index phục vụ đọc lịch sử.
+
+Phạm vi
+Lưu tin nhắn gốc, khóa chống gửi lặp và index history TEXT.
+
+Tiêu chí hoàn thành
+• Ràng buộc unique bảo vệ khóa retry.
+• Trang lịch sử đúng phạm vi/thứ tự; kiểm text không cần model upload/DM.
+
+Phụ thuộc / phối hợp
+• Phụ thuộc: M2-T2.1, M2-T1.6.
+• Reviewer: M1.
+
+Tham chiếu
+• Thiết kế và WBS M2-T2.2: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m2-messaging-files.md#L525
+• Phân công và phụ thuộc Sprint 1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L156
+"
+SCRUM-42,[M2-T4.1] Triển khai gửi và đọc tin nhắn TEXT trên REST/socket,"Mục tiêu
+Triển khai gửi/đọc tin TEXT chỉ có văn bản trên cùng service cho REST và socket.
+
+Phạm vi
+Dùng cùng service cho send/history, chống gửi lặp và trả lỗi; chỉ xử lý văn bản.
+
+Tiêu chí hoàn thành
+• Hai người gửi/đọc được tin văn bản.
+• Retry cùng mã không trùng; khác payload trả conflict.
+• Không chờ upload, DM hoặc thread để kiểm luồng text.
+
+Phụ thuộc / phối hợp
+• Phụ thuộc: M2-T1.6, M2-T2.2, M1-T1.1, M1-T1.2.
+• Reviewer: M1.
+
+Tham chiếu
+• Thiết kế và WBS M2-T4.1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m2-messaging-files.md#L545
+• Phân công và phụ thuộc Sprint 1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L157
+"
+SCRUM-43,[M2-T4.2] Triển khai đồng bộ tin mới và lịch sử nhiều trang,"Mục tiêu
+Đồng bộ tin mới với lịch sử theo cơ chế subscribe-first, xử lý trùng và mất hiệu lực truy cập.
+
+Phạm vi
+Subscribe trước, tải bù lịch sử theo mốc L/H và xử lý mất hiệu lực đồng bộ.
+
+Tiêu chí hoàn thành
+• Tin ở ranh giới không bị sót; event/history trùng được gộp theo ID.
+• Token hết hạn, mất quyền hoặc buffer đầy không được báo đã đồng bộ.
+
+Phụ thuộc / phối hợp
+• Phụ thuộc: M2-T4.1, M2-T1.3.
+• Reviewer: M1.
+
+Tham chiếu
+• Thiết kế và WBS M2-T4.2: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m2-messaging-files.md#L546
+• Phân công và phụ thuộc Sprint 1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L158
+"
+SCRUM-44,[M3-T1.1] Thống nhất contract join và nguồn media với M4,"Mục tiêu
+Thống nhất contract join và nguồn media giữa M3/M4, gồm dữ liệu bao lệnh (envelope), quyền và cách xử lý dữ liệu cũ.
+
+Phạm vi
+Chuẩn bị ví dụ join, source và envelope của lệnh, kèm quy tắc quyền M3/M4.
+
+Tiêu chí hoàn thành
+• Có ví dụ hợp lệ, sai quyền và dữ liệu thuộc trạng thái/kết nối cũ.
+• Ghi kết quả review ví dụ với bên dùng contract.
+
+Phụ thuộc / phối hợp
+• Phụ thuộc: Không chờ task khác; kiểm điều kiện môi trường/contract trong kế hoạch Sprint 1.
+• Reviewer: M4.
+
+Tham chiếu
+• Thiết kế và WBS M3-T1.1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m3-media.md#L796
+• Phân công và phụ thuộc Sprint 1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L174
+"
+SCRUM-45,"[M1-T7.2] Dựng khung Workspace và vị trí nhúng chat, cuộc gọi","Mục tiêu
+Dựng khung Workspace/sidebar để M2/M3/M4 nhúng chat và cuộc gọi theo contract đã thống nhất.
+
+Phạm vi
+Dựng shell/sidebar và panel mẫu bằng fixture đúng contract M2/M3/M4.
+
+Tiêu chí hoàn thành
+• Nhúng được panel mẫu; đổi panel không unmount CallController.
+• Sidebar không hiển thị kênh ngoài dữ liệu được phép xem.
+
+Phụ thuộc / phối hợp
+• Phụ thuộc: M1-T1.2, M3-T1.1, M2-T1.1.
+• Reviewer: M1.
+
+Tham chiếu
+• Thiết kế và WBS M1-T7.2: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m1-workspace-auth.md#L500
+• Phân công và phụ thuộc Sprint 1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L220
+"
+SCRUM-46,[M2-T5.1] Dựng giao diện timeline và composer TEXT,"Mục tiêu
+Dựng timeline và composer TEXT bằng fixture theo contract, gồm trạng thái gửi và thử lại.
+
+Phạm vi
+Dùng fixture đúng contract cho trạng thái đang gửi, lỗi và thử lại.
+
+Tiêu chí hoàn thành
+• Có trạng thái trống, đang tải và lỗi.
+• Retry giữ clientMessageId; chỉnh ý định gửi mới không ghi đè khóa cũ.
+
+Phụ thuộc / phối hợp
+• Phụ thuộc: M2-T1.6, M1-T7.2.
+• Reviewer: M1.
+
+Tham chiếu
+• Thiết kế và WBS M2-T5.1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m2-messaging-files.md#L554
+• Phân công và phụ thuộc Sprint 1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L159
+"
+SCRUM-47,[M2-T5.2] Tích hợp chat TEXT thật với hai tài khoản,"Mục tiêu
+Nối UI với chat TEXT thật và kiểm gửi/đọc/reconnect bằng hai tài khoản.
+
+Phạm vi
+Nối UI với send, subscribe và history; chỉ demo văn bản, không chờ ảnh/DM/thread.
+
+Tiêu chí hoàn thành
+• Demo gửi tin và reconnect không sót hoặc trùng.
+• Mất quyền loại bỏ cache của phạm vi bị thu; ghi kết quả tích hợp thật.
+
+Phụ thuộc / phối hợp
+• Phụ thuộc: M2-T5.1, M2-T4.2, M1-T6.2, M1-T7.1, M1-T4.4, M1-T5.1, M1-T4.2, M1-T5.3.
+• Reviewer: M1.
+
+Tham chiếu
+• Thiết kế và WBS M2-T5.2: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m2-messaging-files.md#L555
+• Phân công và phụ thuộc Sprint 1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L160
+"
+SCRUM-48,[M3-T9.1] Thử môi trường ghi hình Python/PyGObject trên Linux,"Mục tiêu
+Thử Python/PyGObject/helper ghi hình trên Linux, xác định phiên bản/plugin và blocker trước pipeline sản phẩm.
+
+Phạm vi
+Kiểm helper, version và plugin phục vụ PoC recording.
+
+Tiêu chí hoàn thành
+• Ghi version/plugin và kết quả ready/EOS/error.
+• Nếu không chạy được, ghi blocker và kết luận trong timebox.
+
+Phụ thuộc / phối hợp
+• Phụ thuộc: Không chờ task khác; kiểm điều kiện môi trường/contract trong kế hoạch Sprint 1.
+• Reviewer: M3.
+
+Tham chiếu
+• Thiết kế và WBS M3-T9.1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m3-media.md#L825
+• Phân công và phụ thuộc Sprint 1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L163
+"
+SCRUM-49,[M3-T9.2] Tạo fixture nguồn mediasoup RTP/RTCP cố định,"Mục tiêu
+Tạo nguồn mediasoup RTP/RTCP cố định, có thể tái lập để thử pipeline ghi hình.
+
+Phạm vi
+Chuẩn bị descriptor, ports và nguồn tham chiếu để thử ghi hình.
+
+Tiêu chí hoàn thành
+• Nguồn và cấu hình có thể tái lập.
+• Fixture không được mô tả như route sản phẩm đã hoàn thành.
+
+Phụ thuộc / phối hợp
+• Phụ thuộc: M3-T9.1.
+• Reviewer: M3.
+
+Tham chiếu
+• Thiết kế và WBS M3-T9.2: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m3-media.md#L826
+• Phân công và phụ thuộc Sprint 1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L164
+"
+SCRUM-50,[M3-T9.3] Thử ghi hình nguồn cố định và hoàn tất file,"Mục tiêu
+Thử ghi nguồn cố định rồi stop/finalize, kiểm file có hình/tiếng và phát/seek được.
+
+Phạm vi
+Chạy PoC ghi nguồn cố định, stop/finalize và kiểm file cuối.
+
+Tiêu chí hoàn thành
+• File có hình/tiếng, phát/seek được và có dữ liệu cuối sau finalize.
+• Ghi số đo và kết luận hoặc blocker trong timebox.
+
+Phụ thuộc / phối hợp
+• Phụ thuộc: M3-T9.2.
+• Reviewer: M3.
+
+Tham chiếu
+• Thiết kế và WBS M3-T9.3: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m3-media.md#L827
+• Phân công và phụ thuộc Sprint 1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L165
+"
+SCRUM-51,[M2-T9.1] Thử tích hợp output ghi hình M3 với sink M2,"Mục tiêu
+Thử nhận output ghi hình từ M3 vào sink M2, đánh giá writer, seek và finalize trong timebox.
+
+Phạm vi
+Thử writer, seek và finalize trong timebox, chưa coi là pipeline sản phẩm.
+
+Tiêu chí hoàn thành
+• Đo áp lực ghi chậm (backpressure), RAM, kết thúc luồng (EOS) và lỗi disk.
+• Hai bên review interface; nếu cần đổi phương án, ghi kết quả và bước tiếp có kiểm soát.
+
+Phụ thuộc / phối hợp
+• Phụ thuộc: M2-T1.2, M3-T9.3.
+• Reviewer: M1.
+
+Tham chiếu
+• Thiết kế và WBS M2-T9.1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m2-messaging-files.md#L591
+• Phân công và phụ thuộc Sprint 1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L161
+"
+SCRUM-52,[M2-T3.6] Kết nối backend với kho R2 riêng tư,"Mục tiêu
+Kết nối backend với kho R2 thử nghiệm riêng tư để dùng chung cho file và video.
+
+Phạm vi
+Dùng cấu hình R2 chung cho file/video trên kho thử riêng tư.
+
+Tiêu chí hoàn thành
+• Upload, đọc và xóa được tệp thử; không truy cập công khai hoặc lộ khóa.
+• Timeout và hủy có giới hạn; cấu hình có thể dùng lại cho video.
+
+Phụ thuộc / phối hợp
+• Phụ thuộc: M2-T1.4.
+• Reviewer: M1.
+
+Tham chiếu
+• Thiết kế và WBS M2-T3.6: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m2-messaging-files.md#L538
+• Phân công và phụ thuộc Sprint 1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L162
+"
+SCRUM-53,[M3-T9.4] Tổng hợp kết quả PoC ghi hình và bước tiếp theo,"Mục tiêu
+Tổng hợp bằng chứng PoC ghi hình và đề xuất cấu hình, rủi ro, estimate cho bước tiếp theo.
+
+Phạm vi
+Báo cáo cấu hình, độ đồng bộ, tải tài nguyên và rủi ro; điều chỉnh estimate bước sau.
+
+Tiêu chí hoàn thành
+• Kết quả/config và số đo có bằng chứng.
+• Có đề xuất bước tiếp và estimate điều chỉnh; không coi PoC là recording sản phẩm đã hoàn thành.
+
+Phụ thuộc / phối hợp
+• Phụ thuộc: M3-T9.3, M2-T9.1.
+• Reviewer: M3.
+
+Tham chiếu
+• Thiết kế và WBS M3-T9.4: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m3-media.md#L828
+• Phân công và phụ thuộc Sprint 1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L166
+"
+SCRUM-54,[M3-T17.1] Rà cấu hình và chuẩn bị checklist staging,"Mục tiêu
+Rà Docker/nginx hiện có và chuẩn bị checklist cấu hình staging để người triển khai biết cần cấp gì.
+
+Phạm vi
+Rà Docker/nginx hiện có cho origin/TLS/media address/ports/DB.
+
+Tiêu chí hoàn thành
+• Diff cấu hình được M4 review.
+• Ghi biến môi trường và quyền cần cấp, không ghi secret.
+
+Phụ thuộc / phối hợp
+• Phụ thuộc: Không chờ task khác; kiểm điều kiện môi trường/contract trong kế hoạch Sprint 1.
+• Reviewer: M4.
+
+Tham chiếu
+• Thiết kế và WBS M3-T17.1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m3-media.md#L856
+• Phân công và phụ thuộc Sprint 1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L167
+"
+SCRUM-55,[M3-T17.2] Triển khai thử app và MongoDB lên staging,"Mục tiêu
+Thử triển khai app/Mongo trên staging được cấp, kiểm TLS, readiness và transaction.
+
+Phạm vi
+Dùng staging được cấp để kiểm Web/API, readiness và transaction DB.
+
+Tiêu chí hoàn thành
+• Web/API qua TLS; readiness và transaction DB test đạt.
+• DB không public; không đưa nguyên compose local chưa auth lên staging.
+
+Phụ thuộc / phối hợp
+• Phụ thuộc: M3-T17.1.
+• Reviewer: M4.
+
+Tham chiếu
+• Thiết kế và WBS M3-T17.2: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m3-media.md#L857
+• Phân công và phụ thuộc Sprint 1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L168
+"
+SCRUM-56,[M3-T1.2] Thống nhất contract thu quyền và cleanup media,"Mục tiêu
+Thống nhất kết quả thu quyền, tài nguyên đang chờ và xác nhận cleanup giữa M3/M4.
+
+Phạm vi
+Định nghĩa revoke, tài nguyên đang chờ và ack theo context đã thống nhất với M4.
+
+Tiêu chí hoàn thành
+• Kết quả cleanup/context bám proposal M4 trong PR #28.
+• Có giới hạn xử lý, timeout và ca callback đến muộn.
+
+Phụ thuộc / phối hợp
+• Phụ thuộc: M3-T1.1, M4-T1.2.
+• Reviewer: M4.
+
+Tham chiếu
+• Thiết kế và WBS M3-T1.2: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m3-media.md#L797
+• Phân công và phụ thuộc Sprint 1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L175
+"
+SCRUM-57,[M3-T1.3] Thống nhất contract snapshot và sự kiện nguồn media,"Mục tiêu
+Thống nhất SourceDescriptor và cách đồng bộ snapshot/event/revision giữa FE, media và phiên họp.
+
+Phạm vi
+Định nghĩa SourceDescriptor, snapshot/event và revision.
+
+Tiêu chí hoàn thành
+• Có ví dụ mốc đồng bộ (watermark), khoảng thiếu sự kiện và thay đổi phạm vi.
+• Snapshot biểu diễn đủ Producer của chính người dùng ở PAUSED/SWITCHING.
+
+Phụ thuộc / phối hợp
+• Phụ thuộc: M3-T1.1, M4-T1.2.
+• Reviewer: M4.
+
+Tham chiếu
+• Thiết kế và WBS M3-T1.3: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m3-media.md#L798
+• Phân công và phụ thuộc Sprint 1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L176
+"
+SCRUM-58,[M3-T1.4] Thống nhất schema REST bootstrap/ICE và context proof,"Mục tiêu
+Thống nhất schema REST bootstrap/ICE và cách ràng buộc yêu cầu với đúng kết nối hiện hành.
+
+Phạm vi
+Review proof cho REST, cách từ chối ICE theo context cũ và schema API strict.
+
+Tiêu chí hoàn thành
+• Hai tab dùng cùng cookie vẫn kiểm được đúng context; proof không thay xác thực.
+• Danh mục API và giới hạn xử lý được ghi rõ.
+
+Phụ thuộc / phối hợp
+• Phụ thuộc: M3-T1.2, M3-T1.3.
+• Reviewer: M4.
+
+Tham chiếu
+• Thiết kế và WBS M3-T1.4: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m3-media.md#L799
+• Phân công và phụ thuộc Sprint 1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L177
+"
+SCRUM-59,[M3-T3.1] Tách CallController khỏi vòng đời panel,"Mục tiêu
+Giữ CallController độc lập với panel để chuyển màn không tạo thêm cuộc gọi.
+
+Phạm vi
+Giữ bộ điều khiển cuộc gọi hoạt động độc lập với panel giao diện.
+
+Tiêu chí hoàn thành
+• Chuyển panel không tạo thêm CallController.
+• Việc mở/đóng panel không làm tạo lại bộ điều khiển cuộc gọi.
+
+Phụ thuộc / phối hợp
+• Phụ thuộc: M3-T1.1.
+• Reviewer: M3.
+
+Tham chiếu
+• Thiết kế và WBS M3-T3.1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m3-media.md#L802
+• Phân công và phụ thuộc Sprint 1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L223
+"
+SCRUM-60,[M3-T4.1] Triển khai tạo và kết nối media transport,"Mục tiêu
+Tạo/kết nối transport qua signaling, có cleanup tài nguyên đang chờ khi lỗi.
+
+Phạm vi
+Cung cấp transport factory và signaling create/connect.
+
+Tiêu chí hoàn thành
+• Hai trình duyệt kết nối được qua transport/signaling.
+• Lỗi đóng tài nguyên đang chờ, không để pending bị bỏ quên.
+
+Phụ thuộc / phối hợp
+• Phụ thuộc: M3-T1.4, M3-T3.1, M4-T1.2.
+• Reviewer: M4.
+
+Tham chiếu
+• Thiết kế và WBS M3-T4.1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m3-media.md#L804
+• Phân công và phụ thuộc Sprint 1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L178
+"
+SCRUM-61,[M3-T4.2] Triển khai Producer/Consumer theo luồng paused-ready,"Mục tiêu
+Triển khai Producer/Consumer theo luồng paused-ready; chỉ resume sau khi kiểm quyền.
+
+Phạm vi
+Tạo media và chỉ resume sau bước ready cùng kiểm quyền.
+
+Tiêu chí hoàn thành
+• Hai phía nhận được hình/tiếng.
+• Kiểm quyền trước resume Consumer.
+
+Phụ thuộc / phối hợp
+• Phụ thuộc: M3-T4.1.
+• Reviewer: M4.
+
+Tham chiếu
+• Thiết kế và WBS M3-T4.2: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m3-media.md#L805
+• Phân công và phụ thuộc Sprint 1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L179
+"
+SCRUM-62,[M3-T4.3] Theo dõi tài nguyên đang tạo và xử lý callback cũ,"Mục tiêu
+Theo dõi tài nguyên đang tạo và đóng kết quả đến muộn sau khi quyền hoặc kết nối đã đổi.
+
+Phạm vi
+Lưu pending registry; đóng tài nguyên tạo xong sau khi context hoặc quyền đã mất hiệu lực.
+
+Tiêu chí hoàn thành
+• Thu quyền lúc đang await vẫn đóng được object khi tạo xong.
+• Số tài nguyên trở về mức nền sau cleanup, không giữ kết quả từ callback cũ.
+
+Phụ thuộc / phối hợp
+• Phụ thuộc: M3-T4.2.
+• Reviewer: M4.
+
+Tham chiếu
+• Thiết kế và WBS M3-T4.3: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m3-media.md#L806
+• Phân công và phụ thuộc Sprint 1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L180
+"
+SCRUM-63,[M3-T17.3] Cấu hình TURN và kiểm relay trên staging,"Mục tiêu
+Cấu hình TURN trên staging, kiểm relay có xác thực và thời hạn credential.
+
+Phạm vi
+Kiểm relay có xác thực, credential hết hạn và đường mạng.
+
+Tiêu chí hoàn thành
+• Credential hết hạn bị từ chối; ghi candidate relay/network.
+• Không kết luận kiểm media đạt nếu chưa có audio thật.
+
+Phụ thuộc / phối hợp
+• Phụ thuộc: M3-T17.1.
+• Reviewer: M3.
+
+Tham chiếu
+• Thiết kế và WBS M3-T17.3: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m3-media.md#L858
+• Phân công và phụ thuộc Sprint 1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L196
+"
+SCRUM-64,[M3-T4.4] Triển khai REST bootstrap/ICE trên FE và BE,"Mục tiêu
+Triển khai REST bootstrap/ICE trên FE/BE, ràng buộc proof với đúng phiên/kết nối hiện hành.
+
+Phạm vi
+Ràng buộc HTTP context proof với kết nối hiện hành; xử lý rotate/revoke và credential hết hạn.
+
+Tiêu chí hoàn thành
+• Yêu cầu trước join hoặc từ tab cũ bị từ chối.
+• Kiểm token rotate/revoke và credential hết hạn theo contract.
+
+Phụ thuộc / phối hợp
+• Phụ thuộc: M3-T4.1, M3-T1.4, M3-T17.3.
+• Reviewer: M4.
+
+Tham chiếu
+• Thiết kế và WBS M3-T4.4: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m3-media.md#L807
+• Phân công và phụ thuộc Sprint 1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L181
+"
+SCRUM-65,[M4-T3.1] Triển khai policy và projection phiên theo người gọi,"Mục tiêu
+Xác định quyền bằng policy thuần và chỉ trả dữ liệu phiên/nhóm người gọi được phép xem (projection).
+
+Phạm vi
+Policy thuần xác định dữ liệu MAIN/nhóm người gọi được phép xem.
+
+Tiêu chí hoàn thành
+• Kiểm ma trận role/scope và roster chưa join.
+• Quyền admin không vượt quyền nội dung PRIVATE.
+
+Phụ thuộc / phối hợp
+• Phụ thuộc: M4-T1.2.
+• Reviewer: M3.
+
+Tham chiếu
+• Thiết kế và WBS M4-T3.1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m4-session-groups.md#L710
+• Phân công và phụ thuộc Sprint 1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L203
+"
+SCRUM-66,[M4-T3.4] Định nghĩa snapshot và sự kiện theo người nhận,"Mục tiêu
+Cung cấp snapshot/event tại đúng mốc, có audienceEpoch và sequence riêng cho người nhận.
+
+Phạm vi
+Dùng audienceEpoch/projectionSequence để đồng bộ đúng mốc và đúng phạm vi người nhận.
+
+Tiêu chí hoàn thành
+• Snapshot phản ánh một mốc nhất quán.
+• Sequence riêng người nhận; đổi audience được phân biệt đúng đời.
+
+Phụ thuộc / phối hợp
+• Phụ thuộc: M4-T3.1, M4-T1.2.
+• Reviewer: M3.
+
+Tham chiếu
+• Thiết kế và WBS M4-T3.4: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m4-session-groups.md#L713
+• Phân công và phụ thuộc Sprint 1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L206
+"
+SCRUM-67,[M3-T4.6] Đồng bộ snapshot nguồn và tài nguyên media trên FE,"Mục tiêu
+Đồng bộ danh sách nguồn và tài nguyên của chính người dùng từ snapshot, tránh nhân track/audio trên FE.
+
+Phạm vi
+Đọc snapshot nguồn/tài nguyên của chính người dùng và đối chiếu với state FE.
+
+Tiêu chí hoàn thành
+• Snapshot nhất quán, có đủ trạng thái tài nguyên của chính người dùng.
+• Đồng bộ lại không tạo trùng track/audio.
+
+Phụ thuộc / phối hợp
+• Phụ thuộc: M3-T4.2, M3-T1.3, M4-T3.4.
+• Reviewer: M4.
+
+Tham chiếu
+• Thiết kế và WBS M3-T4.6: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m3-media.md#L809
+• Phân công và phụ thuộc Sprint 1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L182
+"
+SCRUM-68,[M3-T4.7] Triển khai đồng bộ sự kiện media và resync,"Mục tiêu
+Đồng bộ thay đổi media bằng event có sequence và buffer giới hạn, resync khi dữ liệu thiếu hoặc cũ.
+
+Phạm vi
+Xử lý event có sequence và buffer giới hạn.
+
+Tiêu chí hoàn thành
+• Sự kiện thiếu, trùng, buffer tràn hoặc context đổi đều dẫn tới resync phù hợp.
+• Resync vẫn kiểm quyền, không nhận lại media ngoài phạm vi được phép.
+
+Phụ thuộc / phối hợp
+• Phụ thuộc: M3-T4.6.
+• Reviewer: M4.
+
+Tham chiếu
+• Thiết kế và WBS M3-T4.7: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m3-media.md#L810
+• Phân công và phụ thuộc Sprint 1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L183
+"
+SCRUM-69,[M3-T2.1] Dựng lobby chọn thiết bị và xem preview,"Mục tiêu
+Cho người dùng chọn thiết bị và xem preview ở lobby trước khi vào cuộc gọi.
+
+Phạm vi
+Cho người dùng chọn mic/camera và xem preview trước khi vào cuộc gọi.
+
+Tiêu chí hoàn thành
+• Preview/chọn thiết bị hoạt động trên trình duyệt.
+• Cho phép hoặc từ chối quyền thiết bị đều có trạng thái rõ.
+
+Phụ thuộc / phối hợp
+• Phụ thuộc: Không chờ task khác; kiểm điều kiện môi trường/contract trong kế hoạch Sprint 1.
+• Reviewer: M3.
+
+Tham chiếu
+• Thiết kế và WBS M3-T2.1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m3-media.md#L800
+• Phân công và phụ thuộc Sprint 1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L221
+"
+SCRUM-70,[M3-T2.2] Xử lý hủy lobby và lỗi thiết bị,"Mục tiêu
+Xử lý hủy lobby và lỗi thiết bị; dọn preview mà không ảnh hưởng cuộc gọi đang có.
+
+Phạm vi
+Dọn preview khi hủy và xử lý lỗi thiết bị ở lobby.
+
+Tiêu chí hoàn thành
+• Hủy lobby đóng preview và tài nguyên liên quan.
+• Không đóng cuộc gọi đang có khi xử lý lobby.
+
+Phụ thuộc / phối hợp
+• Phụ thuộc: M3-T2.1.
+• Reviewer: M3.
+
+Tham chiếu
+• Thiết kế và WBS M3-T2.2: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m3-media.md#L801
+• Phân công và phụ thuộc Sprint 1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L222
+"
+SCRUM-71,[M3-T5.1] Triển khai bật/tắt mic và camera,"Mục tiêu
+Cho người dùng bật/tắt mic và camera theo trạng thái thiết bị và quyền hiện hành.
+
+Phạm vi
+Nối thao tác mic/camera với trạng thái thiết bị và quyền hiện hành.
+
+Tiêu chí hoàn thành
+• Bật/tắt cập nhật đúng trạng thái mic/camera.
+• Không tự bật lại thiết bị người dùng đang tắt.
+
+Phụ thuộc / phối hợp
+• Phụ thuộc: M3-T2.2, M3-T4.3, M3-T4.4, M3-T4.7.
+• Reviewer: M4.
+
+Tham chiếu
+• Thiết kế và WBS M3-T5.1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m3-media.md#L811
+• Phân công và phụ thuộc Sprint 1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L184
+"
+SCRUM-72,[M4-T3.2] Triển khai điều phối chuyển trạng thái và cleanup phiên,"Mục tiêu
+Điều phối thay đổi trạng thái với chốt chặn truy cập, transition token và kết quả cleanup.
+
+Phạm vi
+Dùng deny barrier, transition token và kết quả cleanup theo contract.
+
+Tiêu chí hoàn thành
+• Adapter đến muộn hoặc lỗi không cấp lại quyền đã thu.
+• Caller đang giữ gate không gây deadlock.
+
+Phụ thuộc / phối hợp
+• Phụ thuộc: M4-T1.2.
+• Reviewer: M3.
+
+Tham chiếu
+• Thiết kế và WBS M4-T3.2: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m4-session-groups.md#L711
+• Phân công và phụ thuộc Sprint 1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L204
+"
+SCRUM-73,[M4-T3.3] Triển khai slot chia sẻ MAIN/ACTIVITY và media gate,"Mục tiêu
+Quản lý slot share riêng cho MAIN/ACTIVITY và kiểm quyền khi tạo/ready media.
+
+Phạm vi
+Quản lý share lease và kiểm media ở bước create/ready.
+
+Tiêu chí hoàn thành
+• Kiểm slot bận và picker hết hạn.
+• Callback/release của lượt cũ không tác động lượt mới.
+
+Phụ thuộc / phối hợp
+• Phụ thuộc: M4-T3.1, M4-T3.2, M3-T1.3.
+• Reviewer: M3.
+
+Tham chiếu
+• Thiết kế và WBS M4-T3.3: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m4-session-groups.md#L712
+• Phân công và phụ thuộc Sprint 1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L205
+"
+SCRUM-74,[M3-T6.1] Giữ slot chia sẻ và xử lý chọn/hủy màn hình,"Mục tiêu
+Xin slot share trước khi mở picker; xử lý hủy hoặc hết hạn mà không giữ track/slot cũ.
+
+Phạm vi
+Nhận share lease trước picker; thu track và trả lease khi hủy/hết hạn.
+
+Tiêu chí hoàn thành
+• Hủy hoặc hết hạn dừng track đã tạo.
+• Trả đúng lease của lượt share, không tác động lượt mới.
+
+Phụ thuộc / phối hợp
+• Phụ thuộc: M3-T4.3, M3-T1.3, M4-T3.3.
+• Reviewer: M4.
+
+Tham chiếu
+• Thiết kế và WBS M3-T6.1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m3-media.md#L815
+• Phân công và phụ thuộc Sprint 1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L185
+"
+SCRUM-75,[M3-T6.2] Triển khai phát/dừng màn hình và âm thanh chia sẻ,"Mục tiêu
+Phát và dừng SCREEN cùng SCREEN_AUDIO, kể cả khi người dùng bấm Stop từ trình duyệt.
+
+Phạm vi
+Xử lý SCREEN và SCREEN_AUDIO cùng luồng publish/stop.
+
+Tiêu chí hoàn thành
+• Phát/dừng xử lý đúng hai nguồn tương ứng.
+• Bấm Stop từ trình duyệt thu cả SCREEN và SCREEN_AUDIO.
+
+Phụ thuộc / phối hợp
+• Phụ thuộc: M3-T6.1.
+• Reviewer: M4.
+
+Tham chiếu
+• Thiết kế và WBS M3-T6.2: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m3-media.md#L816
+• Phân công và phụ thuộc Sprint 1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L186
+"
+SCRUM-76,[M3-T3.2] Dựng RoomShell và dọn media khi unmount/remount,"Mục tiêu
+Dựng RoomShell và kiểm cleanup khi React StrictMode unmount/remount.
+
+Phạm vi
+Kiểm vòng đời RoomShell cùng React StrictMode.
+
+Tiêu chí hoàn thành
+• Unmount/remount không để rò track hoặc audio.
+• Ghi kết quả kiểm cleanup trong StrictMode.
+
+Phụ thuộc / phối hợp
+• Phụ thuộc: M3-T3.1.
+• Reviewer: M3.
+
+Tham chiếu
+• Thiết kế và WBS M3-T3.2: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m3-media.md#L803
+• Phân công và phụ thuộc Sprint 1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L224
+"
+SCRUM-77,[M3-T8.1] Triển khai âm thanh MAIN và xử lý autoplay,"Mục tiêu
+Phát âm thanh MAIN qua AudioGraph, tránh tiếng lặp và có cách khôi phục khi autoplay bị chặn.
+
+Phạm vi
+Dùng một output cho mỗi track trong AudioGraph MAIN, dọn output khi rời/mất quyền.
+
+Tiêu chí hoàn thành
+• Nghe được mic và âm thanh nguồn share, không lặp tiếng hoặc tạo vòng âm thanh.
+• Autoplay bị chặn có thao tác để người dùng khôi phục.
+• Rời/thu quyền dọn output; chuyển nhóm kiểm riêng ở M3-T7 và M3-T8.3.
+
+Phụ thuộc / phối hợp
+• Phụ thuộc: M3-T4.3, M3-T3.2, M4-T1.2.
+• Reviewer: M4.
+
+Tham chiếu
+• Thiết kế và WBS M3-T8.1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m3-media.md#L822
+• Phân công và phụ thuộc Sprint 1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L187
+"
+SCRUM-78,[M3-T5.3] Hiển thị ô camera và trạng thái pause từ server,"Mục tiêu
+Hiển thị ô camera và trạng thái pause từ server đúng với tình trạng phát thực tế.
+
+Phạm vi
+Nối camera tiles với trạng thái phát/pause thực tế.
+
+Tiêu chí hoàn thành
+• UI không báo đang phát khi server đang chặn.
+• Ghi kết quả kiểm ô camera khi trạng thái server thay đổi.
+
+Phụ thuộc / phối hợp
+• Phụ thuộc: M3-T5.1.
+• Reviewer: M3.
+
+Tham chiếu
+• Thiết kế và WBS M3-T5.3: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m3-media.md#L813
+• Phân công và phụ thuộc Sprint 1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L225
+"
+SCRUM-79,[M4-T2.1] Tạo model phiên họp và participant với transaction/CAS,"Mục tiêu
+Lưu metadata phiên/participant qua repository có transaction/CAS và index theo thiết kế.
+
+Phạm vi
+Tạo schema/index metadata và repository ghi dữ liệu.
+
+Tiêu chí hoàn thành
+• Kiểm unique phiên mở và participation.
+• DB test có commit, rollback và trường hợp chưa rõ commit đã thành công hay chưa.
+
+Phụ thuộc / phối hợp
+• Phụ thuộc: M4-T1.1, M1-T2.4.
+• Reviewer: M3.
+
+Tham chiếu
+• Thiết kế và WBS M4-T2.1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m4-session-groups.md#L706
+• Phân công và phụ thuộc Sprint 1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L200
+"
+SCRUM-80,[M4-T2.4] Xử lý phiên cũ khi khởi động và truy vấn metadata,"Mục tiêu
+Xử lý metadata phiên cũ khi khởi động và cung cấp query có giới hạn, không phục hồi quyền runtime cũ.
+
+Phạm vi
+Bootstrap metadata phiên cũ; query có giới hạn và kiểm quyền kênh.
+
+Tiêu chí hoàn thành
+• Restart không khôi phục quyền runtime cũ.
+• Query đúng kênh, có giới hạn và kiểm quyền truy cập.
+
+Phụ thuộc / phối hợp
+• Phụ thuộc: M4-T2.1, M4-T1.2.
+• Reviewer: M3.
+
+Tham chiếu
+• Thiết kế và WBS M4-T2.4: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m4-session-groups.md#L709
+• Phân công và phụ thuộc Sprint 1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L202
+"
+SCRUM-81,[M3-T17.4] Kiểm kết nối hai mạng và rollback app staging,"Mục tiêu
+Kiểm đường mạng trên hai mạng và diễn tập quay lại bản app staging trước, không rollback dữ liệu.
+
+Phạm vi
+Kiểm kết nối/relay và diễn tập trở lại bản app trước.
+
+Tiêu chí hoàn thành
+• Có kết quả kết nối trên hai mạng, relay và rollback app.
+• Không reset/rollback dữ liệu; nghiệm thu media 5 người riêng ở M3-T15.1.
+
+Phụ thuộc / phối hợp
+• Phụ thuộc: M3-T17.2, M3-T17.3, M3-T5.1, M3-T6.2, M3-T8.1, M4-T2.4.
+• Reviewer: M3.
+
+Tham chiếu
+• Thiết kế và WBS M3-T17.4: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m3-media.md#L859
+• Phân công và phụ thuộc Sprint 1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L226
+"
+SCRUM-82,[M4-T2.2] Triển khai registry và ticket vào MAIN tối thiểu,"Mục tiêu
+Tạo registry, join intent/ticket và MAIN tối thiểu, gắn với phiên xác thực/quyền hiện hành.
+
+Phạm vi
+Tạo join intent/ticket gắn với phiên xác thực và quyền hiện hành.
+
+Tiêu chí hoàn thành
+• Hai join đồng thời không tạo trùng phiên/host.
+• Ticket hết hạn hoặc dùng lại bị từ chối.
+
+Phụ thuộc / phối hợp
+• Phụ thuộc: M4-T2.1, M4-T3.1, M4-T3.2, M1-T1.2, M3-T1.1.
+• Reviewer: M3.
+
+Tham chiếu
+• Thiết kế và WBS M4-T2.2: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m4-session-groups.md#L707
+• Phân công và phụ thuộc Sprint 1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L201
+"
+SCRUM-83,[M4-T9.1] Thu quyền MAIN và hủy ticket/media đang chờ,"Mục tiêu
+Thu quyền MAIN và hủy ticket/tài nguyên đang chờ khi authSession hoặc quyền truy cập mất hiệu lực.
+
+Phạm vi
+Gắn việc thu quyền với authSession/access hiện hành.
+
+Tiêu chí hoàn thành
+• Đăng xuất hoặc mất quyền khi join/tạo media đang chờ vẫn thu được quyền.
+• Kết quả tạo tài nguyên đến muộn bị đóng.
+
+Phụ thuộc / phối hợp
+• Phụ thuộc: M4-T2.2, M4-T3.2, M1-T1.2.
+• Reviewer: M3.
+
+Tham chiếu
+• Thiết kế và WBS M4-T9.1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m4-session-groups.md#L730
+• Phân công và phụ thuộc Sprint 1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L208
+"
+SCRUM-84,[M4-T9.2] Triển khai reconnect và resync MAIN theo quyền hiện tại,"Mục tiêu
+Cho reconnect/resync MAIN theo quyền hiện tại, từ chối socket/generation cũ.
+
+Phạm vi
+Từ chối socket/generation cũ, không phục hồi quyền đã thu.
+
+Tiêu chí hoàn thành
+• Socket/generation cũ bị từ chối.
+• Reconnect không kéo dài grace hoặc khôi phục grant đã bị thu.
+
+Phụ thuộc / phối hợp
+• Phụ thuộc: M4-T2.2, M4-T3.4, M1-T1.1.
+• Reviewer: M3.
+
+Tham chiếu
+• Thiết kế và WBS M4-T9.2: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m4-session-groups.md#L731
+• Phân công và phụ thuộc Sprint 1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L209
+"
+SCRUM-85,[M4-T10.2] Đồng bộ state MAIN và cache theo audience trên FE,"Mục tiêu
+Đồng bộ state MAIN trên FE và tách cache theo audience, không cho dữ liệu cũ ghi đè trạng thái mới.
+
+Phạm vi
+Xử lý resync và dữ liệu cũ khi chuyển phạm vi nhận dữ liệu.
+
+Tiêu chí hoàn thành
+• Kiểm dữ liệu đảo thứ tự khi chuyển A → MAIN → B.
+• Snapshot/event/ảnh cũ, thiếu sequence hoặc buffer tràn không ghi đè state mới.
+
+Phụ thuộc / phối hợp
+• Phụ thuộc: M4-T3.4, M4-T9.2, M3-T3.2.
+• Reviewer: M4.
+
+Tham chiếu
+• Thiết kế và WBS M4-T10.2: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m4-session-groups.md#L736
+• Phân công và phụ thuộc Sprint 1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L227
+"
+SCRUM-86,[M4-T7.2] Triển khai kết thúc cuộc họp và host chủ động rời,"Mục tiêu
+Kết thúc cuộc họp khi host chủ động rời hoặc chọn end, bảo đảm shutdown lặp không gây sai trạng thái.
+
+Phạm vi
+Điều phối shutdown để yêu cầu end lặp không tạo thêm tác động.
+
+Tiêu chí hoàn thành
+• Kiểm host rời đồng thời với chuyển host.
+• Yêu cầu end lặp an toàn; ENDING chặn join; cleanup lỗi vẫn chặn truy cập.
+
+Phụ thuộc / phối hợp
+• Phụ thuộc: M4-T2.2, M4-T3.2.
+• Reviewer: M3.
+
+Tham chiếu
+• Thiết kế và WBS M4-T7.2: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m4-session-groups.md#L725
+• Phân công và phụ thuộc Sprint 1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L207
+"
+SCRUM-87,[M4-T9.3] Đối chiếu kết quả chưa rõ và kết thúc phiên không còn người,"Mục tiêu
+Đối chiếu kết quả thao tác chưa rõ và kết thúc phiên khi không còn call ownership hợp lệ.
+
+Phạm vi
+Đọc lại kết quả DB và kiểm call ownership khi join/end chạy đồng thời.
+
+Tiêu chí hoàn thành
+• Mất DB ack không gây thực hiện lại mù; join và end có thứ tự xử lý.
+• Ownership còn trong reconnect grace giữ phiên; khi ownership cuối mất hiệu lực thì end ngay.
+
+Phụ thuộc / phối hợp
+• Phụ thuộc: M4-T2.1, M4-T2.2, M4-T3.2.
+• Reviewer: M3.
+
+Tham chiếu
+• Thiết kế và WBS M4-T9.3: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m4-session-groups.md#L732
+• Phân công và phụ thuộc Sprint 1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L210
+"
+SCRUM-88,[M4-T11.1] Kiểm tích hợp MAIN với xác thực và media thật,"Mục tiêu
+Kiểm tích hợp MAIN với auth và media thật trước gate 5 người, gồm thu quyền và reconnect.
+
+Phạm vi
+Kiểm join, thu quyền lúc có pending, reconnect và resync FE.
+
+Tiêu chí hoàn thành
+• Ca kiểm dùng provider auth/media thật và có kết quả thực chạy.
+• Ghi phần chưa đạt; fixture/mock không thay bằng chứng tích hợp.
+
+Phụ thuộc / phối hợp
+• Phụ thuộc: M1-T5.3, M1-T4.2, M4-T2.2, M4-T9.1, M4-T9.2, M4-T10.2, M3-T4.4, M3-T4.7, M3-T8.1, M1-T4.3, M1-T10.1, M4-T7.2, M4-T9.3.
+• Reviewer: M3.
+
+Tham chiếu
+• Thiết kế và WBS M4-T11.1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m4-session-groups.md#L738
+• Phân công và phụ thuộc Sprint 1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L212
+"
+SCRUM-89,"[M3-T15.1] Kiểm tích hợp MAIN với 5 người, hai mạng và TURN","Mục tiêu
+Kiểm MAIN thật với 5 người trên hai mạng và forced TURN; ghi bằng chứng media cùng số đo tải.
+
+Phạm vi
+Chạy camera/audio/share thật trên hai mạng, gồm forced TURN và đo tải.
+
+Tiêu chí hoàn thành
+• Có bằng chứng 5 người dùng mic/camera/share trên hai mạng.
+• Forced TURN có relay bytes và mẫu đo tải.
+• Kết quả không thay kiểm tích hợp nhóm hoặc recording.
+
+Phụ thuộc / phối hợp
+• Phụ thuộc: M3-T4.7, M3-T5.3, M3-T6.2, M3-T8.1, M3-T17.4, M4-T11.1, M1-T10.1, M1-T4.3.
+• Reviewer: M4.
+
+Tham chiếu
+• Thiết kế và WBS M3-T15.1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m3-media.md#L848
+• Phân công và phụ thuộc Sprint 1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L188
+"
+SCRUM-90,[M4-T1.3] Thử fixture kế vị host và contract recording trong 4 giờ,"Mục tiêu
+Trong 4 giờ, kiểm fixture kế vị host và tính khả thi contract/PoC recording; ghi kết luận và điểm còn vướng.
+
+Phạm vi
+Kiểm tính khả thi kỹ thuật cho kế vị host và contract/PoC recording.
+
+Tiêu chí hoàn thành
+• Ghi kết quả fixture, đề xuất kỹ thuật và lỗi còn lại trong timebox.
+• Không tự chọn chính sách video còn mở.
+
+Phụ thuộc / phối hợp
+• Phụ thuộc: Không chờ task khác; kiểm điều kiện môi trường/contract trong kế hoạch Sprint 1.
+• Reviewer: M3.
+
+Tham chiếu
+• Thiết kế và WBS M4-T1.3: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m4-session-groups.md#L705
+• Phân công và phụ thuộc Sprint 1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L199
+"
+SCRUM-91,[M4-T9.4] Xử lý worker chết và khởi động lại phiên runtime,"Mục tiêu
+Kết thúc/đối chiếu đúng các phiên bị ảnh hưởng khi worker chết hoặc server khởi động lại.
+
+Phạm vi
+Đưa phiên bị ảnh hưởng qua end/reconcile và bootstrap trước readiness.
+
+Tiêu chí hoàn thành
+• Worker chết kết thúc đúng các phiên bị ảnh hưởng.
+• Bootstrap hoàn tất trước khi báo readiness.
+
+Phụ thuộc / phối hợp
+• Phụ thuộc: M4-T2.4, M4-T7.2.
+• Reviewer: M3.
+
+Tham chiếu
+• Thiết kế và WBS M4-T9.4: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m4-session-groups.md#L733
+• Phân công và phụ thuộc Sprint 1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L211
+"

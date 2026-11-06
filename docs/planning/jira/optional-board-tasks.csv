@@ -1,0 +1,109 @@
+﻿Issue Type,Summary,Description,Original Estimate,Labels,Labels,Labels,Labels,Labels,Work item ID,Parent
+Task,[M5-W1.1] Định nghĩa schema lệnh board và Freeze/Resume,"## Mục tiêu
+Định nghĩa boardCommandEnvelopeSchema và contract Freeze/Resume cho board nhóm.
+
+## Phạm vi
+Viết boardCommandEnvelopeSchema cùng lệnh Freeze/Resume cho nhóm.
+
+## Tiêu chí hoàn thành
+- Envelope Zod có sessionId kiểu ObjectId, epoch và callGeneration.
+- Contract giữ đúng phạm vi Freeze/Resume của nhóm.
+
+## Phụ thuộc / phối hợp
+- Phụ thuộc: M4-T1.2, M3-T1.3.
+- Reviewer: M3.
+
+## Tham chiếu
+- [Thiết kế và WBS M5-W1.1](https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m5-board.md#L1032)
+- [Phân công và phụ thuộc Sprint 1](https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L228)
+",7200,source-m5-w1-1,domain-m5,executor-m5,priority-p2,s1-optional,2001,SCRUM-9
+Task,[M5-W1.2] Định nghĩa schema nét vẽ và đồng bộ board,"## Mục tiêu
+Định nghĩa schema nét vẽ, state, đồng bộ phân trang và mã lỗi cho board.
+
+## Phạm vi
+Viết schema Stroke, State, phân trang đồng bộ và mã lỗi.
+
+## Tiêu chí hoàn thành
+- Schema Zod biên dịch được.
+- Có kết quả ca hợp lệ/không hợp lệ và kiểm giới hạn kích thước dữ liệu.
+
+## Phụ thuộc / phối hợp
+- Phụ thuộc: M5-W1.1.
+- Reviewer: M3.
+
+## Tham chiếu
+- [Thiết kế và WBS M5-W1.2](https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m5-board.md#L1033)
+- [Phân công và phụ thuộc Sprint 1](https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L229)
+",7200,source-m5-w1-2,domain-m5,executor-m5,priority-p2,s1-optional,2002,SCRUM-9
+Task,[M5-W2.1] Tính vùng video thực để đặt lớp vẽ,"## Mục tiêu
+Tính đúng vùng video thực hiển thị, loại phần dải đen letterbox/pillarbox khỏi vùng vẽ.
+
+## Phạm vi
+Tách letterbox/pillarbox để xác định vùng video trong khung hiển thị.
+
+## Tiêu chí hoàn thành
+- calculateRenderBox() trả đúng offset và kích thước render.
+- Dải đen không bị tính là vùng video thực.
+
+## Phụ thuộc / phối hợp
+- Phụ thuộc: Không chờ task khác; kiểm điều kiện môi trường/contract trong kế hoạch Sprint 1.
+- Reviewer: M3.
+
+## Tham chiếu
+- [Thiết kế và WBS M5-W2.1](https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m5-board.md#L1034)
+- [Phân công và phụ thuộc Sprint 1](https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L230)
+",14400,source-m5-w2-1,domain-m5,executor-m5,priority-p2,s1-optional,2003,SCRUM-9
+Task,[M5-W2.2] Chuẩn hóa tọa độ con trỏ theo vùng video,"## Mục tiêu
+Chuẩn hóa tọa độ con trỏ theo vùng video và lượng tử hóa tới 4 chữ số thập phân.
+
+## Phạm vi
+Dùng normalizePoint() để lượng tử hóa tọa độ tới 4 chữ số thập phân.
+
+## Tiêu chí hoàn thành
+- Tọa độ có dạng 0.xxxx và loại phần dải đen.
+- Unit test tỉ lệ 16:9 và 4:3 có kết quả.
+
+## Phụ thuộc / phối hợp
+- Phụ thuộc: M5-W2.1.
+- Reviewer: M3.
+
+## Tham chiếu
+- [Thiết kế và WBS M5-W2.2](https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m5-board.md#L1035)
+- [Phân công và phụ thuộc Sprint 1](https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L231)
+",14400,source-m5-w2-2,domain-m5,executor-m5,priority-p2,s1-optional,2004,SCRUM-9
+Task,[M5-W3.1] Dựng bộ vẽ Canvas 2D và làm mượt nét Bezier,"## Mục tiêu
+Dựng bộ vẽ freehand Canvas 2D có làm mượt Bezier và đo hiệu năng với cấu hình thử rõ ràng.
+
+## Phạm vi
+Render freehand bằng requestAnimationFrame và đo hiệu năng.
+
+## Tiêu chí hoàn thành
+- Ghi frame time/FPS, browser, máy, kích thước canvas, số nét/điểm và DPR.
+- Profile được review trước khi đánh giá mục tiêu 60fps; không cam kết trên mọi máy.
+
+## Phụ thuộc / phối hợp
+- Phụ thuộc: M5-W2.2.
+- Reviewer: M3.
+
+## Tham chiếu
+- [Thiết kế và WBS M5-W3.1](https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m5-board.md#L1036)
+- [Phân công và phụ thuộc Sprint 1](https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L232)
+",21600,source-m5-w3-1,domain-m5,executor-m5,priority-p2,s1-optional,2005,SCRUM-9
+Task,[M5-W9.1] Tích hợp lớp canvas lên Call Stage,"## Mục tiêu
+Gắn StageCanvasOverlay.tsx lên Call Stage, xử lý pointer và thay đổi kích thước.
+
+## Phạm vi
+Gắn StageCanvasOverlay.tsx lên video trong Call Stage.
+
+## Tiêu chí hoàn thành
+- React overlay phủ trên video.
+- Pointer events và resize listener được xử lý đúng vòng đời component.
+
+## Phụ thuộc / phối hợp
+- Phụ thuộc: M5-W1.2, M5-W3.1, M3-T3.2.
+- Reviewer: M3.
+
+## Tham chiếu
+- [Thiết kế và WBS M5-W9.1](https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m5-board.md#L1048)
+- [Phân công và phụ thuộc Sprint 1](https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L233)
+",21600,source-m5-w9-1,domain-m5,executor-m5,priority-p2,s1-optional,2006,SCRUM-9

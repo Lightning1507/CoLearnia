@@ -1,0 +1,37 @@
+﻿Issue Type,Summary,Description,Original Estimate,Labels,Labels,Labels,Labels,Labels,Work item ID,Parent
+Task,[M1-T1.1] Thống nhất contract xác thực và hồ sơ cá nhân,"## Mục tiêu
+Thống nhất dữ liệu và lỗi cho đăng ký, đăng nhập, phiên đăng nhập và hồ sơ cá nhân để FE/BE triển khai cùng một contract.
+
+## Phạm vi
+Xác định input/output, quyền, mã lỗi và giới hạn cho auth/profile.
+
+## Tiêu chí hoàn thành
+- Có ví dụ hợp lệ và không hợp lệ cho dữ liệu, quyền và lỗi.
+- Giới hạn chưa chốt có đầu mối và task xử lý; M4 review trước khi các bên dùng contract.
+
+## Phụ thuộc / phối hợp
+- Phụ thuộc: Không chờ task khác; kiểm điều kiện môi trường/contract trong kế hoạch Sprint 1.
+- Reviewer: M4.
+
+## Tham chiếu
+- [Thiết kế và WBS M1-T1.1](https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m1-workspace-auth.md#L447)
+- [Phân công và phụ thuộc Sprint 1](https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L128)
+",14400,source-m1-t1-1,domain-m1,executor-m1,priority-p0,s1-core,1001,SCRUM-5
+Task,"[M2-T1.1] Thống nhất interface danh tính, general và thu quyền","## Mục tiêu
+Thống nhất cách nhận danh tính, tạo general và kiểm/thu quyền giữa M2 với M1/M4.
+
+## Phạm vi
+Chốt identity, tạo general, quyền/thu quyền, giới hạn handler và thứ tự khóa chung.
+
+## Tiêu chí hoàn thành
+- Có input/output, lỗi và thứ tự khóa cho các bên sử dụng.
+- Có giới hạn xử lý handler và ví dụ thu quyền không phục hồi quyền cũ; M1 review kết quả.
+
+## Phụ thuộc / phối hợp
+- Phụ thuộc: Không chờ task khác; kiểm điều kiện môi trường/contract trong kế hoạch Sprint 1.
+- Reviewer: M1.
+
+## Tham chiếu
+- [Thiết kế và WBS M2-T1.1](https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m2-messaging-files.md#L513)
+- [Phân công và phụ thuộc Sprint 1](https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L150)
+",14400,source-m2-t1-1,domain-m2,executor-m2,priority-p0,s1-core,1003,SCRUM-6

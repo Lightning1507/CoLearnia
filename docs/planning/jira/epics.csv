@@ -1,0 +1,11 @@
+﻿Issue Type,Summary,Description,Labels
+Epic,"[M1] Tài khoản, Workspace và quyền truy cập","Miền M1: Tài khoản, Workspace và quyền truy cập. Bao phủ cả dự án, không chỉ Sprint 1. Nguồn phạm vi: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m1-workspace-auth.md.
+Owner miền M1; tài khoản sẽ được ánh xạ khi cấu hình Jira. Tiêu chí từng task theo proposal và kế hoạch sprint. Không cộng estimate cha vào tổng task con.",domain-m1
+Epic,"[M2] Chat, tệp và lưu trữ video","Miền M2: Chat, tệp và lưu trữ video. Bao phủ cả dự án, không chỉ Sprint 1. Nguồn phạm vi: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m2-messaging-files.md.
+Owner miền M2; tài khoản sẽ được ánh xạ khi cấu hình Jira. Tiêu chí từng task theo proposal và kế hoạch sprint. Không cộng estimate cha vào tổng task con.",domain-m2
+Epic,[M3] Cuộc gọi và media,"Miền M3: Cuộc gọi và media. Bao phủ cả dự án, không chỉ Sprint 1. Nguồn phạm vi: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m3-media.md.
+Owner miền M3; tài khoản sẽ được ánh xạ khi cấu hình Jira. Tiêu chí từng task theo proposal và kế hoạch sprint. Không cộng estimate cha vào tổng task con.",domain-m3
+Epic,[M4] Phiên họp và hoạt động nhóm,"Miền M4: Phiên họp và hoạt động nhóm. Bao phủ cả dự án, không chỉ Sprint 1. Nguồn phạm vi: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m4-session-groups.md.
+Owner miền M4; tài khoản sẽ được ánh xạ khi cấu hình Jira. Tiêu chí từng task theo proposal và kế hoạch sprint. Không cộng estimate cha vào tổng task con.",domain-m4
+Epic,[M5] Board và cộng tác trên nội dung chia sẻ,"Miền M5: Board và cộng tác trên nội dung chia sẻ. Bao phủ cả dự án, không chỉ Sprint 1. Nguồn phạm vi: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m5-board.md.
+Owner miền M5; tài khoản sẽ được ánh xạ khi cấu hình Jira. Tiêu chí từng task theo proposal và kế hoạch sprint. Không cộng estimate cha vào tổng task con.",domain-m5
