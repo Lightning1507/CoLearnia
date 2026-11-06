@@ -55,6 +55,8 @@ Policy/media phải có review chéo. Chưa gán CODEOWNERS khi nhóm chưa cung
 
 - Audit kiểm cả development tools. Không tự chạy audit --fix hoặc thêm ignore rộng chỉ để check xanh.
 - Gitleaks quét lịch sử Git với output đã che giá trị. Khi phát hiện secret thật: thu hồi/rotate, không chỉ xóa dòng ở commit mới.
+- Dữ liệu mẫu trong test phải rõ là giả; với ID chỉ kiểm định dạng, ưu tiên giá trị đơn giản như `'1'.repeat(24)` thay chuỗi ngẫu nhiên dễ bị nhận nhầm là secret. Khi thêm fixture auth/token, chạy Gitleaks cùng phiên bản CI trước khi push; `pnpm check` không gồm secret scan.
+- Chỉ thêm ngoại lệ vào `.gitleaksignore` sau khi xác minh là cảnh báo nhầm, ghi lý do và dùng fingerprint chính xác của commit/file/rule/dòng; không bỏ qua toàn file test hoặc tắt rule. Quét lại toàn lịch sử và kiểm rằng cùng dữ liệu ở vị trí khác vẫn bị phát hiện.
 - Dependabot tạo PR cập nhật theo tuần, không tự merge. Mỗi PR vẫn qua review và CI.
 - Native GitHub secret scanning/push protection và Dependabot alerts là các tính năng riêng; tài liệu này chỉ khẳng định các cấu hình thực hiện ở trên.
 

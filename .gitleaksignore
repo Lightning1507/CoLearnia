@@ -1,0 +1,4 @@
+# Verified false positive: hard-coded MongoDB ObjectId used as authSessionId
+# in a schema unit test; not an authentication token or API credential.
+# Scope this exception to the exact historical commit, file, rule and line.
+69bb8f3d1f555a548b63835a5ce5f4c7cde8c3bf:packages/contracts/src/auth.test.ts:generic-api-key:145
