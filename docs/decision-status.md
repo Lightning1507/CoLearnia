@@ -57,14 +57,14 @@ Chi tiết implementation thông thường được chọn/review trong task đ�
 
 **Làm rõ M1 ngày 03/11/2026:** đăng ký thành công tự đăng nhập; đi từ link mời thì quay lại lời mời và chủ động xác nhận, server kiểm lại hiệu lực trước cấp membership. Đăng nhập thông thường có danh sách/nút Tạo Workspace, kể cả chưa có Workspace. Lời mời Workspace dùng link, không hệ thống gửi mail hoặc nhập mã; PRIVATE cấp qua danh sách thành viên hiện có. Nguồn: [Workspace](product/workspace-channels.md). [Proposal M1](proposals/m1-workspace-auth.md) là Draft thiết kế/estimate, không tự chốt package/hash/endpoint hoặc lịch triển khai.
 
-| Điểm mở                                                                              | Khi nào cần quyết định                                                                                                            |
-| ------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
-| Thư viện/tham số hash; input limits còn thiếu như displayName; thời hạn auth session | Task auth/contracts trước handler tương ứng; plan mới chọn yêu cầu/hướng, chưa chọn mọi giá trị                                   |
-| Không có ứng viên host hoặc host tạm cũng mất mạng                                   | Áp policy live-session: giữ đích gốc, elect tạm ngay khi có người, hết mọi grace end; auth/access bị thu không tự hoàn            |
-| Retention audit/User/invitation/metadata phiên và participant                        | Trước vận hành dài hạn/cleanup đầy đủ; chưa tự TTL hoặc purge                                                                     |
-| Queue/pool/timeouts, quota frame theo board và tài nguyên máy                        | Trước chạy profile; số khởi đầu không là SLA hoặc capacity đạt                                                                    |
-| Người thật cho A–E, giờ làm, lịch bắt đầu/nộp, budget/VPS                            | Nhóm cung cấp khi chia việc/cam kết lịch hoặc mua dịch vụ; A–E trong plan chỉ tham khảo                                           |
-| GitHub Projects, labels/automation và branch protection thực tế                      | Issues nhận việc, PR lưu review; Projects do người dùng để sau harness. Quy ước repo không chứng minh đã bật settings trên GitHub |
+| Điểm mở                                                                     | Khi nào cần quyết định                                                                                                            |
+| --------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| Thư viện/tham số hash; cấu hình email/CSRF/limiter và thời hạn auth session | Task auth/contracts trước handler tương ứng; plan mới chọn yêu cầu/hướng, chưa chọn mọi giá trị                                   |
+| Không có ứng viên host hoặc host tạm cũng mất mạng                          | Áp policy live-session: giữ đích gốc, elect tạm ngay khi có người, hết mọi grace end; auth/access bị thu không tự hoàn            |
+| Retention audit/User/invitation/metadata phiên và participant               | Trước vận hành dài hạn/cleanup đầy đủ; chưa tự TTL hoặc purge                                                                     |
+| Queue/pool/timeouts, quota frame theo board và tài nguyên máy               | Trước chạy profile; số khởi đầu không là SLA hoặc capacity đạt                                                                    |
+| Người thật cho A–E, giờ làm, lịch bắt đầu/nộp, budget/VPS                   | Nhóm cung cấp khi chia việc/cam kết lịch hoặc mua dịch vụ; A–E trong plan chỉ tham khảo                                           |
+| GitHub Projects, labels/automation và branch protection thực tế             | Issues nhận việc, PR lưu review; Projects do người dùng để sau harness. Quy ước repo không chứng minh đã bật settings trên GitHub |
 
 ## Harness và nguồn lịch sử
 
@@ -117,3 +117,7 @@ M3 finalize artifact tạm; M2 dùng private storage adapter, xác minh byte và
 Bỏ chuyển owner Workspace khỏi MVP; người tạo giữ OWNER, cấp/thu ADMIN hỗ trợ. FR-02-08/UC-WS-11 ngừng áp dụng, không tái dùng mã; còn 57 FR, M1 17 FR và 47 UC hiện hành. Chuyển host cuộc họp giữ nguyên. Q9 đã đóng; thiết kế transfer Workspace cũ trong review lịch sử không là yêu cầu implementation.
 
 **Link mời Workspace — chốt 04/11/2026:** một link hiện hành, sao chép lại được, không hết hạn/giới hạn lượt; owner/admin tắt hoặc tạo lại để vô hiệu link cũ. Không duyệt người nhận, vẫn đăng nhập và xác nhận tham gia; PRIVATE không tự cấp. Thay thiết kế nhiều link có hạn/lượt. Cách lưu/tái tạo token để sao chép lại còn chờ M1 review trước code; xem [nguồn nghiệp vụ](product/workspace-channels.md) và [thiết kế dữ liệu](database/collection-design.md#35-invitations).
+
+## Contract auth/profile — 06/11/2026
+
+PM đồng ý giới hạn tên 1–80 Unicode code point sau trim; mật khẩu mới 15–128, giữ nguyên Unicode/khoảng trắng, không bắt trộn loại ký tự. [Contract SCRUM-12](contracts/auth-profile.md) và schema input/output đã được soạn để M4 review; chưa là endpoint hoặc hành vi thu phiên đã chạy. Chuẩn hóa email là đề xuất kỹ thuật trong PR; cấu hình CSRF, hash/limiter, retry và upload avatar tiếp tục theo owner/task tại contract.
