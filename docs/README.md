@@ -16,6 +16,8 @@
 
 **Sprint/milestone:** khung [3 sprint ×2 tuần](planning/milestones-and-sprints.md) và [Sprint 1: task, ưu tiên và phụ thuộc](planning/sprint-1.md). Có 80 task chính, 6 task mở rộng; Jira giữ trạng thái và assignee thực tế.
 
+**Dữ liệu nhập Jira Sprint 1:** dùng [bộ CSV và hướng dẫn ánh xạ](planning/jira/README.md): 80 task chính, 6 task tùy sức, Epic và danh sách phụ thuộc. Đã nhập 5 Epic và 80 task chính; xem hướng dẫn cập nhật nội dung theo Jira key và hoàn tất Epic, priority, sprint, liên kết phụ thuộc.
+
 **Chuẩn bị task Jira:** xem [tổng hợp WBS và điểm giao giữa 5 miền](planning/task-consolidation.md). Có 247 task sau rà soát, đầu mối cung cấp/tích hợp/review và các việc nền cần làm rõ; chưa là sprint hoặc bảng trạng thái. PM chốt kế hoạch, PR vẫn cần review.
 
 **Viết API/backend:** dùng [quy ước chung](contracts/api-conventions.md) và [mã lỗi](contracts/error-codes.md); schema từng miền chốt theo task với consumer.

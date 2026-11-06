@@ -2,21 +2,57 @@
 
 **Chốt khung ngày 05/11/2026:** 3 sprint, mỗi sprint 2 tuần; PM chốt ưu tiên và phân công, PR/contract vẫn cần reviewer. Sprint 1 có danh sách cụ thể tại [kế hoạch Sprint 1](sprint-1.md); Sprint 2–3 là dự kiến và được điều chỉnh theo kết quả thực chạy.
 
-Tuần 1–2 / 3–4 / 5–6 tính từ ngày bắt đầu sprint trên Jira. Định hướng trước đó là bắt đầu thứ Sáu 06/11; chưa coi ngày báo cáo thực tế đã được cung cấp. Không tạo lịch/sprint trên Jira trong lượt tài liệu này. Jira giữ status/assignee/ngày; repo giữ mục tiêu, tiêu chí và cơ sở xếp việc.
+**PM cập nhật ngày 06/11:** Sprint 1 bắt đầu từ **sáng 06/11/2026**. Các task contract, dữ liệu, backend và thử nghiệm độc lập triển khai ngay khi đủ đầu vào, không chờ Figma Make hoàn tất. Chiều/tối 06/11 dự kiến có bản Make để rà code xuất và tích hợp component dùng chung, sau đó ghép từng màn theo task. Sprint review và retrospective vào tối **20/11**; sprint kết thúc sau buổi review. Khoảng này dài hơn đúng hai tuần vài giờ; PM cập nhật giờ cụ thể trên Jira. Sprint 2–3 tiếp tục theo nhịp hai tuần, lịch chi tiết chốt khi lập sprint. Ngày báo cáo học phần chưa được cung cấp.
+
+Sprint 1 có [mốc bàn giao theo ngày](sprint-1.md#mốc-bàn-giao-theo-ngày): 08/11 giao nền dùng chung, 13/11 kiểm luồng đầu tiên và PoC, 17/11 có bản tích hợp, 19/11 chốt bản demo, tối 20/11 review. Đây là ngày mục tiêu để kiểm đầu ra và xử lý lệch kế hoạch; không phải hạn áp cho mọi task.
+
+Jira giữ trạng thái, assignee và lịch thực tế. Tài liệu này giải thích mục tiêu, kết quả cần bàn giao và cách nghiệm thu; không dùng để báo cáo tiến độ hằng ngày.
 
 Nguồn: [379 giờ việc chính Sprint 1](sprint-1.md), [247 task và estimate](task-consolidation.md), [FR/AC](../product/functional-requirements.md), [API/backend](../contracts/api-conventions.md), [capacity](../capacity.md). Không chia 1.378 giờ thành ba phần bằng nhau hoặc coi mỗi người có cùng tải chỉ vì số task giống nhau.
 
-## 1. Ba milestone
+## 1. Mục tiêu và kết quả của từng sprint
 
-| Mốc / thời điểm                                 | Sprint Goal                                                                                        | Tiêu chí nghiệm thu và demo                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| ----------------------------------------------- | -------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **MS1 — Luồng đầu tiên chạy thật**, cuối tuần 2 | Người dùng đăng nhập, mở Workspace và sử dụng chat TEXT cùng cuộc gọi MAIN cơ bản trên staging.    | 1) Register tự đăng nhập, login/reload/logout và HTTP/socket từ chối phiên không hợp lệ. 2) Tạo Workspace/OWNER/general/conversation nguyên tử, rollback khi lỗi; tạo/mở kênh LIVE đúng quyền. 3) Hai danh tính có quyền gửi/đọc TEXT, retry không nhân tin, history/catch-up có kiểm ranh giới; người ngoài bị từ chối. 4) MAIN: lobby, mic/camera/share, một nguồn share tại một thời điểm, rời/end/revoke/resync tối thiểu; bộ kiểm 5 người, hai mạng và forced TURN có evidence. 5) PoC recording cố định và writer/sink có kết luận khả thi hoặc blocker cụ thể, chưa tuyên bố recording hoàn thành.                                                                                                                                      |
-| **MS2 — Học nhóm tích hợp**, cuối tuần 4        | Lớp học được trong DISCUSSION và ACTIVITY, trao đổi và giải thích trên nguồn chia sẻ đúng phạm vi. | 1) Host transfer/tạm/hoàn quyền đúng quyết định; DISCUSSION auto-create/explicit join/close khi rỗng, không share và host không vào hỗ trợ. 2) ACTIVITY manual/random preview, start/partial failure, deadline tự về MAIN, vào lại đúng nhóm; help/announcement đúng audience. 3) Chat cuộc họp Everyone/Host, freeze/vẽ/resume nhóm, MAIN chỉ host vẽ; không rò media/chat/file/board giữa các phạm vi. 4) File/DM/thread và các luồng vào Workspace qua link được ghép; avatar/profile/password và quản trị quyền phát triển theo phụ thuộc, phần còn lại phải có task cụ thể trước MS3. 5) Mục tiêu recording là ghi MAIN → stop/end → R2/READY → xem/tua đúng quyền; chỉ chốt task pipeline sau PoC, ghi rõ phần chưa đạt nếu còn blocker. |
-| **MS3 — MVP sẵn sàng báo cáo**, cuối tuần 6     | Team demo được một hành trình MVP xuyên suốt trên bản deploy đã kiểm, hiểu rõ giới hạn hệ thống.   | 1) Hoàn tất các FR trong scope, gồm quản trị/profile/avatar/password, thu quyền xuyên miền và recording; từng FR có AC/evidence tương ứng, không chỉ có UI. 2) F-05 đầy đủ theo capacity: 1 host + hai nhóm ×2, thử riêng DISCUSSION/ACTIVITY, camera/share, 30 phút/hai mạng/forced TURN và ca isolation. 3) Kiểm lỗi/reconnect/host/cleanup/restart, rollback app và giới hạn vận hành; người demo làm theo runbook không sửa DB thủ công. 4) Đo C-10→C-25; chỉ thử 50 nếu 25 đạt. Công bố đúng profile đã đạt, không lấy số mục tiêu làm năng lực đã có. 5) Hoàn thành kịch bản báo cáo, bản build/commit demo và danh sách giới hạn/lỗi còn lại.                                                                                           |
+**Sprint Goal** trả lời: cuối sprint, người dùng hoặc team làm được điều gì có giá trị? **Tiêu chí nghiệm thu** cho biết cần kiểm gì để xác nhận kết quả đó. Các công việc kỹ thuật và thử nghiệm hỗ trợ mục tiêu được giữ trong kế hoạch task, không ghép tất cả vào câu goal.
 
-MS2 và MS3 là mục tiêu, không tự hạ tiêu chí khi thiếu thời gian. Nếu recording hoặc FR bắt buộc chưa đạt, milestone chưa đạt đầy đủ; PM xử lý lại kế hoạch với bằng chứng, không tự đánh dấu hoàn tất hoặc âm thầm bỏ tính năng. Không cam kết đạt 25/50 người trước đo tải; MVP chức năng và capacity là hai kết quả khác nhau.
+### MS1 — Phiên bản cộng tác đầu tiên · cuối Sprint 1
 
-Kịch bản trình bày MS1 khoảng 15–20 phút và danh sách evidence nằm tại [output/demo Sprint 1](sprint-1.md#7-output-và-kịch-bản-demo-cuối-sprint-1). PoC recording có checkpoint cuối tuần đầu: kết quả ban đầu hoặc blocker cụ thể; cuối sprint có kết luận trong timebox. Đây là mốc kiểm rủi ro, không yêu cầu video sản phẩm READY ngay tuần đầu.
+**Sprint Goal:** Đưa CoLearnia từ bản mẫu giao diện thành phiên bản đầu tiên dùng được, để một nhóm 5 người có thể đăng nhập, vào cùng Workspace, nhắn tin và gọi trực tuyến có mic, camera, chia sẻ màn hình.
+
+**Kết quả cần kiểm khi demo:**
+
+1. **Tài khoản dùng được:** đăng ký xong có phiên đăng nhập; đăng nhập, tải lại trang và đăng xuất hoạt động đúng. HTTP và socket từ chối phiên không hợp lệ.
+2. **Workspace được tạo đầy đủ:** Workspace mới có OWNER, kênh `general` và hội thoại đi kèm. Nếu tạo lỗi thì hoàn tác toàn bộ, không để dữ liệu dở dang. Tạo và mở kênh LIVE đúng quyền.
+3. **Nhắn tin thật giữa hai tài khoản:** người có quyền gửi, đọc lịch sử và nhận tin mới trong kênh TEXT; gửi lại sau lỗi không nhân đôi tin. Kiểm ranh giới lịch sử/nhận bù tin; người ngoài không đọc được nội dung.
+4. **Gọi ở phòng chung (MAIN):** năm người dùng được màn kiểm thiết bị trước khi vào, mic, camera và chia sẻ màn hình. Chỉ một nguồn share tại một thời điểm; kiểm rời phòng, kết thúc cuộc họp, thu quyền và đồng bộ lại sau mất kết nối ở mức cơ bản. Có kết quả thử qua hai mạng và buộc kết nối qua TURN.
+5. **Có kết luận thử nghiệm ghi hình:** thử nguồn ghi cố định và bộ phận nhận/lưu dữ liệu ghi hình; báo rõ khả thi tới đâu, số đo và vấn đề còn chặn. Đây là PoC để quyết định cách triển khai Sprint 2, chưa phải tính năng ghi/xem video hoàn chỉnh.
+
+Bản demo chạy trên **staging** — môi trường triển khai thử để cả team truy cập. Kịch bản MS1 khoảng 15–20 phút và danh sách kết quả kiểm cần lưu nằm tại [demo Sprint 1](sprint-1.md#7-output-và-kịch-bản-demo-cuối-sprint-1). PoC recording có mốc kiểm cuối tuần đầu: cần kết quả ban đầu hoặc lỗi tái hiện được; cuối sprint phải có kết luận trong thời gian đã dành cho task.
+
+### MS2 — Học và trao đổi trong nhóm nhỏ · cuối Sprint 2, dự kiến
+
+**Sprint Goal:** Cho phép lớp học chuyển từ phòng chung sang các nhóm nhỏ để trao đổi, cùng giải thích trên nội dung chia sẻ và trở lại phòng chung khi kết thúc hoạt động.
+
+**Kết quả cần kiểm khi demo:**
+
+1. **Vai trò host hoạt động đúng:** chuyển host, chọn host tạm khi mất kết nối và hoàn quyền khi host cũ quay lại theo quy tắc đã chốt.
+2. **Hai cách học nhóm rõ ràng:** DISCUSSION được tạo khi yêu cầu hợp lệ, từng người chủ động vào, theo dõi bài giảng và không share riêng; nhóm từng có người sẽ đóng khi không còn ai. ACTIVITY cho phép chia thủ công hoặc xem trước kết quả random, chỉnh trước khi bắt đầu; hết giờ tự về MAIN, thành viên được vào lại đúng nhóm. Kiểm cả trường hợp bắt đầu lượt bị lỗi một phần, hỗ trợ nhóm và thông báo đúng người nhận. Host chỉ vào hỗ trợ ACTIVITY.
+3. **Trao đổi và vẽ đúng nơi:** chat cuộc họp có Everyone/Host; nhóm dừng hình, vẽ và trở lại trực tiếp được. MAIN chỉ host được vẽ. Nội dung media, chat, file và board không lọt sang nhóm khác.
+4. **Ghép các luồng liên quan:** file, DM, thread và tham gia Workspace qua link. Hồ sơ, avatar, đổi mật khẩu và quản trị quyền tiếp tục theo phụ thuộc; phần chưa hoàn tất phải được phân thành task cụ thể trước MS3.
+5. **Triển khai ghi hình theo kết luận PoC:** mục tiêu là ghi MAIN, dừng/kết thúc, lưu lên R2 ở trạng thái READY và xem/tua đúng quyền. Chốt task pipeline sau PoC; nếu còn vấn đề chặn thì ghi rõ phần chưa đạt.
+
+### MS3 — MVP sẵn sàng báo cáo · cuối Sprint 3, dự kiến
+
+**Sprint Goal:** Hoàn thiện bản CoLearnia đã triển khai để team trình diễn trọn vẹn một buổi học, từ trao đổi trong Workspace đến gọi, học nhóm và xem lại bản ghi, với giới hạn sử dụng được kiểm chứng.
+
+**Kết quả cần kiểm khi báo cáo:**
+
+1. **Đủ chức năng MVP đã chốt:** gồm quản trị, hồ sơ/avatar/đổi mật khẩu, thu quyền xuyên miền và recording. Mỗi FR có tiêu chí chấp nhận cùng kết quả kiểm tương ứng.
+2. **Kiểm trọn luồng học nhóm F-05:** một host và hai nhóm, mỗi nhóm hai người; thử riêng DISCUSSION và ACTIVITY, camera/share, 30 phút, hai mạng và forced TURN. Xác nhận các nhóm không nhận nội dung riêng của nhau.
+3. **Vận hành và xử lý lỗi:** kiểm mất kết nối, host, thu tài nguyên, khởi động lại và quay về bản app trước khi cần. Người demo chạy theo hướng dẫn, không sửa DB thủ công trong buổi trình bày.
+4. **Đo năng lực thực tế:** thử C-10 rồi C-25; chỉ thử 50 người nếu 25 đạt. Báo đúng cấu hình và số người đã kiểm, không lấy mục tiêu làm năng lực đã có.
+5. **Chuẩn bị báo cáo:** có kịch bản, bản build/commit dùng để demo, danh sách lỗi và giới hạn còn lại.
+
+Sprint 2–3 được điều chỉnh theo kết quả Sprint 1. Nếu một chức năng bắt buộc chưa đạt, ghi rõ milestone chưa hoàn tất và cập nhật kế hoạch; không tự bỏ tiêu chí để đánh dấu đạt. Khả năng phục vụ 25/50 người chỉ được xác nhận sau đo tải, riêng với kết quả hoàn thiện chức năng MVP.
 
 ### MS1 bao phủ tới đâu?
 
@@ -69,9 +105,9 @@ S06 trong WBS được cụ thể hóa thành ba task chuẩn bị chung, không
 
 **12 giờ người thực hiện là phần bổ sung** ngoài 247 task/1.378 giờ, không giấu trong buffer. Reviewer/người dự tham gia dùng ngân sách review/điều phối tương ứng; nếu cần làm slide/báo cáo học phần riêng lớn hơn thì tách và ước lượng khi có yêu cầu, không giả đã tính đủ. 12 giờ PM Sprint 1 cũng là khoản lịch riêng ngoài WBS; công PM của Sprint 2–3 còn cần theo dõi/đặt chỗ khi lập sprint, không gọi 1.378 giờ là toàn bộ dự án.
 
-- Daily ngắn: đang bảo vệ đầu ra nào, đã chạy được gì, blocker/phụ thuộc/estimate có thay đổi không. Cập nhật Jira trước daily; blocker không chờ daily.
+- Daily ngắn: đã hoàn thành gì, hôm nay làm gì để tiến tới Sprint Goal, đang chờ ai hoặc có nguy cơ trễ phần nào. Cập nhật Jira trước daily; blocker không chờ daily.
 - Giữa sprint: xem provider thật đã tới đâu và có ghép được luồng không; không chỉ cộng số task Done.
 - Cuối mỗi sprint: demo theo milestone, đối chiếu AC/evidence, ghi phần chưa đạt; rút kinh nghiệm ngắn rồi cập nhật sprint tiếp theo.
-- Khi đưa lên Jira: tạo sprint/goal/milestone theo bản này; liên kết task nguồn và `blocks / is blocked by` theo Sprint 1. Chưa tạo sprint/ticket tự động trong lượt này.
+- Jira đã có 5 Epic, 80 task chính và 171 liên kết phụ thuộc được PM xác nhận đã kiểm. Tiếp tục đưa task vào Sprint 1, đặt goal/lịch và sắp thứ tự nhận việc. Xem [hướng dẫn Jira](jira/README.md).
 
 Nhóm áp dụng nhịp sprint phù hợp đồ án, PM giữ quyền chốt kế hoạch theo thống nhất hiện tại; không coi đây là triển khai đầy đủ mọi vai trò Scrum. [Scrum Guide](https://scrumguides.org/scrum-guide.html) là nguồn tham khảo về Sprint Goal, kiểm tra/thích nghi và việc chia công việc nhỏ; lịch/task cụ thể là lựa chọn của CoLearnia.

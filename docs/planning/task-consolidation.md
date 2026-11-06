@@ -1,10 +1,10 @@
 # Tổng hợp task và điểm giao giữa 5 miền
 
-**Ngày:** 05/11/2026. **Phạm vi:** bước 1 chuẩn bị kế hoạch thực thi, trước quy ước API chung và lập sprint. PM chốt phân công theo miền; không mở thêm vòng team duyệt toàn bộ kế hoạch. Reviewer vẫn kiểm PR và contract liên quan, không bỏ cổng review code.
+**Cập nhật:** 05/11/2026. Tài liệu gom task từ năm proposal để PM chọn việc, phân công và xem các phần cần phối hợp. Mỗi task có đầu ra, giờ dự kiến, phụ thuộc và cách kiểm hoàn thành.
 
-Kế hoạch sau bước tổng hợp: [milestone/3 sprint](milestones-and-sprints.md) và [Sprint 1](sprint-1.md). Sprint 1 chốt người thực hiện và phụ thuộc tối thiểu cụ thể; owner miền/reviewer mặc định dưới đây vẫn dùng khi chưa có phân công riêng.
+**Đọc theo nhu cầu:** mục 1–2 giải thích khối lượng và trách nhiệm; mục 3–4 làm rõ phần dùng chung; mục 5 là WBS để tra cứu task cụ thể. Để nhận việc trong đợt hiện tại, dùng [Sprint 1](sprint-1.md); để hiểu mục tiêu cả sáu tuần, dùng [kế hoạch ba sprint](milestones-and-sprints.md).
 
-Tài liệu tổng hợp WBS để chọn việc và nhập Jira, không giữ trạng thái, ngày chạy, sprint hoặc tiến độ song song với Jira. Chưa tạo ticket hay gán mã Jira. Mã `M1-T6.1` là mã truy vết nội bộ, không phải số ticket. Nội dung này bổ sung kế hoạch thực thi, không đổi nghiệp vụ hoặc chứng minh feature đã chạy.
+PM chốt kế hoạch; reviewer vẫn kiểm PR và contract thuộc miền mình. **Jira giữ trạng thái, assignee và lịch thực tế.** Đã có 80 task Sprint 1 trên Jira; mã như `M1-T6.1` là mã WBS để truy vết, mã như `SCRUM-12` là ticket thực tế. Xem [mapping](jira/jira-key-mapping.csv). Các task chưa được chọn cho sprint tiếp tục là dự kiến; tài liệu thiết kế không chứng minh chức năng đã chạy.
 
 Nguồn: [quy ước 5 proposal](../proposals/README.md#quy-ước-chung-trước-khi-lập-sprint), [phân miền và FR](../product/delivery-domains.md), [FR/AC](../product/functional-requirements.md), [contracts](../contracts/README.md), [kiến trúc](../architecture.md). Bảng task giữ đầu ra, giờ và điều kiện trong WBS hiện hành; các điều chỉnh phụ thuộc tại mục 3 dưới đây được áp dụng khi lập ticket.
 
@@ -374,4 +374,6 @@ Nguồn thiết kế và truy vết FR/AC: [m5-board.md](../proposals/m5-board.m
 
 ## 6. Bước tiếp theo
 
-S01 đã có [quy ước API/mã lỗi chung](../contracts/api-conventions.md); schema và middleware nghiệp vụ còn triển khai theo task nền. Đã có [ba milestone](milestones-and-sprints.md) và [80 task chính Sprint 1](sprint-1.md), kèm 6 task tùy sức. Bước tiếp theo là đóng contract cụ thể của các task đó, nhập Jira và gắn dependency trước code phụ thuộc. Những việc tuần sau chưa cần thiết kế chi tiết hết ngay. Jira giữ trạng thái và phân công thực tế; tài liệu này chỉ giữ cơ sở phân rã và quyết định trách nhiệm.
+Đã có [quy ước API/mã lỗi chung](../contracts/api-conventions.md), [ba milestone](milestones-and-sprints.md) và [kế hoạch Sprint 1](sprint-1.md). PM đã xác nhận nhập 80 task chính và kiểm đủ 171 liên kết phụ thuộc trên Jira; sáu task tùy sức chưa nhập.
+
+Tiếp theo hoàn thiện Sprint 1 trên Jira, xác định việc đầu tiên của mỗi người và bàn giao các contract cụ thể theo task. Chọn task Sprint 2 sau khi có kết quả tích hợp/PoC; chưa cần thiết kế chi tiết toàn bộ phần còn lại ngay bây giờ. Giữ WBS để tra nguồn và trách nhiệm, cập nhật tiến độ trên Jira.

@@ -1,0 +1,19 @@
+﻿Issue key,Summary,Description
+SCRUM-12,[M1-T1.1] Thống nhất contract xác thực và hồ sơ cá nhân,"Mục tiêu
+Thống nhất dữ liệu và lỗi cho đăng ký, đăng nhập, phiên đăng nhập và hồ sơ cá nhân để FE/BE triển khai cùng một contract.
+
+Phạm vi
+Xác định input/output, quyền, mã lỗi và giới hạn cho auth/profile.
+
+Tiêu chí hoàn thành
+• Có ví dụ hợp lệ và không hợp lệ cho dữ liệu, quyền và lỗi.
+• Giới hạn chưa chốt có đầu mối và task xử lý; M4 review trước khi các bên dùng contract.
+
+Phụ thuộc / phối hợp
+• Phụ thuộc: Không chờ task khác; kiểm điều kiện môi trường/contract trong kế hoạch Sprint 1.
+• Reviewer: M4.
+
+Tham chiếu
+• Thiết kế và WBS M1-T1.1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m1-workspace-auth.md#L447
+• Phân công và phụ thuộc Sprint 1: https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/planning/sprint-1.md#L128
+"
