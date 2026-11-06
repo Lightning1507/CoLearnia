@@ -12,6 +12,8 @@
 
 ## Chọn nguồn theo việc
 
+**Thiết kế và tổ chức frontend dùng chung:** xem [Frontend Design & Development Standards](design-system/frontend/README.md) — đề xuất 10 phần về UI/UX, token/component, kiến trúc code và workflow, cùng lộ trình chuyển từng phần code export Figma vào app chính. Chưa là bộ component đã triển khai hoặc thiết kế được team duyệt cuối.
+
 **Tiếp tục UI hoặc bàn giao Figma:** dùng [hướng dẫn bàn giao và lộ trình hoàn thiện UI](ui/figma-handoff.md), cùng [hiện trạng Figma và các luồng đã kiểm](ui/figma-current-state.md). Bản bàn giao chỉ cách đọc nguồn, chia đợt, viết prompt và nghiệm thu; bản hiện trạng ghi kết quả thực tế.
 
 **Sprint/milestone:** khung [3 sprint ×2 tuần](planning/milestones-and-sprints.md) và [Sprint 1: task, ưu tiên và phụ thuộc](planning/sprint-1.md). Có 80 task chính, 6 task mở rộng; Jira giữ trạng thái và assignee thực tế.
