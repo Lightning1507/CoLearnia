@@ -97,7 +97,7 @@ Danh sách có khả năng tăng dùng cursor opaque, không gửi toàn bộ l�
 - Ack một lần cho một lượt xử lý. Nếu chỉ xác nhận bắt đầu công việc thì trả trạng thái đang chạy và ID theo dõi; không dùng ack thành công để chứng minh upload/recording đã READY.
 - Event có schema và context tối thiểu để consumer loại packet cũ. Không bắt chat TEXT/DM mang epoch/callGeneration của LIVE. Không phát event private vào room Workspace để FE tự lọc.
 - Mất ack hoặc reconnect không bảo đảm phát lại: client resync snapshot/history phù hợp, dedupe bằng ID/version đã chốt. Command quyền cũ không replay mù sau reconnect. Room Socket.IO chỉ là nơi gửi event, không là nguồn quyền.
-- Không bọc payload nghiệp vụ bằng `z.unknown()` rồi coi đã hoàn thành contract. Envelope phiên hiện có chỉ là scaffold; mỗi command phải ràng payload và schema ID/context đúng miền.
+- Mỗi command phải ràng payload và schema ID/context đúng miền. Xem [contract phiên họp](session-commands.md) cho cách tạo envelope strict và ack riêng theo lệnh.
 
 ## 8. Cách viết backend
 
@@ -129,7 +129,7 @@ Mỗi task giao tiếp cần một mô tả ngắn trong proposal/task/PR, đặ
 5. Ví dụ thành công, validation, sai quyền/không thấy resource, stale/retry và cleanup khi liên quan.
 6. Consumer review cùng PR; build contracts trước typecheck consumer. Có test service/API với hai identity khác quyền; mock/schema pass không là nghiệm thu tích hợp.
 
-**Đã có sau lượt này:** quy ước và bảng mã lỗi, schema envelope/factory và hằng status chung. **Chưa có:** toàn bộ endpoint, middleware lỗi nghiệp vụ, auth/CSRF, idempotency store, enum đích và payload từng miền. Scaffold RESTRICTED/FREE-MODERATED phải đổi trong task contract liên quan trước khi có consumer nghiệp vụ; không dùng làm quyết định mới.
+Lượt S01 cung cấp quy ước và bảng mã lỗi, schema envelope/factory và hằng status chung. Các task contract tiếp theo bổ sung schema theo từng miền. Đối chiếu [mục lục contracts](README.md) trước khi dùng schema để triển khai endpoint hoặc handler.
 
 S01 trong WBS có đầu ra quy ước này; M1 triển khai phần nền dùng chung, M4 review, từng owner chốt lỗi/payload của miền mình với consumer. Lập sprint có thể tiếp tục; chỉ đóng chi tiết contract của các task sắp triển khai, không đợi mọi API tương lai.
 
