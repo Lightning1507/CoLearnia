@@ -1,0 +1,10 @@
+{
+  "description": "Ứng dụng giúp sinh viên cộng tác học tập qua kênh chat, tin nhắn riêng, chia sẻ tệp và thảo luận theo luồng trong workspace nhóm.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}
