@@ -2,7 +2,7 @@
 
 ## Nhánh và PR
 
-- Nhận task theo [AI workflow](docs/ai/workflow.md) và [task brief](docs/ai/task-template.md); GitHub Issues là nơi nhận việc/trạng thái. GitHub Projects sẽ được cấu hình sau; bộ harness chưa tạo Project hoặc automation.
+- Nhận task trên Jira theo [AI workflow](docs/ai/workflow.md) và [task brief](docs/ai/task-template.md). Cập nhật dự kiến bàn giao/blocker trong Comments của ticket. Khi gửi review, gắn PR vào Jira, request reviewer trên GitHub và gửi link vào nhóm kèm tag người review chính; xem [quy trình và mẫu comment](docs/ai/workflow.md#cập-nhật-tiến-độ-và-gửi-review).
 - `main` là nhánh tích hợp. Tạo nhánh `feat/<feature-id>-<short-name>`, `fix/<short-name>` hoặc `chore/<short-name>`.
 - Commit: `feat(scope): ...`, `fix(scope): ...`, `chore(scope): ...`, `docs(scope): ...`, `test(scope): ...`.
 - PR nhỏ theo một đầu ra có thể kiểm tra; có feature ID, reviewer và lệnh/evidence đã chạy.

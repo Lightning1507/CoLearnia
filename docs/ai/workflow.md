@@ -10,13 +10,56 @@ AGENTS/workflow/guard là quy ước vận hành harness, không phải nghiệp
 
 ## Nhận việc, triển khai, review
 
-1. GitHub Issue giữ owner/reviewer/feature ID, trạng thái và dependency. Trước chia task/estimate, đối chiếu [FR và AC](../product/functional-requirements.md) cùng PB/UC và flow UI; ghi rõ FR/AC task bao phủ, không coi mỗi FR bắt buộc là một Issue. Dev ước lượng với giả định/rủi ro, lead tổng hợp cả review/test/tích hợp trước cam kết sprint. Dùng [task brief](task-template.md); trong thời gian chưa có issue, ghi brief trong yêu cầu/PR, không tạo mã issue giả.
-2. GitHub Projects sẽ là góc nhìn quản lý trên Issues/PR sau khi nhóm cấu hình. Đợt harness chưa tạo Project, labels, automation hoặc tài khoản bot. Không dùng một sổ task Markdown khác cạnh tranh trạng thái với GitHub.
+1. Jira giữ người thực hiện, reviewer, mã task, trạng thái và phụ thuộc. Trước chia task/estimate, đối chiếu [FR và AC](../product/functional-requirements.md) cùng PB/UC và flow UI; ghi rõ FR/AC task bao phủ, không coi mỗi FR bắt buộc là một ticket. Dev ước lượng với giả định/rủi ro, PM tổng hợp cả review/test/tích hợp trước cam kết sprint. Dùng [task brief](task-template.md); khi chưa có ticket, ghi brief trong yêu cầu/PR, không tạo mã giả.
+2. GitHub giữ code, PR, nhận xét và bằng chứng review; Jira giữ tiến độ thực tế. Tài liệu planning giữ cơ sở kế hoạch, không tạo bảng trạng thái khác cạnh tranh với Jira.
 3. Tạo nhánh theo [CONTRIBUTING](../../CONTRIBUTING.md); một checkout chỉ một tác vụ sửa cùng lúc. Khi cần song song cùng máy, dùng worktree và cổng/tài nguyên dev tách biệt; không kill process khác hoặc xóa volume cho nhanh.
 4. Owner miền chuẩn bị proposal, contract dự kiến, task sơ bộ và estimate; bên cung cấp/bên dùng review rồi hoàn thiện task/estimate trước cam kết. Dùng [ranh giới miền và đầu ra review contract](../product/delivery-domains.md); mỗi task một owner, ghi phần AC và dependency. Có thể làm phần độc lập/fixture theo contract dự kiến, nhưng mock không thay nghiệm thu tích hợp thật. Chốt contract với bên dùng trước code phụ thuộc. Feature có nhiều phiên/state phức tạp mới cần plan theo mẫu. Tự xử lý lựa chọn implementation thông thường trong phạm vi đã giao.
 5. Chạy check gần thay đổi; xem diff, kiểm tiêu chí cả thành công/từ chối. Trước PR chạy `pnpm check`; media/runtime/Docker thêm check theo runbook và phạm vi thay đổi.
 6. PR nhỏ, dẫn issue/feature và bằng chứng; title bằng tiếng Anh theo `<type>(<scope>): <short description> (#<issue>)`, chỉ thêm số Issue thật, không giữ tên nhánh làm title. Description bằng tiếng Việt theo [CONTRIBUTING](../../CONTRIBUTING.md#nhánh-và-pr) và [PR template](../../.github/pull_request_template.md). Giữ What/Why/Environment Variables/Developer Test; How và Limits tùy task, không bắt đủ heading. Env không đổi ghi “Không có”; test ghi loại/lệnh/kết quả thật và phần chưa kiểm. Viết theo thay đổi cuối cùng, đủ để reviewer hiểu mà không cần chat cũ; ít nhất một thành viên khác review. Auth/policy/media cần reviewer chéo theo plan. Không tự approve/merge hoặc bỏ required checks.
 7. Owner giải thích được flow, contract, quyền và cleanup. Cập nhật nguồn đúng miền, bàn giao điều đã/chưa kiểm. CI xanh không chứng minh mọi hành vi đúng.
+
+## Cập nhật tiến độ và gửi review
+
+Mỗi người cập nhật tại **Activity → Comments** của ticket Jira ở các thời điểm dưới đây. Description giữ mục tiêu, phạm vi và tiêu chí hoàn thành; không thay bằng nhật ký tiến độ.
+
+### Khi bắt đầu task
+
+Kiểm đầu vào, chuyển sang **In Progress** và comment:
+
+```text
+Dự kiến gửi PR: [ngày/buổi hoặc giờ].
+Đầu vào còn chờ: [nội dung và người cung cấp] / Không có.
+```
+
+Estimate là công sức dự kiến; thời điểm gửi PR cần tính cả giờ làm thực tế và đầu vào. Nếu task kéo dài sang ngày tiếp theo, cập nhật ngắn phần đã làm, phần còn thiếu và dự kiến bàn giao.
+
+### Khi bị block hoặc có nguy cơ trễ
+
+Báo ngay trên ticket; nếu cần hỗ trợ hoặc ảnh hưởng người khác, nhắn nhóm và tag người liên quan, không đợi tới cuối ngày.
+
+```text
+Đã hoàn thành: …
+Đang vướng: …
+Cần hỗ trợ từ: [tên người].
+Dự kiến bàn giao mới: … / Chưa xác định, cần làm rõ …
+```
+
+### Khi gửi review
+
+Sau khi tự kiểm và chuẩn bị PR theo template:
+
+1. Gắn link PR vào ticket Jira, chuyển **In Review** và comment theo mẫu bên dưới.
+2. Request người review chính trong **Reviewers** trên GitHub theo phân công của task. Nếu đổi assignee khiến reviewer trùng người làm, PM phân công reviewer khác. PR ảnh hưởng contract cần mời thêm bên sử dụng cùng kiểm.
+3. **Gửi link PR vào nhóm và tag người review chính**; không chỉ gửi link rồi chờ mọi người tự nhận review.
+
+```text
+PR: [link].
+Nhờ [tên reviewer] review.
+```
+
+Kết quả kiểm và phần chưa kiểm ghi trong description của PR, không cần lặp lại trong tin nhắn nhóm.
+
+Assignee trên Jira vẫn là người thực hiện khi đang review. Nhóm chat dùng để gọi người và phối hợp; nhận xét, cách xử lý và quyết định review lưu trên PR. Khi sửa xong, trả lời comment và request review lại. Chỉ chuyển **Done** khi đủ tiêu chí của task, PR liên quan đã được duyệt, checks bắt buộc đạt và merge; không coi mở PR là hoàn tất bàn giao. Bên nhận task phụ thuộc xác nhận đầu ra đã dùng được.
 
 ## Chọn kiểm tra
 
