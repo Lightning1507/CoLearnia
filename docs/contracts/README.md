@@ -6,6 +6,8 @@ Trước khi viết API/socket, đọc [quy ước API và backend](api-conventi
 
 Source schema ở `packages/contracts/src`, frontend và backend import qua `@colearnia/contracts`.
 
+**Auth/profile (SCRUM-12):** [contract và ví dụ](auth-profile.md), schema input/output và identity nội bộ trong `auth.ts`; chờ M4 review trước khi consumer dùng. Upload avatar tiếp tục ở M1-T1.3 với M2; chưa có endpoint chỉ từ contract này.
+
 Đã có: API error/response, Workspace/channel inputs, session command envelope và system status. Chưa có handler nghiệp vụ tương ứng chỉ vì schema đã được tạo.
 
 Khi thêm command:
