@@ -1,4 +1,4 @@
-<!-- Title nhập riêng bằng tiếng Anh: <type>(<scope>): <short description> (#<issue>); bỏ số Issue nếu chưa có, không dùng nguyên tên nhánh. Body bằng tiếng Việt; Closes #... khi hoàn tất Issue, Refs #... khi chỉ đóng góp một phần. Giữ What, Why, Environment Variables và Developer Test; có thể xóa How/Limits khi không cần. PR nhỏ viết ngắn, không điền cho đủ heading. -->
+<!-- Title nhập riêng bằng tiếng Anh: <type>(<scope>): <short description> [<Jira-key>], ví dụ feat(auth): add login form [SCRUM-25]; bỏ mã nếu chưa có ticket, không dùng nguyên tên nhánh. Body bằng tiếng Việt; dẫn mã Jira liên quan. Closes #... / Refs #... chỉ dùng nếu thực sự có GitHub Issue. Giữ What, Why, Environment Variables và Developer Test; có thể xóa How/Limits khi không cần. PR nhỏ viết ngắn, không điền cho đủ heading. -->
 
 ## What — Thay đổi gì?
 
