@@ -3,4 +3,5 @@ export * from './errors.js';
 export * from './auth.js';
 export * from './workspace.js';
 export * from './session.js';
+export * from './session-context.js';
 export * from './system.js';
