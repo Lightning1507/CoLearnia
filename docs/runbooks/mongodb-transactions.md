@@ -1,0 +1,88 @@
+# MongoDB dùng chung — SCRUM-15
+
+Áp dụng cho một app process, MongoDB Docker replica set `rs0`. Connector ở `apps/server/src/lib/database.ts`; sau khi `await database.connect()` thành công, M1/M2 đăng ký model trên **cùng `database.connection`** do bootstrap tạo. Không dùng `mongoose.model()` trên default connection, không tạo pool theo user/miền. Đây là nền transaction; chưa triển khai model nghiệp vụ hoặc tạo Workspace/general.
+
+## Khởi động và cấu hình
+
+```sh
+pnpm infra:up
+docker compose ps -a
+pnpm dev
+```
+
+`pnpm infra:down` dừng stack, giữ named volume. Không dùng `down -v` để sửa lỗi kết nối. URI local và lưu dữ liệu theo [local runbook](local-development.md#mongodb). Connector đặt `autoCreate`, `autoIndex`, `bufferCommands` thành false ngay khi tạo Mongoose instance riêng, trước lúc đăng ký model hoặc connect; không đổi cấu hình global của module khác. Query model trước connect bị từ chối ngay. Chỉ connection được bootstrap mở mới tạo pool. Migration được review phải tạo collection/index trước khi handler nghiệp vụ sử dụng.
+
+| Biến                                | Mặc định | Ý nghĩa                                                                                                          |
+| ----------------------------------- | -------- | ---------------------------------------------------------------------------------------------------------------- |
+| `MONGO_MAX_POOL_SIZE`               | 10       | Số connection tối đa trong pool; đồng thời là trần transaction đang chạy, không xếp hàng transaction ở connector |
+| `MONGO_SERVER_SELECTION_TIMEOUT_MS` | 5000     | Trần chờ chọn server; với CSOT, driver dùng chung ngân sách này cho checkout pool                                |
+| `MONGO_OPERATION_TIMEOUT_MS`        | 15000    | Driver CSOT: giới hạn thao tác DB ngoài transaction và ngân sách DB/retry của `withTransaction`                  |
+
+Các giá trị khởi đầu, chưa là capacity đã đo. Config từ chối 0, số âm, số lẻ hoặc vượt trần trong `env.ts`. Selection mặc định và connect timeout là 5 giây. Với driver 7.7, checkout pool dùng ngân sách còn lại của CSOT cùng trần selection; không cấu hình `waitQueueTimeoutMS` vì nó không có hiệu lực độc lập khi bật CSOT. Transaction dùng primary, snapshot read concern và majority write concern. CSOT không hủy tùy ý JavaScript đang đợi việc ngoài DB; callback chỉ chứa DB ngắn, không chờ upload/client/media. Không tự bọc `Promise.race` rồi báo rollback khi DB có thể còn commit.
+
+Khi đủ transaction đang chạy, connector từ chối ngay bằng `DatabaseBusyError` và nhả suất cả khi lỗi. Handler tương lai ánh xạ sang lỗi phụ thuộc/bận phù hợp contract; không retry vô hạn. Query ngoài transaction vẫn chia sẻ pool và timeout. Workspace/User gate, limiter theo scope và tải kết hợp thuộc task service/capacity; trần connector không thay ACL hoặc các gate đó.
+
+## M1 gọi M2 trong cùng transaction
+
+Provider M2 nhận connection tại khởi tạo và thực thi `GeneralConversationFactory<ClientSession>` ở `apps/server/src/messaging/ports.ts`. Mỗi lần ghi phải truyền `{ session: input.dbSession }`. Caller M1 chuẩn bị ID/time trước callback:
+
+```ts
+const result = await database.transaction(async (session) => {
+  await workspaceModel.create([workspaceDocument], { session });
+  return conversationFactory.create({
+    workspaceId,
+    channelId,
+    conversationId,
+    createdAt,
+    dbSession: session,
+  });
+});
+```
+
+Ví dụ minh họa thứ tự, chưa là service Workspace. Chỉ gọi factory cho TEXT theo [contract](../contracts/workspace-channels.md#3-các-hàm-nội-bộ). Toàn bộ model của provider dùng `database.connection`; session của client khác bị driver từ chối. Không mở transaction lồng, không gọi commit/abort/endSession trong callback; connector/Mongoose sở hữu vòng đời. Không dùng `Promise.all` cho các ghi trong cùng transaction. Không nuốt lỗi DB trong callback và trả kết quả thành công.
+
+Driver có thể chạy lại callback khi transient error: dùng lại ID/time đã chuẩn bị, không publish socket, gọi storage, thu quyền hoặc ghi side effect bên ngoài DB trong callback. Khi transaction resolve mới có xác nhận commit. Lỗi callback/DB bị ném ra, session được kết thúc; connector giữ nguyên lỗi và error labels. `UnknownTransactionCommitResult`/timeout/mất mạng chưa chứng minh rollback: caller phải read-back/reconcile theo ID/revision trước tạo lại hoặc báo kết quả. SCRUM-15 kiểm việc giữ nguyên lỗi unknown bằng unit test, chưa gây lỗi mạng ở thời điểm commit thật.
+
+## Kiểm DB và index/migration trên môi trường riêng
+
+```sh
+pnpm infra:up
+pnpm test:database
+pnpm check
+```
+
+`test:database` bắt buộc có MongoDB thật ở `127.0.0.1:27017`, `rs0`; không skip thành công nếu thiếu DB. Test không đọc `MONGO_URI` của ứng dụng: mỗi lượt tạo DB `colearnia_test_scrum15_<UUID>` và chỉ drop chính DB đó sau kiểm. Đây là lệnh **tạo/xóa dữ liệu test**; không đụng DB `colearnia`. Khi bị kill trước cleanup có thể còn DB test; xác minh đúng tên/lượt sở hữu trước dọn thủ công.
+
+Consumer test của M2 ghi MongoDB thật theo port đã chốt; kiểm commit, abort, retry và session khác client. Chưa là provider conversation sản phẩm; rollback Workspace/OWNER/general đầy đủ kiểm ở M1-T6.2.
+
+`preflightIndexes(connection, requirements)` là bước **chỉ đọc**, không chạy tự động ở bootstrap. Manifest do server/task migration cung cấp, không nhận từ request. Hàm kiểm collection, tên/thứ tự key/options và dữ liệu trùng trước unique index; chỉ trả mã vấn đề, không trả email/token/nội dung hoặc khóa trùng. Missing collection/index, options lệch hay dữ liệu trùng phải dừng để review, không tự sửa/xóa dữ liệu. Lỗi quyền/timeout DB được ném ra, không coi là ready.
+
+Helper hỗ trợ index scalar với field thường/đường dẫn lồng, unique, `partialFilterExpression` và TTL qua `expireAfterSeconds` (kể cả 0). So sánh đúng key order, unique, TTL và toàn bộ partial filter. Kiểm trùng chỉ trên các document khớp partial filter dự kiến; mảng ở field hoặc bất kỳ cấp cha đều bị từ chối để không chứng nhận nhầm multikey. Collection/index collation, sparse, hidden và prepareUnique vẫn bị từ chối. `ready` chỉ nói **các index trong manifest này** phù hợp, không chứng minh toàn bộ schema/migration đã hợp lệ. Unique multikey, validator nghiệp vụ, refs và migration ledger/checksum cần preflight riêng theo task model và [kế hoạch DB](../database/integrity-and-migrations.md#6-kế-hoạch-migration-và-rollback).
+
+Rehearsal tự động trong DB riêng:
+
+1. Collection chưa có: báo thiếu, không tự tạo.
+2. Dữ liệu trùng: preflight báo lỗi, unique build bị Mongo từ chối, dữ liệu không bị sửa.
+3. Fixture hợp lệ: tạo validator/index tường minh, chạy createIndex lần hai không nhân index; `listCollections`/`listIndexes` đối chiếu và thử insert bị từ chối.
+4. TTL auth expiry, partial CHANNEL theo `scope.channelId` và partial ACTIVE/ENDING: kiểm options đúng/sai, trùng trong/ngoài filter, mảng ở cấp cha; index sai giữ nguyên. Không đợi TTL monitor xóa document để kiểm auth expiry; handler vẫn phải kiểm thời hạn trực tiếp.
+5. Rollback fixture: chỉ drop đúng index fixture do lượt test tạo, giữ document; cuối suite dọn DB test.
+
+Không dùng cách rollback fixture này để drop index đang bảo vệ dữ liệu sản phẩm. Với DB có dữ liệu thật: kiểm kê và backup/restore cô lập, dừng writes khi cần, review migration version/checksum/khả năng tương thích; chỉ rollback ứng dụng khi schema tương thích. Backfill mất thông tin cần backup hoặc forward-fix; không khôi phục token/quyền đã thu. SCRUM-15 không áp migration lên DB ứng dụng, không triển khai runner/ledger hay tất cả index của các miền.
+
+CI chạy `pnpm check`, khởi động rs0, giữ smoke `mongosh` hiện có rồi chạy `pnpm test:database`. Bằng chứng SCRUM-15 ở [evidence](../test-evidence/2026-11-07-scrum-15-database.md).
+
+## Bàn giao cho các task phụ thuộc
+
+Sau review/merge SCRUM-15, các bên dùng cùng connector và manifest index của model mình. Bảng này mô tả đầu vào kỹ thuật, không thay trạng thái Jira hoặc xác nhận các phụ thuộc khác đã xong.
+
+| Task nhận | Đầu vào đã có                                                   | Phần task nhận tiếp tục làm                                                     |
+| --------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| SCRUM-16  | Connection, unique index preflight, TTL preflight               | User/authSession model, validator, index thật và ca auth expiry                 |
+| SCRUM-26  | Connection, transaction, compound unique preflight              | Channel/PRIVATE grant model và incarnation/ACL                                  |
+| SCRUM-30  | Connection, transaction, membership/invitation unique preflight | Model và invariant OWNER/membership/link mời                                    |
+| SCRUM-31  | ClientSession khớp port M2, partial/dotted index preflight      | Conversation model và factory thật, truyền session vào mọi ghi                  |
+| SCRUM-38  | Connection và ngân sách DB/retry                                | Fixture spike history/checkpoint/Q9; chưa coi commit DB là event đã publish     |
+| SCRUM-79  | Connection, transaction, partial ACTIVE/ENDING preflight        | Metadata model/repository, CAS và lifecycle phiên                               |
+| SCRUM-18  | Transaction dùng chung                                          | Handler đăng ký sau khi model SCRUM-16, hash SCRUM-17 và contract auth sẵn sàng |
+
+Consumer xác nhận trên PR bằng cách inject `database.connection`, tạo fixture với index/validator tường minh trong DB riêng và chạy `pnpm test:database`. Bộ SCRUM-15 chưa có toàn bộ model các miền. Preflight trả thiếu index trước migration là kết quả cần xử lý; không bỏ index, đổi manifest hoặc bật autoIndex để làm xanh.
