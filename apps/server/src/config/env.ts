@@ -9,6 +9,10 @@ const envSchema = z.object({
     .string()
     .min(1)
     .default('mongodb://127.0.0.1:27017/colearnia?replicaSet=rs0&directConnection=true'),
+  MONGO_MAX_POOL_SIZE: z.coerce.number().int().min(1).max(100).default(10),
+  MONGO_SERVER_SELECTION_TIMEOUT_MS: z.coerce.number().int().min(1).max(60_000).default(5000),
+  MONGO_WAIT_QUEUE_TIMEOUT_MS: z.coerce.number().int().min(1).max(60_000).default(5000),
+  MONGO_SOCKET_TIMEOUT_MS: z.coerce.number().int().min(1).max(120_000).default(15_000),
   MEDIA_ENABLED: z
     .enum(['true', 'false'])
     .default('false')
