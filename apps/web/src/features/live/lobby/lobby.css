@@ -1,0 +1,7 @@
+/* Scoped rules override the existing unlayered global button focus styles.
+   The white halo keeps the dark outline visible on the camera surface too. */
+.lobby-device-check :is(button, select):focus-visible {
+  outline: 3px solid #173f35;
+  outline-offset: 3px;
+  box-shadow: 0 0 0 3px #ffffff;
+}
