@@ -10,6 +10,8 @@ Source schema ở `packages/contracts/src`, frontend và backend import qua `@co
 
 **Workspace/kênh (SCRUM-13):** [contract và điểm giao M2/M4](workspace-channels.md), schema trong `workspace.ts`, chữ ký hàm nội bộ tại `apps/server/src/workspaces/ports.ts`, type shell/sidebar tại `apps/web/src/features/workspaces/shell-contract.ts`. Cần M2/M4 review trước tích hợp; chưa có resolver/transaction/cleanup thực thi.
 
+**Messaging access (SCRUM-14 / M2-T1.1):** [identity, general, thu quyền và ngân sách handler](messaging-access.md); typed ports/consumer fixture trong `apps/server/src/messaging/`. Chờ M1 review, M4 xác nhận runtime/cleanup trước consumer; chưa có provider ACL, factory Mongo hoặc admission runtime thật.
+
 Đã có: API error/response, Workspace/channel inputs, session command envelope và system status. Chưa có handler nghiệp vụ tương ứng chỉ vì schema đã được tạo.
 
 Khi thêm command:

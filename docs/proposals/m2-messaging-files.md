@@ -47,6 +47,8 @@ Bản đầu không thêm DM nhóm, DM xuyên Workspace, thread trong DM/chat h�
 
 ## 4. Các điểm cần thống nhất
 
+Đầu ra SCRUM-14 / T1.1 cho Q1, khung Q2/Q7: [contract identity/general/access/revoke](../contracts/messaging-access.md), kèm typed ports và consumer fixture. Chờ M1 review và M4 xác nhận phần runtime/cleanup; không coi fixture là provider thật hoặc tự đóng các quyết định quota/giới hạn còn mở.
+
 Các bên thống nhất phần giao tiếp trước khi code phụ thuộc. Trong thời gian chờ, M2 vẫn có thể làm giao diện hoặc thử các luồng chat/tệp độc lập. Những quy tắc sản phẩm đã chốt tiếp tục theo nguồn hiện hành.
 
 | ID  | Nội dung cần thống nhất                                                                                                                                                                                                                                                                                                        | Bên phối hợp                                                      | Cần chốt trước                                                                            |
