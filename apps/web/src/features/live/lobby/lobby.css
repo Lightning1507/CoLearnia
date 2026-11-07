@@ -1,0 +1,124 @@
+.lobby-device-check {
+  color: #193e35;
+  background: #f7f8f2;
+  min-height: 100dvh;
+  font-family: inherit;
+  line-height: 1.6;
+}
+.lobby-device-check .lobby-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding: 16px 24px;
+  border-bottom: 1px solid #dce3d6;
+  background: white;
+}
+.lobby-device-check button,
+.lobby-device-check select {
+  min-height: 44px;
+  max-width: 100%;
+  font: inherit;
+  color: inherit;
+  border: 1px solid #d5dfc7;
+  border-radius: 8px;
+  padding: 8px 12px;
+  background: white;
+}
+.lobby-device-check button {
+  background: #edf2dd;
+}
+.lobby-device-check button:disabled {
+  cursor: not-allowed;
+}
+.lobby-device-check :is(button, select):focus-visible {
+  outline: 3px solid #a2b949;
+  outline-offset: 3px;
+}
+.lobby-device-check .lobby-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 48px;
+  max-width: 1280px;
+  margin: auto;
+  padding: 48px 24px;
+}
+.lobby-device-check .lobby-preview {
+  position: relative;
+  display: grid;
+  place-items: center;
+  aspect-ratio: 16 / 10;
+  overflow: hidden;
+  border-radius: 16px;
+  background: #222927;
+  color: #eff4df;
+}
+.lobby-device-check video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.lobby-device-check .lobby-placeholder {
+  padding: 24px;
+  text-align: center;
+}
+.lobby-device-check .lobby-placeholder span {
+  display: block;
+  font-size: 40px;
+}
+.lobby-device-check .lobby-placeholder p {
+  font-size: 14px;
+}
+.lobby-device-check .lobby-play {
+  position: absolute;
+  bottom: 20px;
+  color: #193e35;
+}
+.lobby-device-check .lobby-settings {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.lobby-device-check h1 {
+  font-size: 30px;
+  letter-spacing: -0.8px;
+  margin: 8px 0 16px;
+}
+.lobby-device-check .lobby-eyebrow {
+  font-size: 12px;
+  font-weight: 700;
+  color: #63756b;
+}
+.lobby-device-check fieldset {
+  margin: 20px 0;
+  padding: 16px;
+  border: 1px solid #dce3d6;
+  border-radius: 12px;
+}
+.lobby-device-check legend {
+  font-weight: 700;
+  padding: 0 6px;
+}
+.lobby-device-check label {
+  display: block;
+  margin-bottom: 6px;
+}
+.lobby-device-check select {
+  width: 100%;
+}
+.lobby-device-check fieldset p {
+  font-size: 14px;
+}
+.lobby-device-check .lobby-continue {
+  width: 100%;
+  background: #173f35;
+  color: #eff4df;
+}
+@media (max-width: 800px) {
+  .lobby-device-check .lobby-main {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 24px;
+    padding: 24px 16px;
+  }
+}
