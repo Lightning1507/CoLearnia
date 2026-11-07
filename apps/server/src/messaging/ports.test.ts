@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { liveContextSchema } from '@colearnia/contracts';
 import type {
   GeneralConversationFactory,
   MessagingAccessPort,
@@ -113,6 +114,72 @@ describe('SCRUM-14 consumer fixture (not a production ACL provider)', () => {
 });
 
 describe('pending authorization freshness', () => {
+  it.each([
+    {
+      scenario: 'host changes',
+      host: { participantId: '5'.repeat(24), userId: '6'.repeat(24) },
+      revisionDelta: 1,
+    },
+    {
+      scenario: 'original host returns',
+      host: { participantId: '3'.repeat(24), userId: '4'.repeat(24) },
+      revisionDelta: 2,
+    },
+    { scenario: 'host unavailable', host: null, revisionDelta: 1 },
+  ])(
+    'invalidates pending host-private work when $scenario after an await',
+    async ({ host, revisionDelta }) => {
+      const member = authorization();
+      const context = liveContextSchema.parse({
+        auth: member.auth,
+        access: {
+          workspaceId: member.workspaceId,
+          channelId: member.channel!.channelId,
+          channelType: 'LIVE',
+          membershipId: member.memberships[0].membershipId,
+          membershipIncarnation: 1,
+          membershipRevision: 0,
+          channelRevision: 0,
+          canReadContent: true,
+          canManageChannel: false,
+        },
+        sessionId: '1'.repeat(24),
+        participantId: '2'.repeat(24),
+        epoch: '10000000-0000-4000-8000-000000000001',
+        callGeneration: 1,
+        role: 'MEMBER',
+        host: { participantId: '3'.repeat(24), userId: '4'.repeat(24) },
+        scope: { type: 'MAIN' },
+        audienceEpoch: 0,
+        policyRevision: 9,
+      });
+      const pending = {
+        ...member,
+        runtime: {
+          sessionId: context.sessionId,
+          epoch: context.epoch,
+          callGeneration: context.callGeneration,
+          policyRevision: context.policyRevision,
+          scope: { type: 'MAIN' as const },
+          deadlineMs: null,
+        },
+      };
+      expect(isMessagingAuthorizationCurrent(pending, pending, now)).toBe(true);
+      const resumed = await Promise.resolve(
+        liveContextSchema.parse({
+          ...context,
+          host,
+          policyRevision: context.policyRevision + revisionDelta,
+        }),
+      );
+      const current = {
+        ...pending,
+        runtime: { ...pending.runtime, policyRevision: resumed.policyRevision },
+      };
+      expect(isMessagingAuthorizationCurrent(pending, current, now)).toBe(false);
+    },
+  );
+
   it('accepts unchanged authority and rejects expired auth at the boundary', () => {
     const stamp = authorization();
     expect(isMessagingAuthorizationCurrent(stamp, stamp, now)).toBe(true);
