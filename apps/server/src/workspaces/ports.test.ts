@@ -12,7 +12,37 @@ it('exposes server signatures compatible with M2 transaction and M4 identity con
   expectTypeOf<
     Parameters<CreateChannelConversation>[0]['dbSession']
   >().toEqualTypeOf<ClientSession>();
-  expectTypeOf<Parameters<CreateChannelConversation>[0]['channelType']>().toEqualTypeOf<'TEXT'>();
+  // SCRUM-14 PR #41, 46a218f: GeneralConversationFactory<ClientSession>.create input.
+  expectTypeOf<Parameters<CreateChannelConversation>[0]>().toEqualTypeOf<{
+    workspaceId: string;
+    channelId: string;
+    conversationId: string;
+    createdAt: Date;
+    dbSession: ClientSession;
+  }>();
+});
+
+it('M1 caller example preserves IDs, time and transaction when a callback is retried', async () => {
+  const create: CreateChannelConversation = vi.fn(async (input) => ({
+    conversationId: input.conversationId,
+  }));
+  const prepared = {
+    workspaceId: '000000000000000000000003',
+    channelId: '000000000000000000000004',
+    conversationId: '000000000000000000000006',
+    createdAt: new Date('2026-11-07T10:00:00.000Z'),
+  };
+  // Opaque fixture only; no Mongo transaction is started in this example.
+  const dbSession = {} as ClientSession;
+  const callback = () => create({ ...prepared, dbSession });
+  expect(await callback()).toEqual({ conversationId: prepared.conversationId });
+  await callback();
+  expect(create).toHaveBeenCalledTimes(2);
+  for (const [input] of vi.mocked(create).mock.calls) {
+    expect(input).toEqual({ ...prepared, dbSession });
+    expect(input.dbSession).toBe(dbSession);
+    expect(input.createdAt).toBe(prepared.createdAt);
+  }
 });
 
 // Executable consumer examples, not the real M1 resolver or M2/M4 adapters.

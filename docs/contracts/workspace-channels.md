@@ -74,7 +74,9 @@ Chỉ trả snapshot cho membership hiện hành trong Workspace còn tồn tạ
 
 ### M2 cung cấp `CreateChannelConversation` cho M1
 
-Nhận workspaceId, channelId, channelType=TEXT và `dbSession: ClientSession` từ transaction M1 trên cùng connection. Trả conversationId. M1 tạo Workspace + OWNER membership + general TEXT/WORKSPACE + conversation trong cùng transaction; kênh TEXT mới cũng có conversation tương ứng. LIVE dùng conversation theo phiên do M2/M4 quản lý, không gọi hàm TEXT này.
+Nhận `workspaceId`, `channelId`, `conversationId`, `createdAt: Date` và `dbSession: ClientSession` từ transaction M1 trên cùng connection. Chữ ký khớp `GeneralConversationFactory<ClientSession>.create` trong SCRUM-14 (PR #41, commit `46a218f`); không truyền `channelType` vào factory. Caller M1 chỉ gọi cho kênh TEXT đã được kiểm ở service. Trả conversationId. M1 tạo Workspace + OWNER membership + general TEXT/WORKSPACE + conversation trong cùng transaction; kênh TEXT mới cũng có conversation tương ứng. LIVE dùng conversation theo phiên do M2/M4 quản lý, không gọi hàm TEXT này.
+
+M1 chuẩn bị các ID và createdAt ở server trước callback transaction có thể được chạy lại; mọi lượt callback dùng lại cùng ID/thời gian, cùng dbSession của transaction. Không lấy createdAt từ client hoặc sinh lại conversationId trong callback. Khi kết quả commit chưa rõ, đọc lại theo bộ ID ổn định và đối chiếu đủ quan hệ trước khi quyết định thử lại; không tạo bộ ID mới để che kết quả chưa xác định.
 
 M2 không tự commit/mở transaction khác hoặc phát event trong callback có thể retry. Lỗi thì ném về caller để hủy toàn bộ lần tạo; chỉ phát thông báo sau khi biết commit thành công. Chữ ký hàm hiện chưa chứng minh transaction/rollback thực tế.
 

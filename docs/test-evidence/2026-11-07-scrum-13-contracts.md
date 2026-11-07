@@ -24,3 +24,11 @@ Nhánh: `feat/SCRUM-13-workspace-channel-contract`. Working tree ngày 07/11/202
 ## Chưa kiểm / cần review
 
 Chưa có HTTP API, resolver ACL, transaction tạo general, gate hoặc cleanup thực tế trong task này. Chưa chạy migration RESTRICTED. Chưa có xác nhận M2/M4: cần review contract và các điểm mở tại [tài liệu bàn giao](../contracts/workspace-channels.md#5-bàn-giao-và-phần-còn-mở). Chưa chuyển task Done chỉ dựa vào local checks.
+
+## Đồng bộ factory với SCRUM-14 sau review PR #41
+
+- Thay `channelType` trong input factory bằng `conversationId` và `createdAt: Date`, khớp `GeneralConversationFactory<ClientSession>.create` tại commit `46a218f19d4d482ab326d0492bdab9104ea4b297` của PR #41. Caller vẫn chỉ gọi factory cho TEXT; LIVE có lifecycle conversation riêng.
+- M1 chuẩn bị ID/thời gian trước callback transaction và giữ nguyên khi callback chạy lại. Thêm ví dụ caller gọi lại với cùng ID, thời gian và dbSession; đây chưa là kiểm rollback MongoDB.
+- Typecheck đối chiếu trực tiếp hai chiều giữa type M1 mới và type M2 thật trong bản PR #41 được giải nén tại thư mục tạm: `tsc -p apps/server/tsconfig.json --noEmit`, exit 0. Probe không được thêm vào repo. Test type trong repo ghi hình dạng input và commit M2 dùng đối chiếu; chưa tự theo dõi thay đổi tương lai của PR #41.
+- Chạy lại `pnpm check` ngoài sandbox: PASS, 55 harness test và 53 Vitest test; format/lint/typecheck/build đều đạt. Cảnh báo web bundle >500 kB vẫn còn.
+- Việc dùng factory chung cho general và kênh TEXT tạo sau cần M2 xác nhận trên PR; kiểm tương thích kiểu không thay xác nhận hành vi hoặc review M4.
