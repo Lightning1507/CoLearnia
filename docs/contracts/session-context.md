@@ -13,7 +13,7 @@ Schema và interface nằm trong [session-context.ts](../../packages/contracts/s
 
 ## Thu quyền và cleanup
 
-M1 xác định loại thu quyền theo `accessRevocationSchema` tại [workspace.ts](../../packages/contracts/src/workspace.ts). M4 import trực tiếp schema này và alias thành `liveAccessRevocationSchema`; `LiveAccessRevocation` tiếp tục infer từ alias. Hai miền dùng cùng schema, không đổi tên hoặc bỏ field khi chuyển payload. Phần schema thu quyền dùng chung được cung cấp cùng contract SCRUM-23; các input/DTO Workspace và kênh còn lại thuộc SCRUM-13.
+M1 xác định loại thu quyền theo `accessRevocationSchema` tại [workspace.ts](../../packages/contracts/src/workspace.ts). M4 import trực tiếp schema này và alias thành `liveAccessRevocationSchema`; `LiveAccessRevocation` tiếp tục infer từ alias. Hai miền dùng cùng schema, không đổi tên hoặc bỏ field khi chuyển payload. Schema thu quyền chung cùng các input/DTO Workspace và kênh được cung cấp bởi [SCRUM-13](workspace-channels.md).
 
 `operationId` là UUID ổn định cho một lần thu quyền. `revision` là mốc của nguồn quyền mà coordinator xác minh, không phải `policyRevision` của phiên. Adapter đối soát phạm vi và mốc đó trước khi áp dụng một lần gọi lại.
 
