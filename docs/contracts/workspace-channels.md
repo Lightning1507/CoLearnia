@@ -70,7 +70,7 @@ Ví dụ admin ngoài danh sách PRIVATE có thể quản lý danh sách nhưng 
 
 Nhận identity từ `requireAuth` và workspaceId/channelId đích. Trả `ChannelAccessSnapshot`: workspaceId, channelId, channelType, membershipId, membershipIncarnation, membershipRevision, channelRevision, canReadContent, canManageChannel.
 
-Chỉ trả snapshot cho membership hiện hành trong Workspace còn tồn tại; thiếu membership/quyền biết đích thì trả lỗi theo mục 1. `canReadContent:false` cho phép UI quản trị phân biệt quyền quản lý; M2 phải từ chối nội dung khi false, M4 còn kiểm channelType=LIVE. Không nhận snapshot từ client làm bằng chứng quyền. Consumer kiểm lại identity/expiry/quyền hiện tại sau await và trước commit, publish, tạo/resume media hoặc fanout. Không gọi resolver trả snapshot một lần rồi cache thành quyền vĩnh viễn.
+Chỉ trả snapshot cho membership hiện hành trong Workspace còn tồn tại; thiếu membership/quyền biết đích thì trả lỗi theo mục 1. `canReadContent:false` cho phép UI quản trị phân biệt quyền quản lý; M2 phải từ chối nội dung khi false, M4 còn kiểm channelType=LIVE. Không nhận snapshot từ client làm bằng chứng quyền. Consumer kiểm lại identity/expiry/quyền hiện tại sau await và trước commit, publish, tạo/resume media hoặc fanout. Nếu đã tạo resource tạm mà lần kiểm lại từ chối hoặc ném lỗi, phải đóng resource bằng nhánh cleanup được bảo đảm (try/finally); chỉ chuyển ownership khi grant/publish thành công. Không nuốt lỗi resolver để tiếp tục cấp quyền. Không gọi resolver trả snapshot một lần rồi cache thành quyền vĩnh viễn.
 
 ### M2 cung cấp `CreateChannelConversation` cho M1
 
@@ -82,16 +82,20 @@ M2 không tự commit/mở transaction khác hoặc phát event trong callback c
 
 ### Thu quyền từ M1 tới M2/M4
 
-`AccessRevocation` là union strict gồm sáu loại, mỗi loại có operationId/revision và đúng tập ID:
+`accessRevocationSchema` trong `workspace.ts` là schema dùng chung được đề xuất cho M1 và đầu vào thu quyền của M4. `AccessRevocation` là union strict gồm sáu loại, mỗi loại có operationId/revision và đúng tập ID:
 
-| kind                 | Đích bắt buộc                                                       | revision dùng để đối chiếu                                 |
-| -------------------- | ------------------------------------------------------------------- | ---------------------------------------------------------- |
-| AUTH_SESSION         | authSessionId                                                       | Phiên bản thao tác thu phiên do coordinator quản lý        |
-| USER_SESSIONS        | userId                                                              | Phiên bản thao tác thu tất cả phiên do coordinator quản lý |
-| WORKSPACE_MEMBERSHIP | workspaceId, userId, membershipId, membershipIncarnation            | Membership revision                                        |
-| PRIVATE_CHANNEL      | workspaceId, channelId, userId, membershipId, membershipIncarnation | Channel revision                                           |
-| CHANNEL_DELETED      | workspaceId, channelId                                              | Channel revision                                           |
-| WORKSPACE_DELETED    | workspaceId                                                         | Workspace revision                                         |
+| kind                   | Đích bắt buộc                                                       | revision dùng để đối chiếu                                 |
+| ---------------------- | ------------------------------------------------------------------- | ---------------------------------------------------------- |
+| AUTH_SESSION           | authSessionId                                                       | Phiên bản thao tác thu phiên do coordinator quản lý        |
+| USER_AUTH_SESSIONS     | userId                                                              | Phiên bản thao tác thu tất cả phiên do coordinator quản lý |
+| WORKSPACE_MEMBERSHIP   | workspaceId, userId, membershipId, membershipIncarnation            | Membership revision                                        |
+| PRIVATE_CHANNEL_ACCESS | workspaceId, channelId, userId, membershipId, membershipIncarnation | Channel revision                                           |
+| CHANNEL_DELETED        | workspaceId, channelId                                              | Channel revision                                           |
+| WORKSPACE_DELETED      | workspaceId                                                         | Workspace revision                                         |
+
+Theo góp ý PR #39, dùng tên `USER_AUTH_SESSIONS` và `PRIVATE_CHANNEL_ACCESS`; không nhận hai tên cũ `USER_SESSIONS`/`PRIVATE_CHANNEL`. M4 cần import `accessRevocationSchema` và alias thành `liveAccessRevocationSchema` thay vì khai báo lại union. PRIVATE vẫn bắt buộc `membershipId` và `membershipIncarnation`: coordinator đối chiếu lượt thành viên và revision cũ trước khi chọn runtime resource, không bỏ field chỉ để vượt strict schema. Chưa tương thích với nguyên trạng PR #39 (`f6979c9`) cho đến khi M4 nối schema chung; không coi kiểm local là M4 đã xác nhận. Schema cleanup runtime của M4 tiếp tục riêng vì có session/epoch/transition token và target đời kết nối.
+
+Với `USER_AUTH_SESSIONS`, operation/revision phải gắn tập phiên bị thu đã được coordinator xác định; retry không chọn lại mọi phiên hiện có theo userId rồi đóng nhầm phiên đăng nhập mới. Cách giữ tập đó thuộc thiết kế coordinator, chưa triển khai trong task contract.
 
 revision là bản hiện tại khi bắt đầu thu, chưa phải revision sau commit. Hai loại auth cần M1-T5/M4-T1.2 xác nhận cách cấp bộ đếm ở coordinator; không thêm field DB trong task này. Adapter không dùng số này thay epoch/generation LIVE.
 

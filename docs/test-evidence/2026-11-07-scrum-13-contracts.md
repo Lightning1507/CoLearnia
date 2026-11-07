@@ -32,3 +32,12 @@ Chưa có HTTP API, resolver ACL, transaction tạo general, gate hoặc cleanup
 - Typecheck đối chiếu trực tiếp hai chiều giữa type M1 mới và type M2 thật trong bản PR #41 được giải nén tại thư mục tạm: `tsc -p apps/server/tsconfig.json --noEmit`, exit 0. Probe không được thêm vào repo. Test type trong repo ghi hình dạng input và commit M2 dùng đối chiếu; chưa tự theo dõi thay đổi tương lai của PR #41.
 - Chạy lại `pnpm check` ngoài sandbox: PASS, 55 harness test và 53 Vitest test; format/lint/typecheck/build đều đạt. Cảnh báo web bundle >500 kB vẫn còn.
 - Việc dùng factory chung cho general và kênh TEXT tạo sau cần M2 xác nhận trên PR; kiểm tương thích kiểu không thay xác nhận hành vi hoặc review M4.
+
+## Xử lý hai góp ý của M4 trên PR #40
+
+- Chọn schema chung `accessRevocationSchema` làm nguồn duy nhất cho M1 và M4, đổi kind thành `USER_AUTH_SESSIONS`/`PRIVATE_CHANNEL_ACCESS`. PRIVATE giữ `membershipId`/`membershipIncarnation`, có test từ chối thiếu field, incarnation=0 và tên kind cũ.
+- M4 cần cập nhật PR #39 để import/alias schema này thay union riêng. PR #39 gốc tại `f6979c992a1f6219babcc1f03f3973fab013e9c5` vẫn từ chối payload PRIVATE của M1 do strict fields. Chưa gọi hai PR hiện tại là đã tương thích.
+- Kiểm phương án ghép trong thư mục tạm: lấy PR #39, ghép workspace schema mới và thay union thu quyền của M4 bằng import/alias schema chung. Chạy workspace tests, session-context tests và probe qua đầu vào M4 cho đủ sáu kind: 3 file / 21 test PASS. Probe đồng thời tái hiện lỗi strict PRIVATE của schema M4 gốc. Đây là kiểm phương án đã điều chỉnh, không phải kết quả của PR #39 nguyên trạng.
+- Ví dụ M4 dùng try/finally: đóng resource chưa bàn giao khi resolver trả deny, revision cũ hoặc reject; lỗi reject được truyền nguyên về caller. Ca allow kiểm không đóng resource đã bàn giao. Vẫn là consumer fixture, chưa là implementation resolver/cleanup.
+- `pnpm check` sau sửa: PASS 55 harness test, 109 nguồn/liên kết/runtime pins, 9 file / 74 Vitest test, format/lint/typecheck/build. Cảnh báo bundle web >500 kB không đổi.
+- Cần M4 xác nhận field membership và cập nhật PR #39; không tự resolve review thread hoặc đánh dấu task Done.

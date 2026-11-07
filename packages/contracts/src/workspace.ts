@@ -81,6 +81,7 @@ export const channelAccessSnapshotSchema = z.strictObject({
   canManageChannel: z.boolean(),
 });
 
+// Canonical M1 -> M4 revocation schema. M4 reuses this schema instead of duplicating variants.
 // Scope-specific revocation prevents accidentally treating an absent field as 'all'.
 const revokeBase = { operationId: requestIdSchema, revision: accessRevisionSchema };
 export const accessRevocationSchema = z.discriminatedUnion('kind', [
@@ -91,7 +92,7 @@ export const accessRevocationSchema = z.discriminatedUnion('kind', [
   }),
   z.strictObject({
     ...revokeBase,
-    kind: z.literal('USER_SESSIONS'),
+    kind: z.literal('USER_AUTH_SESSIONS'),
     userId: workspaceDocumentIdSchema,
   }),
   z.strictObject({
@@ -104,7 +105,7 @@ export const accessRevocationSchema = z.discriminatedUnion('kind', [
   }),
   z.strictObject({
     ...revokeBase,
-    kind: z.literal('PRIVATE_CHANNEL'),
+    kind: z.literal('PRIVATE_CHANNEL_ACCESS'),
     workspaceId: workspaceDocumentIdSchema,
     channelId: workspaceDocumentIdSchema,
     userId: workspaceDocumentIdSchema,

@@ -109,7 +109,7 @@ describe('Workspace/channel contracts', () => {
     const base = { operationId: requestId, revision: 1 };
     const targets = [
       { kind: 'AUTH_SESSION', authSessionId: id },
-      { kind: 'USER_SESSIONS', userId: id },
+      { kind: 'USER_AUTH_SESSIONS', userId: id },
       {
         kind: 'WORKSPACE_MEMBERSHIP',
         workspaceId: id,
@@ -118,7 +118,7 @@ describe('Workspace/channel contracts', () => {
         membershipIncarnation: 2,
       },
       {
-        kind: 'PRIVATE_CHANNEL',
+        kind: 'PRIVATE_CHANNEL_ACCESS',
         workspaceId: id,
         channelId: id,
         userId: id,
@@ -135,7 +135,8 @@ describe('Workspace/channel contracts', () => {
       );
     }
     expect(
-      accessRevocationSchema.safeParse({ ...base, kind: 'PRIVATE_CHANNEL', channelId: id }).success,
+      accessRevocationSchema.safeParse({ ...base, kind: 'PRIVATE_CHANNEL_ACCESS', channelId: id })
+        .success,
     ).toBe(false);
     expect(
       accessRevocationSchema.safeParse({
@@ -152,6 +153,40 @@ describe('Workspace/channel contracts', () => {
         pendingInvalidated: false,
         cleanupPending: true,
       }).permissionRevoked,
+    ).toBe(false);
+  });
+
+  it('keeps the membership incarnation on PRIVATE revocation and rejects legacy kind names', () => {
+    const target = {
+      operationId: requestId,
+      revision: 4,
+      kind: 'PRIVATE_CHANNEL_ACCESS',
+      workspaceId: id,
+      channelId: id,
+      userId: id,
+      membershipId: id,
+      membershipIncarnation: 2,
+    };
+    expect(accessRevocationSchema.parse(target)).toEqual(target);
+    const { membershipId, membershipIncarnation, ...unbound } = target;
+    expect(accessRevocationSchema.safeParse(unbound).success).toBe(false);
+    expect(accessRevocationSchema.safeParse({ ...unbound, membershipId }).success).toBe(false);
+    expect(accessRevocationSchema.safeParse({ ...unbound, membershipIncarnation }).success).toBe(
+      false,
+    );
+    expect(accessRevocationSchema.safeParse({ ...target, membershipIncarnation: 0 }).success).toBe(
+      false,
+    );
+    expect(accessRevocationSchema.safeParse({ ...target, kind: 'PRIVATE_CHANNEL' }).success).toBe(
+      false,
+    );
+    expect(
+      accessRevocationSchema.safeParse({
+        operationId: requestId,
+        revision: 4,
+        kind: 'USER_SESSIONS',
+        userId: id,
+      }).success,
     ).toBe(false);
   });
 });

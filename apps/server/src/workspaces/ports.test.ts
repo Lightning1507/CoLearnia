@@ -89,36 +89,57 @@ it.each([
   },
 );
 
-it('M4 join example discards a prepared resource when recheck denies access', async () => {
-  const resolve: ResolveChannelAccess = vi
-    .fn()
-    .mockResolvedValueOnce(channelAccessSnapshotSchema.parse(snapshot))
-    .mockResolvedValueOnce(
-      channelAccessSnapshotSchema.parse({
-        ...snapshot,
-        canReadContent: false,
-        channelRevision: 4,
-      }),
-    );
-  const create = vi.fn().mockResolvedValue({ close: vi.fn(), publish: vi.fn() });
-  const before = await resolve(target);
-  expect(before.canReadContent && before.channelType === 'LIVE').toBe(true);
-  const prepared = await create();
-  const current = await resolve(target);
-  if (
-    !current.canReadContent ||
-    current.channelType !== 'LIVE' ||
-    current.membershipIncarnation !== before.membershipIncarnation ||
-    current.membershipRevision !== before.membershipRevision ||
-    current.channelRevision !== before.channelRevision
-  ) {
-    prepared.close();
-  } else {
-    prepared.publish();
-  }
-  expect(prepared.close).toHaveBeenCalledOnce();
-  expect(prepared.publish).not.toHaveBeenCalled();
-});
+it.each(['allowed', 'denied', 'stale', 'rejected'] as const)(
+  'M4 join example releases untransferred resources when recheck is %s',
+  async (mode) => {
+    const recheckError = new Error('Membership no longer exists');
+    const resolveMock = vi.fn().mockResolvedValueOnce(channelAccessSnapshotSchema.parse(snapshot));
+    if (mode === 'rejected') {
+      resolveMock.mockRejectedValueOnce(recheckError);
+    } else {
+      resolveMock.mockResolvedValueOnce(
+        channelAccessSnapshotSchema.parse({
+          ...snapshot,
+          canReadContent: mode !== 'denied',
+          channelRevision:
+            mode === 'stale' ? snapshot.channelRevision + 1 : snapshot.channelRevision,
+        }),
+      );
+    }
+    const resolve: ResolveChannelAccess = resolveMock;
+    const resource = { close: vi.fn(), publish: vi.fn() };
+    const create = vi.fn().mockResolvedValue(resource);
+    // Illustrates ownership transfer only; the production gate/context is still M4's task.
+    const join = async () => {
+      const before = await resolve(target);
+      if (!before.canReadContent || before.channelType !== 'LIVE') return;
+      const prepared = await create();
+      let transferred = false;
+      try {
+        const current = await resolve(target);
+        if (
+          !current.canReadContent ||
+          current.channelType !== 'LIVE' ||
+          current.membershipIncarnation !== before.membershipIncarnation ||
+          current.membershipRevision !== before.membershipRevision ||
+          current.channelRevision !== before.channelRevision
+        )
+          return;
+        prepared.publish();
+        transferred = true;
+      } finally {
+        if (!transferred) prepared.close();
+      }
+    };
+    if (mode === 'rejected') {
+      await expect(join()).rejects.toBe(recheckError);
+    } else {
+      await join();
+    }
+    expect(resource.publish).toHaveBeenCalledTimes(mode === 'allowed' ? 1 : 0);
+    expect(resource.close).toHaveBeenCalledTimes(mode === 'allowed' ? 0 : 1);
+  },
+);
 
 it.each([
   [true, true, true, true],
