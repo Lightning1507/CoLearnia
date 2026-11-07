@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { authenticatedContextSchema } from './auth.js';
 import { commonErrorCodeSchema } from './errors.js';
-import { accessRevocationSchema } from './workspace.js';
+import { accessRevocationSchema, channelAccessSnapshotSchema } from './workspace.js';
 import {
   sessionEpochSchema,
   sessionGroupIdSchema,
@@ -11,23 +11,10 @@ import {
   sessionScopeRefSchema,
 } from './session.js';
 
-const documentIdSchema = z
-  .string()
-  .length(24)
-  .regex(/^[a-fA-F0-9]{24}$/);
 const revisionSchema = z.number().int().nonnegative();
 const generationSchema = z.number().int().positive();
 
-export const channelAccessStampSchema = z.strictObject({
-  workspaceId: documentIdSchema,
-  channelId: documentIdSchema,
-  channelType: z.enum(['TEXT', 'LIVE']),
-  membershipId: documentIdSchema,
-  membershipIncarnation: generationSchema,
-  membershipRevision: revisionSchema,
-  channelRevision: revisionSchema,
-  canReadContent: z.boolean(),
-});
+export const channelAccessStampSchema = channelAccessSnapshotSchema;
 
 // Internal DTOs. The resolver validates the current server-side ownership and access.
 export const liveContextRequestSchema = z.strictObject({
@@ -60,6 +47,12 @@ export const liveContextSchema = liveContextRequestSchema.extend({
   }),
   participantId: sessionParticipantIdSchema,
   role: z.enum(['HOST', 'MEMBER']),
+  host: z
+    .strictObject({
+      participantId: sessionParticipantIdSchema,
+      userId: authenticatedContextSchema.shape.userId,
+    })
+    .nullable(),
   scope: liveContextScopeSchema,
   audienceEpoch: revisionSchema,
   policyRevision: revisionSchema,

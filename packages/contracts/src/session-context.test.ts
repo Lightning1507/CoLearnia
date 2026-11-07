@@ -1,8 +1,9 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
-import { accessRevocationSchema } from './workspace.js';
-import type { AccessRevocation } from './workspace.js';
-import type { LiveAccessRevocation } from './session-context.js';
+import { accessRevocationSchema, channelAccessSnapshotSchema } from './workspace.js';
+import type { AccessRevocation, ChannelAccessSnapshot } from './workspace.js';
+import type { ChannelAccessStamp, LiveAccessRevocation } from './session-context.js';
 import {
+  channelAccessStampSchema,
   liveAccessRevocationSchema,
   liveContextResultSchema,
   sessionCleanupRequestSchema,
@@ -29,12 +30,14 @@ const liveContext = {
     membershipRevision: 0,
     channelRevision: 0,
     canReadContent: true,
+    canManageChannel: false,
   },
   sessionId,
   participantId,
   epoch,
   callGeneration: 2,
   role: 'MEMBER',
+  host: { participantId: '8'.repeat(24), userId: '9'.repeat(24) },
   scope: { type: 'MAIN' },
   audienceEpoch: 4,
   policyRevision: 9,
@@ -76,6 +79,52 @@ const revocationTargets = [
 ] as const;
 
 describe('session context and cleanup contracts', () => {
+  it('accepts the exact M1 access snapshot including channel-management authority', () => {
+    expect(channelAccessStampSchema).toBe(channelAccessSnapshotSchema);
+    expectTypeOf<ChannelAccessStamp>().toEqualTypeOf<ChannelAccessSnapshot>();
+    for (const canManageChannel of [false, true]) {
+      const access = channelAccessSnapshotSchema.parse({ ...liveContext.access, canManageChannel });
+      const context = { ...liveContext, access };
+      expect(liveContextResultSchema.parse({ ok: true, context })).toEqual({ ok: true, context });
+    }
+  });
+
+  it('keeps management authority separate from permission to read LIVE content', () => {
+    const access = channelAccessSnapshotSchema.parse({
+      ...liveContext.access,
+      canManageChannel: true,
+      canReadContent: false,
+    });
+    expect(
+      liveContextResultSchema.safeParse({ ok: true, context: { ...liveContext, access } }).success,
+    ).toBe(false);
+    expect(
+      liveContextResultSchema.safeParse({
+        ok: true,
+        context: {
+          ...liveContext,
+          access: channelAccessSnapshotSchema.parse({ ...liveContext.access, channelType: 'TEXT' }),
+        },
+      }).success,
+    ).toBe(false);
+  });
+
+  it('represents the current host for a member and an explicitly unavailable host', () => {
+    expect(liveContextResultSchema.parse({ ok: true, context: liveContext })).toEqual({
+      ok: true,
+      context: liveContext,
+    });
+    expect(
+      liveContextResultSchema.safeParse({ ok: true, context: { ...liveContext, host: null } })
+        .success,
+    ).toBe(true);
+    for (const host of [undefined, { participantId: '8'.repeat(24) }, { userId: '9'.repeat(24) }]) {
+      expect(
+        liveContextResultSchema.safeParse({ ok: true, context: { ...liveContext, host } }).success,
+      ).toBe(false);
+    }
+  });
+
   it('uses the shared M1 revocation schema and inferred type directly', () => {
     expect(liveAccessRevocationSchema).toBe(accessRevocationSchema);
     expectTypeOf<LiveAccessRevocation>().toEqualTypeOf<AccessRevocation>();
