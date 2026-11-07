@@ -450,6 +450,8 @@ Bảng tổng hợp chỉ nêu phụ thuộc giữa các nhóm; khi giao việc 
 | T1.2 | Chốt contract Workspace/kênh và interface M2/M4; cập nhật Zod PRIVATE/ObjectId, kiểm consumer và ghi kết quả review. | M2/M4 review; Q4/Q5, Q2 cách lưu token; không chờ T1.1 nếu phần giao tiếp đã rõ            | 6   |
 | T1.3 | Chốt contract upload/xác minh/gắn/xóa avatar với M2; ghi metadata, lỗi và trách nhiệm cleanup để T18 triển khai.     | Q10, M2 review; dùng contract user ở T1.1                                                  | 4   |
 
+Đầu ra SCRUM-13/T1.2: [contract Workspace/kênh và interface M2/M4](../contracts/workspace-channels.md). Schema đã có để review; resolver, transaction và cleanup chưa triển khai. Các bảng interface dự kiến trong proposal được đối chiếu với contract này trước khi code; M2/M4 xác nhận trên PR.
+
 **T2**
 
 | ID   | Đầu ra và kiểm tra hoàn thành                                                                                                          | Phụ thuộc / điều kiện bắt đầu                                        | Giờ |

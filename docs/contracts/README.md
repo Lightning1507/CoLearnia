@@ -8,6 +8,8 @@ Source schema ở `packages/contracts/src`, frontend và backend import qua `@co
 
 **Auth/profile (SCRUM-12):** [contract và ví dụ](auth-profile.md), schema input/output và identity nội bộ trong `auth.ts`; chờ M4 review trước khi consumer dùng. Upload avatar tiếp tục ở M1-T1.3 với M2; chưa có endpoint chỉ từ contract này.
 
+**Workspace/kênh (SCRUM-13):** [contract và điểm giao M2/M4](workspace-channels.md), schema trong `workspace.ts`, chữ ký hàm nội bộ tại `apps/server/src/workspaces/ports.ts`, type shell/sidebar tại `apps/web/src/features/workspaces/shell-contract.ts`. Cần M2/M4 review trước tích hợp; chưa có resolver/transaction/cleanup thực thi.
+
 Đã có: API error/response, Workspace/channel inputs, session command envelope và system status. Chưa có handler nghiệp vụ tương ứng chỉ vì schema đã được tạo.
 
 Khi thêm command:
@@ -59,7 +61,7 @@ DISCUSSION: tên ≤80, mục đích ≤500, roster hợp lệ không trùng/cù
 
 ## Đầu vào thiết kế DB bước 4 — 01/11/2026
 
-Nguồn field/scope: [collection-design](../database/collection-design.md). Document ID dùng ObjectId nội bộ/chuỗi hex ra API; runtime ID và requestId/clientMessageId dùng UUID. Contract phiên đã dùng schema đúng loại ID; `resourceIdSchema` scaffold vẫn là chuỗi rộng ở các phần khác. `channelAccessSchema` trong `workspace.ts` vẫn RESTRICTED và chưa có grant/incarnation; đồng bộ trong task Workspace trước khi triển khai consumer.
+Nguồn field/scope: [collection-design](../database/collection-design.md). Document ID dùng ObjectId nội bộ/chuỗi hex ra API; runtime ID và requestId/clientMessageId dùng UUID. Contract phiên đã dùng schema đúng loại ID; `resourceIdSchema` scaffold vẫn là chuỗi rộng ở các phần khác. `workspace.ts` đã dùng WORKSPACE/PRIVATE, ObjectId và snapshot membership/incarnation/revision theo [SCRUM-13](workspace-channels.md); schema không thay kiểm grant/ACL tại server.
 
 Scope/binding hội thoại/file là cấu trúc theo kind/purpose, không payload Mixed tùy ý. Membership incarnation và grants là quyền server, không cho client tự khai version để được cấp PRIVATE. Không đưa passwordHash/tokenHash/storageKey hoặc document Mongoose nguyên bản vào response. Đây là đầu vào thiết kế, chưa đổi source contract hoặc tạo endpoint mới.
 
