@@ -8,6 +8,8 @@ Source schema ở `packages/contracts/src`, frontend và backend import qua `@co
 
 **Auth/profile (SCRUM-12):** [contract và ví dụ](auth-profile.md), schema input/output và identity nội bộ trong `auth.ts`; chờ M4 review trước khi consumer dùng. Upload avatar tiếp tục ở M1-T1.3 với M2; chưa có endpoint chỉ từ contract này.
 
+**Messaging access (SCRUM-14 / M2-T1.1):** [identity, general, thu quyền và ngân sách handler](messaging-access.md); typed ports/consumer fixture trong `apps/server/src/messaging/`. Chờ M1 review, M4 xác nhận runtime/cleanup trước consumer; chưa có provider ACL, factory Mongo hoặc admission runtime thật.
+
 Đã có: API error/response, Workspace/channel inputs, session command envelope và system status. Chưa có handler nghiệp vụ tương ứng chỉ vì schema đã được tạo.
 
 Khi thêm command:
