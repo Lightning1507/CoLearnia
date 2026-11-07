@@ -42,9 +42,9 @@ pnpm infra:config
 
 `/health/live` chỉ cho biết process nhận HTTP. `/health/ready` trả 503 khi database/worker chưa sẵn sàng; không đổi thành 200 để giao diện đẹp hơn. Socket auth chưa triển khai thì mọi handshake đều nhận `AUTH_REQUIRED`.
 
-## Staging chưa cấu hình
+## Chuẩn bị staging
 
-Trước khi mở Internet: TLS, `APP_ORIGIN`, database authentication, secret thực, public announced IP, media/TURN ports, private storage, quota, backup và bảng kiểm quyền nhóm. Không dùng nguyên profile local public.
+Xem [checklist cấu hình staging SCRUM-54](staging-configuration.md) để đối chiếu HTTPS, địa chỉ web/media, cổng, MongoDB và quyền cần cấp. Compose local dành cho phát triển trên máy cá nhân.
 
 ## Profile capacity
 
