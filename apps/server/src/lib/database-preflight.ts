@@ -1,6 +1,8 @@
 import { isDeepStrictEqual } from 'node:util';
 import type { Connection } from 'mongoose';
 
+const maxTimeMS = 5000;
+
 // Reviewed, server-owned manifests only. Domain tasks supply their own indexes.
 // Scalar indexes (including dotted paths), simple collation, no sparse/multikey.
 export type IndexRequirement = {
@@ -47,6 +49,7 @@ export async function preflightIndexes(
     }
     const info = await connection.db
       .listCollections({ name: expected.collection }, { nameOnly: false })
+      .maxTimeMS(maxTimeMS)
       .next();
     if (!info) {
       issue('MISSING_COLLECTION');
@@ -57,7 +60,7 @@ export async function preflightIndexes(
       continue;
     }
     const collection = connection.db.collection(expected.collection);
-    const indexes = await collection.listIndexes().toArray();
+    const indexes = await collection.listIndexes().maxTimeMS(maxTimeMS).toArray();
     const actual = indexes.find((index) => index.name === expected.name);
     if (!actual) issue('MISSING_INDEX');
     else if (
@@ -95,7 +98,7 @@ export async function preflightIndexes(
           },
         ],
       },
-      { projection: { _id: 1 } },
+      { projection: { _id: 1 }, maxTimeMS },
     );
     if (nonScalar) {
       issue('UNSUPPORTED_INDEX');
@@ -103,18 +106,21 @@ export async function preflightIndexes(
     }
     if (expected.unique) {
       const duplicate = await collection
-        .aggregate([
-          { $match: filter },
-          {
-            $group: {
-              _id: fields.map((field) => ({ $ifNull: [`$${field}`, null] })),
-              count: { $sum: 1 },
+        .aggregate(
+          [
+            { $match: filter },
+            {
+              $group: {
+                _id: fields.map((field) => ({ $ifNull: [`$${field}`, null] })),
+                count: { $sum: 1 },
+              },
             },
-          },
-          { $match: { count: { $gt: 1 } } },
-          { $limit: 1 },
-          { $project: { _id: 0, count: 1 } },
-        ])
+            { $match: { count: { $gt: 1 } } },
+            { $limit: 1 },
+            { $project: { _id: 0, count: 1 } },
+          ],
+          { maxTimeMS },
+        )
         .next();
       if (duplicate) issue('DUPLICATE_KEYS');
     }

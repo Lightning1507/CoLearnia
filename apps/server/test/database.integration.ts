@@ -72,6 +72,17 @@ afterAll(async () => {
 });
 
 describe('shared Mongoose transaction on MongoDB rs0', () => {
+  it('opens the pool with separate timeouts and CSOT disabled', () => {
+    const options = connection.getClient().options;
+    expect(options).toMatchObject({
+      connectTimeoutMS: 5000,
+      serverSelectionTimeoutMS: 5000,
+      waitQueueTimeoutMS: 5000,
+      socketTimeoutMS: 15_000,
+    });
+    expect(options.timeoutMS).toBeUndefined();
+  });
+
   it('does not auto-create a model collection or its declared index', async () => {
     const unprovisioned = connection.model(
       'UnprovisionedFixture',
@@ -84,38 +95,24 @@ describe('shared Mongoose transaction on MongoDB rs0', () => {
     );
   });
 
-  it('bounds transient retries by the client deadline and leaves no writes', async () => {
-    const bounded = createDatabase(uri, {
-      maxPoolSize: 1,
-      serverSelectionTimeoutMS: 5000,
-      operationTimeoutMS: 200,
-    });
+  it('stops after two transient attempts, ends the session and leaves no writes', async () => {
     let used: ClientSession | undefined;
     let attempts = 0;
-    try {
-      await bounded.connect();
-      await expect(
-        bounded.transaction(async (session) => {
-          used = session;
-          attempts += 1;
-          await bounded.connection
-            .db!.collection('transaction_owner_fixture')
-            .insertOne({ _id: new mongoose.Types.ObjectId() }, { session });
-          const error = new mongoose.mongo.MongoServerError({
-            message: 'injected transient error',
-          });
-          error.addErrorLabel('TransientTransactionError');
-          throw error;
-        }),
-      ).rejects.toBeInstanceOf(mongoose.mongo.MongoOperationTimeoutError);
-      // Deadline may expire in the first DB operation on a slow runner. Retry itself
-      // is covered separately with a two-attempt fixture, without a short deadline.
-      expect(attempts).toBeGreaterThan(0);
-      expect(used?.hasEnded).toBe(true);
-      expect(await owner.countDocuments({})).toBe(0);
-    } finally {
-      await bounded.close();
-    }
+    const error = new mongoose.mongo.MongoServerError({ message: 'injected transient error' });
+    error.addErrorLabel('TransientTransactionError');
+    await expect(
+      database.transaction(async (session) => {
+        used = session;
+        attempts += 1;
+        await owner.create([{ _id: prepared.workspaceId }], { session });
+        await factory.create({ ...prepared, dbSession: session });
+        throw error;
+      }),
+    ).rejects.toBe(error);
+    expect(attempts).toBe(2);
+    expect(used?.hasEnded).toBe(true);
+    expect(await owner.countDocuments({})).toBe(0);
+    expect(await conversations.countDocuments({})).toBe(0);
   });
 
   it('commits M1 and a real DB consumer of the M2 port atomically', async () => {

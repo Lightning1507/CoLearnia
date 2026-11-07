@@ -4,14 +4,37 @@ import type { ClientSession } from 'mongoose';
 export type DatabaseOptions = {
   maxPoolSize: number;
   serverSelectionTimeoutMS: number;
-  operationTimeoutMS: number;
+  waitQueueTimeoutMS: number;
+  socketTimeoutMS: number;
 };
 
 export const defaultDatabaseOptions: Readonly<DatabaseOptions> = {
   maxPoolSize: 10,
   serverSelectionTimeoutMS: 5000,
-  operationTimeoutMS: 15_000,
+  waitQueueTimeoutMS: 5000,
+  socketTimeoutMS: 15_000,
 };
+
+const maxTransactionAttempts = 2;
+const commitTimeoutMS = 5000;
+
+function hasLabel(error: unknown, label: string): boolean {
+  return error instanceof mongoose.mongo.MongoError && error.hasErrorLabel(label);
+}
+
+async function commitTransaction(session: ClientSession): Promise<void> {
+  try {
+    await session.commitTransaction();
+  } catch (error) {
+    if (!hasLabel(error, 'UnknownTransactionCommitResult')) throw error;
+    try {
+      await session.commitTransaction();
+    } catch {
+      // A failed retry cannot establish that the first commit rolled back.
+      throw error;
+    }
+  }
+}
 
 export class DatabaseBusyError extends Error {
   constructor() {
@@ -22,11 +45,17 @@ export class DatabaseBusyError extends Error {
 
 // One instance at bootstrap; inject its connection into every model/provider.
 export function createDatabase(uri: string, options: DatabaseOptions = defaultDatabaseOptions) {
+  const queryStart = uri.indexOf('?');
+  const query = new URLSearchParams(queryStart === -1 ? '' : uri.slice(queryStart + 1));
+  if ([...query.keys()].some((key) => key.toLowerCase() === 'timeoutms')) {
+    throw new Error('Remove timeoutMS from MONGO_URI');
+  }
   const limits = { ...options };
   for (const value of [
     limits.maxPoolSize,
     limits.serverSelectionTimeoutMS,
-    limits.operationTimeoutMS,
+    limits.waitQueueTimeoutMS,
+    limits.socketTimeoutMS,
   ]) {
     if (!Number.isSafeInteger(value) || value <= 0) throw new Error('Invalid database limits');
   }
@@ -48,7 +77,8 @@ export function createDatabase(uri: string, options: DatabaseOptions = defaultDa
         maxPoolSize: limits.maxPoolSize,
         minPoolSize: 0,
         serverSelectionTimeoutMS: limits.serverSelectionTimeoutMS,
-        timeoutMS: limits.operationTimeoutMS,
+        waitQueueTimeoutMS: limits.waitQueueTimeoutMS,
+        socketTimeoutMS: limits.socketTimeoutMS,
         bufferCommands: false,
         autoCreate: false,
         autoIndex: false,
@@ -60,15 +90,37 @@ export function createDatabase(uri: string, options: DatabaseOptions = defaultDa
       // No hidden transaction queue. Workspace/User coordination remains caller-owned.
       if (activeTransactions >= limits.maxPoolSize) throw new DatabaseBusyError();
       activeTransactions += 1;
-      // Driver inherits timeoutMS for the whole withTransaction retry cycle.
-      // Always await sequential DB operations and pass session explicitly.
-      // Preserve errors/labels: unknown commit is NOT proof of rollback.
       try {
-        return await connection.transaction(work, {
-          readPreference: 'primary',
-          readConcern: { level: 'snapshot' },
-          writeConcern: { w: 'majority' },
-        });
+        const session = await connection.startSession();
+        try {
+          for (let attempt = 1; ; attempt += 1) {
+            session.startTransaction({
+              readPreference: 'primary',
+              readConcern: { level: 'snapshot' },
+              writeConcern: { w: 'majority', wtimeoutMS: commitTimeoutMS },
+              maxCommitTimeMS: commitTimeoutMS,
+            });
+            try {
+              const result = await work(session);
+              await commitTransaction(session);
+              return result;
+            } catch (error) {
+              if (
+                attempt >= maxTransactionAttempts ||
+                hasLabel(error, 'UnknownTransactionCommitResult') ||
+                !hasLabel(error, 'TransientTransactionError')
+              ) {
+                throw error;
+              }
+              if (session.inTransaction()) {
+                await session.abortTransaction();
+              }
+            }
+          }
+        } finally {
+          // The driver aborts any active transaction when ending the session.
+          await session.endSession();
+        }
       } finally {
         activeTransactions -= 1;
       }

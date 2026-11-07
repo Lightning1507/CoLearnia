@@ -15,10 +15,13 @@ pnpm dev
 | Biến                                | Mặc định | Ý nghĩa                                                                                                          |
 | ----------------------------------- | -------- | ---------------------------------------------------------------------------------------------------------------- |
 | `MONGO_MAX_POOL_SIZE`               | 10       | Số connection tối đa trong pool; đồng thời là trần transaction đang chạy, không xếp hàng transaction ở connector |
-| `MONGO_SERVER_SELECTION_TIMEOUT_MS` | 5000     | Trần chờ chọn server; với CSOT, driver dùng chung ngân sách này cho checkout pool                                |
-| `MONGO_OPERATION_TIMEOUT_MS`        | 15000    | Driver CSOT: giới hạn thao tác DB ngoài transaction và ngân sách DB/retry của `withTransaction`                  |
+| `MONGO_SERVER_SELECTION_TIMEOUT_MS` | 5000     | Trần chờ chọn MongoDB server                                                                                     |
+| `MONGO_WAIT_QUEUE_TIMEOUT_MS`       | 5000     | Trần chờ lấy connection từ pool                                                                                  |
+| `MONGO_SOCKET_TIMEOUT_MS`           | 15000    | Trần chờ socket không có hoạt động                                                                               |
 
-Các giá trị khởi đầu, chưa là capacity đã đo. Config từ chối 0, số âm, số lẻ hoặc vượt trần trong `env.ts`. Selection mặc định và connect timeout là 5 giây. Với driver 7.7, checkout pool dùng ngân sách còn lại của CSOT cùng trần selection; không cấu hình `waitQueueTimeoutMS` vì nó không có hiệu lực độc lập khi bật CSOT. Transaction dùng primary, snapshot read concern và majority write concern. CSOT không hủy tùy ý JavaScript đang đợi việc ngoài DB; callback chỉ chứa DB ngắn, không chờ upload/client/media. Không tự bọc `Promise.race` rồi báo rollback khi DB có thể còn commit.
+Connect timeout là 5 giây cho mỗi lần thiết lập socket. Preflight đặt `maxTimeMS` 5 giây cho từng lệnh đọc. Transaction dùng primary, snapshot read concern và majority write concern. Commit đặt giới hạn 5 giây cho lệnh phía MongoDB và 5 giây chờ write concern. Đây là các giới hạn từng giai đoạn, không phải deadline chung cho cả callback.
+
+Bỏ `MONGO_OPERATION_TIMEOUT_MS` khỏi cấu hình cũ và dùng hai biến mới trong bảng khi cần. Connector từ chối `timeoutMS` trong `MONGO_URI`. Consumer tránh truyền `timeoutMS` cho session/query vì driver 7.7 có rủi ro sai phản hồi giữa các request khi bật CSOT. [Cảnh báo MongoDB Node.js Driver](https://github.com/mongodb/node-mongodb-native/releases/tag/v7.8.0)
 
 Khi đủ transaction đang chạy, connector từ chối ngay bằng `DatabaseBusyError` và nhả suất cả khi lỗi. Handler tương lai ánh xạ sang lỗi phụ thuộc/bận phù hợp contract; không retry vô hạn. Query ngoài transaction vẫn chia sẻ pool và timeout. Workspace/User gate, limiter theo scope và tải kết hợp thuộc task service/capacity; trần connector không thay ACL hoặc các gate đó.
 
@@ -39,9 +42,9 @@ const result = await database.transaction(async (session) => {
 });
 ```
 
-Ví dụ minh họa thứ tự, chưa là service Workspace. Chỉ gọi factory cho TEXT theo [contract](../contracts/workspace-channels.md#3-các-hàm-nội-bộ). Toàn bộ model của provider dùng `database.connection`; session của client khác bị driver từ chối. Không mở transaction lồng, không gọi commit/abort/endSession trong callback; connector/Mongoose sở hữu vòng đời. Không dùng `Promise.all` cho các ghi trong cùng transaction. Không nuốt lỗi DB trong callback và trả kết quả thành công.
+Ví dụ minh họa thứ tự ghi cho TEXT theo [contract](../contracts/workspace-channels.md#3-các-hàm-nội-bộ). Toàn bộ model của provider dùng `database.connection`. Connector quản lý commit, abort và kết thúc session. Trong callback, chờ từng thao tác DB theo thứ tự, truyền session, để lỗi DB truyền ra ngoài và tránh transaction lồng nhau. Mỗi lượt retry phải đọc/tạo lại document trong callback vì connector dùng API session của driver, không tự đặt lại trạng thái document Mongoose trong bộ nhớ.
 
-Driver có thể chạy lại callback khi transient error: dùng lại ID/time đã chuẩn bị, không publish socket, gọi storage, thu quyền hoặc ghi side effect bên ngoài DB trong callback. Khi transaction resolve mới có xác nhận commit. Lỗi callback/DB bị ném ra, session được kết thúc; connector giữ nguyên lỗi và error labels. `UnknownTransactionCommitResult`/timeout/mất mạng chưa chứng minh rollback: caller phải read-back/reconcile theo ID/revision trước tạo lại hoặc báo kết quả. SCRUM-15 kiểm việc giữ nguyên lỗi unknown bằng unit test, chưa gây lỗi mạng ở thời điểm commit thật.
+Connector chạy callback tối đa hai lượt khi lỗi có nhãn `TransientTransactionError`. Dùng lại ID/time đã chuẩn bị. Để publish socket, gọi storage hoặc thu quyền sau khi commit được xác nhận. Với `UnknownTransactionCommitResult`, connector chỉ thử lại lệnh commit một lần trên cùng transaction. Driver vẫn có retry nội bộ cho lệnh commit. Nếu kết quả còn chưa rõ, caller nhận lỗi gốc và cần đọc lại theo ID/revision để đối soát trước khi thử lại nghiệp vụ hoặc báo kết quả. Unit test mô phỏng lỗi ở lệnh commit.
 
 ## Kiểm DB và index/migration trên môi trường riêng
 

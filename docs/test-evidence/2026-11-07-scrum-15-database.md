@@ -35,5 +35,11 @@ Test tạo DB `colearnia_test_scrum15_<UUID>` tại loopback rồi drop chính D
 
 - Bổ sung TTL `ttl_auth_expiry`, partial/dotted `uq_conv_channel`, partial ACTIVE/ENDING `uq_live_open_channel`. Đã kiểm options không khớp, trùng trong filter, bản ghi ngoài filter không báo trùng giả, mảng ở ancestor bị từ chối. Dùng fixture DB riêng, chưa tạo index trên collection ứng dụng.
 - Mongoose instance riêng đặt mặc định trước đăng ký model; không thay global Mongoose của các module khác. Unit trước connect PASS, integration không tự tạo collection/index PASS.
-- Test deadline chỉ kiểm lỗi timeout/session/data cleanup, không bắt máy CI phải thực hiện hai lượt trong 200 ms; retry hai lượt được kiểm riêng. Selection timeout của test giữ 5 giây để không áp deadline retry vào bootstrap.
+- Test deadline của bản trước review chỉ kiểm lỗi timeout/session/data cleanup. Lượt cập nhật dưới đây thay test đó bằng kiểm số lần retry và rollback dữ liệu.
 - Bảng bàn giao SCRUM-16/18/26/30/31/38/79 tại runbook; các task nhận vẫn cung cấp model/validator/provider và các test nghiệp vụ riêng.
+
+## Sau review CSOT
+
+- `pnpm check` đạt 55 ca harness, 86 ca unit/contract, format, lint, typecheck và build. Build web vẫn có cảnh báo kích thước bundle trên 500 kB.
+- `pnpm test:database` đạt 18/18 trên MongoDB Docker `rs0`. Kiểm cấu hình pool thực tế không có CSOT. Khi lỗi transient ở cả hai lượt, connector trả đúng lỗi, kết thúc session và không để lại dữ liệu ở hai collection.
+- Unit test kiểm từ chối `timeoutMS` trong URI và mô phỏng commit chưa rõ kết quả. Cả nhánh commit lại thành công và thất bại đều chỉ gọi callback một lần. Chưa mô phỏng ngắt mạng trong lúc commit thật.

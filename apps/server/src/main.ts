@@ -11,7 +11,8 @@ const config = loadConfig();
 const database = createDatabase(config.MONGO_URI, {
   maxPoolSize: config.MONGO_MAX_POOL_SIZE,
   serverSelectionTimeoutMS: config.MONGO_SERVER_SELECTION_TIMEOUT_MS,
-  operationTimeoutMS: config.MONGO_OPERATION_TIMEOUT_MS,
+  waitQueueTimeoutMS: config.MONGO_WAIT_QUEUE_TIMEOUT_MS,
+  socketTimeoutMS: config.MONGO_SOCKET_TIMEOUT_MS,
 });
 let media: Awaited<ReturnType<typeof createMediaRuntime>> | undefined;
 let stopping = false;
