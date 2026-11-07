@@ -25,6 +25,7 @@
     "format:check": "prettier --check .",
     "test": "pnpm --filter @colearnia/contracts build && vitest run",
     "test:watch": "vitest",
+    "test:database": "pnpm --filter @colearnia/contracts build && vitest run --config vitest.database.config.ts",
     "check": "pnpm check:harness && pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build",
     "check:harness": "node --test scripts/check-harness.test.mjs scripts/architecture.test.mjs && node scripts/check-harness.mjs",
     "infra:up": "docker compose up -d --wait mongo && docker compose run --rm mongo-init",
