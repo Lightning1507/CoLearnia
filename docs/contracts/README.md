@@ -63,7 +63,7 @@ DISCUSSION: tên ≤80, mục đích ≤500, roster hợp lệ không trùng/cù
 
 ## Đầu vào thiết kế DB bước 4 — 01/11/2026
 
-Nguồn field/scope: [collection-design](../database/collection-design.md). Document ID dùng ObjectId nội bộ/chuỗi hex ra API; runtime ID và requestId/clientMessageId dùng UUID. Contract phiên đã dùng schema đúng loại ID; `resourceIdSchema` scaffold vẫn là chuỗi rộng ở các phần khác. `channelAccessSchema` trong `workspace.ts` vẫn RESTRICTED và chưa có grant/incarnation; đồng bộ trong task Workspace trước khi triển khai consumer.
+Nguồn field/scope: [collection-design](../database/collection-design.md). Document ID dùng ObjectId nội bộ/chuỗi hex ra API; runtime ID và requestId/clientMessageId dùng UUID. Contract phiên đã dùng schema đúng loại ID; `resourceIdSchema` scaffold vẫn là chuỗi rộng ở các phần khác. `channelAccessSchema` trong `workspace.ts` vẫn RESTRICTED; input/DTO và grant kênh được đồng bộ trong task Workspace trước khi triển khai consumer. Schema thu quyền chung `accessRevocationSchema` đã có trong `workspace.ts` theo [SCRUM-23](session-context.md); M4 dùng alias trực tiếp, gồm membership/incarnation bắt buộc cho PRIVATE.
 
 Scope/binding hội thoại/file là cấu trúc theo kind/purpose, không payload Mixed tùy ý. Membership incarnation và grants là quyền server, không cho client tự khai version để được cấp PRIVATE. Không đưa passwordHash/tokenHash/storageKey hoặc document Mongoose nguyên bản vào response. Đây là đầu vào thiết kế, chưa đổi source contract hoặc tạo endpoint mới.
 

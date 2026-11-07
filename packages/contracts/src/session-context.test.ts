@@ -1,4 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, expectTypeOf, it } from 'vitest';
+import { accessRevocationSchema } from './workspace.js';
+import type { AccessRevocation } from './workspace.js';
+import type { LiveAccessRevocation } from './session-context.js';
 import {
   liveAccessRevocationSchema,
   liveContextResultSchema,
@@ -46,7 +49,86 @@ const cleanupIdentity = {
   target: { type: 'PARTICIPANT_SCOPE', participantId, scope: { type: 'MAIN' }, audienceEpoch: 4 },
 } as const;
 
+const revocationTargets = [
+  { kind: 'AUTH_SESSION', authSessionId: liveContext.auth.authSessionId },
+  { kind: 'USER_AUTH_SESSIONS', userId: liveContext.auth.userId },
+  {
+    kind: 'WORKSPACE_MEMBERSHIP',
+    workspaceId: liveContext.access.workspaceId,
+    userId: liveContext.auth.userId,
+    membershipId: liveContext.access.membershipId,
+    membershipIncarnation: 1,
+  },
+  {
+    kind: 'PRIVATE_CHANNEL_ACCESS',
+    workspaceId: liveContext.access.workspaceId,
+    channelId: liveContext.access.channelId,
+    userId: liveContext.auth.userId,
+    membershipId: liveContext.access.membershipId,
+    membershipIncarnation: 1,
+  },
+  {
+    kind: 'CHANNEL_DELETED',
+    workspaceId: liveContext.access.workspaceId,
+    channelId: liveContext.access.channelId,
+  },
+  { kind: 'WORKSPACE_DELETED', workspaceId: liveContext.access.workspaceId },
+] as const;
+
 describe('session context and cleanup contracts', () => {
+  it('uses the shared M1 revocation schema and inferred type directly', () => {
+    expect(liveAccessRevocationSchema).toBe(accessRevocationSchema);
+    expectTypeOf<LiveAccessRevocation>().toEqualTypeOf<AccessRevocation>();
+  });
+
+  it.each(revocationTargets)('accepts the M1 $kind payload without mapping fields', (target) => {
+    const payload = accessRevocationSchema.parse({
+      operationId: cleanupIdentity.operationId,
+      revision: 4,
+      ...target,
+    });
+    expect(liveAccessRevocationSchema.parse(payload)).toEqual(payload);
+  });
+
+  it('requires both PRIVATE membership fields and preserves the old incarnation', () => {
+    const payload = {
+      operationId: cleanupIdentity.operationId,
+      revision: 4,
+      ...revocationTargets[3],
+    };
+    const { membershipId, membershipIncarnation, ...unbound } = payload;
+    for (const invalid of [
+      unbound,
+      { ...unbound, membershipId },
+      { ...unbound, membershipIncarnation },
+      { ...payload, membershipIncarnation: 0 },
+    ]) {
+      expect(liveAccessRevocationSchema.safeParse(invalid).success).toBe(false);
+    }
+    expect(liveAccessRevocationSchema.parse(payload)).toEqual(payload);
+  });
+
+  it('rejects legacy kinds, injected authority and unsafe shared revisions', () => {
+    const payload = {
+      operationId: cleanupIdentity.operationId,
+      revision: 4,
+      ...revocationTargets[3],
+    };
+    for (const invalid of [
+      { ...payload, kind: 'PRIVATE_CHANNEL' },
+      {
+        operationId: payload.operationId,
+        revision: 4,
+        kind: 'USER_SESSIONS',
+        userId: '3'.repeat(24),
+      },
+      { ...payload, actorId: liveContext.auth.userId },
+      { ...payload, revision: Number.MAX_SAFE_INTEGER + 1 },
+    ]) {
+      expect(liveAccessRevocationSchema.safeParse(invalid).success).toBe(false);
+    }
+  });
+
   it('accepts a server-resolved LIVE context and confirmed revocation with deferred physical cleanup', () => {
     const resolved = { ok: true, context: liveContext };
     expect(liveContextResultSchema.parse(resolved)).toEqual(resolved);

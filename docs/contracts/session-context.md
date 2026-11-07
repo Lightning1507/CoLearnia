@@ -13,17 +13,21 @@ Schema và interface nằm trong [session-context.ts](../../packages/contracts/s
 
 ## Thu quyền và cleanup
 
-M1 xác định loại thu quyền và tạo `LiveAccessRevocation` theo đúng phạm vi. `operationId` là UUID ổn định cho một lần thu quyền. `revision` là mốc của nguồn quyền mà coordinator xác minh, không phải `policyRevision` của phiên. Adapter đối soát phạm vi và mốc đó trước khi áp dụng một lần gọi lại.
+M1 xác định loại thu quyền theo `accessRevocationSchema` tại [workspace.ts](../../packages/contracts/src/workspace.ts). M4 import trực tiếp schema này và alias thành `liveAccessRevocationSchema`; `LiveAccessRevocation` tiếp tục infer từ alias. Hai miền dùng cùng schema, không đổi tên hoặc bỏ field khi chuyển payload. Phần schema thu quyền dùng chung được cung cấp cùng contract SCRUM-23; các input/DTO Workspace và kênh còn lại thuộc SCRUM-13.
+
+`operationId` là UUID ổn định cho một lần thu quyền. `revision` là mốc của nguồn quyền mà coordinator xác minh, không phải `policyRevision` của phiên. Adapter đối soát phạm vi và mốc đó trước khi áp dụng một lần gọi lại.
 
 | Loại thu quyền                          | Phạm vi phải khớp                                                                                                                                        |
 | --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `AUTH_SESSION`                          | Đúng `authSessionId`                                                                                                                                     |
 | `USER_AUTH_SESSIONS`                    | Các phiên xác thực của user bị thao tác thu quyền này tác động. Lần chạy lại giữ cùng tập đã xác định từ nguồn quyền M1, kể cả khi user đã đăng nhập lại |
 | `WORKSPACE_MEMBERSHIP`                  | Đúng Workspace, user, membership và incarnation cũ                                                                                                       |
-| `PRIVATE_CHANNEL_ACCESS`                | Đúng Workspace, kênh, user và revision của lần thu                                                                                                       |
+| `PRIVATE_CHANNEL_ACCESS`                | Đúng Workspace, kênh, user, `membershipId`, `membershipIncarnation` cũ và channel revision của lần thu                                                   |
 | `CHANNEL_DELETED` / `WORKSPACE_DELETED` | Đúng kênh trong Workspace hoặc toàn Workspace tương ứng                                                                                                  |
 
-M4 chuyển phạm vi thu quyền thành request nội bộ cho adapter liên quan. Request mang `operationId`, `sessionId`, `epoch`, `transitionToken`, `target` và `reason`. Đích `PARTICIPANT` thu đúng đời sở hữu `callGeneration`. Đích `PARTICIPANT_SCOPE` còn chỉ rõ scope và `audienceEpoch` cũ để cleanup sau chuyển phạm vi không đóng tài nguyên của audience mới. Đích `SCOPE` dùng khi đóng một scope, gắn với đời phiên và token đóng scope do coordinator kiểm. Adapter dùng cùng định danh khi trả kết quả.
+Coordinator cố định đích membership và incarnation của lần thu, không lấy membership mới nhất của cùng user để thay đích cũ khi retry. Incarnation phân biệt các lần rejoin Workspace; gỡ rồi cấp lại PRIVATE trong cùng membership không tăng incarnation. Vì vậy, vẫn phải đối chiếu operation, channel revision và đời tài nguyên đã gắn với lần thu; incarnation riêng lẻ không bảo vệ kết nối mới sau khi được cấp lại quyền.
+
+M4 chuyển phạm vi thu quyền thành request nội bộ cho adapter liên quan. Request mang `operationId`, `sessionId`, `epoch`, `transitionToken`, `target` và `reason`. Đích `PARTICIPANT` thu đúng đời sở hữu `callGeneration`. Đích `PARTICIPANT_SCOPE` còn chỉ rõ scope và `audienceEpoch` cũ để cleanup sau chuyển phạm vi không đóng tài nguyên của audience mới. Đích `SCOPE` dùng khi đóng một scope, gắn với đời phiên và token đóng scope do coordinator kiểm. Adapter dùng cùng định danh khi trả kết quả. Các schema cleanup runtime này vẫn riêng với schema thu quyền M1; callback chỉ được tác động đúng tài nguyên cũ, không tìm lại theo userId để đóng tài nguyên mới.
 
 | Kết quả                                               | Điều kiện và việc tiếp theo                                                                                                                                                                                                             |
 | ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

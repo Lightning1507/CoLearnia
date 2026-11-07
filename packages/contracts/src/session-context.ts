@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { authenticatedContextSchema } from './auth.js';
 import { commonErrorCodeSchema } from './errors.js';
+import { accessRevocationSchema } from './workspace.js';
 import {
   sessionEpochSchema,
   sessionGroupIdSchema,
@@ -72,46 +73,7 @@ export const liveContextResultSchema = z.discriminatedUnion('ok', [
   }),
 ]);
 
-const revokeAccessFields = { operationId: z.uuid(), revision: revisionSchema };
-
-export const liveAccessRevocationSchema = z.discriminatedUnion('kind', [
-  z.strictObject({
-    ...revokeAccessFields,
-    kind: z.literal('AUTH_SESSION'),
-    authSessionId: documentIdSchema,
-  }),
-  z.strictObject({
-    ...revokeAccessFields,
-    kind: z.literal('USER_AUTH_SESSIONS'),
-    userId: documentIdSchema,
-  }),
-  z.strictObject({
-    ...revokeAccessFields,
-    kind: z.literal('WORKSPACE_MEMBERSHIP'),
-    workspaceId: documentIdSchema,
-    userId: documentIdSchema,
-    membershipId: documentIdSchema,
-    membershipIncarnation: generationSchema,
-  }),
-  z.strictObject({
-    ...revokeAccessFields,
-    kind: z.literal('PRIVATE_CHANNEL_ACCESS'),
-    workspaceId: documentIdSchema,
-    channelId: documentIdSchema,
-    userId: documentIdSchema,
-  }),
-  z.strictObject({
-    ...revokeAccessFields,
-    kind: z.literal('CHANNEL_DELETED'),
-    workspaceId: documentIdSchema,
-    channelId: documentIdSchema,
-  }),
-  z.strictObject({
-    ...revokeAccessFields,
-    kind: z.literal('WORKSPACE_DELETED'),
-    workspaceId: documentIdSchema,
-  }),
-]);
+export const liveAccessRevocationSchema = accessRevocationSchema;
 
 const cleanupFields = {
   operationId: z.uuid(),
