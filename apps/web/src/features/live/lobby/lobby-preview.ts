@@ -147,13 +147,18 @@ export class LobbyPreview {
         const openedMissing =
           current.openedId && !inputs.some((d) => d.deviceId === current.openedId);
         this.update(kind, { devices: options });
-        if (selectedMissing || openedMissing) {
+        const replacementPending = current.status === 'requesting' && inputs.length > 0;
+        if (selectedMissing || (openedMissing && !replacementPending)) {
           this.stop(kind);
           this.update(kind, {
             selectedId: '',
             status: 'unavailable',
             message: 'Thiết bị đã chọn không còn khả dụng. Hãy chọn lại thiết bị rồi bấm Bật.',
           });
+        } else if (openedMissing) {
+          // Losing A must not invalidate the generation acquiring the still-available B.
+          this.releaseOwned(kind);
+          this.update(kind, { openedId: null });
         }
       }
       this.publish({ enumerating: false });

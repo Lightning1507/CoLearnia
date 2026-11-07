@@ -211,6 +211,60 @@ describe('lobby preview ownership and browser devices', () => {
     expect(replacement.stop).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ['camera', 'video', 'videoinput', 'cam1', 'cam2'],
+    ['microphone', 'audio', 'audioinput', 'mic1', 'mic2'],
+  ] as const)(
+    'keeps the pending %s replacement when only the old device is unplugged',
+    async (kind, trackKind, inputKind, firstId, nextId) => {
+      const { preview, getUserMedia, enumerateDevices, change } = setup();
+      await preview.refreshDevices();
+      const first = media(trackKind, firstId);
+      const replacement = media(trackKind, nextId);
+      const pending = deferred<MediaStream>();
+      getUserMedia.mockResolvedValueOnce(first.stream).mockReturnValueOnce(pending.promise);
+      preview.select(kind, firstId);
+      await preview.open(kind);
+      await preview.refreshDevices();
+      preview.select(kind, nextId);
+      enumerateDevices.mockResolvedValue([device(inputKind, nextId)]);
+      change();
+      await vi.waitFor(() => expect(first.stop).toHaveBeenCalledOnce());
+      expect(preview.getSnapshot()[kind]).toMatchObject({
+        selectedId: nextId,
+        openedId: null,
+        status: 'requesting',
+      });
+      if (kind === 'camera') expect(preview.getSnapshot().videoStream).toBeNull();
+      pending.resolve(replacement.stream);
+      await vi.waitFor(() => expect(preview.getSnapshot()[kind].status).toBe('ready'));
+      expect(preview.getSnapshot()[kind].openedId).toBe(nextId);
+      expect(replacement.stop).not.toHaveBeenCalled();
+      expect(getUserMedia).toHaveBeenCalledTimes(2);
+      if (kind === 'camera') expect(preview.getSnapshot().videoStream).toBe(replacement.stream);
+    },
+  );
+
+  it('cancels the replacement when the selected new device is unplugged', async () => {
+    const { preview, getUserMedia, enumerateDevices, change } = setup();
+    await preview.refreshDevices();
+    const first = media('video', 'cam1');
+    const replacement = media('video', 'cam2');
+    const pending = deferred<MediaStream>();
+    getUserMedia.mockResolvedValueOnce(first.stream).mockReturnValueOnce(pending.promise);
+    await preview.open('camera');
+    await preview.refreshDevices();
+    preview.select('camera', 'cam2');
+    enumerateDevices.mockResolvedValue([device('videoinput', 'cam1')]);
+    change();
+    await vi.waitFor(() => expect(preview.getSnapshot().camera.status).toBe('unavailable'));
+    pending.resolve(replacement.stream);
+    await vi.waitFor(() => expect(replacement.stop).toHaveBeenCalledOnce());
+    expect(first.stop).toHaveBeenCalledOnce();
+    expect(preview.getSnapshot().camera.selectedId).toBe('');
+    expect(preview.getSnapshot().videoStream).toBeNull();
+  });
+
   it('releases an old stream after replacement fails and does not show a fake active preview', async () => {
     const { preview, getUserMedia } = setup();
     const camera = media('video', 'cam1');

@@ -1,7 +1,11 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import type { DeviceKind } from './lobby-preview';
-import { useLobbyPreview } from './use-lobby-preview';
+import { useLobbyPreview } from './useLobbyPreview';
 import './lobby.css';
+
+const controlClass =
+  'min-h-11 max-w-full rounded-lg border border-[#d5dfc7] px-3 py-2 font-[inherit] disabled:cursor-not-allowed!';
+const buttonClass = `${controlClass} bg-[#edf2dd] text-[#193e35]`;
 
 export type LobbyDevicePreferences = {
   camera: { enabled: boolean; deviceId: string };
@@ -34,10 +38,17 @@ function CameraPreview({ stream }: { stream: MediaStream }) {
   }, [stream]);
   return (
     <>
-      <video ref={ref} autoPlay playsInline muted aria-label="Camera xem trước của bạn" />
+      <video
+        className="h-full w-full object-cover"
+        ref={ref}
+        autoPlay
+        playsInline
+        muted
+        aria-label="Camera xem trước của bạn"
+      />
       {playbackError && (
         <button
-          className="lobby-play"
+          className={`${buttonClass} absolute bottom-5`}
           type="button"
           onClick={() => {
             void ref.current
@@ -83,30 +94,40 @@ export function LobbyDeviceCheck({
   };
 
   return (
-    <section className="lobby-device-check" aria-labelledby={`${id}-title`}>
-      <header className="lobby-header">
-        <button type="button" onClick={back} disabled={continuePending}>
+    <section
+      className="lobby-device-check min-h-dvh bg-[#f7f8f2] leading-[1.6] text-[#193e35]"
+      aria-labelledby={`${id}-title`}
+    >
+      <header className="flex flex-wrap items-center justify-between gap-4 border-b border-[#dce3d6] bg-white px-6 py-4">
+        <button className={buttonClass} type="button" onClick={back} disabled={continuePending}>
           ← Quay lại Phòng học
         </button>
         <strong>CoLearnia</strong>
       </header>
-      <div className="lobby-main">
-        <div className="lobby-preview" aria-label="Khu vực xem trước camera">
+      <div className="mx-auto grid max-w-7xl grid-cols-[minmax(0,1fr)] items-center gap-6 px-4 py-6 min-[801px]:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)] min-[801px]:gap-12 min-[801px]:px-6 min-[801px]:py-12">
+        <div
+          className="relative grid aspect-[16/10] place-items-center overflow-hidden rounded-2xl bg-[#222927] text-[#eff4df]"
+          aria-label="Khu vực xem trước camera"
+        >
           {state.videoStream ? (
             <CameraPreview key={state.videoStream.id} stream={state.videoStream} />
           ) : (
-            <div className="lobby-placeholder">
-              <span aria-hidden="true">◉</span>
+            <div className="p-6 text-center">
+              <span className="block text-[40px]" aria-hidden="true">
+                ◉
+              </span>
               <strong>
                 {state.camera.status === 'requesting' ? 'Đang mở camera…' : 'Camera chưa bật'}
               </strong>
-              <p>Hình ảnh chỉ xuất hiện sau khi camera mở thành công.</p>
+              <p className="text-sm">Hình ảnh chỉ xuất hiện sau khi camera mở thành công.</p>
             </div>
           )}
         </div>
-        <div className="lobby-settings">
-          <p className="lobby-eyebrow">{channelName}</p>
-          <h1 id={`${id}-title`}>Sẵn sàng tham gia?</h1>
+        <div className="min-w-0 wrap-anywhere">
+          <p className="text-xs font-bold text-[#63756b]">{channelName}</p>
+          <h1 className="mt-2! mb-4! text-[30px]! tracking-[-0.8px]!" id={`${id}-title`}>
+            Sẵn sàng tham gia?
+          </h1>
           <p>Kiểm tra camera và microphone trước khi vào phòng. Chỉ bật thiết bị khi bạn muốn.</p>
           {state.environmentError && <p role="alert">{state.environmentError}</p>}
           <p role="status">
@@ -117,10 +138,17 @@ export function LobbyDeviceCheck({
             const name = kind === 'camera' ? 'Camera' : 'Microphone';
             const running = device.status === 'ready' || device.status === 'requesting';
             return (
-              <fieldset key={kind} disabled={!!state.environmentError || continuePending}>
-                <legend>{name}</legend>
-                <label htmlFor={`${id}-${kind}`}>Chọn {name.toLowerCase()}</label>
+              <fieldset
+                className="my-5 rounded-xl border border-[#dce3d6] p-4 text-sm"
+                key={kind}
+                disabled={!!state.environmentError || continuePending}
+              >
+                <legend className="px-1.5 font-bold text-base">{name}</legend>
+                <label className="mb-1.5 block text-base" htmlFor={`${id}-${kind}`}>
+                  Chọn {name.toLowerCase()}
+                </label>
                 <select
+                  className={`${controlClass} w-full bg-white text-base`}
                   id={`${id}-${kind}`}
                   value={device.selectedId}
                   aria-describedby={`${id}-${kind}-status`}
@@ -143,6 +171,7 @@ export function LobbyDeviceCheck({
                   </p>
                 )}
                 <button
+                  className={`${buttonClass} text-base`}
                   type="button"
                   aria-pressed={device.status === 'ready'}
                   onClick={() => (running ? preview.stop(kind) : void preview.open(kind))}
@@ -154,6 +183,7 @@ export function LobbyDeviceCheck({
             );
           })}
           <button
+            className={buttonClass}
             type="button"
             disabled={!!state.environmentError || state.enumerating || continuePending}
             onClick={() => void preview.refreshDevices()}
@@ -164,7 +194,7 @@ export function LobbyDeviceCheck({
             <>
               <p>Bạn vẫn có thể tiếp tục để xem nội dung mà không bật camera hoặc microphone.</p>
               <button
-                className="lobby-continue"
+                className={`${controlClass} w-full bg-[#173f35] text-[#eff4df]`}
                 type="button"
                 onClick={continueToSession}
                 disabled={continuePending}
