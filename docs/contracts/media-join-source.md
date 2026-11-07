@@ -31,7 +31,53 @@ Ví dụ Socket.IO `session.join` lần đầu dùng ticket từ response trên.
 }
 ```
 
-Retry cùng ý định giữ request ID và payload. Mất ack cần đối chiếu kết quả hoặc đồng bộ lại theo contract, tránh sinh participant thứ hai. Nếu đang có cuộc gọi khác, server báo `CALL_ALREADY_ACTIVE` và giữ ownership hiện tại để người dùng quyết định. Theo proposal M4, nhánh này giữ ticket chưa consume. Xác nhận chuyển là ý định mới, dùng `requestId` mới với ticket còn hạn và payload đề xuất `takeover: { confirmed: true, expectedCallGeneration }`. M4 cần xác nhận shape payload và metadata xung đột được phép trả trước khi consumer triển khai. [Vòng đời join](../product/live-session.md) · [Thiết kế join/takeover M4](../proposals/m4-session-groups.md#63-api-socket-và-contract-dự-kiến) · [Context SCRUM-23](session-context.md)
+Ack `completed` dưới đây dùng snapshot MAIN tối thiểu để controller và shell thử đọc kết quả công khai. `requestId` ngoài ack và trong snapshot đều khớp lệnh join. Snapshot chỉ chứa dấu phiên, dấu quyền và scope đã lọc cho người gọi. Schema projection đầy đủ và cách chia phần tiếp tục ở SCRUM-66.
+
+```json
+{
+  "data": {
+    "status": "completed",
+    "result": {
+      "participantId": "222222222222222222222222",
+      "callGeneration": 2,
+      "snapshot": {
+        "requestId": "10000000-0000-4000-8000-000000000001",
+        "sessionId": "111111111111111111111111",
+        "epoch": "10000000-0000-4000-8000-000000000003",
+        "callGeneration": 2,
+        "audienceEpoch": 0,
+        "projectionSequence": 0,
+        "policyRevision": 9,
+        "scope": { "type": "MAIN" }
+      }
+    }
+  },
+  "requestId": "10000000-0000-4000-8000-000000000001"
+}
+```
+
+### Khi đang sở hữu một cuộc gọi khác
+
+Nếu join gặp ownership đang hoạt động, ack lỗi giữ ID của lần join và ticket còn hạn vẫn chưa bị consume. Người dùng có thể giữ cuộc gọi cũ hoặc xác nhận chuyển.
+
+```json
+{
+  "error": { "code": "CALL_ALREADY_ACTIVE", "message": "Bạn đang có một cuộc gọi khác." },
+  "requestId": "10000000-0000-4000-8000-000000000001"
+}
+```
+
+Ví dụ xác nhận với generation cũ `1`. Fixture cung cấp riêng generation mà M4 đã xác minh và cho phép actor biết. Cách truyền metadata này trên wire vẫn cần M4 xác nhận theo error contract. `expectedCallGeneration` nằm trong `takeover` và tham chiếu ownership cũ, còn `callGeneration` trong ack thành công là ownership mới.
+
+```json
+{
+  "requestId": "10000000-0000-4000-8000-000000000006",
+  "ticket": "fixture-join-ticket",
+  "takeover": { "confirmed": true, "expectedCallGeneration": 1 }
+}
+```
+
+Khi xác nhận, server kiểm lại ticket, quyền kênh đích và ownership dự kiến. Sau khi thu quyền của đời cũ và cấp ownership mới, ack dùng dạng `completed` ở trên với `requestId` của lệnh xác nhận. Nếu người dùng hủy, giữ cuộc gọi cũ. Retry cùng ý định giữ request ID và payload. Mất ack cần đối chiếu kết quả hoặc đồng bộ lại theo contract, tránh sinh participant thứ hai. [Vòng đời join](../product/live-session.md) · [Thiết kế join/takeover M4](../proposals/m4-session-groups.md#63-api-socket-và-contract-dự-kiến) · [Context SCRUM-23](session-context.md)
 
 ## Nguồn và envelope sau join
 
@@ -98,10 +144,10 @@ Fixture chạy bằng `pnpm exec vitest run packages/contracts/src/media-join-so
 
 ## Kết quả review và bàn giao
 
-| Điểm cần xác nhận                                                                     | Reviewer                | Kết quả                                                                  |
-| ------------------------------------------------------------------------------------- | ----------------------- | ------------------------------------------------------------------------ |
-| Input join, payload xác nhận takeover, ack join khi snapshot trực tiếp hoặc chia phần | M4                      | Chờ review. Fixture giữ ví dụ join lần đầu và context nội bộ             |
-| Cách phân biệt lỗi mất ownership với state/source cũ và thứ tự kiểm quyền biết đích   | M4 cùng M3              | Chờ review. Các mã riêng trong proposal chưa được đăng ký từ fixture này |
-| Ca hợp lệ, sai quyền và stale có đủ để controller, shell và registry dùng fixture     | M4 và bên dùng contract | Chờ review. Ghi link nhận xét và nội dung đã chốt ở PR                   |
+| Điểm cần xác nhận                                                                   | Reviewer                | Kết quả                                                                                       |
+| ----------------------------------------------------------------------------------- | ----------------------- | --------------------------------------------------------------------------------------------- |
+| Input join, payload xác nhận takeover và ack join công khai                         | M4                      | Đã bổ sung theo review. Chờ xác nhận lại ví dụ và cách truyền metadata ownership khi xung đột |
+| Cách phân biệt lỗi mất ownership với state/source cũ và thứ tự kiểm quyền biết đích | M4 cùng M3              | Chờ review. Các mã riêng trong proposal chưa được đăng ký từ fixture này                      |
+| Ca hợp lệ, sai quyền và stale có đủ để controller, shell và registry dùng fixture   | M4 và bên dùng contract | Chờ review. Ghi link nhận xét và nội dung đã chốt ở PR                                        |
 
 Bàn giao ví dụ cho SCRUM-59 (controller), SCRUM-45 (shell) và SCRUM-82 (registry). SCRUM-56 tiếp tục contract revoke/pending/cleanup. SCRUM-57 hoàn thiện `SourceDescriptor`, snapshot/event và revision. SCRUM-58 tiếp tục REST proof, ICE fencing và schema strict cho API media. [Phụ thuộc Sprint 1](../planning/sprint-1.md#thứ-tự-nhận-việc-đầu-sprint-trên-jira)

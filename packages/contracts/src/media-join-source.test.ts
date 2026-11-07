@@ -1,6 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
-import { apiErrorSchema, apiResponseSchema, requestIdSchema, resourceIdSchema } from './common.js';
+import {
+  apiErrorSchema,
+  apiResponseSchema,
+  commandAckSchema,
+  requestIdSchema,
+  resourceIdSchema,
+} from './common.js';
 import { liveContextSchema } from './session-context.js';
 import {
   mediaSourceSchema,
@@ -12,7 +18,33 @@ import {
 } from './session.js';
 
 // Review-only shapes for SCRUM-44 examples. Public media schemas follow in SCRUM-57/58.
-const joinExampleSchema = z.strictObject({ requestId: requestIdSchema, ticket: z.string().min(1) });
+const callGenerationSchema = z.number().int().positive();
+const joinExampleSchema = z.strictObject({
+  requestId: requestIdSchema,
+  ticket: z.string().min(1),
+  takeover: z
+    .strictObject({ confirmed: z.literal(true), expectedCallGeneration: callGenerationSchema })
+    .optional(),
+});
+const joinAckExampleSchema = commandAckSchema(
+  z.strictObject({
+    status: z.literal('completed'),
+    result: z.strictObject({
+      participantId: sessionParticipantIdSchema,
+      callGeneration: callGenerationSchema,
+      snapshot: z.strictObject({
+        requestId: requestIdSchema,
+        sessionId: sessionIdSchema,
+        epoch: sessionEpochSchema,
+        callGeneration: callGenerationSchema,
+        audienceEpoch: z.number().int().nonnegative(),
+        projectionSequence: z.number().int().nonnegative(),
+        policyRevision: z.number().int().nonnegative(),
+        scope: sessionScopeRefSchema,
+      }),
+    }),
+  }),
+);
 const ticketResponseExampleSchema = apiResponseSchema(
   z.strictObject({
     sessionId: sessionIdSchema,
@@ -32,6 +64,10 @@ const sessionId = '1'.repeat(24);
 const participantId = '2'.repeat(24);
 const epoch = '10000000-0000-4000-8000-000000000003';
 const mainScope = sessionScopeRefSchema.parse({ type: 'MAIN' });
+const firstJoin = {
+  requestId: '10000000-0000-4000-8000-000000000001',
+  ticket: 'fixture-join-ticket',
+};
 const context = liveContextSchema.parse({
   auth: {
     userId: '4'.repeat(24),
@@ -71,6 +107,29 @@ const source = {
   kind: 'video',
   publicationState: 'PUBLISHING',
 };
+
+function completedJoin(requestId: string) {
+  return {
+    data: {
+      status: 'completed',
+      result: {
+        participantId: context.participantId,
+        callGeneration: context.callGeneration,
+        snapshot: {
+          requestId,
+          sessionId: context.sessionId,
+          epoch: context.epoch,
+          callGeneration: context.callGeneration,
+          audienceEpoch: context.audienceEpoch,
+          projectionSequence: 0,
+          policyRevision: context.policyRevision,
+          scope: mainScope,
+        },
+      },
+    },
+    requestId,
+  };
+}
 
 const ready = readyExampleSchema.parse({
   requestId: '10000000-0000-4000-8000-000000000002',
@@ -120,20 +179,72 @@ function reviewReady(
 describe('SCRUM-44 join and media examples', () => {
   it('uses a ticket before join and the server-assigned context for a subsequent MAIN command', () => {
     const issued = ticketResponseExampleSchema.parse({
-      data: { sessionId, epoch, ticket: 'fixture-join-ticket', expiresAt: '2026-11-07T12:01:00Z' },
+      data: { sessionId, epoch, ticket: firstJoin.ticket, expiresAt: '2026-11-07T12:01:00Z' },
       requestId: '10000000-0000-4000-8000-000000000004',
     });
-    const join = {
-      requestId: '10000000-0000-4000-8000-000000000001',
-      ticket: issued.data.ticket,
-    };
-    expect(joinExampleSchema.parse(join)).toEqual(join);
+    const join = joinExampleSchema.parse({ ...firstJoin, ticket: issued.data.ticket });
+    expect(join).toEqual(firstJoin);
     expect(joinExampleSchema.safeParse({ ...join, callGeneration: 2 }).success).toBe(false);
-    expect(context).toMatchObject({ sessionId: issued.data.sessionId, epoch: issued.data.epoch });
 
+    const ack = joinAckExampleSchema.parse(completedJoin(join.requestId));
+    if (!('data' in ack)) throw new Error('Expected a completed join fixture');
+    const { participantId: joinedParticipant, callGeneration, snapshot } = ack.data.result;
+    expect(joinedParticipant).toBe(context.participantId);
+    expect(snapshot).toMatchObject({
+      requestId: join.requestId,
+      sessionId: issued.data.sessionId,
+      epoch: issued.data.epoch,
+      callGeneration,
+    });
+
+    const command = readyExampleSchema.parse({
+      ...ready,
+      sessionId: snapshot.sessionId,
+      epoch: snapshot.epoch,
+      callGeneration,
+      expectedPolicyRevision: snapshot.policyRevision,
+    });
     const resume = vi.fn<(consumerId: string) => void>();
-    expect(reviewReady(ready, source, resume)).toBe('completed');
-    expect(resume).toHaveBeenCalledExactlyOnceWith(ready.payload.consumerId);
+    expect(reviewReady(command, source, resume)).toBe('completed');
+    expect(resume).toHaveBeenCalledExactlyOnceWith(command.payload.consumerId);
+  });
+
+  it('rejects internal auth and access fields in a public join snapshot', () => {
+    const ack = completedJoin(firstJoin.requestId);
+    for (const field of [{ auth: context.auth }, { access: context.access }]) {
+      const result = { ...ack.data.result, snapshot: { ...ack.data.result.snapshot, ...field } };
+      expect(
+        joinAckExampleSchema.safeParse({ ...ack, data: { ...ack.data, result } }).success,
+      ).toBe(false);
+    }
+  });
+
+  it('uses a new intent and the same ticket after an explicit takeover confirmation', () => {
+    const join = joinExampleSchema.parse(firstJoin);
+    const conflict = {
+      error: { code: 'CALL_ALREADY_ACTIVE', message: 'Bạn đang có một cuộc gọi khác.' },
+      requestId: join.requestId,
+    };
+    expect(joinAckExampleSchema.parse(conflict)).toEqual(conflict);
+
+    // The fixture injects the old ownership generation separately from the common error ack.
+    const currentCallGeneration = 1;
+    const confirmation = joinExampleSchema.parse({
+      ticket: join.ticket,
+      requestId: '10000000-0000-4000-8000-000000000006',
+      takeover: { confirmed: true, expectedCallGeneration: currentCallGeneration },
+    });
+    expect(confirmation.requestId).not.toBe(conflict.requestId);
+    expect(confirmation.ticket).toBe(join.ticket);
+    expect(confirmation.takeover?.expectedCallGeneration).toBe(currentCallGeneration);
+    expect(joinAckExampleSchema.parse(completedJoin(confirmation.requestId))).toMatchObject({
+      requestId: confirmation.requestId,
+      data: { result: { callGeneration: 2, snapshot: { requestId: confirmation.requestId } } },
+    });
+
+    for (const takeover of [{ confirmed: true }, { confirmed: false, expectedCallGeneration: 1 }]) {
+      expect(joinExampleSchema.safeParse({ ...confirmation, takeover }).success).toBe(false);
+    }
   });
 
   it('does not resume a private ACTIVITY source withheld by the audience projection', () => {
