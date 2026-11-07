@@ -70,6 +70,12 @@ Trước khi bật tính năng tệp, cần chuẩn bị nơi lưu riêng, quy�
 3. Kiểm readiness nội bộ, kết nối replica set bằng tài khoản app, thử lưu/hủy trên dữ liệu thử được cấp và kiểm DB/app port không truy cập được từ Internet. Readiness có media worker chỉ xác nhận tiến trình sẵn sàng ở mức cơ sở.
 4. Ghi commit/image đã triển khai, phiên bản cấu hình, nơi lưu dữ liệu bền/backup và người duyệt. Giữ một app process. Khi thay bản app, thông báo và chờ các cuộc gọi kết thúc trước khi khởi động lại.
 
+#### Kiểm proxy sau khi tạo lại container app
+
+Nginx dùng DNS nội bộ của Docker để tra lại IP của service `server`. Cả `/api/` và `/socket.io/` dùng chung địa chỉ này. DNS được lưu trong 5 giây. Trong lúc app đang khởi động hoặc Nginx còn giữ địa chỉ cũ, yêu cầu có thể tạm thất bại và kết nối đang mở cần kết nối lại.
+
+Trên staging, sau khi các cuộc gọi đã kết thúc, ghi lại IP app trên mạng Compose rồi tạo lại riêng container `server`. Xác nhận app đã sẵn sàng và IP thực sự đổi. Giữ nguyên container Nginx, gọi lại API qua HTTPS và thử mở kết nối Socket.IO mới. Cả hai phải đến được app mới. Nếu địa chỉ được cấp lại trùng IP cũ, ca thử đó chưa kiểm được việc cập nhật DNS.
+
 ### SCRUM-63 kiểm khi có TURN
 
 1. Xác nhận DNS/IP, NAT, cổng lắng nghe và dải relay theo hạ tầng thật.
@@ -89,5 +95,7 @@ Kiểm trên nhánh `chore/SCRUM-54-staging-config`, nền `ff27fdd`, ngày 07/1
 | `pnpm media:smoke`                               | Worker và Router khởi động được với Opus/VP8. Chưa kiểm đường truyền RTP, cuộc gọi trên trình duyệt hay TURN.                                                                                                               |
 
 Máy làm việc không có Docker Engine để chạy stack. Kiểm HTTPS từ bên ngoài, kết nối MongoDB có xác thực, cổng qua firewall và TURN đang chờ môi trường staging. Trạng thái review của M4 vẫn đang chờ.
+
+Sau góp ý review về đổi IP container, kiểm trên Nginx 1.28.3 trong WSL với chứng chỉ thử, DNS giả và hai backend thử. Khi bản ghi DNS đổi từ IP cũ sang IP mới và backend cũ dừng, API trả 200 và yêu cầu nâng cấp WebSocket qua đường dẫn Socket.IO trả 101 từ backend mới mà không reload Nginx. Cả hai giữ nguyên đường dẫn và tham số truy vấn. Ca đổi IP bằng Docker thật thực hiện trên staging theo mục trên.
 
 Tham khảo cách [Compose kiểm biến bắt buộc](https://docs.docker.com/compose/how-tos/environment-variables/variable-interpolation/) và [Nginx chuyển tiếp WebSocket](https://nginx.org/en/docs/http/websocket.html).
