@@ -232,4 +232,40 @@ describe('SCRUM-57 media source contract', () => {
     ).toBe(false);
     expect(mediaSourceEventSchemas['media.source.ended'].safeParse(closed).success).toBe(false);
   });
+
+  it('accepts Producer pause, resume and replace prepare without a close reason', () => {
+    const schema = mediaSourceEventSchemas['media.producer.stateChanged'];
+    const producer = {
+      producerId: camera.producerId,
+      sourceId: camera.sourceId,
+      sourceGeneration: camera.sourceGeneration,
+    };
+    const pause = { ...producer, sourceRevision: 1, state: 'PAUSED' };
+    const resume = { ...producer, sourceRevision: 2, state: 'PUBLISHING' };
+    const prepare = { ...producer, sourceRevision: 3, state: 'SWITCHING' };
+    for (const [index, payload] of [pause, resume, prepare].entries()) {
+      const delta = { ...event, mediaSequence: event.mediaSequence + index, payload };
+      expect(schema.parse(delta)).toEqual(delta);
+      expect(
+        schema.safeParse({ ...delta, payload: { ...payload, reason: 'USER_STOP' } }).success,
+      ).toBe(false);
+    }
+  });
+
+  it('requires a catalog reason when the Producer closes', () => {
+    const schema = mediaSourceEventSchemas['media.producer.stateChanged'];
+    const payload = {
+      producerId: camera.producerId,
+      sourceId: camera.sourceId,
+      sourceGeneration: camera.sourceGeneration,
+      sourceRevision: 4,
+      state: 'CLOSED',
+    };
+    const closed = { ...event, payload: { ...payload, reason: 'PERMISSION_REVOKED' } };
+    expect(schema.parse(closed)).toEqual(closed);
+    expect(schema.safeParse({ ...closed, payload }).success).toBe(false);
+    expect(
+      schema.safeParse({ ...closed, payload: { ...payload, reason: 'raw error' } }).success,
+    ).toBe(false);
+  });
 });

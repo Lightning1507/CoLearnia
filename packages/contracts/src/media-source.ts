@@ -137,36 +137,52 @@ const resourceCloseReasons = [
   'SESSION_ENDED',
   'DEADLINE',
 ] as const;
-const sourceReasonSchema = z.enum([...resourceCloseReasons, 'SOURCE_ENDED', 'SOURCE_REPLACED']);
+const sourceCloseReasonSchema = z.enum([
+  ...resourceCloseReasons,
+  'SOURCE_ENDED',
+  'SOURCE_REPLACED',
+]);
 
-function mediaDeltaSchema<Shape extends z.ZodRawShape>(payload: Shape) {
+function mediaDeltaSchema<Payload extends z.ZodType>(payload: Payload) {
   return z.strictObject({
     ...recipientContext,
     ...mediaWatermark,
     mediaSequence: generationSchema,
-    payload: z.strictObject(payload),
+    payload,
   });
 }
 
 // Socket event name selects the schema. It is separate from the wire envelope.
 export const mediaSourceEventSchemas = {
-  'media.source.changed': mediaDeltaSchema({ source: mediaSourceDescriptorSchema }),
-  'media.source.ended': mediaDeltaSchema({ ...sourceVersion, reason: sourceReasonSchema }),
-  'media.producer.stateChanged': mediaDeltaSchema({
-    ...sourceVersion,
-    producerId: resourceIdSchema,
-    state: z.enum([...publicationStateSchema.options, 'CLOSED']),
-    reason: sourceReasonSchema,
-  }),
-  'media.consumer.closed': mediaDeltaSchema({
-    ...sourceIdentity,
-    consumerId: resourceIdSchema,
-    reason: sourceReasonSchema,
-  }),
-  'media.transport.closed': mediaDeltaSchema({
-    transportId: resourceIdSchema,
-    reason: z.enum(resourceCloseReasons),
-  }),
+  'media.source.changed': mediaDeltaSchema(z.strictObject({ source: mediaSourceDescriptorSchema })),
+  'media.source.ended': mediaDeltaSchema(
+    z.strictObject({ ...sourceVersion, reason: sourceCloseReasonSchema }),
+  ),
+  'media.producer.stateChanged': mediaDeltaSchema(
+    z.discriminatedUnion('state', [
+      z.strictObject({
+        ...sourceVersion,
+        producerId: resourceIdSchema,
+        state: publicationStateSchema,
+      }),
+      z.strictObject({
+        ...sourceVersion,
+        producerId: resourceIdSchema,
+        state: z.literal('CLOSED'),
+        reason: sourceCloseReasonSchema,
+      }),
+    ]),
+  ),
+  'media.consumer.closed': mediaDeltaSchema(
+    z.strictObject({
+      ...sourceIdentity,
+      consumerId: resourceIdSchema,
+      reason: sourceCloseReasonSchema,
+    }),
+  ),
+  'media.transport.closed': mediaDeltaSchema(
+    z.strictObject({ transportId: resourceIdSchema, reason: z.enum(resourceCloseReasons) }),
+  ),
 } as const;
 
 export type MediaSourceDescriptor = z.infer<typeof mediaSourceDescriptorSchema>;

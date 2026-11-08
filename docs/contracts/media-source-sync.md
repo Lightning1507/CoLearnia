@@ -34,15 +34,17 @@ Schema kiểm phần riêng lẻ và giới hạn số part theo `sessionControl
 
 Tên event đi riêng trong Socket.IO. Mỗi event chứa `sessionId`, `epoch`, `callGeneration` của **người nhận**, `audienceEpoch`, `policyRevision`, `mediaStreamId`, `mediaSequence` và `payload`.
 
-| Event                         | Payload                                                                                    |
-| ----------------------------- | ------------------------------------------------------------------------------------------ |
-| `media.source.changed`        | `{ source }`                                                                               |
-| `media.source.ended`          | `{ sourceId, sourceGeneration, sourceRevision, reason }`                                   |
-| `media.producer.stateChanged` | `{ producerId, sourceId, sourceGeneration, sourceRevision, state, reason }`, chỉ tới owner |
-| `media.consumer.closed`       | `{ consumerId, sourceId, sourceGeneration, reason }`, chỉ tới owner của Consumer           |
-| `media.transport.closed`      | `{ transportId, reason }`, chỉ tới owner của transport                                     |
+| Event                         | Payload                                                                                                             |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `media.source.changed`        | `{ source }`                                                                                                        |
+| `media.source.ended`          | `{ sourceId, sourceGeneration, sourceRevision, reason }`                                                            |
+| `media.producer.stateChanged` | `{ producerId, sourceId, sourceGeneration, sourceRevision, state }`, chỉ tới owner. `CLOSED` bắt buộc thêm `reason` |
+| `media.consumer.closed`       | `{ consumerId, sourceId, sourceGeneration, reason }`, chỉ tới owner của Consumer                                    |
+| `media.transport.closed`      | `{ transportId, reason }`, chỉ tới owner của transport                                                              |
 
-Schema dùng catalog reason của proposal để lọc giá trị, với hai reason riêng về nguồn `SOURCE_ENDED` và `SOURCE_REPLACED` dùng cho event gắn nguồn. M4 đối chiếu cách map reason với các adapter. Một event đóng chỉ được dọn mapping đúng đời nguồn hoặc ownership tương ứng. [Thiết kế event M3](../proposals/m3-media.md#636-event-media-payload-sequence-và-bảo-đảm-xử-lý)
+Các trạng thái Producer `PUBLISHING`, `PAUSED` và `SWITCHING` chỉ gửi `state` cùng định danh và revision nguồn. Ví dụ `media.producer.resume` phát `PUBLISHING`, còn `media.producer.replace.prepare` phát `SWITCHING`. Cả hai payload đều không có `reason`.
+
+Các event kết thúc nguồn hoặc đóng tài nguyên dùng catalog `reason` của proposal. `SOURCE_ENDED` và `SOURCE_REPLACED` chỉ dùng cho event gắn nguồn. Một event đóng chỉ được dọn mapping đúng đời nguồn hoặc ownership tương ứng. [Thiết kế event M3](../proposals/m3-media.md#636-event-media-payload-sequence-và-bảo-đảm-xử-lý)
 
 Ví dụ dưới đây bắt đầu ở `callGeneration = 2`, `audienceEpoch = 4`, stream A. Snapshot chốt watermark `S = 12`, `policyRevision = 9`. Snapshot giữ mic own ở `PAUSED` và camera own ở `SWITCHING` dù `sources = []`.
 
@@ -60,9 +62,6 @@ FE giữ event đúng context trong khi ghép. Sau khi nhận đủ part, áp sn
 
 Schema và type dùng chung nằm ở [media-source.ts](../../packages/contracts/src/media-source.ts). [Fixture SCRUM-57](../../packages/contracts/src/media-source.test.ts) kiểm dữ liệu hợp lệ, trường nội bộ bị từ chối, own Producer PAUSED/SWITCHING, watermark, gap và audience đổi. Fixture mô tả quyết định của consumer. Handler, lọc registry theo ACL và ghép FE được kiểm ở các task tích hợp.
 
-**Chờ M4 review** phần bind `callGeneration`/`audienceEpoch` của người nhận và watermark khi đổi phạm vi. Cần xác nhận hai chi tiết của schema trước khi các task sau dùng contract này.
-
-- Schema hiện yêu cầu own Producer `SWITCHING` có pending replacement đúng revision. §6.3.4 mô tả `replacement` là nullable, còn §6.3.5 mô tả `prepare` chuyển sang `SWITCHING` cùng lúc cấp token. M4 xác nhận liệu snapshot có thể quan sát `SWITCHING` mà pending đã bị vô hiệu hay không.
-- §6.3.6 đưa catalog `reason` chung và yêu cầu lọc theo event. Schema hiện loại `SOURCE_ENDED` và `SOURCE_REPLACED` khỏi `media.transport.closed`. M4 xác nhận danh sách phù hợp cho từng event với adapter.
+**Kết quả review M4 trên bản `5765fdf`.** Snapshot own Producer và watermark bám proposal. M4 xác nhận giữ pending replacement đúng revision khi snapshot thấy `SWITCHING`. Timeout hoặc revoke phải vô hiệu pending và đóng Producer. Theo góp ý, schema event Producer đã tách nhánh `CLOSED` dùng `reason` và bổ sung fixture cho resume, prepare cùng các payload đóng hợp lệ và không hợp lệ. Phần sửa event chờ M4 review lại.
 
 SCRUM-58 dùng contract này để làm REST proof và ICE. SCRUM-67 ghép snapshot và đối soát tài nguyên ở FE. SCRUM-68 xử lý delta stream và buffer. SCRUM-73/74 dùng định danh nguồn khi ghép share lease và picker.
