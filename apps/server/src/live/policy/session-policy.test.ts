@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { liveContextSchema, sessionProjectionSchema } from '@colearnia/contracts';
+import {
+  liveContextSchema,
+  sessionCleanupResultSchema,
+  sessionProjectionSchema,
+} from '@colearnia/contracts';
+import {
+  beginSessionTransition,
+  createSessionTransitionTiming,
+} from '../session-manager/session-transition.js';
+import { CleanupAdmission } from '../session-manager/cleanup-admission.js';
 import type { MediaSource } from '@colearnia/contracts';
 import {
   canDrawBoard,
@@ -425,6 +434,69 @@ describe('media and board rights', () => {
 });
 
 describe('recipient projection', () => {
+  it('denies media/board/projection through a live transition until cleanup and commit complete', async () => {
+    const f = fixture();
+    const participant = f.participant(3);
+    const context = { assertHeld: () => undefined, isCurrent: () => true };
+    const cleanup = async (value: import('@colearnia/contracts').SessionCleanupRequest) => {
+      const result = { ...value };
+      Reflect.deleteProperty(result, 'reason');
+      return sessionCleanupResultSchema.parse({
+        ...result,
+        outcome: { permissionRevoked: true, pendingInvalidated: true, cleanupPending: false },
+      });
+    };
+    const transition = beginSessionTransition(
+      {
+        operationId: '10000000-0000-4000-8000-000000000005',
+        sessionId: f.session.sessionId,
+        epoch: f.session.epoch,
+        transitionToken: '10000000-0000-4000-8000-000000000006',
+        callGeneration: participant.callGeneration,
+        reason: 'SCOPE_CHANGED',
+        target: {
+          type: 'PARTICIPANT_SCOPE',
+          participantId: participant.participantId,
+          audienceEpoch: participant.audienceEpoch,
+          scope: participant.scope,
+        },
+      },
+      context,
+      { media: cleanup, messaging: cleanup, board: cleanup },
+      {
+        userId: participant.auth.userId,
+        timing: createSessionTransitionTiming(),
+        admission: new CleanupAdmission({ perUser: 3, perSession: 8, process: 32 }),
+      },
+    );
+    const input = () => {
+      participant.blocked = transition.blocks({
+        sessionId: f.session.sessionId,
+        epoch: f.session.epoch,
+        participantId: participant.participantId,
+        callGeneration: participant.callGeneration,
+        audienceEpoch: participant.audienceEpoch,
+        scope: participant.scope,
+      });
+      return f.input(3);
+    };
+    expect(canPublishMedia(input(), 'MIC')).toBe(false);
+    expect(canDrawBoard(input(), scopeA)).toBe(false);
+    expect(projectSessionFor(input()).ok).toBe(false);
+    await transition.runForeground();
+    expect(projectSessionFor(input()).ok).toBe(false);
+    expect(
+      transition.commitHeld(context, () => {
+        participant.scope = { type: 'MAIN' };
+        participant.audienceEpoch++;
+        f.session.policyRevision++;
+        return true;
+      }),
+    ).toEqual({ ok: true });
+    expect(projectSessionFor(input()).ok).toBe(true);
+    expect(canPublishMedia(input(), 'MIC')).toBe(true);
+    expect(canDrawBoard(input(), scopeA)).toBe(false);
+  });
   it.each(['DISCUSSION', 'ACTIVITY'] as const)(
     'matches the public projection contract in %s',
     (mode) => {
