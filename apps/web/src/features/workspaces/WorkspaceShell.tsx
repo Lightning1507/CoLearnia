@@ -1,4 +1,5 @@
 import type { ChannelSummary } from '@colearnia/contracts';
+import { Fragment } from 'react';
 import type { WorkspaceShellProps } from './shell-contract';
 import { readableSidebarChannels, resolvePanelChannel } from './shell-contract';
 import './workspace-shell.css';
@@ -95,7 +96,7 @@ export function WorkspaceShell({
 
       <main className="workspace-main">
         <header className="workspace-topbar">
-          <div>
+          <div className="workspace-topbar-title">
             <p>
               {selected
                 ? selected.channel.type === 'TEXT'
@@ -121,10 +122,10 @@ export function WorkspaceShell({
               <h2>Kênh không còn khả dụng</h2>
               <p>Quyền truy cập hoặc dữ liệu kênh đã thay đổi. Nội dung cũ đã được đóng.</p>
             </div>
-          ) : panel.kind === 'text' ? (
-            chatPanel
           ) : (
-            callPanel
+            <Fragment key={`${workspace.id}:${selected.channel.id}`}>
+              {panel.kind === 'text' ? chatPanel : callPanel}
+            </Fragment>
           )}
         </section>
       </main>
