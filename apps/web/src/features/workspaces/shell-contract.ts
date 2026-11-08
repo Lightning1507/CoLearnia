@@ -21,3 +21,24 @@ export type WorkspaceShellProps = {
   callPanel: ReactNode;
   persistentCallControls: ReactNode;
 };
+
+export function readableSidebarChannels(channels: readonly SidebarChannel[], workspaceId: string) {
+  return channels.filter(
+    ({ channel, canReadContent }) => channel.workspaceId === workspaceId && canReadContent,
+  );
+}
+
+export function resolvePanelChannel(
+  channels: readonly SidebarChannel[],
+  workspaceId: string,
+  panel: WorkspacePanel,
+) {
+  if (panel.kind === 'empty') return undefined;
+
+  const selected = readableSidebarChannels(channels, workspaceId).find(
+    ({ channel }) => channel.id === panel.channelId,
+  );
+  const expectedType = panel.kind === 'text' ? 'TEXT' : 'LIVE';
+  if (!selected || selected.channel.type !== expectedType) return undefined;
+  return selected;
+}

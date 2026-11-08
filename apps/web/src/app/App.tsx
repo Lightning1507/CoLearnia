@@ -1,5 +1,9 @@
 import { useQuery } from '@tanstack/react-query';
+import { useState } from 'react';
 import { Link, Route, Routes } from 'react-router-dom';
+import { CallControllerProvider } from '../features/live/runtime/CallControllerProvider';
+import { CallControllerOwner } from '../features/live/runtime/callController';
+import { WorkspaceFixturePage } from '../features/workspaces/WorkspaceFixturePage';
 import { getSystemStatus } from '../lib/api/system';
 
 function HomePage() {
@@ -28,6 +32,7 @@ function HomePage() {
           <span aria-hidden="true">＋</span>
           <strong>Chưa có Workspace</strong>
           <p>Các kênh trò chuyện và phòng học của bạn sẽ xuất hiện tại đây.</p>
+          <Link to="/workspace">Mở Workspace fixture</Link>
         </div>
         <div className="sidebar-footer">Cùng học. Cùng kết nối.</div>
       </aside>
@@ -122,18 +127,23 @@ function HomePage() {
 }
 
 export function App() {
+  const [callOwner] = useState(() => new CallControllerOwner());
+
   return (
-    <Routes>
-      <Route path="/" element={<HomePage />} />
-      <Route
-        path="*"
-        element={
-          <main className="not-found">
-            <h1>Không tìm thấy trang</h1>
-            <Link to="/">Về trang chính</Link>
-          </main>
-        }
-      />
-    </Routes>
+    <CallControllerProvider owner={callOwner}>
+      <Routes>
+        <Route path="/" element={<HomePage />} />
+        <Route path="/workspace" element={<WorkspaceFixturePage />} />
+        <Route
+          path="*"
+          element={
+            <main className="not-found">
+              <h1>Không tìm thấy trang</h1>
+              <Link to="/">Về trang chính</Link>
+            </main>
+          }
+        />
+      </Routes>
+    </CallControllerProvider>
   );
 }
