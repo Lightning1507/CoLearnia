@@ -101,7 +101,7 @@ M1 điều phối toàn bộ lần lưu. M2 chỉ cung cấp thao tác tạo h�
 
 Việc đọc lại dùng máy chủ dữ liệu chính. Lỗi trùng dữ liệu không mặc nhiên có nghĩa lần thử trước đã thành công; cần đối chiếu đúng thao tác và các quan hệ dữ liệu. Nếu chưa thể xác nhận, báo `DEPENDENCY_UNAVAILABLE` và xử lý tiếp theo quy định của M1.
 
-Task này chưa viết phần lưu MongoDB thật. M1-T2.4 cung cấp cách điều phối lần lưu chung; M2-T2.1 triển khai dữ liệu và thao tác tạo hội thoại. Ví dụ kiểm tra hiện tại chỉ xác nhận cách truyền đúng `dbSession` và các mã, chưa chứng minh khả năng hủy toàn bộ trên MongoDB.
+SCRUM-14 quy định cách gọi. SCRUM-15 cung cấp kết nối và transaction chung. Xem [cách dùng model và hàm tạo hội thoại của SCRUM-31](conversation-persistence.md) để nối vào luồng M1 và đối chiếu ca rollback trên MongoDB.
 
 General là kênh mặc định lúc tạo Workspace, không tự được bổ sung quy tắc cấm xóa hoặc tự tạo lại sau khi xóa.
 

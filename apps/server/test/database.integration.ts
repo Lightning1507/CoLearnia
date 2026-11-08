@@ -6,10 +6,11 @@ import { createDatabase } from '../src/lib/database.js';
 import { preflightIndexes } from '../src/lib/database-preflight.js';
 import type { IndexRequirement } from '../src/lib/database-preflight.js';
 import type { GeneralConversationFactory } from '../src/messaging/ports.js';
+import { testReplicaUri } from './replica-uri.js';
 
 // Fixed local endpoint, generated DB owned only by this run. Never read app MONGO_URI.
 const databaseName = `colearnia_test_scrum15_${randomUUID().replaceAll('-', '')}`;
-const uri = `mongodb://127.0.0.1:27017/${databaseName}?replicaSet=rs0&directConnection=true`;
+const uri = testReplicaUri(databaseName);
 const database = createDatabase(uri);
 const connection = database.connection;
 const owner = connection.model(

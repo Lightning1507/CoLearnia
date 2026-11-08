@@ -54,7 +54,7 @@ pnpm test:database
 pnpm check
 ```
 
-`test:database` bắt buộc có MongoDB thật ở `127.0.0.1:27017`, `rs0`; không skip thành công nếu thiếu DB. Test không đọc `MONGO_URI` của ứng dụng: mỗi lượt tạo DB `colearnia_test_scrum15_<UUID>` và chỉ drop chính DB đó sau kiểm. Đây là lệnh **tạo/xóa dữ liệu test**; không đụng DB `colearnia`. Khi bị kill trước cleanup có thể còn DB test; xác minh đúng tên/lượt sở hữu trước dọn thủ công.
+`test:database` cần MongoDB replica set `rs0` thật trên loopback. Cổng mặc định là `27017`. Nếu cổng đó đang dành cho một MongoDB khác, có thể đặt `COLEARNIA_DB_TEST_PORT` cho replica set thử riêng. Mỗi suite tạo database thử với hậu tố UUID và chỉ dọn database do chính suite tạo. Test dùng endpoint loopback cố định và không đọc `MONGO_URI` của ứng dụng. Nếu dừng tiến trình trước khi dọn xong, xác minh đúng tên và lượt sở hữu trước khi dọn database thử.
 
 Consumer test của M2 ghi MongoDB thật theo port đã chốt; kiểm commit, abort, retry và session khác client. Chưa là provider conversation sản phẩm; rollback Workspace/OWNER/general đầy đủ kiểm ở M1-T6.2.
 
