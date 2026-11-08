@@ -105,3 +105,7 @@ Cần chọn capture/composition/encode, bố cục/số camera/codec và cách 
 ## Quyết định phiên/nhóm ngày 04/11/2026
 
 Không triển khai `participant.move`. `group.join` kiểm DISCUSSION roster/GUIDANCE hoặc đúng ACTIVITY đã phân của round còn mở, không nhận nhóm khác; host hiện hành chỉ dùng `host.help.enter/leave` và không nằm trong draft member. Disconnect DISCUSSION thu membership ngay; nhóm từng có người rỗng thì close; reconnect về MAIN. Host rớt bị thu quyền kết nối cũ/thay tạm ngay; reconnect grace của call ownership vẫn tối đa 30 giây. Không empty grace; phiên rỗng end ngay qua coordinator và kiểm race join. Recording theo [vòng đời hiện hành](../product/recording.md); công cụ/metadata/byte dở cần contract/PoC.
+
+Điều phối User/Workspace trên server: xem
+[runbook SCRUM-19](../runbooks/operation-coordination.md) để dùng chung instance,
+context khóa, giới hạn hàng chờ và điểm nối M2/M4.
