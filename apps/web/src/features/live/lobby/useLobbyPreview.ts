@@ -14,7 +14,9 @@ export function useLobbyPreview() {
   const state = useSyncExternalStore(preview.subscribe, preview.getSnapshot, preview.getSnapshot);
   useEffect(() => {
     preview.start();
-    return preview.dispose;
+    return () => {
+      preview.dispose();
+    };
   }, [preview]);
   return { state, preview };
 }

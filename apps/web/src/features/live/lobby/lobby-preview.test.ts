@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { CallControllerOwner } from '../runtime/callController';
 import { LobbyPreview } from './lobby-preview';
 
 function deferred<T>() {
@@ -17,14 +18,20 @@ function device(kind: MediaDeviceKind, deviceId: string, label = ''): MediaDevic
 
 function media(kind: 'audio' | 'video', deviceId: string) {
   const events = new EventTarget();
-  const stop = vi.fn();
+  let readyState: MediaStreamTrackState = 'live';
+  const stop = vi.fn(() => {
+    readyState = 'ended';
+  });
+  const removeEventListener = vi.fn(events.removeEventListener.bind(events));
   const track = {
     kind,
-    readyState: 'live',
+    get readyState() {
+      return readyState;
+    },
     stop,
     getSettings: () => ({ deviceId }),
     addEventListener: events.addEventListener.bind(events),
-    removeEventListener: events.removeEventListener.bind(events),
+    removeEventListener,
   } as unknown as MediaStreamTrack;
   const stream = {
     id: `${kind}-${deviceId}`,
@@ -32,7 +39,16 @@ function media(kind: 'audio' | 'video', deviceId: string) {
     getVideoTracks: () => (kind === 'video' ? [track] : []),
     getAudioTracks: () => (kind === 'audio' ? [track] : []),
   } as unknown as MediaStream;
-  return { stream, track, stop, end: () => events.dispatchEvent(new Event('ended')) };
+  return {
+    stream,
+    track,
+    stop,
+    removeEventListener,
+    end: () => {
+      readyState = 'ended';
+      events.dispatchEvent(new Event('ended'));
+    },
+  };
 }
 
 const cleanup: (() => void)[] = [];
@@ -126,6 +142,7 @@ describe('lobby preview ownership and browser devices', () => {
 
   it.each([
     ['NotAllowedError', 'denied'],
+    ['SecurityError', 'denied'],
     ['NotFoundError', 'unavailable'],
     ['NotReadableError', 'busy'],
     ['OverconstrainedError', 'unavailable'],
@@ -160,7 +177,9 @@ describe('lobby preview ownership and browser devices', () => {
     expect(latest.stop).not.toHaveBeenCalled();
     expect(preview.getSnapshot().camera.selectedId).toBe('cam2');
     const lateFailure = deferred<MediaStream>();
-    getUserMedia.mockReturnValueOnce(lateFailure.promise).mockResolvedValueOnce(latest.stream);
+    getUserMedia
+      .mockReturnValueOnce(lateFailure.promise)
+      .mockResolvedValueOnce(media('video', 'cam2').stream);
     const failed = preview.open('camera');
     await preview.open('camera');
     lateFailure.reject(new DOMException('', 'NotAllowedError'));
@@ -326,7 +345,6 @@ describe('lobby preview ownership and browser devices', () => {
     const old = deferred<MediaStream>();
     const stale = media('video', 'cam1');
     const current = media('video', 'cam2');
-    const unrelated = media('audio', 'other-call');
     getUserMedia.mockReturnValueOnce(old.promise).mockResolvedValueOnce(current.stream);
     const request = preview.open('camera');
     preview.dispose();
@@ -340,8 +358,112 @@ describe('lobby preview ownership and browser devices', () => {
     expect(removeEventListener).toHaveBeenCalledOnce();
     preview.dispose();
     expect(current.stop).toHaveBeenCalledOnce();
-    expect(unrelated.stop).not.toHaveBeenCalled();
     expect(removeEventListener).toHaveBeenCalledTimes(2);
+  });
+
+  it('cancels once, releases both lobby tracks and leaves the active call runtime running', async () => {
+    const callOwner = new CallControllerOwner();
+    cleanup.push(() => callOwner.shutdown());
+    const callMic = media('audio', 'mic1');
+    const callCamera = media('video', 'cam1');
+    const closeTransport = vi.fn();
+    const abort = vi.fn();
+    const disposeCall = vi.fn(() => {
+      callMic.stop();
+      callCamera.stop();
+      closeTransport();
+    });
+    await callOwner.acquire(
+      { sessionId: 'session', epoch: 'epoch', participantId: 'participant', callGeneration: 1 },
+      (_, signal) => {
+        signal.addEventListener('abort', abort);
+        return disposeCall;
+      },
+    );
+    const activeCall = callOwner.getSnapshot();
+    const { preview, getUserMedia, removeEventListener } = setup();
+    const lobbyCamera = media('video', 'cam1');
+    const lobbyMic = media('audio', 'mic1');
+    getUserMedia.mockResolvedValueOnce(lobbyCamera.stream).mockResolvedValueOnce(lobbyMic.stream);
+    await preview.refreshDevices();
+    preview.select('camera', 'cam1');
+    await preview.open('camera');
+    await preview.open('microphone');
+    const onUpdate = vi.fn();
+    const unsubscribe = preview.subscribe(onUpdate);
+
+    expect(preview.dispose()).toBe(true);
+    expect(preview.dispose()).toBe(false);
+    await preview.open('camera');
+    await preview.open('microphone');
+    unsubscribe();
+
+    expect(onUpdate).toHaveBeenCalledOnce();
+    expect(getUserMedia).toHaveBeenCalledTimes(2);
+    expect(removeEventListener).toHaveBeenCalledExactlyOnceWith(
+      'devicechange',
+      expect.any(Function),
+    );
+    for (const { track, stop, removeEventListener: removeTrackListener } of [
+      lobbyCamera,
+      lobbyMic,
+    ]) {
+      expect(stop).toHaveBeenCalledOnce();
+      expect(track.readyState).toBe('ended');
+      expect(removeTrackListener).toHaveBeenCalledExactlyOnceWith('ended', expect.any(Function));
+    }
+    expect(preview.getSnapshot()).toMatchObject({
+      camera: { selectedId: '', openedId: null, status: 'off', devices: [] },
+      microphone: { openedId: null, status: 'off', devices: [] },
+      videoStream: null,
+      enumerating: false,
+      enumerationError: null,
+    });
+    expect(callOwner.getSnapshot()).toBe(activeCall);
+    expect(activeCall.status).toBe('active');
+    expect(callMic.track.readyState).toBe('live');
+    expect(callCamera.track.readyState).toBe('live');
+    expect(abort).not.toHaveBeenCalled();
+    expect(disposeCall).not.toHaveBeenCalled();
+    expect(closeTransport).not.toHaveBeenCalled();
+  });
+
+  it('ignores both late streams and enumeration from a canceled lobby after reopening', async () => {
+    const first = setup();
+    const staleCamera = deferred<MediaStream>();
+    const staleMic = deferred<MediaStream>();
+    const staleDevices = deferred<MediaDeviceInfo[]>();
+    first.getUserMedia
+      .mockReturnValueOnce(staleCamera.promise)
+      .mockReturnValueOnce(staleMic.promise);
+    first.enumerateDevices.mockReturnValueOnce(staleDevices.promise);
+    const pending = [
+      first.preview.open('camera'),
+      first.preview.open('microphone'),
+      first.preview.refreshDevices(),
+    ];
+    first.preview.dispose();
+    const closedSnapshot = first.preview.getSnapshot();
+
+    const reopened = setup();
+    const camera = media('video', 'cam1');
+    reopened.getUserMedia.mockResolvedValueOnce(camera.stream);
+    await reopened.preview.open('camera');
+    await reopened.preview.refreshDevices();
+    const reopenedSnapshot = reopened.preview.getSnapshot();
+    const oldCamera = media('video', 'cam1');
+    const oldMic = media('audio', 'mic1');
+    staleCamera.resolve(oldCamera.stream);
+    staleMic.resolve(oldMic.stream);
+    staleDevices.resolve([device('videoinput', 'old')]);
+    await Promise.all(pending);
+
+    expect(first.preview.getSnapshot()).toBe(closedSnapshot);
+    expect(reopened.preview.getSnapshot()).toBe(reopenedSnapshot);
+    expect(reopenedSnapshot.videoStream).toBe(camera.stream);
+    expect(oldCamera.stop).toHaveBeenCalledOnce();
+    expect(oldMic.stop).toHaveBeenCalledOnce();
+    expect(camera.track.readyState).toBe('live');
   });
 
   it('cancels a pending prompt without accepting its late stream', async () => {
@@ -358,30 +480,60 @@ describe('lobby preview ownership and browser devices', () => {
     expect(preview.getSnapshot().camera.status).toBe('off');
   });
 
-  it('observes permission revocation and removes permission listeners', async () => {
-    const permissionEvents = new EventTarget();
-    const permission = {
-      state: 'granted',
-      addEventListener: vi.fn(permissionEvents.addEventListener.bind(permissionEvents)),
-      removeEventListener: vi.fn(permissionEvents.removeEventListener.bind(permissionEvents)),
-    };
-    const { preview, getUserMedia } = setup({
-      permissions: { query: vi.fn().mockResolvedValue(permission) },
-    });
-    await vi.waitFor(() => expect(permission.addEventListener).toHaveBeenCalledTimes(2));
-    const camera = media('video', 'cam1');
-    getUserMedia.mockResolvedValueOnce(camera.stream);
+  it.each([
+    ['denied', 'denied'],
+    ['prompt', 'off'],
+  ] as const)(
+    'keeps the %s permission state after device IDs become hidden',
+    async (revoked, status) => {
+      const permissionEvents = new EventTarget();
+      const permission = {
+        state: 'granted',
+        addEventListener: vi.fn(permissionEvents.addEventListener.bind(permissionEvents)),
+        removeEventListener: vi.fn(permissionEvents.removeEventListener.bind(permissionEvents)),
+      };
+      const { preview, getUserMedia, enumerateDevices } = setup({
+        permissions: { query: vi.fn().mockResolvedValue(permission) },
+      });
+      await vi.waitFor(() => expect(permission.addEventListener).toHaveBeenCalledTimes(2));
+      const camera = media('video', 'cam1');
+      getUserMedia.mockResolvedValueOnce(camera.stream);
+      preview.select('camera', 'cam1');
+      await preview.open('camera');
+      enumerateDevices.mockResolvedValue([device('videoinput', '')]);
+      permission.state = revoked;
+      permissionEvents.dispatchEvent(new Event('change'));
+      await preview.refreshDevices();
+      expect(preview.getSnapshot().camera).toMatchObject({
+        status,
+        selectedId: '',
+        openedId: null,
+      });
+      expect(camera.stop).toHaveBeenCalledOnce();
+      permission.state = 'granted';
+      permissionEvents.dispatchEvent(new Event('change'));
+      expect(preview.getSnapshot().camera.status).toBe('off');
+      expect(getUserMedia).toHaveBeenCalledOnce();
+      preview.dispose();
+      expect(permission.removeEventListener).toHaveBeenCalledTimes(2);
+    },
+  );
+
+  it('clears the opened device when it ends while its replacement is still pending', async () => {
+    const { preview, getUserMedia } = setup();
+    const first = media('video', 'cam1');
+    const next = media('video', 'cam2');
+    const pending = deferred<MediaStream>();
+    getUserMedia.mockResolvedValueOnce(first.stream).mockReturnValueOnce(pending.promise);
     await preview.open('camera');
-    permission.state = 'denied';
-    permissionEvents.dispatchEvent(new Event('change'));
-    expect(preview.getSnapshot().camera.status).toBe('denied');
-    expect(camera.stop).toHaveBeenCalledOnce();
-    permission.state = 'granted';
-    permissionEvents.dispatchEvent(new Event('change'));
-    expect(preview.getSnapshot().camera.status).toBe('off');
-    expect(getUserMedia).toHaveBeenCalledOnce();
-    preview.dispose();
-    expect(permission.removeEventListener).toHaveBeenCalledTimes(2);
+    const request = preview.open('camera');
+    first.end();
+
+    expect(preview.getSnapshot().camera).toMatchObject({ status: 'requesting', openedId: null });
+    expect(preview.getSnapshot().videoStream).toBeNull();
+    pending.resolve(next.stream);
+    await request;
+    expect(preview.getSnapshot().videoStream).toBe(next.stream);
   });
 
   it('ignores stale enumeration and cleans up after enumerate failure', async () => {

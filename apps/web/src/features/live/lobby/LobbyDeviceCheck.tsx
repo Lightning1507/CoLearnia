@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react';
+import type { RefObject } from 'react';
 import type { DeviceKind } from './lobby-preview';
 import { useLobbyPreview } from './useLobbyPreview';
 import './lobby.css';
@@ -14,33 +15,39 @@ export type LobbyDevicePreferences = {
 
 export type LobbyDeviceCheckProps = {
   channelName: string;
+  /** Close the lobby or navigate away after its preview has been released. */
   onBack: () => void;
   /** Supply only from the authorized join flow. This callback does not imply join success. */
   onContinue?: (preferences: LobbyDevicePreferences) => void;
   continuePending?: boolean;
 };
 
-function CameraPreview({ stream }: { stream: MediaStream }) {
-  const ref = useRef<HTMLVideoElement>(null);
+function CameraPreview({
+  stream,
+  videoRef,
+}: {
+  stream: MediaStream;
+  videoRef: RefObject<HTMLVideoElement | null>;
+}) {
   const [playbackError, setPlaybackError] = useState(false);
   useEffect(() => {
-    const video = ref.current;
+    const video = videoRef.current;
     if (!video) return;
     let active = true;
     video.srcObject = stream;
     void video.play().catch(() => {
-      if (active) setPlaybackError(true);
+      if (active && video.srcObject === stream) setPlaybackError(true);
     });
     return () => {
       active = false;
       video.srcObject = null;
     };
-  }, [stream]);
+  }, [stream, videoRef]);
   return (
     <>
       <video
         className="h-full w-full object-cover"
-        ref={ref}
+        ref={videoRef}
         autoPlay
         playsInline
         muted
@@ -51,10 +58,16 @@ function CameraPreview({ stream }: { stream: MediaStream }) {
           className={`${buttonClass} absolute bottom-5`}
           type="button"
           onClick={() => {
-            void ref.current
-              ?.play()
-              .then(() => setPlaybackError(false))
-              .catch(() => setPlaybackError(true));
+            const video = videoRef.current;
+            if (video?.srcObject !== stream) return;
+            void video.play().then(
+              () => {
+                if (video.srcObject === stream) setPlaybackError(false);
+              },
+              () => {
+                if (video.srcObject === stream) setPlaybackError(true);
+              },
+            );
           }}
         >
           Phát hình xem trước
@@ -71,6 +84,7 @@ export function LobbyDeviceCheck({
   continuePending = false,
 }: LobbyDeviceCheckProps) {
   const { state, preview } = useLobbyPreview();
+  const videoRef = useRef<HTMLVideoElement>(null);
   const id = useId();
   const continueToSession = () => {
     const preferences: LobbyDevicePreferences = {
@@ -89,7 +103,8 @@ export function LobbyDeviceCheck({
     onContinue?.(preferences);
   };
   const back = () => {
-    preview.dispose();
+    if (!preview.dispose()) return;
+    if (videoRef.current) videoRef.current.srcObject = null;
     onBack();
   };
 
@@ -110,7 +125,11 @@ export function LobbyDeviceCheck({
           aria-label="Khu vực xem trước camera"
         >
           {state.videoStream ? (
-            <CameraPreview key={state.videoStream.id} stream={state.videoStream} />
+            <CameraPreview
+              key={state.videoStream.id}
+              stream={state.videoStream}
+              videoRef={videoRef}
+            />
           ) : (
             <div className="p-6 text-center">
               <span className="block text-[40px]" aria-hidden="true">
