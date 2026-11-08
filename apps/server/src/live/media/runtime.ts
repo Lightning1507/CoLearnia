@@ -38,6 +38,8 @@ export async function createMediaRuntime(config: AppConfig) {
     isReady: () => !worker.closed && !webRtcServer.closed,
     // The SessionManager will own one Router per authorized LiveSession.
     createSessionRouter: () => worker.createRouter({ mediaCodecs }),
+    createTransport: (router: MediaTypes.Router) =>
+      router.createWebRtcTransport({ webRtcServer, enableSctp: false }),
     close: () => worker.close(),
   };
 }
