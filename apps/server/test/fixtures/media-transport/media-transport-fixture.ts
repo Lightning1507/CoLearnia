@@ -3,7 +3,7 @@ import { Server } from 'socket.io';
 import type { LiveContext } from '@colearnia/contracts';
 import { loadConfig } from '../../../src/config/env.js';
 import { createMediaRuntime } from '../../../src/live/media/runtime.js';
-import { createTransportSignaling } from '../../../src/live/media/transportSignaling.js';
+import { createTransportSignaling } from '../../../src/live/media/transport-signaling.js';
 
 // Opt-in loopback evidence only. No routes or fake identities in the product server.
 const origin = 'http://127.0.0.1:5191';

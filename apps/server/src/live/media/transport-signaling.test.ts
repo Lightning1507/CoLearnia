@@ -4,7 +4,7 @@ import { mediaTransportCreateAckSchema } from '@colearnia/contracts';
 import type { types as MediaTypes } from 'mediasoup';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CleanupAdmission } from '../session-manager/cleanup-admission.js';
-import { createTransportSignaling } from './transportSignaling.js';
+import { createTransportSignaling } from './transport-signaling.js';
 
 type Ports = Parameters<typeof createTransportSignaling>[0];
 type Native = Awaited<ReturnType<Ports['createTransport']>>;

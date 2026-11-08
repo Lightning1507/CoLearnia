@@ -5,7 +5,7 @@ M3-T4.1 trên nhánh `feat/SCRUM-60-media-transport-signaling`, nền `3ab2f86`.
 ## Giao diện cho M4 và FE
 
 - `media.transport.create` nhận `{ direction: 'SEND' | 'RECV' }`, trả `{ transportId, iceGeneration: 0, iceParameters, iceCandidates, dtlsParameters }`. Factory dùng Router của phiên và WebRtcServer chung của worker, tắt SCTP. `media.transport.connect` nhận `{ transportId, dtlsParameters }`, trả `{ transportId, connected: true }` sau khi worker nhận DTLS parameters. Browser vẫn phải theo dõi trạng thái kết nối thực tế.
-- Cả hai dùng envelope mutation SCRUM-22 và ack theo `requestId`. [Schema](../../packages/contracts/src/mediaTransport.ts) · [Signaling](../../apps/server/src/live/media/transportSignaling.ts)
+- Cả hai dùng envelope mutation SCRUM-22 và ack theo `requestId`. [Schema](../../packages/contracts/src/media-transport.ts) · [Signaling](../../apps/server/src/live/media/transport-signaling.ts)
 - M4 cung cấp `withContext` để xác minh socket, auth, ACL, deny barrier và Router hiện hành. Callback kiểm và ghi trạng thái đồng bộ dưới gate. Native I/O chạy sau khi nhả gate. Kiểm lại context trước khi công bố tài nguyên và trả ack. Adapter cleanup dùng target/token của SCRUM-23. Pending bị vô hiệu ngay, slot I/O giữ tới khi native thực sự settle, kết quả cũ tự đóng tài nguyên vừa tạo. Transport đã kết nối chuyển theo lifecycle/cleanup của M4.
 - Profile PoC dùng một SEND và một RECV cho mỗi binding, tối đa 512 slot/process. Chia sẻ admission I/O 2/user, 8/session, 32/process với cleanup. Command có budget 16 KiB. Chờ native tối đa 2 giây, transport chưa đạt DTLS connected hết hạn sau 10 giây. Replay giữ intent 60 giây, giới hạn 64/user, 1.024/session và 4.096/process. Descriptor nhạy cảm chỉ nằm trên transport còn sống. `SERVER_BUSY` và `OPERATION_IN_PROGRESS` dùng theo proposal, M4 review mã và ngưỡng PoC trước khi ghép vào handler thật.
 
@@ -14,7 +14,7 @@ M3-T4.1 trên nhánh `feat/SCRUM-60-media-transport-signaling`, nền `3ab2f86`.
 Chạy `pnpm --filter @colearnia/contracts build` một lần. Sau đó mở hai terminal ở root repo.
 
 ```powershell
-pnpm --filter @colearnia/server exec tsx test/fixtures/media-transport/mediaTransportFixture.ts
+pnpm --filter @colearnia/server exec tsx test/fixtures/media-transport/media-transport-fixture.ts
 ```
 
 ```powershell
