@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
-import { CallControllerContext } from './call-controller-context';
-import type { CallControllerOwner } from './call-controller';
+import { CallControllerContext } from './callControllerContext';
+import type { CallControllerOwner } from './callController';
 
 export function CallControllerProvider({
   owner,

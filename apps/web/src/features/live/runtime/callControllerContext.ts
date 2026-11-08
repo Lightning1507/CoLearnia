@@ -1,5 +1,5 @@
 import { createContext, useContext, useSyncExternalStore } from 'react';
-import type { CallControllerOwner } from './call-controller';
+import type { CallControllerOwner } from './callController';
 
 type CallStateSource = Pick<CallControllerOwner, 'subscribe' | 'getSnapshot'>;
 

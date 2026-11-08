@@ -1,10 +1,10 @@
 import { StrictMode, act, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Link, MemoryRouter, Route, Routes } from 'react-router-dom';
-import { CallControllerProvider } from './CallControllerProvider';
-import { CallControllerOwner } from './call-controller';
-import type { CallHandle, CallIdentity } from './call-controller';
-import { useCallSnapshot } from './call-controller-context';
+import { CallControllerProvider } from '../../../src/features/live/runtime/CallControllerProvider';
+import { CallControllerOwner } from '../../../src/features/live/runtime/callController';
+import type { CallHandle, CallIdentity } from '../../../src/features/live/runtime/callController';
+import { useCallSnapshot } from '../../../src/features/live/runtime/callControllerContext';
 
 const identity: CallIdentity = {
   sessionId: '111111111111111111111111',
@@ -122,9 +122,9 @@ async function verifyLifecycle(container: HTMLElement) {
     verifyListeners(2);
     check(totalSubscriptions > 2, 'StrictMode phải chạy lại effect subscription');
 
-    let controller: CallHandle | undefined;
+    let handle: CallHandle | undefined;
     await act(async () => {
-      controller = await owner.acquire(identity, initialize);
+      handle = await owner.acquire(identity, initialize);
     });
     verifyStatus('active');
 
@@ -143,7 +143,7 @@ async function verifyLifecycle(container: HTMLElement) {
     await click('room');
     verifyListeners(2);
     verifyStatus('active');
-    check((await owner.acquire(identity, initialize)) === controller, 'Instance phải giữ nguyên');
+    check((await owner.acquire(identity, initialize)) === handle, 'Handle phải giữ nguyên');
     verifyCounts(0);
 
     await act(() => owner.end(identity));

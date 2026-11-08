@@ -60,7 +60,7 @@ type OwnedCall = {
   reject: (reason: unknown) => void;
 };
 
-export type CallHandle = Readonly<Pick<CallController, 'identity'>>;
+export type CallHandle = Readonly<{ identity: CallIdentity }>;
 
 const idle: CallSnapshot = Object.freeze({ status: 'idle' });
 
@@ -91,7 +91,7 @@ export class CallControllerOwner {
     }
 
     const controller = new CallController(identity);
-    let resolve!: (controller: CallHandle) => void;
+    let resolve!: (handle: CallHandle) => void;
     let reject!: (reason: unknown) => void;
     const ready = new Promise<CallHandle>((resolveReady, rejectReady) => {
       resolve = resolveReady;
@@ -107,7 +107,7 @@ export class CallControllerOwner {
         () => {
           if (this.#current !== call) return;
           this.#snapshot = Object.freeze({ status: 'active', identity: controller.identity });
-          resolve(controller);
+          resolve(Object.freeze({ identity: controller.identity }));
           this.#notify();
         },
         (error: unknown) => {

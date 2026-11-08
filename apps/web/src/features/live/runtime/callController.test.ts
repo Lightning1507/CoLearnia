@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { CallControllerOwner } from './call-controller';
-import type { CallIdentity } from './call-controller';
+import { CallControllerOwner } from './callController';
+import type { CallIdentity } from './callController';
 
 const identity: CallIdentity = {
   sessionId: '111111111111111111111111',
@@ -18,7 +18,7 @@ function deferred<T>() {
 }
 
 describe('CallControllerOwner', () => {
-  it('shares the same pending and active controller for concurrent acquires', async () => {
+  it('shares one read-only identity handle without exposing the controller lifecycle', async () => {
     const owner = new CallControllerOwner();
     const pending = deferred<() => void>();
     const dispose = vi.fn();
@@ -29,8 +29,13 @@ describe('CallControllerOwner', () => {
     expect(second).toBe(first);
     expect(owner.getSnapshot()).toEqual({ status: 'starting', identity });
     pending.resolve(dispose);
-    const controller = await first;
-    expect(await owner.acquire(identity, initialize)).toBe(controller);
+    const handle = await first;
+    expect(await second).toBe(handle);
+    expect(await owner.acquire(identity, initialize)).toBe(handle);
+    expect(handle).toStrictEqual({ identity });
+    expect(Object.isFrozen(handle)).toBe(true);
+    expect('initialize' in handle).toBe(false);
+    expect('dispose' in handle).toBe(false);
     expect(initialize).toHaveBeenCalledTimes(1);
     expect(owner.getSnapshot()).toEqual({ status: 'active', identity });
 
