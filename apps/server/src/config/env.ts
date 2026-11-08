@@ -13,6 +13,9 @@ const envSchema = z.object({
   MONGO_SERVER_SELECTION_TIMEOUT_MS: z.coerce.number().int().min(1).max(60_000).default(5000),
   MONGO_WAIT_QUEUE_TIMEOUT_MS: z.coerce.number().int().min(1).max(60_000).default(5000),
   MONGO_SOCKET_TIMEOUT_MS: z.coerce.number().int().min(1).max(120_000).default(15_000),
+  COORDINATOR_MAX_PENDING_PER_KEY: z.coerce.number().int().min(1).max(10_000).default(64),
+  COORDINATOR_MAX_OPERATIONS: z.coerce.number().int().min(1).max(100_000).default(1024),
+  COORDINATOR_WAIT_TIMEOUT_MS: z.coerce.number().int().min(1).max(60_000).default(5000),
   MEDIA_ENABLED: z
     .enum(['true', 'false'])
     .default('false')
