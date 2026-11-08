@@ -138,3 +138,12 @@ Chưa có component render hoặc call controller trong SCRUM-13; hợp đồng 
 Cần M2 xác nhận cùng connection/transaction và conversation TEXT; M4 xác nhận snapshot, sáu scope thu quyền và semantics revision. Pagination/limits list thuộc task endpoint; invitation token storage thuộc task invitation; migration dữ liệu RESTRICTED thuộc task DB có kế hoạch riêng nếu có dữ liệu cũ. Không reset DB hoặc tự chuyển dữ liệu trong SCRUM-13.
 
 Kiểm local gồm schema valid/invalid, field quyền giả, type/access độc lập, revision/ID sai, snapshot admin không có quyền nội dung, scope revoke thiếu/thừa ID, chữ ký consumer server và ví dụ M2 từ chối đọc / M4 kiểm lại quyền sau await / cleanup chưa hoàn tất. Các ví dụ dùng fixture, không gọi adapter thật. Đây là kiểm contract/type, chưa phải kiểm ACL, transaction, cleanup hoặc LIVE tích hợp thật.
+
+## Điều phối User/Workspace — SCRUM-19
+
+Cơ chế khóa RAM và context server dùng chung được mô tả tại
+[runbook điều phối](../runbooks/operation-coordination.md). M1/M2/M4 dùng cùng
+instance, khai báo scope ban đầu theo thứ tự baseline; context chỉ giữ User có thể
+dùng `withWorkspace` để xử lý các Workspace lần lượt, giữ User suốt thao tác;
+context khóa không thay ACL hoặc deny barrier. Channel/session queue thật và
+coordinator thu quyền tiếp tục ở task tương ứng.

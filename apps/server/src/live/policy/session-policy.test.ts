@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { liveContextSchema, sessionCleanupResultSchema } from '@colearnia/contracts';
+import {
+  liveContextSchema,
+  sessionCleanupResultSchema,
+  sessionProjectionSchema,
+} from '@colearnia/contracts';
 import { beginSessionTransition } from '../session-manager/session-transition.js';
 import { CleanupAdmission } from '../session-manager/cleanup-admission.js';
 import type { MediaSource } from '@colearnia/contracts';
@@ -489,6 +493,17 @@ describe('recipient projection', () => {
     expect(canPublishMedia(input(), 'MIC')).toBe(true);
     expect(canDrawBoard(input(), scopeA)).toBe(false);
   });
+  it.each(['DISCUSSION', 'ACTIVITY'] as const)(
+    'matches the public projection contract in %s',
+    (mode) => {
+      const f = fixture(mode);
+      for (const member of [1, 2, 3, 4, 5]) {
+        const result = projectSessionFor(f.input(member));
+        if (!result.ok) throw new Error('Expected eligible participant');
+        expect(sessionProjectionSchema.parse(result.projection)).toEqual(result.projection);
+      }
+    },
+  );
   it('returns only same-scope participants and public group summaries to a roster-only member', () => {
     const f = fixture();
     const result = projectSessionFor(f.input(2));
