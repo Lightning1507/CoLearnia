@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { Types } from 'mongoose';
+import mongoose, { Types } from 'mongoose';
 import type { ClientSession } from 'mongoose';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createDatabase } from '../src/lib/database.js';
@@ -139,6 +139,82 @@ describe('SCRUM-31 CHANNEL conversation with the shared transaction', () => {
     ).rejects.toMatchObject({ code: 11000 });
     expect(await counts(ids)).toEqual([0, 0, 0, 0]);
     expect(await Conversation.exists({ _id: existing.conversationId })).not.toBeNull();
+  });
+
+  it('retries a transient failure after insert with the same ID and timestamps', async () => {
+    const ids = preparedIds();
+    const failure = new mongoose.mongo.MongoServerError({ message: 'injected transient failure' });
+    failure.addErrorLabel('TransientTransactionError');
+    let attempts = 0;
+
+    const result = await database.transaction(async (session) => {
+      attempts += 1;
+      const conversation = await createConversation({ ...ids, dbSession: session });
+      if (attempts === 1) throw failure;
+      return conversation;
+    });
+
+    expect(attempts).toBe(2);
+    expect(result).toEqual({ conversationId: ids.conversationId });
+    const records = await Conversation.find({
+      kind: 'CHANNEL',
+      'scope.channelId': ids.channelId,
+    }).lean();
+    expect(records).toHaveLength(1);
+    expect(records[0]?._id.toHexString()).toBe(ids.conversationId);
+    expect(records[0]).toMatchObject({ createdAt: ids.createdAt, updatedAt: ids.createdAt });
+  });
+
+  it('allows only one of two concurrent CHANNEL inserts for the same channel', async () => {
+    const first = preparedIds();
+    const second = { ...first, conversationId: preparedIds().conversationId };
+    let releaseWrites!: () => void;
+    const bothStarted = new Promise<void>((resolve) => {
+      releaseWrites = resolve;
+    });
+    let started = 0;
+
+    const attempt = (ids: typeof first) =>
+      database.transaction(async (session) => {
+        started += 1;
+        if (started === 2) releaseWrites();
+        await bothStarted;
+        return createConversation({ ...ids, dbSession: session });
+      });
+
+    const results = await Promise.allSettled([attempt(first), attempt(second)]);
+    const successes = results.flatMap((result) =>
+      result.status === 'fulfilled' ? [result.value] : [],
+    );
+    const failures = results.flatMap((result) =>
+      result.status === 'rejected' ? [result.reason as unknown] : [],
+    );
+    expect(successes).toHaveLength(1);
+    expect(failures).toEqual([expect.objectContaining({ code: 11000 })]);
+
+    const records = await Conversation.find({
+      kind: 'CHANNEL',
+      'scope.channelId': first.channelId,
+    }).lean();
+    expect(records.map((record) => record._id.toHexString())).toEqual([
+      successes[0]?.conversationId,
+    ]);
+  });
+
+  it('allows CHANNEL and SESSION to share a channel ID under the partial index', async () => {
+    const ids = preparedIds();
+    const sessionId = new Types.ObjectId();
+    await database.transaction(async (session) => {
+      await createConversation({ ...ids, dbSession: session });
+      await new Conversation({
+        workspaceId: ids.workspaceId,
+        kind: 'SESSION',
+        scope: { channelId: ids.channelId, sessionId },
+      }).save({ session });
+    });
+
+    const records = await Conversation.find({ 'scope.channelId': ids.channelId }).lean();
+    expect(records.map((record) => record.kind).sort()).toEqual(['CHANNEL', 'SESSION']);
   });
 
   it('rejects a session without an active transaction before writing', async () => {

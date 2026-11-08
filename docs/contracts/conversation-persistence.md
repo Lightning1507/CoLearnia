@@ -47,3 +47,26 @@ Ngày 08/11/2026, nhánh `feat/SCRUM-31-conversation-general` từ `5c85eb7`. B�
 - Lỗi chèn sau khi ghi hội thoại hủy cả bốn bản ghi. Lỗi trùng kênh do index cũng hủy các bản ghi M1 đang tạo và giữ hội thoại đã có.
 - Hàm từ chối session không có transaction đang chạy. MongoDB driver từ chối session thuộc client khác.
 - Model từ chối phạm vi sai loại và khóa cặp không khớp.
+
+Sau review commit `b28a347`, ba ca được bổ sung vào bộ kiểm tích hợp SCRUM-31:
+
+- Lỗi tạm thời sau khi ghi làm lần lưu chạy lại với cùng mã và thời điểm. Cuối cùng chỉ có một hội thoại.
+- Hai lần lưu đồng thời tạo hội thoại CHANNEL cho cùng kênh. Một lần thành công, lần còn lại nhận lỗi trùng mã kênh từ MongoDB.
+- CHANNEL và SESSION cùng dùng một mã kênh vẫn lưu được trong cùng transaction vì index chỉ áp dụng cho CHANNEL.
+
+Chạy trên Windows PowerShell với MongoDB 8.0.16 replica set `rs0` thử riêng:
+
+```powershell
+$env:COLEARNIA_DB_TEST_PORT = '27057'
+pnpm test:database
+```
+
+Kết quả thực chạy là **2 file và 27 ca đạt**, gồm 9 ca SCRUM-31. Ba ca mới có thể đối chiếu trong [conversation.integration.ts](../../apps/server/test/conversation.integration.ts) theo tên sau:
+
+| Ca kiểm                                                                    | Điều kiện đạt                                                                                                          |
+| -------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `retries a transient failure after insert with the same ID and timestamps` | Callback chạy 2 lượt. MongoDB lưu đúng 1 hội thoại với ID, `createdAt` và `updatedAt` đã chuẩn bị.                     |
+| `allows only one of two concurrent CHANNEL inserts for the same channel`   | Hai transaction cùng bắt đầu. Một lượt commit, lượt còn lại nhận mã lỗi `11000`. ID còn lại trong DB khớp lượt commit. |
+| `allows CHANNEL and SESSION to share a channel ID under the partial index` | Cùng một transaction lưu được 1 CHANNEL và 1 SESSION có chung `channelId`.                                             |
+
+`pnpm check` cũng đạt với 217 test ứng dụng. Các bài kiểm dùng database riêng và tạo index tường minh trong bước chuẩn bị test.
