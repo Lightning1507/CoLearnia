@@ -4,6 +4,7 @@ import {
   sessionProjectionEventSchema,
   sessionProjectionSchema,
   sessionResyncInputSchema,
+  sessionResyncAckSchema,
   sessionSnapshotPartSchema,
   sessionSnapshotSchema,
 } from './session-projection.js';
@@ -12,7 +13,9 @@ import {
   assembleSessionSnapshot,
   classifySessionProjectionEvent,
   isSessionProjectionCurrent,
+  isSessionEndedNoticeCurrent,
 } from './session-snapshot.js';
+import { commonErrorCodeSchema, commonErrorHttpStatus } from './errors.js';
 
 const uuid = (value: number) => `10000000-0000-4000-8000-${String(value).padStart(12, '0')}`;
 const header = {
@@ -163,7 +166,11 @@ describe('multipart snapshot assembly', () => {
       fragment,
     }));
   }
-  const expected = { requestId: uuid(2), cursor: header };
+  const expected = {
+    requestId: uuid(2),
+    cursor: header,
+    snapshot: { snapshotId: uuid(3), partCount: 2 },
+  };
 
   it('assembles reversed parts once and validates the final projection', () => {
     const result = assembleSessionSnapshot(parts().reverse(), expected);
@@ -189,7 +196,7 @@ describe('multipart snapshot assembly', () => {
 
   it('rejects earlier resync responses, old audiences and sequence rollback', () => {
     for (const minimum of [
-      { requestId: uuid(9), cursor: header },
+      { ...expected, requestId: uuid(9) },
       { ...expected, cursor: { ...header, audienceEpoch: 1 } },
       { ...expected, cursor: { ...header, projectionSequence: 1 } },
       { ...expected, cursor: { ...header, callGeneration: 2 } },
@@ -204,18 +211,91 @@ describe('multipart snapshot assembly', () => {
 
   it('rejects invalid JSON, an invalid final projection and oversized serialized parts', () => {
     const data = parts();
+    const single = { ...expected, snapshot: { ...expected.snapshot, partCount: 1 } };
+    expect(assembleSessionSnapshot([{ ...data[0], partCount: 1, fragment: '{' }], single)).toEqual({
+      ok: false,
+      errorCode: 'INVALID_JSON',
+    });
+    expect(assembleSessionSnapshot([{ ...data[0], partCount: 1, fragment: '{}' }], single)).toEqual(
+      { ok: false, errorCode: 'VALIDATION_ERROR' },
+    );
     expect(
-      assembleSessionSnapshot([{ ...data[0], partCount: 1, fragment: '{' }], expected),
-    ).toEqual({ ok: false, errorCode: 'INVALID_JSON' });
-    expect(
-      assembleSessionSnapshot([{ ...data[0], partCount: 1, fragment: '{}' }], expected),
-    ).toEqual({ ok: false, errorCode: 'VALIDATION_ERROR' });
-    expect(
-      assembleSessionSnapshot(
-        [{ ...data[0], partCount: 1, fragment: '😀'.repeat(5000) }],
-        expected,
-      ),
+      assembleSessionSnapshot([{ ...data[0], partCount: 1, fragment: '😀'.repeat(5000) }], single),
     ).toEqual({ ok: false, errorCode: 'PAYLOAD_TOO_LARGE' });
+  });
+
+  it('binds the assembled snapshot to the descriptor returned by the resync ack', () => {
+    for (const descriptor of [
+      { snapshotId: uuid(9), partCount: 2 },
+      { snapshotId: uuid(3), partCount: 1 },
+    ]) {
+      expect(assembleSessionSnapshot(parts(), { ...expected, snapshot: descriptor })).toEqual({
+        ok: false,
+        errorCode: 'CONFLICT',
+      });
+    }
+  });
+});
+
+describe('resync acknowledgements', () => {
+  it('returns a completed descriptor with the requestId used by snapshot parts', () => {
+    const ack = {
+      requestId: uuid(2),
+      data: { status: 'completed', result: { snapshotId: uuid(3), partCount: 2 } },
+    };
+    expect(sessionResyncAckSchema.parse(ack)).toEqual(ack);
+    for (const result of [
+      { snapshotId: 'bad', partCount: 2 },
+      { snapshotId: uuid(3), partCount: 0 },
+      { snapshotId: uuid(3), partCount: 65 },
+    ]) {
+      expect(
+        sessionResyncAckSchema.safeParse({ ...ack, data: { ...ack.data, result } }).success,
+      ).toBe(false);
+    }
+  });
+
+  it('represents SESSION_ENDED as a terminal resync failure without a snapshot descriptor', () => {
+    const ack = {
+      requestId: uuid(2),
+      error: { code: 'SESSION_ENDED', message: 'Phiên học đã kết thúc.' },
+    };
+    expect(sessionResyncAckSchema.parse(ack)).toEqual(ack);
+    expect(commonErrorCodeSchema.parse(ack.error.code)).toBe('SESSION_ENDED');
+    expect(commonErrorHttpStatus.SESSION_ENDED).toBe(410);
+    expect(
+      sessionResyncAckSchema.safeParse({
+        ...ack,
+        data: { status: 'completed', result: { snapshotId: uuid(3), partCount: 2 } },
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe('terminal call notices', () => {
+  const notice = sessionEndedEventSchema.parse({
+    event: 'session.ended',
+    ...header,
+    projectionSequence: 3,
+  });
+  it.each([
+    ['sessionId', '3'.repeat(24)],
+    ['epoch', uuid(9)],
+    ['participantId', '3'.repeat(24)],
+    ['callGeneration', 2],
+  ])('ignores a terminal notice from another %s', (key, value) => {
+    const stale = sessionEndedEventSchema.parse({ ...notice, [key as string]: value });
+    expect(isSessionEndedNoticeCurrent(stale, header)).toBe(false);
+  });
+  it('ends the matching call across a gap/scope change, but ignores duplicates', () => {
+    const current = {
+      ...header,
+      audienceEpoch: 2,
+      scope: { type: 'GROUP' as const, groupId: uuid(4) },
+    };
+    expect(isSessionEndedNoticeCurrent(notice, current)).toBe(true);
+    expect(isSessionEndedNoticeCurrent(notice, { ...current, projectionSequence: 3 })).toBe(false);
+    expect(isSessionEndedNoticeCurrent(notice, { ...current, projectionSequence: 4 })).toBe(false);
   });
 });
 

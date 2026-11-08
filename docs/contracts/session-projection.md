@@ -22,6 +22,29 @@ Header phải khớp metadata của `projection`, kể cả viewer. Scope chi ti
 
 `sessionResyncInputSchema` nhận `{ requestId, sessionId, epoch, callGeneration, payload: { lastProjectionSequence?, lastPolicyRevision? } }`. Không bắt khớp `expectedPolicyRevision` cũ để được lấy lại state. Các mốc client gửi chỉ là thông tin đối soát; server không dùng chúng làm sequence/quyền đã xác nhận.
 
+Ack dùng `sessionResyncAckSchema`. Khi đã nhận đủ bộ part vào hàng đợi hợp lệ, nhánh thành công trả descriptor, chưa xác nhận consumer đã lắp xong snapshot:
+
+```json
+{
+  "requestId": "10000000-0000-4000-8000-000000000002",
+  "data": {
+    "status": "completed",
+    "result": { "snapshotId": "10000000-0000-4000-8000-000000000003", "partCount": 2 }
+  }
+}
+```
+
+Ack và mọi part dùng cùng requestId; snapshotId/partCount phải khớp descriptor. Consumer có thể nhận part trước ack, nhưng chỉ lắp/áp dụng sau khi đối chiếu descriptor; vẫn giữ cùng deadline/budget của lần resync, không gia hạn khi ack tới. Khi phiên/epoch đã kết thúc và caller còn quyền biết đích, trả lỗi `SESSION_ENDED` (HTTP mapping 410), không trả descriptor và không chờ snapshot:
+
+```json
+{
+  "requestId": "10000000-0000-4000-8000-000000000002",
+  "error": { "code": "SESSION_ENDED", "message": "Phiên học đã kết thúc." }
+}
+```
+
+CallController giữ identity của lượt gọi khi gửi request. Chỉ xử lý ack khi requestId còn là lần resync đang chờ và session/epoch/participant/callGeneration đã lưu vẫn là lượt gọi hiện tại. `SESSION_ENDED` kết thúc lần chờ resync và dọn đúng lượt đó, không retry resync hoặc tự join lại. Ack đến muộn sau resync mới hoặc sau đổi ownership bị bỏ. Thiếu auth/quyền vẫn theo mã lỗi tương ứng, không tiết lộ trạng thái phiên trái ACL.
+
 `sessionSnapshotSchema` mô tả snapshot logic hoàn chỉnh. Ví dụ tối thiểu về header:
 
 ```json
@@ -48,11 +71,11 @@ Event `session.changed`, `host.changed`, `group.changed`, `activity.changed`, `p
 
 Các hàm thuần ở [server projection](../../apps/server/src/live/projection/session-projection.ts):
 
-| Hàm                                                                | Đầu vào / kết quả                                                                                                                   |
-| ------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `createSessionProjectionCursor(input)`                             | Input policy đã xác minh; trả cursor ở sequence 0. Chỉ khởi tạo một lần khi registry commit ownership mới, không gọi lại mỗi resync |
-| `prepareSessionSnapshot(input, cursor, { requestId, snapshotId })` | Gọi policy một lần, serialize projection một lần; trả toàn bộ `parts` cùng một mốc và `nextCursor` không tăng sequence              |
-| `prepareSessionProjectionEvent(input, cursor, eventName)`          | Gọi policy, dựng event ở sequence S+1 và trả `nextCursor`; giữ sequence liên tục khi audience thay đổi                              |
+| Hàm                                                                | Đầu vào / kết quả                                                                                                                        |
+| ------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `createSessionProjectionCursor(input)`                             | Input policy đã xác minh; trả cursor ở sequence 0. Chỉ khởi tạo một lần khi registry commit ownership mới, không gọi lại mỗi resync      |
+| `prepareSessionSnapshot(input, cursor, { requestId, snapshotId })` | Gọi policy một lần, serialize projection một lần; trả `ack` descriptor, toàn bộ `parts` cùng một mốc và `nextCursor` không tăng sequence |
+| `prepareSessionProjectionEvent(input, cursor, eventName)`          | Gọi policy, dựng event ở sequence S+1 và trả `nextCursor`; giữ sequence liên tục khi audience thay đổi                                   |
 
 Cursor thuộc runtime registry của từng participant/callGeneration, không lấy từ client và không dùng chung cho nhiều người. Snapshot ID do server tạo, requestId lấy từ lần join/resync đang xử lý. Các hàm không mutate input/cursor, không tự enqueue, phát socket hoặc lưu runtime.
 
@@ -62,7 +85,7 @@ Coordinator giữ thứ tự gate của SCRUM-23, đối chiếu cursor hiện h
 
 ## 4. Ghép và áp dụng tại consumer
 
-`assembleSessionSnapshot(parts, { requestId, cursor })` kiểm toàn bộ phần, đủ index, không trùng, cùng snapshot/header, đúng request đang chờ và không lùi các mốc đã biết. Trả `{ ok: true, snapshot }` khi projection cuối cùng cũng hợp schema; còn lại trả mã lỗi, không trả state đã ghép dở. Chấp nhận phần đến đảo thứ tự. Caller phải nâng mốc audience tối thiểu ngay khi quan sát được audience mới, không chờ đủ snapshot mới loại context cũ.
+`assembleSessionSnapshot(parts, { requestId, cursor, snapshot })` nhận `snapshot` là descriptor trong `ack.data.result`. Helper kiểm toàn bộ phần, đủ index, không trùng, cùng snapshot/header, đúng descriptor/request đang chờ và không lùi các mốc đã biết. Trả `{ ok: true, snapshot }` khi projection cuối cùng cũng hợp schema; còn lại trả mã lỗi, không trả state đã ghép dở. Chấp nhận phần đến đảo thứ tự. Caller phải nâng mốc audience tối thiểu ngay khi quan sát được audience mới, không chờ đủ snapshot mới loại context cũ.
 
 `classifySessionProjectionEvent(event, currentCursor)` dùng **sau khi parse strict schema**:
 
@@ -74,10 +97,16 @@ Coordinator giữ thứ tự gate của SCRUM-23, đối chiếu cursor hiện h
 
 Sau snapshot tại sequence S, loại event ≤ S rồi chỉ áp các event liên tục từ S+1, đúng context. Đổi audience A → MAIN → A vẫn tăng audienceEpoch, không đặt lại sequence. Hai lần resync trả ngược thứ tự được phân biệt bằng requestId. Khi scope/ownership đổi, client dọn cache chat/board/frame và pending callback theo proposal; helper không tự điều khiển UI hoặc các miền khác.
 
+### Notice kết thúc và teardown media
+
+Parse `sessionEndedEventSchema`, rồi gọi `isSessionEndedNoticeCurrent(notice, currentCursor)` trước khi dọn media. Guard chỉ chấp nhận đúng sessionId, epoch, participantId, callGeneration và sequence mới hơn mốc đã áp dụng. Epoch/callGeneration của lượt gọi cũ hoặc notice trùng/cũ bị bỏ; không cập nhật identity hiện tại từ notice.
+
+Notice kết thúc áp dụng cho toàn bộ lượt gọi khớp identity, kể cả thiếu một số event trước đó hoặc scope/audience đã đổi. Khi guard chấp nhận, CallController dừng resync/buffer, chụp đúng các resource handle của ownership đó để teardown idempotent. Callback dọn đến muộn chỉ đóng các handle đã chụp, không tìm lại bộ resource hiện hành sau `await` hoặc đóng một lượt gọi mới. Guard là kiểm ordering/identity; handler và controller thực tế tiếp tục ở các task tích hợp.
+
 Theo `sessionControlBudget`: event và mỗi phần ≤16 KiB JSON UTF-8 **tính cả envelope và escape**, tối đa 64 phần/1 MiB mỗi bộ. Server chia theo byte đã serialize, giữ cặp surrogate của Unicode. Helper ghép kiểm lại cap phần/tổng byte. Caller giữ deadline lắp 5 giây, buffer tối đa 64 event/256 KiB/5 giây; thiếu phần, hết hạn hoặc overflow thì bỏ bộ/buffer và resync có backoff. Không đặt lại deadline theo từng phần đến, không giữ nhiều bộ snapshot cũ vô hạn. Timeout/buffer runtime được nối ở task FE/registry, chưa có trong helper thuần.
 
 ## 5. Kiểm chứng và tích hợp tiếp
 
-Test chạy trực tiếp schema, policy, bộ tạo packet và bộ ghép: context/header không khớp; roster/private bị loại; sequence riêng từng người; policyRevision nhảy; audience đổi; snapshot đến đảo thứ tự, thiếu/trùng/trộn bộ; resync cũ; Unicode/escape và vượt budget.
+Test chạy trực tiếp schema, policy, bộ tạo packet và bộ ghép: context/header không khớp; roster/private bị loại; sequence riêng từng người; policyRevision nhảy; audience đổi; snapshot đến đảo thứ tự, thiếu/trùng/trộn bộ; resync cũ; Unicode/escape và vượt budget. Fixture ack kiểm thành công/SESSION_ENDED, descriptor khớp part và guard bỏ notice kết thúc từ ownership cũ.
 
 Chưa có handler Socket.IO, cursor registry, lịch enqueue, timer lắp/buffer FE hoặc cuộc gọi thật từ task này. SCRUM-82 giữ cursor ownership/luồng join, SCRUM-84 nối reconnect/resync, SCRUM-85 nối state/cache FE; coordinator SCRUM-72 xác minh quyền và gate khi tích hợp. Controller M3 dùng schema này để đối soát public metadata; schema nguồn media và sequence của M2/M3/M5 vẫn thuộc từng miền.

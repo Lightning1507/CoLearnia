@@ -3,6 +3,7 @@ import {
   assembleSessionSnapshot,
   sessionControlBudget,
   sessionProjectionEventSchema,
+  sessionResyncAckSchema,
   sessionSnapshotPartSchema,
 } from '@colearnia/contracts';
 import {
@@ -15,7 +16,7 @@ import type {
   PolicyParticipant,
   SessionPolicyInput,
 } from '../policy/session-policy.js';
-import type { SessionProjectionCursor } from '@colearnia/contracts';
+import type { SessionProjectionCursor, SessionSnapshotDescriptor } from '@colearnia/contracts';
 
 const id = (value: number) => String(value).padStart(24, '0');
 const uuid = (value: number) => `10000000-0000-4000-8000-${String(value).padStart(12, '0')}`;
@@ -88,8 +89,13 @@ function fixture() {
 function assemble(
   parts: ReturnType<typeof sessionSnapshotPartSchema.parse>[],
   cursor: SessionProjectionCursor,
+  snapshot: SessionSnapshotDescriptor,
 ) {
-  const result = assembleSessionSnapshot(parts, { requestId: identity.requestId, cursor });
+  const result = assembleSessionSnapshot(parts, {
+    requestId: identity.requestId,
+    cursor,
+    snapshot,
+  });
   if (!result.ok) throw new Error('Expected complete snapshot');
   return result.snapshot;
 }
@@ -102,15 +108,24 @@ describe('recipient projection preparation', () => {
     const result = prepareSessionSnapshot(f.input, cursor, identity);
     if (!result.ok) throw new Error('Expected snapshot');
     expect(result.nextCursor.projectionSequence).toBe(4);
-    expect(assemble(result.parts, cursor).projectionSequence).toBe(4);
+    expect(sessionResyncAckSchema.parse(result.ack)).toEqual({
+      requestId: identity.requestId,
+      data: {
+        status: 'completed',
+        result: { snapshotId: identity.snapshotId, partCount: result.parts.length },
+      },
+    });
+    expect(assemble(result.parts, cursor, result.ack.data.result).projectionSequence).toBe(4);
     expect(f.input.session).toEqual(before);
     f.participants.get(id(1))!.displayName = 'Changed later';
-    const projection = assemble(result.parts, cursor).projection;
+    const projection = assemble(result.parts, cursor, result.ack.data.result).projection;
     expect(projection.participants[0]!.displayName).toBe('Member 1');
     expect(JSON.stringify(projection)).not.toContain('authSessionId');
     expect(cursor.projectionSequence).toBe(4);
     Object.assign(result.nextCursor.scope, { type: 'GROUP', groupId: uuid(8) });
-    expect(assemble(result.parts, cursor).projection.viewer.scope).toEqual({ type: 'MAIN' });
+    expect(assemble(result.parts, cursor, result.ack.data.result).projection.viewer.scope).toEqual({
+      type: 'MAIN',
+    });
   });
 
   it('uses independent recipient sequences and allows global policy revision jumps', () => {
@@ -232,12 +247,15 @@ describe('recipient projection preparation', () => {
       expect(part.partIndex).toBe(index);
       expect(part.partCount).toBe(result.parts.length);
       expect(part.projectionSequence).toBe(0);
+      expect(part.requestId).toBe(result.ack.requestId);
+      expect(part.snapshotId).toBe(result.ack.data.result.snapshotId);
+      expect(part.partCount).toBe(result.ack.data.result.partCount);
       const size = Buffer.byteLength(JSON.stringify(part), 'utf8');
       expect(size).toBeLessThanOrEqual(sessionControlBudget.maxSnapshotPartBytes);
       total += size;
     }
     expect(total).toBeLessThanOrEqual(sessionControlBudget.maxSnapshotBytes);
-    const snapshot = assemble(result.parts, cursor);
+    const snapshot = assemble(result.parts, cursor, result.ack.data.result);
     expect(snapshot.projection.groups).toHaveLength(65);
     expect(snapshot.projection.groups[0]!.name).toBe(f.groups.get(uuid(10))!.name);
     expect(prepareSessionProjectionEvent(f.input, cursor, 'group.changed')).toEqual({

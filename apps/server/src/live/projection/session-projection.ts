@@ -6,6 +6,7 @@ import {
   sessionProjectionEventNameSchema,
   sessionProjectionEventSchema,
   sessionProjectionSchema,
+  sessionResyncAckSchema,
   sessionSnapshotSchema,
 } from '@colearnia/contracts';
 import type {
@@ -148,5 +149,13 @@ export function prepareSessionSnapshot(
     offset += length;
   }
   for (const part of parts) part.partCount = parts.length;
-  return { ok: true as const, parts, nextCursor: result.nextCursor };
+  const ack = {
+    requestId: identity.requestId,
+    data: {
+      status: 'completed' as const,
+      result: { snapshotId: identity.snapshotId, partCount: parts.length },
+    },
+  };
+  sessionResyncAckSchema.parse(ack);
+  return { ok: true as const, ack, parts, nextCursor: result.nextCursor };
 }

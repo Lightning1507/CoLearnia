@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { requestIdSchema } from './common.js';
+import { commandAckSchema, requestIdSchema } from './common.js';
 import { liveContextSchema, sessionControlBudget } from './session-context.js';
 import {
   sessionEpochSchema,
@@ -69,6 +69,18 @@ export const sessionResyncInputSchema = z.strictObject({
     lastPolicyRevision: counter.optional(),
   }),
 });
+
+export const sessionSnapshotDescriptorSchema = z.strictObject({
+  snapshotId: z.uuid(),
+  partCount: z.number().int().min(1).max(sessionControlBudget.maxSnapshotParts),
+});
+
+export const sessionResyncAckSchema = commandAckSchema(
+  z.strictObject({
+    status: z.literal('completed'),
+    result: sessionSnapshotDescriptorSchema,
+  }),
+);
 
 export const sessionProjectionEventNameSchema = z.enum([
   'session.changed',
@@ -150,3 +162,5 @@ export type SessionProjectionEvent = z.infer<typeof sessionProjectionEventSchema
 export type SessionProjectionEventName = z.infer<typeof sessionProjectionEventNameSchema>;
 export type SessionEndedEvent = z.infer<typeof sessionEndedEventSchema>;
 export type SessionResyncInput = z.infer<typeof sessionResyncInputSchema>;
+export type SessionSnapshotDescriptor = z.infer<typeof sessionSnapshotDescriptorSchema>;
+export type SessionResyncAck = z.infer<typeof sessionResyncAckSchema>;

@@ -3,14 +3,31 @@ import { sessionControlBudget } from './session-context.js';
 import {
   sameSessionScope,
   sessionProjectionCursorSchema,
+  sessionSnapshotDescriptorSchema,
   sessionSnapshotPartSchema,
   sessionSnapshotSchema,
 } from './session-projection.js';
 import type {
   SessionProjectionCursor,
   SessionProjectionEvent,
+  SessionEndedEvent,
+  SessionSnapshotDescriptor,
   SessionSnapshotPart,
 } from './session-projection.js';
+
+// Call after strict parsing. A terminal notice ends this ownership across a gap/scope change.
+export function isSessionEndedNoticeCurrent(
+  notice: SessionEndedEvent,
+  current: SessionProjectionCursor,
+): boolean {
+  return (
+    notice.sessionId === current.sessionId &&
+    notice.epoch === current.epoch &&
+    notice.participantId === current.participantId &&
+    notice.callGeneration === current.callGeneration &&
+    notice.projectionSequence > current.projectionSequence
+  );
+}
 
 // Call after strict event parsing. A new audience invalidates the old private context.
 export function classifySessionProjectionEvent(
@@ -81,11 +98,16 @@ function jsonBytes(value: unknown): number {
 
 export function assembleSessionSnapshot(
   values: readonly unknown[],
-  expected: { requestId: string; cursor: SessionProjectionCursor },
+  expected: {
+    requestId: string;
+    cursor: SessionProjectionCursor;
+    snapshot: SessionSnapshotDescriptor;
+  },
 ) {
   if (
     !sessionProjectionCursorSchema.safeParse(expected.cursor).success ||
     !requestIdSchema.safeParse(expected.requestId).success ||
+    !sessionSnapshotDescriptorSchema.safeParse(expected.snapshot).success ||
     !Array.isArray(values) ||
     values.length === 0
   ) {
@@ -128,6 +150,8 @@ export function assembleSessionSnapshot(
   }
   if (
     header.requestId !== expected.requestId ||
+    header.snapshotId !== expected.snapshot.snapshotId ||
+    first.partCount !== expected.snapshot.partCount ||
     !isSessionProjectionCurrent(first, expected.cursor)
   ) {
     return fail('CONFLICT');
