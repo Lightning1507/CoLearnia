@@ -49,6 +49,10 @@ Countdown dùng roundId, deadline và server time; host đặt thời lượng k
 
 [Contract context và cleanup phiên (SCRUM-23)](session-context.md) định nghĩa DTO nội bộ, phạm vi thu quyền, kết quả cleanup, thứ tự khóa và giới hạn control/snapshot để các miền review.
 
+[Policy và projection phiên (SCRUM-65)](session-policy.md) kiểm quyền theo role/scope, membership thực tế và quyền kênh, đồng thời lọc metadata cho từng người nhận.
+
+[Contract thu quyền và cleanup media (SCRUM-56)](media-cleanup.md) dùng contract SCRUM-23 và có fixture cho ack, timeout và callback cũ.
+
 [Ví dụ join và nguồn media (SCRUM-44)](media-join-source.md) ghép envelope và context đã có thành các ca hợp lệ, sai quyền và stale cho M3/M4 review. Có fixture contract để controller, shell và registry đối chiếu.
 
 [Contract snapshot và event nguồn media (SCRUM-57)](media-source-sync.md) định nghĩa descriptor, resync, snapshot và delta theo người nhận. Có fixture watermark, gap, đổi audience và own Producer PAUSED/SWITCHING.
