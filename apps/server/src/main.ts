@@ -3,6 +3,7 @@ import { createApp } from './app.js';
 import { loadConfig } from './config/env.js';
 import { createDatabase } from './lib/database.js';
 import { logger } from './lib/logger.js';
+import { operationCoordinator } from './lib/shared-coordination.js';
 import { createRealtime } from './realtime/server.js';
 import type { createMediaRuntime } from './live/media/runtime.js';
 import type { SystemStatus } from '@colearnia/contracts';
@@ -57,6 +58,10 @@ async function shutdown() {
   media?.close();
   await new Promise<void>((resolve) => io.close(() => resolve()));
   await database.close();
+  logger.info(
+    { coordination: operationCoordinator.stats() },
+    'Coordination statistics at shutdown',
+  );
   clearTimeout(deadline);
 }
 
