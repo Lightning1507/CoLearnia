@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { liveContextSchema } from '@colearnia/contracts';
+import { liveContextSchema, sessionProjectionSchema } from '@colearnia/contracts';
 import type { MediaSource } from '@colearnia/contracts';
 import {
   canDrawBoard,
@@ -425,6 +425,17 @@ describe('media and board rights', () => {
 });
 
 describe('recipient projection', () => {
+  it.each(['DISCUSSION', 'ACTIVITY'] as const)(
+    'matches the public projection contract in %s',
+    (mode) => {
+      const f = fixture(mode);
+      for (const member of [1, 2, 3, 4, 5]) {
+        const result = projectSessionFor(f.input(member));
+        if (!result.ok) throw new Error('Expected eligible participant');
+        expect(sessionProjectionSchema.parse(result.projection)).toEqual(result.projection);
+      }
+    },
+  );
   it('returns only same-scope participants and public group summaries to a roster-only member', () => {
     const f = fixture();
     const result = projectSessionFor(f.input(2));

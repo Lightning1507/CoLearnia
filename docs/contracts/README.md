@@ -51,6 +51,8 @@ Countdown dùng roundId, deadline và server time; host đặt thời lượng k
 
 [Policy và projection phiên (SCRUM-65)](session-policy.md) kiểm quyền theo role/scope, membership thực tế và quyền kênh, đồng thời lọc metadata cho từng người nhận.
 
+[Snapshot và sự kiện theo người nhận (SCRUM-66)](session-projection.md) cung cấp schema công khai, cursor/sequence, chia và ghép snapshot nhất quán cùng quy tắc resync theo audience.
+
 [Contract thu quyền và cleanup media (SCRUM-56)](media-cleanup.md) dùng contract SCRUM-23 và có fixture cho ack, timeout và callback cũ.
 
 [Ví dụ join và nguồn media (SCRUM-44)](media-join-source.md) ghép envelope và context đã có thành các ca hợp lệ, sai quyền và stale cho M3/M4 review. Có fixture contract để controller, shell và registry đối chiếu.

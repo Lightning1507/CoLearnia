@@ -4,23 +4,24 @@
 
 Bảng này là bộ mã chung, không phải danh mục toàn bộ lỗi nghiệp vụ. Hằng kiểm được ở `packages/contracts/src/errors.ts`; `apiErrorSchema` giữ code dạng chuỗi để contract từng miền có thể bổ sung mã đã review. Mã mới phải có nghĩa, status và cách xử lý được provider/consumer thống nhất trong cùng PR; không tự thêm một tên khác cho lỗi đã có.
 
-| Code                   | HTTP | Khi nào                                                      | FE xử lý                                                        |
-| ---------------------- | ---- | ------------------------------------------------------------ | --------------------------------------------------------------- |
-| INVALID_JSON           | 400  | Body JSON không parse được                                   | Báo dữ liệu gửi không hợp lệ                                    |
-| VALIDATION_ERROR       | 400  | Sai định dạng/field/giới hạn input hoặc cursor sai           | Hiển thị lỗi form; không gửi lại nguyên payload                 |
-| AUTH_REQUIRED          | 401  | Chưa có phiên hoặc phiên hết hạn/bị thu                      | Về đăng nhập, không tiếp tục command cũ                         |
-| INVALID_CREDENTIALS    | 401  | Email/mật khẩu không khớp                                    | Thông báo chung, không tiết lộ tài khoản tồn tại                |
-| FORBIDDEN              | 403  | Có identity nhưng thiếu quyền với đối tượng được phép biết   | Báo không có quyền; tải lại UI quyền khi cần                    |
-| CSRF_INVALID           | 403  | CSRF/Origin không hợp lệ theo auth contract                  | Khôi phục context auth hợp lệ, không retry mutation mù          |
-| NOT_FOUND              | 404  | Không có đích hoặc không được biết đích tồn tại              | Không hiển thị metadata đích                                    |
-| CONFLICT               | 409  | Revision/trạng thái đổi hoặc cùng operation key khác payload | Tải lại/tra kết quả rồi quyết định; không ghi đè                |
-| EMAIL_EXISTS           | 409  | Email đăng ký đã có                                          | Hiển thị lỗi đăng ký; không dùng mã này cho login               |
-| INVITATION_UNAVAILABLE | 410  | Link mời không còn dùng được theo policy                     | Báo cần link hiện hành; không lộ Workspace private              |
-| PAYLOAD_TOO_LARGE      | 413  | Vượt giới hạn byte body/upload                               | Báo giới hạn hợp lệ của loại dữ liệu                            |
-| UNSUPPORTED_MEDIA_TYPE | 415  | Content-Type/định dạng tệp không được hỗ trợ                 | Chọn loại được cho phép; MIME khai báo không thay kiểm nội dung |
-| RATE_LIMITED           | 429  | Vượt tốc độ/tần suất yêu cầu                                 | Chờ theo Retry-After khi có; tránh vòng retry                   |
-| INTERNAL_ERROR         | 500  | Lỗi bất ngờ không được map an toàn                           | Thông báo chung và requestId để tra                             |
-| DEPENDENCY_UNAVAILABLE | 503  | Phụ thuộc cần thiết tạm không phục vụ được                   | Báo tạm gián đoạn; không kết luận mutation chưa chạy            |
+| Code                   | HTTP | Khi nào                                                      | FE xử lý                                                            |
+| ---------------------- | ---- | ------------------------------------------------------------ | ------------------------------------------------------------------- |
+| INVALID_JSON           | 400  | Body JSON không parse được                                   | Báo dữ liệu gửi không hợp lệ                                        |
+| VALIDATION_ERROR       | 400  | Sai định dạng/field/giới hạn input hoặc cursor sai           | Hiển thị lỗi form; không gửi lại nguyên payload                     |
+| AUTH_REQUIRED          | 401  | Chưa có phiên hoặc phiên hết hạn/bị thu                      | Về đăng nhập, không tiếp tục command cũ                             |
+| INVALID_CREDENTIALS    | 401  | Email/mật khẩu không khớp                                    | Thông báo chung, không tiết lộ tài khoản tồn tại                    |
+| FORBIDDEN              | 403  | Có identity nhưng thiếu quyền với đối tượng được phép biết   | Báo không có quyền; tải lại UI quyền khi cần                        |
+| CSRF_INVALID           | 403  | CSRF/Origin không hợp lệ theo auth contract                  | Khôi phục context auth hợp lệ, không retry mutation mù              |
+| NOT_FOUND              | 404  | Không có đích hoặc không được biết đích tồn tại              | Không hiển thị metadata đích                                        |
+| CONFLICT               | 409  | Revision/trạng thái đổi hoặc cùng operation key khác payload | Tải lại/tra kết quả rồi quyết định; không ghi đè                    |
+| EMAIL_EXISTS           | 409  | Email đăng ký đã có                                          | Hiển thị lỗi đăng ký; không dùng mã này cho login                   |
+| INVITATION_UNAVAILABLE | 410  | Link mời không còn dùng được theo policy                     | Báo cần link hiện hành; không lộ Workspace private                  |
+| SESSION_ENDED          | 410  | Phiên/epoch đã kết thúc; actor được phép biết đích           | Kết thúc đúng lượt resync/call; không chờ snapshot hoặc tự join lại |
+| PAYLOAD_TOO_LARGE      | 413  | Vượt giới hạn byte body/upload                               | Báo giới hạn hợp lệ của loại dữ liệu                                |
+| UNSUPPORTED_MEDIA_TYPE | 415  | Content-Type/định dạng tệp không được hỗ trợ                 | Chọn loại được cho phép; MIME khai báo không thay kiểm nội dung     |
+| RATE_LIMITED           | 429  | Vượt tốc độ/tần suất yêu cầu                                 | Chờ theo Retry-After khi có; tránh vòng retry                       |
+| INTERNAL_ERROR         | 500  | Lỗi bất ngờ không được map an toàn                           | Thông báo chung và requestId để tra                                 |
+| DEPENDENCY_UNAVAILABLE | 503  | Phụ thuộc cần thiết tạm không phục vụ được                   | Báo tạm gián đoạn; không kết luận mutation chưa chạy                |
 
 403/404 là quyết định theo quyền biết đối tượng, không theo sở thích từng route. Kiểm quyền trước trả metadata hoặc lỗi trạng thái có thể lộ đích. Không dò database để trả EMAIL_EXISTS từ luồng đăng nhập. Lỗi sai mật khẩu hiện tại khi đổi mật khẩu dùng VALIDATION_ERROR với thông báo phù hợp, không coi phiên hiện tại đã hết hiệu lực hoặc tự đăng xuất.
 
