@@ -4,4 +4,5 @@ export * from './auth.js';
 export * from './workspace.js';
 export * from './session.js';
 export * from './session-context.js';
+export * from './media-source.js';
 export * from './system.js';
