@@ -16,6 +16,21 @@ import { CleanupAdmission, sessionCleanupAdmission } from './cleanup-admission.j
 const domains = ['media', 'messaging', 'board'] as const;
 type Domain = (typeof domains)[number];
 type Outcome = SessionCleanupResult['outcome'];
+const admissionPollMs = 100;
+
+export type SessionTransitionTiming = Readonly<{ acceptedAtMs: number; deadlineMs: number }>;
+
+// Capture once when accepting the operation, before waiting for any gate.
+export function createSessionTransitionTiming(
+  now: () => number = () => performance.now(),
+): SessionTransitionTiming {
+  const acceptedAtMs = now();
+  if (!Number.isFinite(acceptedAtMs)) throw new TypeError('Invalid transition clock');
+  return Object.freeze({
+    acceptedAtMs,
+    deadlineMs: acceptedAtMs + sessionControlBudget.foregroundTransitionTimeoutMs,
+  });
+}
 
 // Construct this only in the server composition layer, from the caller's live gate context.
 // isCurrent rechecks identity/access, epoch/generation/token, policy and destination deadline.
@@ -103,6 +118,7 @@ export function beginSessionTransition(
   adapters: Record<Domain, CleanupSessionResources>,
   options: {
     userId: string;
+    timing: SessionTransitionTiming;
     admission?: CleanupAdmission;
     now?: () => number;
     random?: () => number;
@@ -126,9 +142,18 @@ export function beginSessionTransition(
   const sessionKey = `${request.sessionId}:${request.epoch}`.toLowerCase();
   const now = options.now ?? (() => performance.now());
   const random = options.random ?? Math.random;
-  const startedAt = now();
-  if (!Number.isFinite(startedAt)) throw new TypeError('Invalid transition clock');
-  const deadline = startedAt + sessionControlBudget.foregroundTransitionTimeoutMs;
+  const startedAt = options.timing.acceptedAtMs;
+  const deadline = options.timing.deadlineMs;
+  const enteredAt = now();
+  if (
+    !Number.isFinite(startedAt) ||
+    !Number.isFinite(deadline) ||
+    !Number.isFinite(enteredAt) ||
+    deadline <= startedAt ||
+    deadline > startedAt + sessionControlBudget.foregroundTransitionTimeoutMs ||
+    enteredAt < startedAt
+  )
+    throw new TypeError('Invalid transition timing');
   const abort = new AbortController();
   const states = Object.fromEntries(
     domains.map((name) => [
@@ -149,7 +174,7 @@ export function beginSessionTransition(
   let reconciliation: Promise<ReturnType<typeof inspect>> | null = null;
 
   const confirmed = () => domains.every((name) => states[name].outcome?.permissionRevoked === true);
-  let lastTime = startedAt;
+  let lastTime = enteredAt;
   let clockFailed = false;
   const currentTime = () => {
     if (clockFailed) return Number.POSITIVE_INFINITY;
@@ -245,7 +270,8 @@ export function beginSessionTransition(
   }
 
   async function foregroundAdapter(name: Domain) {
-    for (let index = 0; index <= sessionControlBudget.cleanupRetryDelaysMs.length; index++) {
+    while (!abort.signal.aborted && currentTime() < deadline) {
+      const attemptsBefore = states[name].attempts;
       await attempt(name, deadline, abort.signal);
       const state = states[name];
       if (
@@ -256,7 +282,12 @@ export function beginSessionTransition(
         currentTime() >= deadline
       )
         return;
-      const delay = sessionControlBudget.cleanupRetryDelaysMs[index];
+      if (state.attempts === attemptsBefore) {
+        // Bounded polling adds no admission queue and consumes no adapter attempt.
+        await pause(Math.min(admissionPollMs, deadline - currentTime()), abort.signal);
+        continue;
+      }
+      const delay = sessionControlBudget.cleanupRetryDelaysMs[state.attempts - 1];
       if (delay === undefined) return;
       const sample = random();
       const jitter = Number.isFinite(sample) ? Math.max(0, Math.min(1, sample)) : 0.5;

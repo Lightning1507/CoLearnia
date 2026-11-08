@@ -4,7 +4,10 @@ import {
   sessionCleanupResultSchema,
   sessionProjectionSchema,
 } from '@colearnia/contracts';
-import { beginSessionTransition } from '../session-manager/session-transition.js';
+import {
+  beginSessionTransition,
+  createSessionTransitionTiming,
+} from '../session-manager/session-transition.js';
 import { CleanupAdmission } from '../session-manager/cleanup-admission.js';
 import type { MediaSource } from '@colearnia/contracts';
 import {
@@ -462,6 +465,7 @@ describe('recipient projection', () => {
       { media: cleanup, messaging: cleanup, board: cleanup },
       {
         userId: participant.auth.userId,
+        timing: createSessionTransitionTiming(),
         admission: new CleanupAdmission({ perUser: 3, perSession: 8, process: 32 }),
       },
     );

@@ -5,8 +5,10 @@ import type {
   SessionCleanupResult,
 } from '@colearnia/contracts';
 import { CleanupAdmission } from './cleanup-admission.js';
-import { beginSessionTransition } from './session-transition.js';
+import { beginSessionTransition, createSessionTransitionTiming } from './session-transition.js';
 import type { HeldTransitionContext, TransitionAudience } from './session-transition.js';
+import { createOperationCoordinator } from '../../lib/operation-coordinator.js';
+import type { CoordinationContext } from '../../lib/operation-coordinator.js';
 
 const id = (value: number) => String(value).padStart(24, '0');
 const uuid = (value: number) => `10000000-0000-4000-8000-${String(value).padStart(12, '0')}`;
@@ -68,7 +70,8 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
-function fixture() {
+function fixture(admission = new CleanupAdmission()) {
+  const timing = createSessionTransitionTiming(() => Date.now());
   let held = false;
   let current = true;
   const context: HeldTransitionContext = {
@@ -86,25 +89,16 @@ function fixture() {
       held = false;
     }
   }
-  async function holdGate<T>(work: () => Promise<T>): Promise<T> {
-    if (held) throw new Error('Reentrant outer gate');
-    held = true;
-    try {
-      return await work();
-    } finally {
-      held = false;
-    }
-  }
   const adapters = {
     media: vi.fn<CleanupSessionResources>(async (value) => ack(value)),
     messaging: vi.fn<CleanupSessionResources>(async (value) => ack(value)),
     board: vi.fn<CleanupSessionResources>(async (value) => ack(value)),
   };
-  const admission = new CleanupAdmission();
-  const begin = (value = request) =>
+  const begin = (value = request, planTiming = timing) =>
     inGate(() =>
       beginSessionTransition(value, context, adapters, {
         userId: id(9),
+        timing: planTiming,
         admission,
         now: () => Date.now(),
         random: () => 0.5,
@@ -115,7 +109,6 @@ function fixture() {
     adapters,
     admission,
     inGate,
-    holdGate,
     begin,
     stale: () => {
       current = false;
@@ -174,16 +167,28 @@ describe('session transition barrier and commit', () => {
     expect(f.admission.stats().active).toBe(0);
   });
 
-  it('uses a caller-held outer gate without trying to acquire it again', async () => {
+  it('uses the caller-held M1 outer gate while releasing the session queue during cleanup', async () => {
     const f = fixture();
-    const result = f.holdGate(async () => {
-      const transition = beginSessionTransition(request, f.context, f.adapters, {
-        userId: id(9),
-        admission: f.admission,
-        now: () => Date.now(),
+    const gates = coordinationFixture();
+    const timing = createSessionTransitionTiming(() => Date.now());
+    for (const name of ['media', 'messaging', 'board'] as const) {
+      f.adapters[name].mockImplementation(async (value) => {
+        expect(gates.sessionHeld()).toBe(false);
+        return ack(value);
       });
+    }
+    const result = gates.coordinator.run(gates.scope, async (outer) => {
+      const context = gates.context(outer, f.context.isCurrent);
+      const transition = gates.inSession(() =>
+        beginSessionTransition(request, context, f.adapters, {
+          userId: id(9),
+          timing,
+          admission: f.admission,
+          now: () => Date.now(),
+        }),
+      );
       await transition.runForeground();
-      return transition.commitHeld(f.context, () => true);
+      return gates.inSession(() => transition.commitHeld(context, () => true));
     });
     await vi.runAllTimersAsync();
     expect(await result).toEqual({ ok: true });
@@ -192,9 +197,12 @@ describe('session transition barrier and commit', () => {
 
   it('rejects missing gates and rechecks authority after adapter I/O', async () => {
     const f = fixture();
-    expect(() => beginSessionTransition(request, f.context, f.adapters, { userId: id(9) })).toThrow(
-      'Gate not held',
-    );
+    expect(() =>
+      beginSessionTransition(request, f.context, f.adapters, {
+        userId: id(9),
+        timing: createSessionTransitionTiming(() => Date.now()),
+      }),
+    ).toThrow('Gate not held');
     const transition = f.begin();
     const pending = transition.runForeground();
     await vi.runAllTimersAsync();
@@ -243,6 +251,97 @@ describe('session transition barrier and commit', () => {
     );
     expect(transition.blocks({ ...audience, scope: { type: 'MAIN' } })).toBe(false);
   });
+});
+
+function coordinationFixture() {
+  const scope = { userId: id(9), workspaceId: id(10) };
+  const coordinator = createOperationCoordinator();
+  let sessionHeld = false;
+  function inSession<T>(work: () => T): T {
+    if (sessionHeld) throw new Error('Reentrant session queue');
+    sessionHeld = true;
+    try {
+      return work();
+    } finally {
+      sessionHeld = false;
+    }
+  }
+  function context(
+    outer: CoordinationContext,
+    isCurrent: HeldTransitionContext['isCurrent'],
+  ): HeldTransitionContext {
+    return {
+      assertHeld() {
+        outer.assertHeld(scope);
+        if (!sessionHeld) throw new Error('Session queue not held');
+      },
+      isCurrent,
+    };
+  }
+  return { scope, coordinator, inSession, context, sessionHeld: () => sessionHeld };
+}
+
+describe('control operations during unlocked cleanup I/O', () => {
+  it.each(['SESSION_ENDED', 'ACCESS_REVOKED', 'SCOPE_CLOSED'] as const)(
+    'can handle %s through the shared outer gate while an adapter is pending',
+    async (reason) => {
+      const f = fixture();
+      const gates = coordinationFixture();
+      const late = deferred<SessionCleanupResult>();
+      f.adapters.media.mockImplementation(() => {
+        expect(gates.sessionHeld()).toBe(false);
+        return late.promise;
+      });
+      const timing = createSessionTransitionTiming(() => Date.now());
+      let currentToken = request.transitionToken;
+      const isCurrent = (value: Readonly<SessionCleanupRequest>) =>
+        value.transitionToken === currentToken;
+      const transition = await gates.coordinator.run(gates.scope, (outer) =>
+        gates.inSession(() =>
+          beginSessionTransition(request, gates.context(outer, isCurrent), f.adapters, {
+            userId: id(9),
+            timing,
+            admission: f.admission,
+            now: () => Date.now(),
+          }),
+        ),
+      );
+      const pending = transition.runForeground();
+      await vi.advanceTimersByTimeAsync(300);
+      expect(gates.coordinator.stats().operations).toBe(0);
+      expect(gates.sessionHeld()).toBe(false);
+      const replacement = await gates.coordinator.run(gates.scope, (outer) =>
+        gates.inSession(() => {
+          const context = gates.context(outer, isCurrent);
+          transition.invalidateHeld(context);
+          currentToken = uuid(9);
+          return beginSessionTransition(
+            { ...request, reason, operationId: uuid(8), transitionToken: currentToken },
+            context,
+            f.adapters,
+            {
+              userId: id(9),
+              admission: f.admission,
+              timing: createSessionTransitionTiming(() => Date.now()),
+              now: () => Date.now(),
+            },
+          );
+        }),
+      );
+      expect((await pending).phase).toBe('CANCELLED');
+      expect(replacement.blocks(audience)).toBe(true);
+      late.resolve(ack(request));
+      await vi.runAllTimersAsync();
+      const commit = vi.fn(() => true);
+      await gates.coordinator.run(gates.scope, (outer) =>
+        gates.inSession(() => {
+          expect(transition.commitHeld(gates.context(outer, isCurrent), commit).ok).toBe(false);
+        }),
+      );
+      expect(commit).not.toHaveBeenCalled();
+      expect(replacement.blocks(audience)).toBe(true);
+    },
+  );
 });
 
 describe('cleanup acknowledgements and retries', () => {
@@ -451,6 +550,7 @@ describe('late I/O, invalidation and reconciliation', () => {
         userId: id(9),
         admission: f.admission,
         now: () => time,
+        timing: createSessionTransitionTiming(() => time),
       }),
     );
     time = -1;
@@ -462,6 +562,131 @@ describe('late I/O, invalidation and reconciliation', () => {
 });
 
 describe('shared cleanup admission', () => {
+  it('keeps multiple handles in one plan on the same pre-gate deadline', async () => {
+    const admission = new CleanupAdmission();
+    const first = fixture(admission);
+    const second = fixture(admission);
+    const timing = createSessionTransitionTiming(() => Date.now());
+    for (const f of [first, second])
+      f.adapters.media.mockImplementation(() => new Promise(() => undefined));
+    await vi.advanceTimersByTimeAsync(7000);
+    const one = first.begin(request, timing);
+    await vi.advanceTimersByTimeAsync(2000);
+    const two = second.begin(
+      {
+        ...request,
+        operationId: uuid(8),
+        transitionToken: uuid(9),
+        target: { type: 'PARTICIPANT', participantId: id(3) },
+      },
+      timing,
+    );
+    const pending = Promise.all([one.runForeground(), two.runForeground()]);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect((await pending).map((result) => result.phase)).toEqual(['DEGRADED', 'DEGRADED']);
+    expect(Date.now()).toBe(10_000);
+    expect(one.blocks(audience)).toBe(true);
+    expect(two.blocks({ ...audience, participantId: id(3) })).toBe(true);
+  });
+
+  it('does not start I/O if the operation already expired while waiting for the gate', async () => {
+    const f = fixture();
+    await vi.advanceTimersByTimeAsync(10_001);
+    const transition = f.begin();
+    expect((await transition.runForeground()).phase).toBe('DEGRADED');
+    expect(f.adapters.media).not.toHaveBeenCalled();
+    expect(transition.blocks(audience)).toBe(true);
+  });
+
+  it('holds deny and spends no adapter attempt when admission stays full until deadline', async () => {
+    const f = fixture();
+    const releases = [
+      f.admission.tryAcquire(id(9), `${id(1)}:${uuid(2)}`)!,
+      f.admission.tryAcquire(id(9), `${id(1)}:${uuid(2)}`)!,
+    ];
+    const transition = f.begin();
+    const pending = transition.runForeground();
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect((await pending).phase).toBe('DEGRADED');
+    expect(transition.inspect().adapters.every((state) => state.attempts === 0)).toBe(true);
+    expect(f.adapters.board).not.toHaveBeenCalled();
+    expect(transition.blocks(audience)).toBe(true);
+    releases.forEach((release) => release());
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(f.adapters.board).not.toHaveBeenCalled();
+    const reconcile = transition.reconcile();
+    await vi.runAllTimersAsync();
+    expect((await reconcile).phase).toBe('READY');
+    expect(transition.blocks(audience)).toBe(true);
+  });
+
+  it('preserves the three actual adapter attempts after waiting for admission', async () => {
+    const f = fixture();
+    for (const name of ['media', 'messaging'] as const)
+      f.adapters[name].mockImplementation(
+        (value) => new Promise((resolve) => setTimeout(() => resolve(ack(value)), 1500)),
+      );
+    f.adapters.board
+      .mockImplementationOnce(async (value) => ack(value, retryable))
+      .mockImplementationOnce(async (value) => ack(value, retryable));
+    const transition = f.begin();
+    const pending = transition.runForeground();
+    await vi.runAllTimersAsync();
+    expect((await pending).phase).toBe('READY');
+    expect(f.adapters.board).toHaveBeenCalledTimes(3);
+    expect(transition.inspect().adapters.find((state) => state.name === 'board')?.attempts).toBe(3);
+  });
+
+  it('waits for a slot without spending adapter retries when healthy I/O takes 1500 ms', async () => {
+    const f = fixture();
+    for (const name of ['media', 'messaging'] as const) {
+      f.adapters[name].mockImplementation(
+        (value) =>
+          new Promise((resolve) => {
+            setTimeout(() => resolve(ack(value)), 1500);
+          }),
+      );
+    }
+    const transition = f.begin();
+    const pending = transition.runForeground();
+    await vi.runAllTimersAsync();
+    expect(f.adapters.board).toHaveBeenCalledTimes(1);
+    expect((await pending).phase).toBe('READY');
+    expect(transition.inspect().adapters.every((adapter) => adapter.attempts === 1)).toBe(true);
+  });
+
+  it('counts time waiting for the gate against the caller deadline', async () => {
+    const f = fixture();
+    const timing = { acceptedAtMs: 0, deadlineMs: 10_000 };
+    await vi.advanceTimersByTimeAsync(9000);
+    for (const name of ['media', 'messaging', 'board'] as const) {
+      f.adapters[name].mockImplementation(
+        (value) =>
+          new Promise((resolve) => {
+            setTimeout(() => resolve(ack(value)), 1500);
+          }),
+      );
+    }
+    const options = {
+      userId: id(9),
+      admission: new CleanupAdmission({ perUser: 3, perSession: 8, process: 32 }),
+      now: () => Date.now(),
+      timing,
+    };
+    const transition = f.inGate(() =>
+      beginSessionTransition(request, f.context, f.adapters, options),
+    );
+    const pending = transition.runForeground();
+    let finishedAt = 0;
+    void pending.then(() => {
+      finishedAt = Date.now();
+    });
+    await vi.runAllTimersAsync();
+    expect((await pending).phase).toBe('DEGRADED');
+    expect(finishedAt).toBe(10_000);
+    expect(transition.blocks(audience)).toBe(true);
+  });
+
   it('bounds user/session/process concurrency and releases slots idempotently', () => {
     const admission = new CleanupAdmission({ perUser: 1, perSession: 2, process: 3 });
     const first = admission.tryAcquire('a', 'one')!;
