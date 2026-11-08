@@ -170,6 +170,102 @@ describe('current session authority', () => {
     });
   });
 
+  it.each(['membershipRevision', 'channelRevision'] as const)(
+    'continues the same ownership after the coordinator commits a revalidated %s',
+    (revision) => {
+      const f = fixture();
+      const original = resolveSessionPolicyContext(f.input(2));
+      if (!original.ok) throw new Error('Expected initial context');
+      const callerAccess = { ...f.participant(2).access, [revision]: 1 };
+      const publisherAccess = { ...f.participant(1).access, [revision]: 1 };
+      f.participant(2).currentAccess = callerAccess;
+      f.participant(1).currentAccess = publisherAccess;
+      const input = { ...f.input(2), access: callerAccess };
+
+      expect(resolveSessionPolicyContext(input)).toEqual({ ok: false, errorCode: 'CONFLICT' });
+      expect(projectSessionFor(input).ok).toBe(false);
+      expect(canReceiveMedia(input, id(1), 'CAMERA')).toBe(false);
+
+      // Simulate the coordinator commit after M1 confirms uninterrupted access
+      // for the same membership/incarnation under the shared gates, without a barrier.
+      f.participant(2).access = { ...callerAccess };
+      expect(canReceiveMedia(input, id(1), 'CAMERA')).toBe(false);
+      f.participant(1).access = { ...publisherAccess };
+
+      const refreshed = resolveSessionPolicyContext(input);
+      expect(refreshed).toEqual({
+        ok: true,
+        context: { ...original.context, access: callerAccess },
+      });
+      const projection = projectSessionFor(input);
+      expect(projection.ok).toBe(true);
+      if (!projection.ok) throw new Error('Expected refreshed projection');
+      expect(projection.projection.participants.map((p) => p.participantId)).toContain(id(1));
+      expect(canReceiveMedia(input, id(1), 'CAMERA')).toBe(true);
+
+      // Work captured before the refresh cannot reuse the previous access stamp.
+      expect(resolveSessionPolicyContext({ ...input, access: original.context.access })).toEqual({
+        ok: false,
+        errorCode: 'CONFLICT',
+      });
+    },
+  );
+
+  it.each(['DISCUSSION', 'ACTIVITY'] as const)(
+    'preserves joined %s membership after uninterrupted-access revalidation',
+    (mode) => {
+      const f = fixture(mode);
+      const original = resolveSessionPolicyContext(f.input(3));
+      if (!original.ok) throw new Error('Expected joined group context');
+      const access = { ...f.participant(3).access, channelRevision: 1 };
+      f.participant(3).currentAccess = access;
+      const input = { ...f.input(3), access };
+      expect(canDrawBoard(input, scopeA)).toBe(false);
+
+      // Same revalidation commit as above; no group join or new ownership.
+      f.participant(3).access = { ...access };
+      expect(resolveSessionPolicyContext(input)).toEqual({
+        ok: true,
+        context: { ...original.context, access },
+      });
+      expect(canDrawBoard(input, scopeA)).toBe(true);
+      expect(canReadScope(input, scopeB)).toBe(false);
+    },
+  );
+
+  it.each(['membershipId', 'membershipIncarnation'] as const)(
+    'denies a new %s even when both fresh snapshots allow content',
+    (field) => {
+      const f = fixture();
+      f.participant(2).scope = scopeA;
+      expect(canReceiveMedia(f.input(2), id(3), 'CAMERA')).toBe(true);
+      const access = {
+        ...f.participant(3).access,
+        [field]: field === 'membershipId' ? id(99) : 2,
+        membershipRevision: 1,
+      };
+      f.participant(3).currentAccess = access;
+      const input = { ...f.input(3), access };
+      expect(resolveSessionPolicyContext(input)).toEqual({ ok: false, errorCode: 'CONFLICT' });
+      expect(projectSessionFor(input).ok).toBe(false);
+      expect(canDrawBoard(input, scopeA)).toBe(false);
+      expect(canReceiveMedia(f.input(2), id(3), 'CAMERA')).toBe(false);
+    },
+  );
+
+  it('does not clear a revocation barrier when fresh content access becomes true again', () => {
+    const f = fixture();
+    f.participant(2).blocked = true;
+    const access = { ...f.participant(2).access, channelRevision: 2 };
+    f.participant(2).currentAccess = access;
+    const input = { ...f.input(2), access };
+    expect(resolveSessionPolicyContext(input)).toEqual({ ok: false, errorCode: 'CONFLICT' });
+    expect(projectSessionFor(input).ok).toBe(false);
+    expect(canReceiveMedia(input, id(1), 'CAMERA')).toBe(false);
+    expect(f.participant(2).access.channelRevision).toBe(0);
+    expect(f.participant(2).blocked).toBe(true);
+  });
+
   it.each(['disconnected', 'denied', 'ending', 'ended'] as const)(
     'denies new access while %s',
     (state) => {

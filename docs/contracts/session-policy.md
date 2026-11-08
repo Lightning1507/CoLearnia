@@ -10,6 +10,21 @@ Caller lấy dữ liệu dưới cổng điều phối chung. M1 kiểm auth, qu
 
 Các hàm trả kết quả theo đúng dữ liệu ở thời điểm gọi. Service chạy lại policy sau `await` và ngay trước grant/read/fanout dưới cổng chung. Binding socket, token, nguồn media và việc thu tài nguyên thực tế tiếp tục do service/adapter tương ứng kiểm theo [kiến trúc](../architecture.md).
 
+### Cập nhật dấu quyền khi participant vẫn còn quyền
+
+Revision khác nhau yêu cầu kiểm lại quyền, không tự buộc người tham gia join lại. Ví dụ đổi tên kênh làm `channelRevision` tăng, hoặc thay role làm `membershipRevision` tăng nhưng quyền đọc LIVE của participant vẫn liên tục còn hiệu lực:
+
+1. Coordinator lấy snapshot mới từ M1, đối chiếu identity/auth còn hạn, đúng session/epoch/callGeneration, Workspace/kênh và cùng `membershipId`/`membershipIncarnation`. Chỉ revision tiến lên; không dùng snapshot cũ để ghi lùi dấu quyền.
+2. Dưới gate theo thứ tự [SCRUM-23](session-context.md#thứ-tự-khóa-và-giới-hạn), coordinator xác minh snapshot còn hiện hành, `canReadContent: true`, loại LIVE và không có thao tác thu quyền/barrier xen giữa. Nếu cần chờ I/O, nhả queue rồi vào lại để kiểm; không giữ snapshot trước `await` làm bằng chứng cuối.
+3. Sau khi xác minh quyền vẫn liên tục hợp lệ, coordinator commit `PolicyParticipant.access` từ snapshot mới, đồng thời dựng `currentAccess` và input `access` tương ứng trước lần gọi policy tiếp theo. Giữ `participantId`, `callGeneration`, scope và quyền host hiện tại; chỉ cập nhật dấu quyền không đổi audience hay `policyRevision` nếu quyền/phạm vi không đổi. Áp dụng cho từng participant bị ảnh hưởng, kể cả publisher; không chép snapshot của người gọi sang người khác.
+4. Policy kiểm dấu quyền đã commit với snapshot mới rồi mới cho context/projection/media tiếp tục. Trong khoảng chưa commit, dấu lệch vẫn bị chặn. Tác vụ đã giữ dấu cũ phải lấy lại context và kiểm trước grant/read/fanout.
+
+Ví dụ dấu đã lưu ở revision 0, M1 trả revision 1 và quyền đọc vẫn còn: chỉ đổi `currentAccess`/input `access` thì context vẫn `CONFLICT`. Sau commit ở bước 3, cùng ownership có thể tiếp tục. Policy thuần không tự ghi runtime hoặc bỏ so sánh revision để cho qua trường hợp này.
+
+Không dùng quy trình này khi đã bị thu quyền rồi được cấp lại, ngay cả khi cùng membership và snapshot mới lại có `canReadContent: true`. PRIVATE có thể được gỡ/thêm lại mà incarnation không đổi; coordinator phải đối chiếu thao tác thu quyền/barrier theo SCRUM-23, không chỉ nhìn snapshot cuối. Giữ nhánh cleanup/deny, không xóa `blocked` để nối lại participation cũ. Workspace rejoin với `membershipId` hoặc incarnation mới cũng phải qua luồng join mới; không phục hồi nhóm/host/tài nguyên cũ bằng cách thay dấu.
+
+### Các hàm policy
+
 | Hàm                              | Kết quả và điều kiện                                                                                                                                                                          |
 | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `resolveSessionPolicyContext`    | `LiveContextResult` của SCRUM-23. Kiểm auth còn hạn, quyền đọc đúng LIVE, session/epoch, đời ownership, access stamp và tư cách nhóm thực tế. Role và host lấy từ runtime                     |
@@ -33,6 +48,6 @@ Các hàm trả kết quả theo đúng dữ liệu ở thời điểm gọi. Se
 
 ## Kiểm chứng và phần tích hợp
 
-[Unit test](../../apps/server/src/live/policy/session-policy.test.ts) chạy trực tiếp các hàm policy, bao phủ ma trận MAIN/DISCUSSION/ACTIVITY, từng loại media, host hỗ trợ, roster chưa join, PRIVATE, access stamp mới, deadline và projection không sửa input. Các test dùng runtime fixture để kiểm thuật toán policy. Handler/registry, adapter media và sự kiện runtime được ghép ở các task phụ thuộc.
+[Unit test](../../apps/server/src/live/policy/session-policy.test.ts) chạy trực tiếp các hàm policy, bao phủ ma trận MAIN/DISCUSSION/ACTIVITY, từng loại media, host hỗ trợ, roster chưa join, PRIVATE, access stamp mới, deadline và projection không sửa input. Fixture cập nhật dấu quyền mô phỏng commit sau revalidation: revision mới vẫn giữ ownership/phạm vi, context cũ bị chặn, membership/incarnation mới và barrier thu quyền tiếp tục bị từ chối. Đây là kiểm đầu vào/kết quả policy; coordinator và revalidation M1 thực tế được triển khai, kiểm tích hợp ở SCRUM-72/registry. Handler, adapter media và sự kiện runtime được ghép ở các task phụ thuộc.
 
 Thứ tự triển khai tiếp theo là coordinator SCRUM-72, snapshot/event theo người nhận SCRUM-66 và registry SCRUM-82 theo kế hoạch. SCRUM-66 bổ sung schema/giao thức truyền projection, `projectionSequence`, chia phần và budget theo SCRUM-23.

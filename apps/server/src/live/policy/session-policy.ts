@@ -14,7 +14,8 @@ export type PolicyParticipant = {
   participantId: string;
   displayName: string;
   auth: AuthenticatedContext;
-  // Committed participation stamp and freshly checked M1 authority are separate.
+  // The coordinator commits access after join or uninterrupted-access revalidation.
+  // currentAccess alone never refreshes the committed stamp or clears a deny barrier.
   access: ChannelAccessStamp;
   currentAccess: ChannelAccessStamp;
   callGeneration: number;
@@ -68,6 +69,7 @@ function hasLiveAccess(access: ChannelAccessStamp, session: SessionPolicyState):
 }
 
 function sameAccessStamp(left: ChannelAccessStamp, right: ChannelAccessStamp): boolean {
+  // Revision drift requires coordinator revalidation before grant/read/fanout.
   return (
     left.workspaceId === right.workspaceId &&
     left.channelId === right.channelId &&
