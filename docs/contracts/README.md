@@ -8,7 +8,7 @@ Source schema ở `packages/contracts/src`, frontend và backend import qua `@co
 
 **Auth/profile (SCRUM-12):** [contract và ví dụ](auth-profile.md), schema input/output và identity nội bộ trong `auth.ts`; chờ M4 review trước khi consumer dùng. Upload avatar tiếp tục ở M1-T1.3 với M2; chưa có endpoint chỉ từ contract này.
 
-**Workspace/kênh (SCRUM-13):** [contract và điểm giao M2/M4](workspace-channels.md), schema trong `workspace.ts`, chữ ký hàm nội bộ tại `apps/server/src/workspaces/ports.ts`, type shell/sidebar tại `apps/web/src/features/workspaces/shell-contract.ts`. Cần M2/M4 review trước tích hợp; chưa có resolver/transaction/cleanup thực thi.
+**Workspace/kênh (SCRUM-13):** [contract và điểm giao M2/M4](workspace-channels.md), schema trong `workspace.ts`, chữ ký hàm nội bộ tại `apps/server/src/workspaces/ports.ts`, type shell/sidebar tại `apps/web/src/features/workspaces/shell-contract.ts`. Cần M2/M4 review trước tích hợp; chưa có resolver, transaction Workspace/general hoặc cleanup nghiệp vụ. Nền connection/transaction dùng chung và kiểm DB riêng ở [runbook SCRUM-15](../runbooks/mongodb-transactions.md).
 
 **Messaging access (SCRUM-14 / M2-T1.1):** [identity, general, thu quyền và ngân sách handler](messaging-access.md); typed ports/consumer fixture trong `apps/server/src/messaging/`. Chờ M1 review, M4 xác nhận runtime/cleanup trước consumer; chưa có provider ACL, factory Mongo hoặc admission runtime thật.
 
@@ -50,6 +50,10 @@ Countdown dùng roundId, deadline và server time; host đặt thời lượng k
 [Contract context và cleanup phiên (SCRUM-23)](session-context.md) định nghĩa DTO nội bộ, phạm vi thu quyền, kết quả cleanup, thứ tự khóa và giới hạn control/snapshot để các miền review.
 
 [Policy và projection phiên (SCRUM-65)](session-policy.md) kiểm quyền theo role/scope, membership thực tế và quyền kênh, đồng thời lọc metadata cho từng người nhận.
+
+[Contract thu quyền và cleanup media (SCRUM-56)](media-cleanup.md) dùng contract SCRUM-23 và có fixture cho ack, timeout và callback cũ.
+
+[Ví dụ join và nguồn media (SCRUM-44)](media-join-source.md) ghép envelope và context đã có thành các ca hợp lệ, sai quyền và stale cho M3/M4 review. Có fixture contract để controller, shell và registry đối chiếu.
 
 Chỉ có một kiểu cuộc họp; bỏ session.setMode, thao tác tự nhận host và screen.grant/revoke theo host khỏi danh mục thiết kế đích. Tạo phiên gán người bắt đầu làm host; join phiên có sẵn không chiếm host. Luồng chuyển host trực tiếp kiểm host hiện tại, target đang kết nối/còn quyền và revision, không có invite/accept hoặc chờ expiry của lời mời; tên event/payload cụ thể chốt trong task contracts, chưa có schema nghiệp vụ chỉ từ tài liệu này; không tự dừng MAIN share còn hợp lệ khi đổi host. Mọi participant ở MAIN acquire/release nguồn tự động, không xin host; nguồn bận từ chối, không giành. Group mode DISCUSSION/ACTIVITY vẫn cần kiểm như trên. Ca kiểm: join đồng thời chỉ một host; member không transfer thay host; MAIN share cạnh tranh; chuyển host không làm mất nguồn share hợp lệ. Phát hiện host mất kết nối: thu ngay mọi quyền kết nối cũ, server chọn ngay ngẫu nhiên participant đang kết nối/hợp lệ làm host tạm, lưu danh tính host cần hoàn quyền và revision; khi người cũ reconnect/join lại hợp lệ trong cùng phiên thì tự thu quyền host tạm và hoàn lại, phát host.changed. Cả chuyển chủ động và thay tạm/hoàn quyền đều không cần người nhận chấp nhận; client không tự khai quyền hoàn lại. Kiểm race reconnect/timeout, quyền cũ và cleanup help/announcement. Host chủ động rời khi còn quyền kết thúc phiên cho mọi người; người đã bàn giao chính thức rời như thành viên. Kiểm race giữa transfer và lệnh kết thúc theo role/revision hiện hành; không xử lý rời/kết thúc bằng quyền cũ. Các nhánh không có ứng viên/host tạm mất mạng theo [vòng đời host](../product/live-session.md#83-chuyển-host-và-host-mất-mạng), không tự thêm quyền ưu tiên owner/admin hoặc đồng host.
 
