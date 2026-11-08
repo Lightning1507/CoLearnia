@@ -6,4 +6,5 @@ export * from './session.js';
 export * from './session-context.js';
 export * from './session-projection.js';
 export * from './session-snapshot.js';
+export * from './media-source.js';
 export * from './system.js';
