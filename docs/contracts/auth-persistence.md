@@ -69,3 +69,5 @@ pnpm exec vitest run --config vitest.database.config.ts apps/server/test/auth-mo
 | Hash riêng tư          | Truy vấn mặc định ẩn hash. Khi service chọn hash để kiểm nội bộ, JSON/đối tượng từ Mongoose document vẫn loại hash.                                         |
 
 Việc quét TTL và xóa bản ghi chạy theo lịch của MongoDB. Ca hết hạn dùng điều kiện truy vấn và xác minh index, chưa đo thời gian dọn thực tế. Kiểm đăng ký, cookie và CSRF thuộc SCRUM-18/21.
+
+Sau review `5605849`, ca thử `displayName: 123` tái hiện việc Mongoose lưu tên thành `"123"`. Thêm `cast: false` cho trường này để model báo lỗi kiểu tại `displayName` và không tạo tài khoản. Chạy lại Vitest với cấu hình database trên replica set thử cổng 27058, cả 34 ca đạt, gồm 7 ca SCRUM-16.

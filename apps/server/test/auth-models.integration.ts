@@ -160,6 +160,15 @@ describe('SCRUM-16 account and session persistence', () => {
     expect(() => new AuthSession({ token: 'fixture-raw-token' })).toThrow(/not in schema/);
   });
 
+  it('rejects a numeric display name before it can be stored as text', async () => {
+    const input = userInput();
+    await expect(new User({ ...input, displayName: 123 }).save()).rejects.toHaveProperty(
+      'errors.displayName.kind',
+      'string',
+    );
+    expect(await User.exists({ emailNormalized: input.emailNormalized })).toBeNull();
+  });
+
   it('hides hashes in default queries and serialized documents', async () => {
     const user = await User.create(userInput());
     const authSession = await AuthSession.create({

@@ -49,6 +49,7 @@ const userSchema = new Schema(
     displayName: {
       type: String,
       required: true,
+      cast: false,
       trim: true,
       validate: { validator: (value: string) => displayNameSchema.safeParse(value).success },
     },
