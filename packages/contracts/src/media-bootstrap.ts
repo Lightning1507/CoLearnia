@@ -27,7 +27,7 @@ export const mediaBootstrapQuerySchema = z.strictObject({
 
 const mediaKindSchema = z.enum(['audio', 'video']);
 // URI values accepted by the pinned mediasoup server and client RTP capability types.
-const rtpHeaderExtensionUriSchema = z.enum([
+export const rtpHeaderExtensionUriSchema = z.enum([
   'urn:ietf:params:rtp-hdrext:sdes:mid',
   'urn:ietf:params:rtp-hdrext:sdes:rtp-stream-id',
   'urn:ietf:params:rtp-hdrext:sdes:repaired-rtp-stream-id',
@@ -40,7 +40,7 @@ const rtpHeaderExtensionUriSchema = z.enum([
   'http://www.webrtc.org/experiments/rtp-hdrext/playout-delay',
   'urn:mediasoup:params:rtp-hdrext:packet-id',
 ]);
-const routerRtpCapabilitiesSchema = z.strictObject({
+export const routerRtpCapabilitiesSchema = z.strictObject({
   codecs: z.array(
     z.strictObject({
       kind: mediaKindSchema,
@@ -114,17 +114,18 @@ export const mediaTransportRestartIceInputSchema = sessionCommandEnvelopeSchema(
   transportId: resourceIdSchema,
   expectedIceGeneration: iceGenerationSchema,
 });
+export const mediaIceParametersSchema = z.strictObject({
+  usernameFragment: z.string().min(1),
+  password: z.string().min(1),
+  iceLite: z.boolean().optional(),
+});
 export const mediaTransportRestartIceAckSchema = commandAckSchema(
   z.strictObject({
     status: z.literal('completed'),
     result: z.strictObject({
       transportId: resourceIdSchema,
       iceGeneration: iceGenerationSchema.min(1),
-      iceParameters: z.strictObject({
-        usernameFragment: z.string().min(1),
-        password: z.string().min(1),
-        iceLite: z.boolean().optional(),
-      }),
+      iceParameters: mediaIceParametersSchema,
     }),
   }),
 );

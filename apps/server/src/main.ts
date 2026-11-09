@@ -1,7 +1,11 @@
 import { createServer } from 'node:http';
 import { createApp } from './app.js';
+import { authIndexRequirements } from './auth/models.js';
+import { createRegistration } from './auth/registration.js';
+import { createRegistrationRouter } from './auth/registration-routes.js';
 import { loadConfig } from './config/env.js';
 import { createDatabase } from './lib/database.js';
+import { preflightIndexes } from './lib/database-preflight.js';
 import { logger } from './lib/logger.js';
 import { operationCoordinator } from './lib/shared-coordination.js';
 import { createRealtime } from './realtime/server.js';
@@ -17,15 +21,27 @@ const database = createDatabase(config.MONGO_URI, {
 });
 let media: Awaited<ReturnType<typeof createMediaRuntime>> | undefined;
 let stopping = false;
+let authIndexesReady = false;
 
 const status = (): SystemStatus => ({
   name: 'CoLearnia',
   database: database.isConnected() ? 'connected' : 'disconnected',
   media: config.MEDIA_ENABLED ? (media?.isReady() ? 'connected' : 'disconnected') : 'disabled',
-  ready: !stopping && database.isConnected() && Boolean(media?.isReady()),
+  ready:
+    !stopping &&
+    database.isConnected() &&
+    Boolean(media?.isReady()) &&
+    (!config.SESSION_SECRET || authIndexesReady),
 });
 
-const httpServer = createServer(createApp(config, status));
+const registrationRouter = config.SESSION_SECRET
+  ? createRegistrationRouter(
+      config.APP_ORIGIN,
+      config.SESSION_SECRET,
+      createRegistration(database, () => authIndexesReady && !stopping, config.AUTH_TTL_SECONDS),
+    )
+  : undefined;
+const httpServer = createServer(createApp(config, status, registrationRouter));
 const io = createRealtime(httpServer, config);
 
 async function start() {
@@ -33,6 +49,16 @@ async function start() {
     await database.connect();
   } catch {
     logger.warn('MongoDB unavailable; readiness remains 503. Start the replica set and restart.');
+  }
+
+  if (registrationRouter && database.isConnected()) {
+    try {
+      const { ready, issues } = await preflightIndexes(database.connection, authIndexRequirements);
+      authIndexesReady = ready;
+      if (!ready) logger.warn({ issues }, 'Registration requires the auth indexes before startup.');
+    } catch {
+      logger.warn('Could not check auth indexes; registration remains unavailable.');
+    }
   }
 
   if (config.MEDIA_ENABLED) {

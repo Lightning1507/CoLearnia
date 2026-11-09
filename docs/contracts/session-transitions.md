@@ -34,7 +34,7 @@ Caller gọi `createSessionTransitionTiming()` đúng một lần khi nhận ope
 | `request`                       | `SessionCleanupRequest` của SCRUM-23; chỉ tạo sau khi server kiểm actor, đích và scope                                                                                                                                              |
 | `context.assertHeld()`          | Xác nhận caller đang giữ đúng User/Workspace và channel/session context cần thiết. Wrapper tại composition root phải kiểm context thật; không nhận cờ bỏ qua khóa từ client                                                         |
 | `context.isCurrent(request)`    | Kiểm đồng bộ snapshot quyền hiện hành, auth expiry, epoch, callGeneration, operation/token còn được registry chọn, role/phase và deadline đích. Caller xác minh lại M1 trước khi gọi commit; hàm này không làm I/O hoặc tự lấy gate |
-| `adapters`                      | Đủ ba hàm `media`, `messaging`, `board`, cùng chữ ký `CleanupSessionResources`. Không thay adapter chưa có bằng hàm trả thành công giả để bật handler                                                                               |
+| `adapters`                      | Đủ `media`, `messaging` và `board`. Các adapter async dùng `CleanupSessionResources`. `media` có thể dùng object `{ revoke }` cho đường thu quyền đồng bộ. Không thay adapter chưa có bằng hàm trả thành công giả                   |
 | `options.userId`                | Actor đã xác thực tại server, dùng tính admission; không phải userId client khai                                                                                                                                                    |
 | `options.timing`                | Bắt buộc; timing chung đã chụp khi nhận operation. Handle giữ bản giá trị, không gia hạn theo lúc vào gate hoặc thời điểm gọi adapter                                                                                               |
 | `options.admission`             | Mặc định dùng cùng `sessionCleanupAdmission` trong process. Instance riêng chỉ dùng trong test; không tạo pool riêng cho từng phiên/miền trong production                                                                           |
@@ -55,6 +55,8 @@ Các hàm trên handle:
 Các API là hàm nội bộ, không thêm REST route/socket command. Thiếu gate hoặc input nội bộ sai ném lỗi để caller map qua lỗi chung; adapter không được đưa stack/raw DB error tới client. Commit chưa sẵn sàng hoặc context đã cũ trả `CONFLICT`; callback commit ném lỗi trả `INTERNAL_ERROR` và giữ deny.
 
 ## 3. Barrier, kết quả adapter và commit
+
+Adapter media dạng `{ revoke: transportSignaling.cleanup }` cho SCRUM-60 thực hiện đóng transport và vô hiệu pending ngay trong `beginSessionTransition`, dưới gate hiện hành. Dùng dạng này cho thao tác đồng bộ có giới hạn, không chờ I/O hoặc lấy thêm gate. Coordinator đối chiếu identity và outcome như với adapter thường. Nếu bước đồng bộ thất bại, giữ deny và báo kết quả chưa xác nhận để caller xử lý. Adapter media dạng hàm async, messaging và board vẫn đi qua admission và retry hiện có.
 
 Đích `SCOPE` chặn đúng scope trong session/epoch, không chặn nhóm khác. Đích `PARTICIPANT` và `PARTICIPANT_SCOPE` chặn participant/callGeneration đó trong lúc transition chưa hoàn tất, kể cả audience đích mới. Cleanup vẫn chỉ tác động target cũ đã chụp. Chặn cả audience đích ngăn quyền mới lọt ra nếu một bước cập nhật runtime thất bại giữa chừng. Participant khác và ownership/generation mới không bị barrier cũ tác động.
 
