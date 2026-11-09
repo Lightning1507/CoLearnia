@@ -1,17 +1,12 @@
 import { useState } from 'react';
-import type {
-  ChannelAccessSnapshot,
-  ChannelSummary,
-  LiveContext,
-  OwnUser,
-} from '@colearnia/contracts';
+import type { ChannelAccessSnapshot, ChannelSummary, OwnUser } from '@colearnia/contracts';
+import { RoomShell } from '../live/room/RoomShell';
 import { useCallSnapshot } from '../live/runtime/callControllerContext';
 import { WorkspaceShell } from './WorkspaceShell';
 import type { WorkspacePanel } from './shell-contract';
 import {
   accessFixture,
   currentUserFixture,
-  liveContextFixture,
   sidebarFixture,
   workspaceFixture,
 } from './workspace-fixture';
@@ -36,25 +31,6 @@ function ChatPanel({
         <p>
           Slot này chỉ nhận projection có quyền đọc ở revision {access.channelRevision}. Timeline,
           composer và realtime sẽ do M2 tích hợp sau.
-        </p>
-      </section>
-    </article>
-  );
-}
-
-function CallPanel({ context }: { context: LiveContext }) {
-  const call = useCallSnapshot();
-  return (
-    <article className="workspace-fixture-panel" aria-label="Panel phòng trực tiếp">
-      <header>
-        <h2>Phòng học trực tiếp</h2>
-        <p>Panel fixture M3/M4 · phạm vi {context.scope.type}</p>
-      </header>
-      <section>
-        <strong>Call runtime: {call.status === 'idle' ? 'chưa tham gia' : call.status}</strong>
-        <p>
-          Chuyển panel chỉ đổi UI consumer. Join, thiết bị, signaling và kết thúc cuộc gọi không
-          được kích hoạt tại đây.
         </p>
       </section>
     </article>
@@ -94,7 +70,7 @@ export function WorkspaceFixturePage() {
           <ChatPanel channel={selected} identity={currentUserFixture} access={selectedAccess} />
         ) : null
       }
-      callPanel={<CallPanel context={liveContextFixture} />}
+      callPanel={selected?.type === 'LIVE' ? <RoomShell channelName={selected.name} /> : null}
       persistentCallControls={<PersistentCallStatus />}
     />
   );
