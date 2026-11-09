@@ -1,6 +1,6 @@
 import type { RegisterInput } from '@colearnia/contracts';
 import mongoose from 'mongoose';
-import { DatabaseBusyError } from '../lib/database.js';
+import { isDatabaseUnavailableError } from '../lib/database.js';
 import type { Database } from '../lib/database.js';
 import { authModels } from './models.js';
 import { hashPassword, PasswordWorkBusyError, runPasswordWork } from './password-hash.js';
@@ -9,11 +9,6 @@ import { newSessionCredentials } from './session-credentials.js';
 export class EmailExistsError extends Error {}
 export class RegistrationUnavailableError extends Error {}
 export class RegistrationUnconfirmedError extends Error {}
-
-// Network, server selection, write concern, timeout and replica-set state failures.
-const unavailableMongoCodes = new Set([
-  6, 7, 50, 64, 89, 91, 189, 262, 9001, 10107, 11600, 11602, 13435, 13436,
-]);
 
 export function createRegistration(
   database: Database,
@@ -69,14 +64,7 @@ export function createRegistration(
       }
       if (
         error instanceof PasswordWorkBusyError ||
-        error instanceof DatabaseBusyError ||
-        error instanceof mongoose.mongo.MongoNetworkError ||
-        error instanceof mongoose.mongo.MongoServerSelectionError ||
-        (error instanceof mongoose.mongo.MongoError &&
-          error.name === 'MongoWaitQueueTimeoutError') ||
-        (error instanceof mongoose.mongo.MongoError &&
-          (error.hasErrorLabel('TransientTransactionError') ||
-            (typeof error.code === 'number' && unavailableMongoCodes.has(error.code)))) ||
+        isDatabaseUnavailableError(error) ||
         !database.isConnected()
       ) {
         throw new RegistrationUnavailableError();

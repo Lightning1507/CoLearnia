@@ -1,8 +1,10 @@
 import { createServer } from 'node:http';
 import { createApp } from './app.js';
+import { createAuthRouter } from './auth/auth-routes.js';
+import { createHttpAuth } from './auth/http-auth.js';
 import { authIndexRequirements } from './auth/models.js';
+import { createSessionReader } from './auth/read-session.js';
 import { createRegistration } from './auth/registration.js';
-import { createRegistrationRouter } from './auth/registration-routes.js';
 import { loadConfig } from './config/env.js';
 import { createDatabase } from './lib/database.js';
 import { preflightIndexes } from './lib/database-preflight.js';
@@ -34,14 +36,18 @@ const status = (): SystemStatus => ({
     (!config.SESSION_SECRET || authIndexesReady),
 });
 
-const registrationRouter = config.SESSION_SECRET
-  ? createRegistrationRouter(
-      config.APP_ORIGIN,
-      config.SESSION_SECRET,
-      createRegistration(database, () => authIndexesReady && !stopping, config.AUTH_TTL_SECONDS),
+const canUseAuthIndexes = () => authIndexesReady && !stopping;
+const authRouter = config.SESSION_SECRET
+  ? createAuthRouter(
+      createHttpAuth(
+        config.APP_ORIGIN,
+        config.SESSION_SECRET,
+        createSessionReader(database, canUseAuthIndexes),
+      ),
+      createRegistration(database, canUseAuthIndexes, config.AUTH_TTL_SECONDS),
     )
   : undefined;
-const httpServer = createServer(createApp(config, status, registrationRouter));
+const httpServer = createServer(createApp(config, status, authRouter));
 const io = createRealtime(httpServer, config);
 
 async function start() {
@@ -51,13 +57,14 @@ async function start() {
     logger.warn('MongoDB unavailable; readiness remains 503. Start the replica set and restart.');
   }
 
-  if (registrationRouter && database.isConnected()) {
+  if (authRouter && database.isConnected()) {
     try {
       const { ready, issues } = await preflightIndexes(database.connection, authIndexRequirements);
       authIndexesReady = ready;
-      if (!ready) logger.warn({ issues }, 'Registration requires the auth indexes before startup.');
+      if (!ready)
+        logger.warn({ issues }, 'Authentication requires the auth indexes before startup.');
     } catch {
-      logger.warn('Could not check auth indexes; registration remains unavailable.');
+      logger.warn('Could not check auth indexes; authentication remains unavailable.');
     }
   }
 

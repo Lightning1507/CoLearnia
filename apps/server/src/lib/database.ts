@@ -43,6 +43,22 @@ export class DatabaseBusyError extends Error {
   }
 }
 
+const unavailableMongoCodes = new Set([
+  6, 7, 50, 64, 89, 91, 189, 262, 9001, 10107, 11600, 11602, 13435, 13436,
+]);
+
+export function isDatabaseUnavailableError(error: unknown): boolean {
+  return (
+    error instanceof DatabaseBusyError ||
+    error instanceof mongoose.mongo.MongoNetworkError ||
+    error instanceof mongoose.mongo.MongoServerSelectionError ||
+    (error instanceof mongoose.mongo.MongoError &&
+      (error.name === 'MongoWaitQueueTimeoutError' ||
+        error.hasErrorLabel('TransientTransactionError') ||
+        (typeof error.code === 'number' && unavailableMongoCodes.has(error.code))))
+  );
+}
+
 // One instance at bootstrap; inject its connection into every model/provider.
 export function createDatabase(uri: string, options: DatabaseOptions = defaultDatabaseOptions) {
   const queryStart = uri.indexOf('?');

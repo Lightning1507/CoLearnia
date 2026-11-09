@@ -99,8 +99,15 @@ export class LobbyPreview {
     this.listeners.forEach((listener) => listener());
   }
 
-  private update(kind: DeviceKind, patch: Partial<DeviceState>) {
-    this.publish({ [kind]: { ...this.state[kind], ...patch } });
+  private update(
+    kind: DeviceKind,
+    patch: Partial<DeviceState>,
+    videoStream = this.state.videoStream,
+  ) {
+    this.publish({
+      [kind]: { ...this.state[kind], ...patch },
+      videoStream: kind === 'camera' ? videoStream : this.state.videoStream,
+    });
   }
 
   start = () => {
@@ -146,11 +153,15 @@ export class LobbyPreview {
           current.selectedId && !inputs.some((d) => d.deviceId === current.selectedId);
         const openedMissing =
           current.openedId && !inputs.some((d) => d.deviceId === current.openedId);
-        this.update(kind, { devices: options });
         const replacementPending = current.status === 'requesting' && inputs.length > 0;
-        if (selectedMissing || (openedMissing && !replacementPending)) {
-          this.stop(kind);
+        if (current.status === 'denied') {
           this.update(kind, {
+            devices: options,
+            selectedId: selectedMissing ? '' : current.selectedId,
+          });
+        } else if (selectedMissing || (openedMissing && !replacementPending)) {
+          this.reset(kind, {
+            devices: options,
             selectedId: '',
             status: 'unavailable',
             message: 'Thiết bị đã chọn không còn khả dụng. Hãy chọn lại thiết bị rồi bấm Bật.',
@@ -158,7 +169,9 @@ export class LobbyPreview {
         } else if (openedMissing) {
           // Losing A must not invalidate the generation acquiring the still-available B.
           this.releaseOwned(kind);
-          this.update(kind, { openedId: null });
+          this.update(kind, { devices: options, openedId: null }, null);
+        } else {
+          this.update(kind, { devices: options });
         }
       }
       this.publish({ enumerating: false });
@@ -177,11 +190,19 @@ export class LobbyPreview {
     try {
       const permission = await this.browser.permissions?.query({ name: kind as PermissionName });
       if (!permission || !this.active || lifetime !== this.lifetime) return;
+      let previousState = permission.state;
       const changed = () => {
         if (!this.active || lifetime !== this.lifetime) return;
+        const hadPermission = previousState === 'granted';
+        previousState = permission.state;
         if (permission.state === 'denied') {
-          this.stop(kind);
-          this.update(kind, describeError(new DOMException('', 'NotAllowedError')));
+          this.reset(kind, describeError(new DOMException('', 'NotAllowedError')));
+        } else if (permission.state === 'prompt' && hadPermission) {
+          this.reset(kind, {
+            selectedId: '',
+            status: 'off',
+            message: 'Quyền thiết bị đã được đặt lại. Bấm Bật để cấp quyền lại.',
+          });
         } else if (this.state[kind].status === 'denied') {
           this.update(kind, {
             status: 'off',
@@ -234,10 +255,10 @@ export class LobbyPreview {
         if (!this.active || this.owned[kind]?.stream !== stream) return;
         if (request !== this.generation[kind]) {
           this.releaseOwned(kind);
+          this.update(kind, { openedId: null }, null);
           return;
         }
-        this.stop(kind);
-        this.update(kind, {
+        this.reset(kind, {
           status: 'unavailable',
           message: 'Thiết bị đã ngừng hoạt động. Kiểm tra kết nối và quyền rồi thử lại.',
         });
@@ -246,20 +267,22 @@ export class LobbyPreview {
       this.releaseOwned(kind);
       track.addEventListener('ended', ended);
       this.owned[kind] = { stream, cleanup: () => track.removeEventListener('ended', ended) };
-      this.update(kind, {
-        openedId: track.getSettings().deviceId || null,
-        status: 'ready',
-        message:
-          kind === 'camera'
-            ? 'Camera đang bật · chỉ xem trước trên máy này.'
-            : 'Microphone đã mở · không phát ra loa hoặc gửi lên phiên.',
-      });
-      if (kind === 'camera') this.publish({ videoStream: stream });
+      this.update(
+        kind,
+        {
+          openedId: track.getSettings().deviceId || null,
+          status: 'ready',
+          message:
+            kind === 'camera'
+              ? 'Camera đang bật · chỉ xem trước trên máy này.'
+              : 'Microphone đã mở · không phát ra loa hoặc gửi lên phiên.',
+        },
+        stream,
+      );
       void this.refreshDevices();
     } catch (error) {
       if (this.active && request === this.generation[kind]) {
-        this.releaseOwned(kind);
-        this.update(kind, { ...describeError(error), openedId: null });
+        this.reset(kind, describeError(error));
       }
     }
   };
@@ -271,23 +294,36 @@ export class LobbyPreview {
       owned.stream.getTracks().forEach((track) => track.stop());
       delete this.owned[kind];
     }
-    if (kind === 'camera') this.publish({ videoStream: null });
+  }
+
+  private reset(kind: DeviceKind, patch: Partial<DeviceState>) {
+    this.generation[kind]++;
+    this.releaseOwned(kind);
+    this.update(kind, { ...patch, openedId: null }, null);
   }
 
   stop = (kind: DeviceKind) => {
-    this.generation[kind]++;
-    this.releaseOwned(kind);
-    this.update(kind, { status: 'off', openedId: null, message: 'Thiết bị đang tắt.' });
+    if (this.active) this.reset(kind, { status: 'off', message: 'Thiết bị đang tắt.' });
   };
 
   dispose = () => {
+    if (!this.active) return false;
     this.active = false;
     this.lifetime++;
     this.enumeration++;
     this.browser.mediaDevices?.removeEventListener('devicechange', this.onDeviceChange);
     this.permissionCleanup.splice(0).forEach((cleanup) => cleanup());
-    this.stop('camera');
-    this.stop('microphone');
-    this.publish({ enumerating: false });
+    for (const kind of ['camera', 'microphone'] as const) {
+      this.generation[kind]++;
+      this.releaseOwned(kind);
+    }
+    this.publish({
+      camera: initialDevice(),
+      microphone: initialDevice(),
+      videoStream: null,
+      enumerating: false,
+      enumerationError: null,
+    });
+    return true;
   };
 }

@@ -1,5 +1,5 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
-import { LobbyPreview } from './lobby-preview';
+import { LobbyPreview } from './lobbyPreview';
 
 export function useLobbyPreview() {
   // Construction is inert; StrictMode may construct twice without opening a device.
@@ -14,7 +14,9 @@ export function useLobbyPreview() {
   const state = useSyncExternalStore(preview.subscribe, preview.getSnapshot, preview.getSnapshot);
   useEffect(() => {
     preview.start();
-    return preview.dispose;
+    return () => {
+      preview.dispose();
+    };
   }, [preview]);
   return { state, preview };
 }
