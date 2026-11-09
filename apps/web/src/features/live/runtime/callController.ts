@@ -1,4 +1,5 @@
 import type { LiveContext } from '@colearnia/contracts';
+import { MediaSnapshotRuntime } from './mediaSnapshotRuntime';
 
 export type CallIdentity = Readonly<
   Pick<LiveContext, 'sessionId' | 'epoch' | 'participantId' | 'callGeneration'>
@@ -15,21 +16,24 @@ type DisposeRuntime = () => void;
 type InitializeRuntime = (
   identity: CallIdentity,
   signal: AbortSignal,
+  mediaSnapshots: MediaSnapshotRuntime,
 ) => DisposeRuntime | Promise<DisposeRuntime>;
 
 class CallController {
   readonly identity: CallIdentity;
   #abort = new AbortController();
+  #mediaSnapshots: MediaSnapshotRuntime;
   #disposeRuntime: DisposeRuntime | undefined;
 
   constructor({ sessionId, epoch, participantId, callGeneration }: CallIdentity) {
     this.identity = Object.freeze({ sessionId, epoch, participantId, callGeneration });
+    this.#mediaSnapshots = new MediaSnapshotRuntime(this.identity, this.#abort.signal);
   }
 
   async initialize(initialize: InitializeRuntime) {
     const { signal } = this.#abort;
     signal.throwIfAborted();
-    const dispose = await initialize(this.identity, signal);
+    const dispose = await initialize(this.identity, signal, this.#mediaSnapshots);
     if (signal.aborted) {
       dispose();
       signal.throwIfAborted();
