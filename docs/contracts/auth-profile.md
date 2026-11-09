@@ -127,6 +127,8 @@ Ví dụ sai mật khẩu hiện tại:
 
 ## 5. Identity và thu phiên cho M2/M4
 
+Xem [model và index SCRUM-16](auth-persistence.md) để dùng chung kết nối, lưu tài khoản/phiên và tra phiên còn hiệu lực.
+
 `requireAuth` là hàm nội bộ dự kiến: adapter server đọc cookie, kiểm hash/hiệu lực phiên/User và trả `AuthenticatedContext`. Lỗi AUTH_REQUIRED hoặc DEPENDENCY_UNAVAILABLE, không truyền raw cookie. M2/M4 vẫn kiểm membership/quyền kênh; auth hợp lệ chưa đủ quyền chat/LIVE. Context chỉ dùng cho thao tác hiện hành, không giữ như grant vĩnh viễn trong socket.
 
 | Tình huống                    | Phạm vi thu và trách nhiệm                                                                                                              |
