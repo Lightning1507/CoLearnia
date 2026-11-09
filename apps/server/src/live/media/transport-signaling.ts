@@ -18,6 +18,7 @@ import type {
   SessionCleanupResult,
 } from '@colearnia/contracts';
 import type { types as MediaTypes } from 'mediasoup';
+import type { SessionPolicyInput } from '../policy/session-policy.js';
 import { randomUUID } from 'node:crypto';
 import { sessionCleanupAdmission } from '../session-manager/cleanup-admission.js';
 import type { CleanupAdmission } from '../session-manager/cleanup-admission.js';
@@ -26,20 +27,22 @@ type Command =
   | { kind: 'create'; input: MediaTransportCreateInput }
   | { kind: 'connect'; input: MediaTransportConnectInput };
 type ContextInput = Pick<Command['input'], 'sessionId' | 'epoch' | 'callGeneration'>;
+type MutationContext = ContextInput & { expectedPolicyRevision: number };
 type Authority = <T>(
   socketId: string,
   input: ContextInput,
   // Called synchronously under the M4 gate with current socket binding and access.
-  use: (resolved: LiveContextResult, router?: MediaTypes.Router) => T,
+  use: (resolved: LiveContextResult, router?: MediaTypes.Router, policy?: SessionPolicyInput) => T,
 ) => Promise<T>;
 type Direction = MediaTransportCreateInput['payload']['direction'];
 type Transport = Pick<
   MediaTypes.WebRtcTransport,
   'id' | 'closed' | 'iceParameters' | 'iceCandidates' | 'dtlsParameters' | 'connect' | 'close'
-> & {
-  observer: { once(event: 'close', listener: () => void): unknown };
-  on(event: 'dtlsstatechange', listener: (state: MediaTypes.DtlsState) => void): unknown;
-};
+> &
+  Partial<Pick<MediaTypes.WebRtcTransport, 'produce' | 'consume'>> & {
+    observer: { once(event: 'close', listener: () => void): unknown };
+    on(event: 'dtlsstatechange', listener: (state: MediaTypes.DtlsState) => void): unknown;
+  };
 type SocketPort = {
   id: string;
   on(
@@ -53,6 +56,7 @@ type Slot = {
   socketId: string;
   context: LiveContext;
   direction: Direction;
+  router?: MediaTypes.Router;
   transport?: Transport;
   descriptor?: MediaTransportCreateResult;
   connectedWith?: string;
@@ -130,7 +134,7 @@ export function createTransportSignaling({
     transport?.close();
   }
 
-  function authorize(socketId: string, input: Command['input'], resolved: LiveContextResult) {
+  function authorize(socketId: string, input: MutationContext, resolved: LiveContextResult) {
     if (!resolved.ok) return reject(resolved.errorCode);
     const { context } = resolved;
     if (!(Date.parse(context.auth.expiresAt) > Date.now())) return reject('AUTH_REQUIRED');
@@ -257,6 +261,7 @@ export function createTransportSignaling({
                 native.close();
                 return reject('CONFLICT');
               }
+              slot.router = router;
               slot.transport = native;
               native.observer.once('close', () => forget(slot));
               native.on('dtlsstatechange', (state) => {
@@ -316,6 +321,49 @@ export function createTransportSignaling({
   }
 
   return {
+    withMediaTransport<T>(
+      socketId: string,
+      input: MutationContext,
+      transportId: string,
+      direction: Direction,
+      use: (
+        context: LiveContext,
+        router: MediaTypes.Router,
+        policy: SessionPolicyInput,
+        transport: Pick<MediaTypes.WebRtcTransport, 'id' | 'produce' | 'consume'>,
+      ) => T,
+    ): Promise<T | Failure> {
+      return withContext(socketId, input, (resolved, router, policy) => {
+        const access = authorize(socketId, input, resolved);
+        if ('errorCode' in access) return access;
+        const slot = transports.get(transportId);
+        const transport = slot?.transport;
+        if (
+          !slot ||
+          !access.owns(slot) ||
+          slot.direction !== direction ||
+          !transport ||
+          transport.closed
+        ) {
+          return reject('CONFLICT');
+        }
+        if (
+          !router ||
+          router.closed ||
+          router !== slot.router ||
+          !policy ||
+          !transport.produce ||
+          !transport.consume
+        ) {
+          return reject('DEPENDENCY_UNAVAILABLE');
+        }
+        return use(access.context, router, policy, {
+          id: transport.id,
+          produce: transport.produce.bind(transport),
+          consume: transport.consume.bind(transport),
+        });
+      });
+    },
     attach(socket: SocketPort) {
       const register = (kind: Command['kind'], decode: (value: unknown) => Command | null) => {
         socket.on(`media.transport.${kind}`, (raw: unknown, ack?: (value: unknown) => void) => {
