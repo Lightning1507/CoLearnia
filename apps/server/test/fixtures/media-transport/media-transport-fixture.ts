@@ -4,6 +4,11 @@ import type { LiveContext } from '@colearnia/contracts';
 import { loadConfig } from '../../../src/config/env.js';
 import { createMediaRuntime } from '../../../src/live/media/runtime.js';
 import { createTransportSignaling } from '../../../src/live/media/transport-signaling.js';
+import { createPausedReadySignaling } from '../../../src/live/media/paused-ready-signaling.js';
+import type {
+  PolicyParticipant,
+  SessionPolicyInput,
+} from '../../../src/live/policy/session-policy.js';
 
 // Opt-in loopback evidence only. No routes or fake identities in the product server.
 const origin = 'http://127.0.0.1:5191';
@@ -16,11 +21,55 @@ const io = new Server(http, {
 });
 const contexts = new Map<string, LiveContext>();
 const connected = new Set<string>();
+const pausedReadyEnabled = process.argv.includes('--paused-ready');
+
+function policyFor(context: LiveContext): SessionPolicyInput {
+  const participants = new Map<string, PolicyParticipant>();
+  for (const entry of contexts.values()) {
+    participants.set(entry.participantId, {
+      participantId: entry.participantId,
+      displayName: entry.participantId,
+      auth: entry.auth,
+      access: entry.access,
+      currentAccess: entry.access,
+      callGeneration: entry.callGeneration,
+      audienceEpoch: entry.audienceEpoch,
+      connected: true,
+      blocked: false,
+      scope: entry.scope,
+    });
+  }
+  return {
+    request: {
+      auth: context.auth,
+      sessionId: context.sessionId,
+      epoch: context.epoch,
+      callGeneration: context.callGeneration,
+    },
+    access: context.access,
+    nowMs: Date.now(),
+    session: {
+      sessionId: context.sessionId,
+      epoch: context.epoch,
+      workspaceId: context.access.workspaceId,
+      channelId: context.access.channelId,
+      state: 'ACTIVE',
+      phase: 'GUIDANCE',
+      policyRevision: 0,
+      hostParticipantId: null,
+      helpingGroupId: null,
+      round: null,
+      participants,
+      groups: new Map(),
+    },
+  };
+}
+
 const service = createTransportSignaling({
   async withContext(socketId, _input, use) {
     const context = contexts.get(socketId);
     return context
-      ? use({ ok: true, context }, router)
+      ? use({ ok: true, context }, router, pausedReadyEnabled ? policyFor(context) : undefined)
       : use({ ok: false, errorCode: 'AUTH_REQUIRED' });
   },
   async createTransport(currentRouter) {
@@ -34,6 +83,7 @@ const service = createTransportSignaling({
     return transport;
   },
 });
+const pausedReady = createPausedReadySignaling(service.withMediaTransport);
 
 io.on('connection', (socket) => {
   const browser: unknown = socket.handshake.auth.browser;
@@ -72,6 +122,12 @@ io.on('connection', (socket) => {
   };
   contexts.set(socket.id, context);
   service.attach(socket);
+  if (pausedReadyEnabled) {
+    pausedReady.attach(socket);
+    socket.on('fixture.sources', (ack: unknown) => {
+      if (typeof ack === 'function') ack(pausedReady.visibleSources(policyFor(context)));
+    });
+  }
   socket.once('disconnect', () => {
     contexts.delete(socket.id);
     service.cleanup({

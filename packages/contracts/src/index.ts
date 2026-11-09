@@ -9,4 +9,5 @@ export * from './session-snapshot.js';
 export * from './media-source.js';
 export * from './media-bootstrap.js';
 export * from './media-transport.js';
+export * from './media-paused-ready.js';
 export * from './system.js';

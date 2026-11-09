@@ -16,6 +16,16 @@ const envSchema = z.object({
   COORDINATOR_MAX_PENDING_PER_KEY: z.coerce.number().int().min(1).max(10_000).default(64),
   COORDINATOR_MAX_OPERATIONS: z.coerce.number().int().min(1).max(100_000).default(1024),
   COORDINATOR_WAIT_TIMEOUT_MS: z.coerce.number().int().min(1).max(60_000).default(5000),
+  SESSION_SECRET: z.preprocess(
+    (value) =>
+      value === '' || value === 'replace-with-at-least-32-random-characters' ? undefined : value,
+    z.string().min(32).optional(),
+  ),
+  AUTH_TTL_SECONDS: z.coerce.number().int().min(60).max(604800).default(604800),
+  AUTH_TRUST_PROXY: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true'),
   MEDIA_ENABLED: z
     .enum(['true', 'false'])
     .default('false')

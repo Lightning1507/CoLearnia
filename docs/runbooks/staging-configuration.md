@@ -41,7 +41,7 @@ Sao chép [mẫu staging](../../.env.staging.example) thành `.env.staging` trê
 
 Compose đặt sẵn `NODE_ENV=production`, `HOST=0.0.0.0`, `PORT=3001`, `MEDIA_ENABLED=true`, `MEDIA_LISTEN_IP=0.0.0.0` và `MEDIA_PORT=40000`. Cổng 3001 phục vụ Nginx trong mạng Docker. Trình duyệt gọi đường dẫn API tương đối nên dùng cùng địa chỉ HTTPS. Việc Compose nhận đủ biến chỉ xác nhận chúng có giá trị. Người triển khai vẫn phải đối chiếu địa chỉ HTTPS, IP công bố và thông tin xác thực của DB với hạ tầng đã cấp.
 
-`SESSION_SECRET`, `AUTH_TTL_SECONDS`, `TURN_URLS` và `TURN_SECRET` có tên trong mẫu local, nhưng trình nạp cấu hình server hiện tại chưa dùng chúng. Chủ task auth và TURN cần xác nhận tên, nguồn cấp và cách nối trước khi bật tính năng tương ứng. Các giá trị cho DB/TURN/auth không đưa vào biến `VITE_*` của frontend.
+Để bật đăng ký, cấp `SESSION_SECRET` ngẫu nhiên qua cấu hình riêng của server, áp migration index đã review và restart server sau preflight. `AUTH_TTL_SECONDS` mặc định 604800. Compose staging chỉ cho Nginx truy cập HTTP từ phía web, dùng một proxy tin cậy để lấy IP client và giữ cổng HTTP server nội bộ. Xem [cấu hình đăng ký](local-development.md#đăng-ký-tài-khoản). `TURN_URLS` và `TURN_SECRET` vẫn theo task TURN. Giữ cấu hình DB, TURN và auth ở server.
 
 Trước khi bật tính năng tệp, cần chuẩn bị nơi lưu riêng, quyền đọc/ghi, dung lượng và cơ chế dọn theo task phụ trách. Khi chạy luồng tích hợp, kiểm quyền giữa các nhóm và đo tài nguyên dùng chung của app, media, MongoDB và TURN theo [kế hoạch tải](../capacity.md).
 
