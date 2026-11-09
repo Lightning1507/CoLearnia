@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import type { RefObject } from 'react';
-import type { DeviceKind } from './lobby-preview';
+import type { DeviceKind } from './lobbyPreview';
 import { useLobbyPreview } from './useLobbyPreview';
 import './lobby.css';
 

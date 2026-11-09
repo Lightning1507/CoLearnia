@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CallControllerOwner } from '../runtime/callController';
-import { LobbyPreview } from './lobby-preview';
+import { LobbyPreview } from './lobbyPreview';
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
