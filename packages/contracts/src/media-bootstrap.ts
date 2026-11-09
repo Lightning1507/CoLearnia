@@ -114,17 +114,18 @@ export const mediaTransportRestartIceInputSchema = sessionCommandEnvelopeSchema(
   transportId: resourceIdSchema,
   expectedIceGeneration: iceGenerationSchema,
 });
+export const mediaIceParametersSchema = z.strictObject({
+  usernameFragment: z.string().min(1),
+  password: z.string().min(1),
+  iceLite: z.boolean().optional(),
+});
 export const mediaTransportRestartIceAckSchema = commandAckSchema(
   z.strictObject({
     status: z.literal('completed'),
     result: z.strictObject({
       transportId: resourceIdSchema,
       iceGeneration: iceGenerationSchema.min(1),
-      iceParameters: z.strictObject({
-        usernameFragment: z.string().min(1),
-        password: z.string().min(1),
-        iceLite: z.boolean().optional(),
-      }),
+      iceParameters: mediaIceParametersSchema,
     }),
   }),
 );
