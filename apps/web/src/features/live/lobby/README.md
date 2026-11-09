@@ -13,11 +13,11 @@ Nguồn áp dụng: [FR-05-01/03](../../../../../../docs/product/functional-requ
 | File                          | Trách nhiệm                                                                                                |
 | ----------------------------- | ---------------------------------------------------------------------------------------------------------- |
 | `LobbyDeviceCheck.tsx`        | UI tiếng Việt; gắn/tháo `srcObject`, preview muted/autoplay/playsInline, chọn/bật/tắt hai thiết bị độc lập |
-| `lobby-preview.ts`            | Runtime cục bộ sở hữu stream, generation, enumerate/devicechange/permission/ended và cleanup               |
+| `lobbyPreview.ts`             | Runtime cục bộ sở hữu stream, generation, enumerate/devicechange/permission/ended và cleanup               |
 | `useLobbyPreview.ts`          | Kết nối runtime với React; start/dispose trong effect, chịu được StrictMode                                |
 | `lobby.css`                   | Viền focus có scope và halo trắng để hiện rõ cả trên nền preview tối                                       |
 | `index.ts`                    | Public component và kiểu preferences để bên tích hợp import                                                |
-| `lobby-preview.test.ts`       | Kiểm thử mock Browser Media APIs và lifecycle                                                              |
+| `lobbyPreview.test.ts`        | Kiểm thử mock Browser Media APIs và lifecycle                                                              |
 | `preview.html`, `preview.tsx` | Entry kiểm tra Vite development độc lập, dùng thiết bị thật; không có join giả                             |
 
 ## Chạy và tích hợp
