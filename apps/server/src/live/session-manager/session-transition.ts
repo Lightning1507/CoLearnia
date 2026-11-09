@@ -16,6 +16,9 @@ import { CleanupAdmission, sessionCleanupAdmission } from './cleanup-admission.j
 const domains = ['media', 'messaging', 'board'] as const;
 type Domain = (typeof domains)[number];
 type Outcome = SessionCleanupResult['outcome'];
+type CleanupAdapters = Record<Exclude<Domain, 'media'>, CleanupSessionResources> & {
+  media: CleanupSessionResources | { revoke(request: SessionCleanupRequest): SessionCleanupResult };
+};
 const admissionPollMs = 100;
 
 export type SessionTransitionTiming = Readonly<{ acceptedAtMs: number; deadlineMs: number }>;
@@ -115,7 +118,7 @@ function pause(timeoutMs: number, signal?: AbortSignal): Promise<void> {
 export function beginSessionTransition(
   rawRequest: SessionCleanupRequest,
   context: HeldTransitionContext,
-  adapters: Record<Domain, CleanupSessionResources>,
+  adapters: CleanupAdapters,
   options: {
     userId: string;
     timing: SessionTransitionTiming;
@@ -129,8 +132,10 @@ export function beginSessionTransition(
   if (!/^[a-f\d]{24}$/i.test(options.userId)) throw new TypeError('Invalid cleanup actor');
   if (!context.isCurrent(request)) throw new Error('Transition context is stale');
   for (const name of domains) {
-    if (typeof adapters[name] !== 'function')
-      throw new TypeError(`Missing ${name} cleanup adapter`);
+    const adapter = adapters[name];
+    if (typeof adapter === 'function') continue;
+    if (name === 'media' && adapter && typeof adapter.revoke === 'function') continue;
+    throw new TypeError(`Missing ${name} cleanup adapter`);
   }
   if ('scope' in request.target) Object.freeze(request.target.scope);
   Object.freeze(request.target);
@@ -165,6 +170,23 @@ export function beginSessionTransition(
       },
     ]),
   ) as Record<Domain, AdapterState>;
+  function readOutcome(value: unknown): Outcome {
+    const parsed = sessionCleanupResultSchema.safeParse(value);
+    return !parsed.success || identity(parsed.data) !== identity(request)
+      ? failure('CONFLICT', false)
+      : parsed.data.outcome;
+  }
+
+  // Closing local transports and invalidating pending handles is synchronous and bounded.
+  // Do it under the current gate even if native create/connect has exhausted admission.
+  if (typeof cleanup.media !== 'function') {
+    try {
+      const outcome = readOutcome(cleanup.media.revoke(structuredClone(request)));
+      states.media.outcome = outcome.permissionRevoked ? outcome : { ...outcome, retryable: false };
+    } catch {
+      states.media.outcome = failure('DEPENDENCY_UNAVAILABLE', false);
+    }
+  }
   let cancelled = false;
   let committed = false;
   let retired = false;
@@ -219,6 +241,8 @@ export function beginSessionTransition(
   function startAdapter(name: Domain): Promise<void> | null {
     const state = states[name];
     if (state.inFlight) return state.inFlight;
+    const adapter = cleanup[name];
+    if (typeof adapter !== 'function') return null;
     const release = admission.tryAcquire(userId, sessionKey);
     if (!release) {
       state.outcome = failure();
@@ -226,14 +250,10 @@ export function beginSessionTransition(
     }
     state.attempts++;
     state.inFlight = Promise.resolve()
-      .then(() => cleanup[name](structuredClone(request)))
+      .then(() => adapter(structuredClone(request)))
       .then(
         (value) => {
-          const parsed = sessionCleanupResultSchema.safeParse(value);
-          state.outcome =
-            !parsed.success || identity(parsed.data) !== identity(request)
-              ? failure('CONFLICT', false)
-              : parsed.data.outcome;
+          state.outcome = readOutcome(value);
         },
         () => {
           state.outcome = failure();
