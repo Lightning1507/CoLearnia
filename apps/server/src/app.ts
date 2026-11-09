@@ -8,11 +8,7 @@ import type { SystemStatus } from '@colearnia/contracts';
 import type { AppConfig } from './config/env.js';
 import { logger } from './lib/logger.js';
 
-export function createApp(
-  config: AppConfig,
-  getStatus: () => SystemStatus,
-  registrationRouter?: Router,
-) {
+export function createApp(config: AppConfig, getStatus: () => SystemStatus, authRouter?: Router) {
   const app = express();
   app.disable('x-powered-by');
   if (config.AUTH_TRUST_PROXY) app.set('trust proxy', 1);
@@ -28,7 +24,7 @@ export function createApp(
     next();
   });
   app.use(express.json({ limit: '32kb' }));
-  if (registrationRouter) app.use('/api/v1/auth', registrationRouter);
+  if (authRouter) app.use('/api/v1/auth', authRouter);
 
   app.get('/health/live', (_req, res) => {
     res.json({ data: { status: 'alive' }, requestId: res.locals.requestId });
