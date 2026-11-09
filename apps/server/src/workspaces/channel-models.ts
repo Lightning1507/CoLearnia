@@ -94,6 +94,11 @@ const timestamps = {
 const objectId = { bsonType: 'objectId' };
 const nullableDate = { bsonType: ['date', 'null'] };
 
+// ECMAScript WhiteSpace + LineTerminator, exactly the characters String.trim removes.
+const trimCharacters =
+  '\\x{0009}-\\x{000D}\\x{0020}\\x{00A0}\\x{1680}\\x{2000}-\\x{200A}\\x{2028}\\x{2029}\\x{202F}\\x{205F}\\x{3000}\\x{FEFF}';
+const nameEdge = `[^${trimCharacters}]`;
+
 export const channelCollectionValidators = {
   channels: {
     $jsonSchema: {
@@ -118,7 +123,7 @@ export const channelCollectionValidators = {
           bsonType: 'string',
           minLength: 1,
           maxLength: 80,
-          pattern: '\\A\\S(?:[\\s\\S]*\\S)?\\z',
+          pattern: `\\A${nameEdge}(?:[\\s\\S]*${nameEdge})?\\z`,
         },
         type: { enum: [...channelTypeSchema.options] },
         accessMode: { enum: [...channelAccessSchema.options] },

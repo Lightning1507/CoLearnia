@@ -24,6 +24,8 @@ Unique grant giữ cả bản ghi đã revoke và incarnation cũ. Cấp lại p
 
 ## Validator và triển khai
 
+Pattern tên trong native validator dùng đúng tập WhiteSpace/LineTerminator của JavaScript `trim`, gồm NBSP và BOM. Raw insert/update phải có tên đã trim; khoảng trắng bên trong tên được giữ. Test kiểm đủ tập ký tự trim ở hai đầu và các ký tự như U+0085/U+180E/U+200B vốn được contract giữ nguyên.
+
 `channelIndexRequirements` dùng với `preflightIndexes`. `channelCollectionValidators` chứa validator MongoDB cho từng collection, kiểm shape/enum, ObjectId/date, nullable bắt buộc và số nguyên an toàn. BSON numeric chấp nhận int/long/double, từ chối Decimal128. Validator bảo vệ cả raw update và `$inc` vượt miền; bất biến so với giá trị cũ và các điều kiện liên collection tiếp tục do service kiểm.
 
 Factory chỉ đăng ký model. Connection chung tắt autoCreate/autoIndex; collection, validator, index cần được provision rõ ràng. Test tự tạo chúng trong DB tên ngẫu nhiên và chỉ xóa đúng DB test đó. Startup/readiness hiện giữ hành vi trước task này; các bước provision cần được tích hợp khi consumer bắt đầu dùng persistence.

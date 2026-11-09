@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { Types, mongo } from 'mongoose';
+import { channelNameSchema } from '@colearnia/contracts';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   channelCollectionValidators,
@@ -73,6 +74,44 @@ afterAll(async () => {
 });
 
 describe('SCRUM-26 channel persistence on MongoDB', () => {
+  it('enforces JavaScript trim whitespace at name edges for raw inserts and updates', async () => {
+    const channel = await Channel.create(channelInput());
+    const channels = database.connection.db!.collection('channels');
+    const stored = await channels.findOne({ _id: channel._id });
+    expect(stored).not.toBeNull();
+    await channels.insertOne({ ...stored, _id: new Types.ObjectId(), name: 'Tên hợp lệ' });
+    const whitespace = [
+      ...Array.from({ length: 5 }, (_, index) => String.fromCodePoint(0x0009 + index)),
+      ' ',
+      '\u00A0',
+      '\u1680',
+      ...Array.from({ length: 11 }, (_, index) => String.fromCodePoint(0x2000 + index)),
+      '\u2028',
+      '\u2029',
+      '\u202F',
+      '\u205F',
+      '\u3000',
+      '\uFEFF',
+    ];
+    for (const char of whitespace) {
+      for (const name of [char, `${char}Tên`, `Tên${char}`]) {
+        expect(name.trim()).not.toBe(name);
+        await expect(
+          channels.updateOne({ _id: channel._id }, { $set: { name } }),
+        ).rejects.toMatchObject({ code: 121 });
+        await expect(
+          channels.insertOne({ ...stored, _id: new Types.ObjectId(), name }),
+        ).rejects.toMatchObject({ code: 121 });
+      }
+      const name = `Tên${char}kênh`;
+      expect(channelNameSchema.parse(name)).toBe(name);
+      await channels.updateOne({ _id: channel._id }, { $set: { name } });
+    }
+    for (const name of ['\u0085', '\u180E', '\u200B']) {
+      expect(channelNameSchema.parse(name)).toBe(name);
+      await channels.updateOne({ _id: channel._id }, { $set: { name } });
+    }
+  });
   it('provisions exactly the reviewed indexes and native validators', async () => {
     expect(await preflightIndexes(database.connection, channelIndexRequirements)).toEqual({
       ready: true,
