@@ -1,6 +1,7 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import {
   apiErrorSchema,
+  authenticatedContextSchema,
   authenticatedResponseSchema,
   csrfResponseSchema,
 } from '@colearnia/contracts';
@@ -10,11 +11,17 @@ import request from 'supertest';
 import type { Response } from 'supertest';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createApp } from '../src/app.js';
+import { createAuthRouter } from '../src/auth/auth-routes.js';
 import { createCsrf, csrfCookie } from '../src/auth/csrf.js';
+import { createHttpAuth, requireVerifiedSession } from '../src/auth/http-auth.js';
 import { authIndexRequirements, authModels } from '../src/auth/models.js';
+import { createSessionReader } from '../src/auth/read-session.js';
 import { createRegistration } from '../src/auth/registration.js';
-import { createRegistrationRouter } from '../src/auth/registration-routes.js';
-import { authCookie, hashAuthToken } from '../src/auth/session-credentials.js';
+import {
+  authCookie,
+  hashAuthToken,
+  newSessionCredentials,
+} from '../src/auth/session-credentials.js';
 import { loadConfig } from '../src/config/env.js';
 import { createDatabase } from '../src/lib/database.js';
 import { preflightIndexes } from '../src/lib/database-preflight.js';
@@ -34,8 +41,17 @@ const origin = 'https://colearnia.example.test';
 const config = loadConfig({ NODE_ENV: 'test', APP_ORIGIN: origin });
 const prefix = '/api/v1/auth';
 
-function client(register = createRegistration(database, () => true, 604800)) {
-  const router = createRegistrationRouter(origin, secret, register);
+function client(
+  register = createRegistration(database, () => true, 604800),
+  readSession = createSessionReader(database, () => true),
+  onMutation = vi.fn(),
+) {
+  const httpAuth = createHttpAuth(origin, secret, readSession);
+  const router = createAuthRouter(httpAuth, register);
+  router.post('/test-mutation', httpAuth.requireAuth, httpAuth.requireCsrf, (_req, res) => {
+    onMutation();
+    res.json(requireVerifiedSession(res)?.context);
+  });
   return request(
     createApp(
       config,
@@ -92,6 +108,246 @@ beforeAll(async () => {
   await User.createIndexes();
   await AuthSession.createIndexes();
   expect((await preflightIndexes(database.connection, authIndexRequirements)).ready).toBe(true);
+});
+
+describe('SCRUM-21 HTTP session and CSRF with MongoDB', () => {
+  async function signUp(http: ReturnType<typeof client>) {
+    const response = await register(http, await bootstrap(http))
+      .send(input())
+      .expect(201);
+    return {
+      sessionCookie: cookie(response, authCookie).split(';', 1)[0]!,
+      csrfCookieValue: cookie(response, csrfCookie).split(';', 1)[0]!,
+      data: authenticatedResponseSchema.parse(response.body).data,
+    };
+  }
+
+  it('reads the registered session and current profile without renewing either valid cookie', async () => {
+    const http = client();
+    const signedIn = await signUp(http);
+    await User.updateOne(
+      { _id: signedIn.data.user.id },
+      {
+        displayName: 'Tên mới',
+        avatar: { secureUrl: 'https://example.test/avatar.png', publicId: 'private-id' },
+      },
+    );
+    const response = await http
+      .get(prefix + '/me')
+      .set('Cookie', `${signedIn.sessionCookie}; ${signedIn.csrfCookieValue}`)
+      .expect(200);
+    expect(authenticatedResponseSchema.parse(response.body).data).toEqual({
+      ...signedIn.data,
+      user: {
+        ...signedIn.data.user,
+        displayName: 'Tên mới',
+        avatarUrl: 'https://example.test/avatar.png',
+      },
+    });
+    expect(response.headers['cache-control']).toBe('no-store');
+    expect(response.headers['set-cookie']).toBeUndefined();
+    expect(response.text).not.toContain(signedIn.sessionCookie.split('=')[1]);
+  });
+
+  it('rejects absent, malformed, duplicate, forged, expired and revoked sessions', async () => {
+    const http = client();
+    const { sessionCookie, data } = await signUp(http);
+    const session = await AuthSession.findOne({ userId: data.user.id }).orFail();
+    const expiresAt = session.expiresAt;
+    const forgedToken = newSessionCredentials(60).token;
+    async function expectUnauthorized(cookieHeader: string) {
+      const response = await http
+        .get(prefix + '/me')
+        .set('Cookie', cookieHeader)
+        .expect(401);
+      expect(apiErrorSchema.parse(response.body).error.code).toBe('AUTH_REQUIRED');
+      expect(response.headers['set-cookie']).toBeUndefined();
+      expect(response.headers['cache-control']).toBe('no-store');
+    }
+    for (const invalid of [
+      '',
+      `${authCookie}=bad-token`,
+      `${sessionCookie}; ${sessionCookie}`,
+      `${authCookie}=${forgedToken}`,
+    ]) {
+      await expectUnauthorized(invalid);
+    }
+
+    // Advance the server clock without giving MongoDB TTL a chance to delete the row.
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(expiresAt.getTime());
+    try {
+      await expectUnauthorized(sessionCookie);
+      expect(await AuthSession.exists({ _id: session._id })).not.toBeNull();
+    } finally {
+      clock.mockRestore();
+    }
+    await AuthSession.updateOne({ _id: session._id }, { revokedAt: new Date() });
+    await expectUnauthorized(sessionCookie);
+  });
+
+  it('rejects disabled or missing users and distinguishes DB unavailability from invalid credentials', async () => {
+    const http = client();
+    const { sessionCookie, data } = await signUp(http);
+    const unavailable = client(
+      undefined,
+      createSessionReader(database, () => false),
+    );
+    const response = await unavailable
+      .get(prefix + '/me')
+      .set('Cookie', sessionCookie)
+      .expect(503);
+    expect(apiErrorSchema.parse(response.body).error.code).toBe('DEPENDENCY_UNAVAILABLE');
+    expect(response.headers['set-cookie']).toBeUndefined();
+    await User.updateOne({ _id: data.user.id }, { status: 'DISABLED' });
+    const disabled = await http
+      .get(prefix + '/me')
+      .set('Cookie', sessionCookie)
+      .expect(401);
+    expect(apiErrorSchema.parse(disabled.body).error.code).toBe('AUTH_REQUIRED');
+    await User.deleteOne({ _id: data.user.id });
+    const missing = await http
+      .get(prefix + '/me')
+      .set('Cookie', sessionCookie)
+      .expect(401);
+    expect(apiErrorSchema.parse(missing.body).error.code).toBe('AUTH_REQUIRED');
+  });
+
+  it.each(['/me', '/test-mutation'] as const)(
+    'rejects %s if revocation commits before the User read',
+    async (path) => {
+      const onMutation = vi.fn();
+      const http = client(undefined, undefined, onMutation);
+      const { sessionCookie, csrfCookieValue, data } = await signUp(http);
+      const session = await AuthSession.findOne({ userId: data.user.id }).orFail();
+      const findUser = User.findOne.bind(User);
+      const lookup = vi.spyOn(User, 'findOne').mockImplementationOnce((...args) => {
+        const query = findUser(...args);
+        const exec = query.exec.bind(query);
+        query.exec = async () => {
+          await AuthSession.updateOne({ _id: session._id }, { revokedAt: new Date() }).orFail();
+          await User.updateOne({ _id: data.user.id }, { displayName: 'Sau khi thu hồi' }).orFail();
+          return exec();
+        };
+        return query;
+      });
+      try {
+        const call =
+          path === '/me'
+            ? http.get(prefix + path)
+            : http
+                .post(prefix + path)
+                .set('Origin', origin)
+                .set('X-CSRF-Token', data.csrfToken);
+        const response = await call
+          .set('Cookie', `${sessionCookie}; ${csrfCookieValue}`)
+          .expect(401);
+        expect(lookup).toHaveBeenCalledOnce();
+        expect(apiErrorSchema.parse(response.body).error.code).toBe('AUTH_REQUIRED');
+        expect(response.headers['set-cookie']).toBeUndefined();
+        expect(response.text).not.toContain('Sau khi thu hồi');
+        expect(onMutation).not.toHaveBeenCalled();
+      } finally {
+        lookup.mockRestore();
+      }
+    },
+  );
+
+  it('renews missing, expired or wrong-session CSRF and enforces both guards before a mutation', async () => {
+    const onMutation = vi.fn();
+    const http = client(undefined, undefined, onMutation);
+    const first = await signUp(http);
+    const second = await signUp(http);
+    const rawToken = first.sessionCookie.slice(authCookie.length + 1);
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.now() - 3_600_001);
+    const expired = (() => {
+      try {
+        return createCsrf(secret).issue(rawToken);
+      } finally {
+        clock.mockRestore();
+      }
+    })();
+    const expireCookie = `${csrfCookie}=${expired.cookie}`;
+    const invalidSignature = first.csrfCookieValue.replace(
+      /(\.\d{13}\.)(.)/,
+      (_match, prefix: string, first: string) => prefix + (first === 'A' ? 'B' : 'A'),
+    );
+    const mutation = (csrfValue: string, token: string, sessionCookie = first.sessionCookie) =>
+      http
+        .post(prefix + '/test-mutation')
+        .set('Origin', origin)
+        .set('Cookie', `${sessionCookie}; ${csrfValue}`)
+        .set('X-CSRF-Token', token);
+    const wrongSession = await mutation(second.csrfCookieValue, second.data.csrfToken).expect(403);
+    expect(apiErrorSchema.parse(wrongSession.body).error.code).toBe('CSRF_INVALID');
+    await mutation(first.csrfCookieValue, first.data.csrfToken, '').expect(401);
+    await mutation(first.csrfCookieValue, first.data.csrfToken).unset('Origin').expect(403);
+    await mutation(first.csrfCookieValue, first.data.csrfToken)
+      .set('Origin', 'https://other.example.test')
+      .expect(403);
+    await mutation(first.csrfCookieValue, first.data.csrfToken).unset('X-CSRF-Token').expect(403);
+    await mutation(first.csrfCookieValue, second.data.csrfToken).expect(403);
+    await mutation(invalidSignature, first.data.csrfToken).expect(403);
+    await mutation(expireCookie, expired.token).expect(403);
+    expect(onMutation).not.toHaveBeenCalled();
+
+    for (const invalid of ['', expireCookie, second.csrfCookieValue]) {
+      const response = await http
+        .get(prefix + '/me')
+        .set('Cookie', [first.sessionCookie, invalid].filter(Boolean).join('; '))
+        .expect(200);
+      const { data } = authenticatedResponseSchema.parse(response.body);
+      expect(data.csrfToken).not.toBe(first.data.csrfToken);
+      expect(data.expiresAt).toBe(first.data.expiresAt);
+      expect(response.headers['set-cookie']).toHaveLength(1);
+      const csrfHeader = cookie(response, csrfCookie);
+      expect(csrfHeader).toContain('HttpOnly; Secure; SameSite=Lax');
+      const success = await mutation(csrfHeader.split(';', 1)[0]!, data.csrfToken).expect(200);
+      const session = await AuthSession.findOne({ userId: first.data.user.id }).orFail();
+      expect(authenticatedContextSchema.parse(success.body)).toEqual({
+        userId: first.data.user.id,
+        authSessionId: session.id,
+        expiresAt: first.data.expiresAt,
+      });
+      expect(session.expiresAt.toISOString()).toBe(first.data.expiresAt);
+    }
+    expect(onMutation).toHaveBeenCalledTimes(3);
+  });
+
+  it('lets a tab recover after another tab replaces the CSRF cookie', async () => {
+    const onMutation = vi.fn();
+    const http = client(undefined, undefined, onMutation);
+    const { sessionCookie, data } = await signUp(http);
+    const refresh = () =>
+      http
+        .get(prefix + '/me')
+        .set('Cookie', sessionCookie)
+        .expect(200);
+    const [firstTab, secondTab] = await Promise.all([refresh(), refresh()]);
+    const firstToken = authenticatedResponseSchema.parse(firstTab.body).data.csrfToken;
+    const sharedCookie = `${sessionCookie}; ${cookie(secondTab, csrfCookie).split(';', 1)[0]}`;
+    const mutate = (token: string) =>
+      http
+        .post(prefix + '/test-mutation')
+        .set('Origin', origin)
+        .set('Cookie', sharedCookie)
+        .set('X-CSRF-Token', token);
+
+    const stale = await mutate(firstToken).expect(403);
+    expect(apiErrorSchema.parse(stale.body).error.code).toBe('CSRF_INVALID');
+    expect(onMutation).not.toHaveBeenCalled();
+    const recovered = await http
+      .get(prefix + '/me')
+      .set('Cookie', sharedCookie)
+      .expect(200);
+    const current = authenticatedResponseSchema.parse(recovered.body).data;
+    expect(current.user.id).toBe(data.user.id);
+    expect(current.csrfToken).toBe(
+      authenticatedResponseSchema.parse(secondTab.body).data.csrfToken,
+    );
+    expect(recovered.headers['set-cookie']).toBeUndefined();
+    await mutate(current.csrfToken).expect(200);
+    expect(onMutation).toHaveBeenCalledOnce();
+  });
 });
 
 afterAll(async () => {

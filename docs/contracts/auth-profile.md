@@ -1,6 +1,6 @@
 # Contract xác thực và hồ sơ cá nhân
 
-**SCRUM-12 · M1-T1.1.** M1 cung cấp contract FR-01-01–06 cho FE M1, M2 và M4. SCRUM-18 triển khai bootstrap CSRF và đăng ký cấp phiên. Các endpoint còn lại theo task tương ứng.
+**SCRUM-12 · M1-T1.1.** M1 cung cấp contract FR-01-01–06 cho FE M1, M2 và M4. SCRUM-18 triển khai bootstrap CSRF và đăng ký cấp phiên. SCRUM-21 bổ sung xác thực phiên HTTP, `GET /auth/me` và guard CSRF dùng chung.
 
 Nguồn: [nghiệp vụ tài khoản](../product/workspace-channels.md), [FR/AC](../product/functional-requirements.md), [proposal M1](../proposals/m1-workspace-auth.md), [quy ước API](api-conventions.md), [mã lỗi](error-codes.md), technical plan mục 10. Schema dùng chung: [auth.ts](../../packages/contracts/src/auth.ts). Bảng HTTP ghi giao tiếp theo contract.
 
@@ -54,16 +54,19 @@ Register/login không accept lời mời Workspace. FE quay lại lời mời b�
 
 1. Trước register/login: GET `/auth/csrf`, trình duyệt nhận cookie CSRF có chữ ký và token trong JSON. Mutation gửi token qua header `X-CSRF-Token`; server kiểm cookie/chữ ký, token và Origin.
 2. Register/login thành công: cookie auth `HttpOnly; Secure; SameSite=Lax`, rotate CSRF và trả token mới. Không trả token phiên trong JSON hoặc lưu localStorage.
-3. Reload: GET `/auth/me` kiểm auth, trả context CSRF hiện hành cùng User và hạn phiên. Nếu cần bootstrap CSRF lại, gọi GET `/auth/csrf`; không tạo phiên auth hoặc gia hạn qua GET.
+3. Khi tải lại, GET `/auth/me` xác thực phiên và trả User, hạn phiên hiện tại và token CSRF. Nếu cookie CSRF thiếu, hết hạn hoặc không khớp phiên, response chỉ cấp lại cookie CSRF. GET `/auth/csrf` vẫn dùng được để bootstrap. GET giữ nguyên hạn phiên auth.
 4. Socket.IO: cookie trình duyệt và `handshake.auth.csrfToken`; M4 kiểm Origin/CSRF/phiên rồi dựng identity server. Header/socket field cần M4 review ở PR này.
 5. Logout/đổi mật khẩu thành công clear cookie đúng tên/path/domain và vô hiệu context CSRF cũ; lần login sau bootstrap mới. JSON auth/profile/CSRF đặt `Cache-Control: no-store`.
 
-SCRUM-18 cấp token phiên ngẫu nhiên 32 byte qua cookie `__Host-colearnia-session` và lưu SHA-256 của token trong DB. Hạn tuyệt đối mặc định 7 ngày. Cookie `__Host-colearnia-csrf` dùng HMAC-SHA-256, hạn một giờ, gắn với token phiên hiện tại nếu có. Bootstrap trước xác thực dùng token ngẫu nhiên riêng. Cả hai cookie đều đặt `Path=/`, `HttpOnly`, `Secure` và `SameSite=Lax`. SCRUM-21 nối phần đọc và kiểm phiên, khôi phục qua `GET /auth/me` và xử lý cookie hết hạn. Xem [cấu hình local](../runbooks/local-development.md#đăng-ký-tài-khoản).
+SCRUM-18 cấp token phiên ngẫu nhiên 32 byte qua cookie `__Host-colearnia-session` và lưu SHA-256 của token trong DB. Hạn tuyệt đối mặc định 7 ngày. Cookie `__Host-colearnia-csrf` dùng HMAC-SHA-256, hạn một giờ, gắn với token phiên hiện tại nếu có. Bootstrap trước xác thực dùng token ngẫu nhiên riêng. Cả hai cookie đều đặt `Path=/`, `HttpOnly`, `Secure` và `SameSite=Lax`. `GET /auth/me` trả `401 AUTH_REQUIRED` mà không ghi cookie xóa phiên, để phản hồi đến muộn không xóa phiên mới của trình duyệt. Xem [cấu hình local](../runbooks/local-development.md#đăng-ký-tài-khoản).
+
+Route HTTP đọc dữ liệu riêng dùng `requireAuth`. Mutation yêu cầu đăng nhập chạy `requireAuth` rồi `requireCsrf`. Handler lấy `AuthenticatedContext` từ `requireVerifiedSession(res).context` sau khi xác nhận hàm trả kết quả. M2 vẫn kiểm ACL của tài nguyên ở handler. SCRUM-24 có thể dùng lại `createSessionReader` để xác thực phiên khi nối socket. Các helper nằm trong [http-auth.ts](../../apps/server/src/auth/http-auth.ts) và [read-session.ts](../../apps/server/src/auth/read-session.ts).
 
 Đăng ký từ chối mật khẩu thuộc danh sách cục bộ gồm các giá trị dễ đoán đã biết và chuỗi Unicode lỗi mã hóa bằng `400 VALIDATION_ERROR` tại field `password`. Giới hạn thử là 10 yêu cầu đã qua kiểm CSRF/phút/IP trong mỗi tiến trình. Khi vượt giới hạn, API trả `429 RATE_LIMITED` cùng `Retry-After`. Hàng chờ băm dùng chung trong tiến trình có một slot chạy, hai chỗ chờ và hạn chờ 250 ms. Đầy hoặc hết hạn chờ trả `503 DEPENDENCY_UNAVAILABLE`. Đây là cấu hình thử, cần đo thêm cùng tải MongoDB và media trên staging.
 
 ### Retry và mất kết nối
 
+- Hai tab có thể nhận token CSRF khác nhau khi cùng làm mới cookie. Với `403 CSRF_INVALID` từ guard, SCRUM-25 gọi lại `GET /auth/me` cho mutation cần đăng nhập hoặc `GET /auth/csrf` cho register/login. Gửi lại tối đa một lần với token mới, giữ nguyên payload và `requestId` nếu có. Với mutation cần đăng nhập, chỉ gửi lại khi `/auth/me` xác nhận cùng `user.id`. Nếu phiên mất hoặc tài khoản đã đổi, cập nhật trạng thái UI và dừng. Timeout hoặc lỗi mạng tiếp tục theo quy tắc riêng của từng mutation.
 - Logout lặp với CSRF/Origin hợp lệ, phiên đã thu/không còn: 200 `data: null`, clear cookie. Nếu CSRF không còn hợp lệ thì bootstrap lại; không bỏ bảo vệ CSRF để đạt lặp an toàn.
 - Register/login timeout: kiểm `/auth/me` trước, không tự gửi lại vô hạn. Unique email ngăn User trùng nhưng không bảo đảm trả lại response đăng ký cũ; nếu chưa xác định, cho người dùng đăng nhập.
 - Nếu đã tạo User nhưng phiên hết hạn trước khi gửi phản hồi, register trả `503 DEPENDENCY_UNAVAILABLE`, báo tài khoản đã được tạo và hướng người dùng đăng nhập.
