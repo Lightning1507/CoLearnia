@@ -36,6 +36,9 @@ services:
       PORT: 3001
       APP_ORIGIN: http://localhost:8080
       MONGO_URI: mongodb://mongo:27017/colearnia?replicaSet=rs0&directConnection=true
+      SESSION_SECRET: ${SESSION_SECRET:-}
+      AUTH_TTL_SECONDS: ${AUTH_TTL_SECONDS:-604800}
+      AUTH_TRUST_PROXY: 'true'
       MEDIA_ENABLED: 'true'
       MEDIA_LISTEN_IP: 0.0.0.0
       MEDIA_ANNOUNCED_ADDRESS: ${MEDIA_ANNOUNCED_ADDRESS:-127.0.0.1}
