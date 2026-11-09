@@ -66,7 +66,7 @@ type Result = Slot | Failure;
 type Intent = {
   signature: string;
   slot: Slot;
-  result: Promise<Result>;
+  result?: Result;
   expiresAt: number;
 };
 
@@ -175,7 +175,8 @@ export function createTransportSignaling({
       const prior = intents.get(intentKey);
       if (prior) {
         if (!owns(prior.slot) || prior.signature !== signature) return reject('CONFLICT');
-        return { ready: prior.result };
+        if (!prior.result) return reject('OPERATION_IN_PROGRESS');
+        return { ready: Promise.resolve(prior.result) };
       }
 
       let slot: Slot;
@@ -211,7 +212,7 @@ export function createTransportSignaling({
         return reject('SERVER_BUSY');
       if (command.kind === 'connect' && slot.connectedWith === signature) {
         const ready = Promise.resolve(slot);
-        intents.set(intentKey, { signature, slot, result: ready, expiresAt: now + replayMs });
+        intents.set(intentKey, { signature, slot, result: slot, expiresAt: now + replayMs });
         return { ready };
       }
       const release = admission.tryAcquire(userId, sessionKey);
@@ -220,11 +221,16 @@ export function createTransportSignaling({
       else slot.connecting = true;
       pending.add(slot);
 
+      const intent: Intent = { signature, slot, expiresAt: now + replayMs };
       let finish!: (result: Result) => void;
       const ready = new Promise<Result>((resolve) => {
-        finish = resolve;
+        finish = (result) => {
+          if (intent.result) return;
+          intent.result = result;
+          resolve(result);
+        };
       });
-      intents.set(intentKey, { signature, slot, result: ready, expiresAt: now + replayMs });
+      intents.set(intentKey, intent);
       let started = false;
       let expired = false;
       const releaseAdmission = () => {
@@ -364,7 +370,7 @@ export function createTransportSignaling({
         }
       });
     },
-    async cleanup(request: SessionCleanupRequest): Promise<SessionCleanupResult> {
+    cleanup(request: SessionCleanupRequest): SessionCleanupResult {
       let cleanupPending = false;
       for (const slot of new Set([...slots.values(), ...pending])) {
         const context = slot.context;

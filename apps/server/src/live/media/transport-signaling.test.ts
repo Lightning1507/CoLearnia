@@ -4,6 +4,10 @@ import { mediaTransportCreateAckSchema } from '@colearnia/contracts';
 import type { types as MediaTypes } from 'mediasoup';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CleanupAdmission } from '../session-manager/cleanup-admission.js';
+import {
+  beginSessionTransition,
+  createSessionTransitionTiming,
+} from '../session-manager/session-transition.js';
 import { createTransportSignaling } from './transport-signaling.js';
 
 type Ports = Parameters<typeof createTransportSignaling>[0];
@@ -18,7 +22,7 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
-function fixture() {
+function fixture(contextForSocket?: (socketId: string, context: LiveContext) => LiveContext) {
   const context: LiveContext = {
     sessionId: '1'.repeat(24),
     epoch: randomUUID(),
@@ -86,7 +90,9 @@ function fixture() {
     async withContext(socketId, _input, use) {
       if (!allowed || socketId === 'anonymous')
         return use({ ok: false, errorCode: 'AUTH_REQUIRED' });
-      return use({ ok: true, context }, { closed: false } as MediaTypes.Router);
+      return use({ ok: true, context: contextForSocket?.(socketId, context) ?? context }, {
+        closed: false,
+      } as MediaTypes.Router);
     },
   });
   function socket(id: string) {
@@ -137,9 +143,8 @@ describe('SCRUM-60 transport signaling', () => {
     const f = fixture();
     const owner = f.socket('owner');
     const first = owner.emit('media.transport.create', f.createInput);
-    const replay = owner.emit('media.transport.create', f.createInput);
     const created = mediaTransportCreateAckSchema.parse(await first);
-    expect(await replay).toEqual(created);
+    expect(await owner.emit('media.transport.create', f.createInput)).toEqual(created);
     expect(f.createTransport).toHaveBeenCalledOnce();
     const connect = {
       ...f.envelope,
@@ -169,7 +174,34 @@ describe('SCRUM-60 transport signaling', () => {
       }),
     ).toMatchObject({ error: { code: 'CONFLICT' } });
     expect(f.native.connect).toHaveBeenCalledOnce();
-    await f.service.cleanup(f.cleanup);
+    f.service.cleanup(f.cleanup);
+  });
+
+  it('rejects a flood of pending retries without attaching extra waiters and replays after completion', async () => {
+    const f = fixture();
+    const late = deferred<Native>();
+    f.createTransport.mockReturnValueOnce(late.promise);
+    const owner = f.socket('owner');
+    const original = owner.emit('media.transport.create', f.createInput);
+    await vi.waitFor(() => expect(f.createTransport).toHaveBeenCalledOnce());
+    const retries = await Promise.all(
+      Array.from({ length: 512 }, () => owner.emit('media.transport.create', f.createInput)),
+    );
+    expect(retries).toEqual(
+      Array.from({ length: 512 }, () =>
+        expect.objectContaining({
+          requestId: f.createInput.requestId,
+          error: expect.objectContaining({ code: 'OPERATION_IN_PROGRESS' }),
+        }),
+      ),
+    );
+    expect(f.createTransport).toHaveBeenCalledOnce();
+    late.resolve(f.native);
+    const completed = mediaTransportCreateAckSchema.parse(await original);
+    expect(completed).toHaveProperty('data.result.transportId', f.native.id);
+    expect(await owner.emit('media.transport.create', f.createInput)).toEqual(completed);
+    expect(f.createTransport).toHaveBeenCalledOnce();
+    f.service.cleanup(f.cleanup);
   });
 
   it('closes a late create on revoke and keeps the I/O slot until completion', async () => {
@@ -179,7 +211,7 @@ describe('SCRUM-60 transport signaling', () => {
     const pending = f.socket('owner').emit('media.transport.create', f.createInput);
     await vi.waitFor(() => expect(f.createTransport).toHaveBeenCalledOnce());
     f.revoke();
-    expect((await f.service.cleanup(f.cleanup)).outcome).toEqual({
+    expect(f.service.cleanup(f.cleanup).outcome).toEqual({
       permissionRevoked: true,
       pendingInvalidated: true,
       cleanupPending: true,
@@ -201,10 +233,93 @@ describe('SCRUM-60 transport signaling', () => {
     await vi.advanceTimersByTimeAsync(2000);
     expect(await reply).toMatchObject({ error: { code: 'DEPENDENCY_UNAVAILABLE' } });
     expect(f.admission.stats().active).toBe(1);
-    expect((await f.service.cleanup(f.cleanup)).outcome.cleanupPending).toBe(true);
+    expect(f.service.cleanup(f.cleanup).outcome.cleanupPending).toBe(true);
     late.resolve(f.native);
     await vi.advanceTimersByTimeAsync(0);
     expect(f.native.close).toHaveBeenCalledOnce();
+    expect(f.admission.stats().active).toBe(0);
+  });
+
+  it('closes an established transport under the transition gate when all eight session slots are occupied', async () => {
+    vi.useFakeTimers();
+    const f = fixture((socketId, context) => {
+      if (socketId === 'owner') return context;
+      const userId = socketId.padStart(24, '0');
+      return { ...context, participantId: userId, auth: { ...context.auth, userId } };
+    });
+    const owner = f.socket('owner');
+    await owner.emit('media.transport.create', f.createInput);
+    await owner.emit('media.transport.connect', {
+      ...f.envelope,
+      requestId: randomUUID(),
+      payload: { transportId: f.native.id, dtlsParameters: f.dtlsParameters },
+    });
+    const dtlsChanged = vi.mocked(f.native.on).mock.calls[0]?.[1];
+    if (!dtlsChanged) throw new Error('DTLS listener was not registered');
+    dtlsChanged('connected');
+
+    const stalled = Array.from({ length: 8 }, (_, index) => {
+      const native = { ...f.native, id: `stalled-${index}`, close: vi.fn() };
+      const late = deferred<Native>();
+      f.createTransport.mockReturnValueOnce(late.promise);
+      return { late, native };
+    });
+    const requests = ['11', '12', '13', '14'].flatMap((user) => {
+      const socket = f.socket(user);
+      return ['SEND', 'RECV'].map((direction) =>
+        socket.emit('media.transport.create', {
+          ...f.envelope,
+          requestId: randomUUID(),
+          payload: { direction },
+        }),
+      );
+    });
+    await vi.advanceTimersByTimeAsync(2000);
+    const timeouts = await Promise.all(requests);
+    for (const reply of timeouts) {
+      expect(reply).toMatchObject({ error: { code: 'DEPENDENCY_UNAVAILABLE' } });
+    }
+    expect(f.createTransport).toHaveBeenCalledTimes(9);
+    expect(f.admission.stats().active).toBe(8);
+    expect(f.native.close).not.toHaveBeenCalled();
+
+    let gateHeld = true;
+    const revoke = vi.fn((request: SessionCleanupRequest) => {
+      expect(gateHeld).toBe(true);
+      return f.service.cleanup(request);
+    });
+    const transition = beginSessionTransition(
+      f.cleanup,
+      {
+        assertHeld() {
+          expect(gateHeld).toBe(true);
+        },
+        isCurrent: () => true,
+      },
+      {
+        media: { revoke },
+        messaging: vi.fn(),
+        board: vi.fn(),
+      },
+      {
+        userId: '3'.repeat(24),
+        admission: f.admission,
+        now: Date.now,
+        timing: createSessionTransitionTiming(Date.now),
+      },
+    );
+    gateHeld = false;
+    expect(revoke).toHaveBeenCalledOnce();
+    expect(f.native.close).toHaveBeenCalledOnce();
+    expect(transition.inspect().barrierActive).toBe(true);
+    const foreground = transition.runForeground();
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect((await foreground).phase).toBe('DEGRADED');
+    expect(f.admission.stats().active).toBe(8);
+
+    for (const { late, native } of stalled) late.resolve(native);
+    await vi.advanceTimersByTimeAsync(0);
+    for (const { native } of stalled) expect(native.close).toHaveBeenCalledOnce();
     expect(f.admission.stats().active).toBe(0);
   });
 

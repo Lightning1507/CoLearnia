@@ -74,7 +74,7 @@ io.on('connection', (socket) => {
   service.attach(socket);
   socket.once('disconnect', () => {
     contexts.delete(socket.id);
-    void service.cleanup({
+    service.cleanup({
       operationId: crypto.randomUUID(),
       transitionToken: crypto.randomUUID(),
       sessionId: context.sessionId,

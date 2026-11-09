@@ -9,6 +9,12 @@ M3-T4.1 trên nhánh `feat/SCRUM-60-media-transport-signaling`, nền `3ab2f86`.
 - M4 cung cấp `withContext` để xác minh socket, auth, ACL, deny barrier và Router hiện hành. Callback kiểm và ghi trạng thái đồng bộ dưới gate. Native I/O chạy sau khi nhả gate. Kiểm lại context trước khi công bố tài nguyên và trả ack. Adapter cleanup dùng target/token của SCRUM-23. Pending bị vô hiệu ngay, slot I/O giữ tới khi native thực sự settle, kết quả cũ tự đóng tài nguyên vừa tạo. Transport đã kết nối chuyển theo lifecycle/cleanup của M4.
 - Profile PoC dùng một SEND và một RECV cho mỗi binding, tối đa 512 slot/process. Chia sẻ admission I/O 2/user, 8/session, 32/process với cleanup. Command có budget 16 KiB. Chờ native tối đa 2 giây, transport chưa đạt DTLS connected hết hạn sau 10 giây. Replay giữ intent 60 giây, giới hạn 64/user, 1.024/session và 4.096/process. Descriptor nhạy cảm chỉ nằm trên transport còn sống. `SERVER_BUSY` và `OPERATION_IN_PROGRESS` dùng theo proposal, M4 review mã và ngưỡng PoC trước khi ghép vào handler thật.
 
+## Kiểm hồi quy theo review
+
+Sau review PR #60, retry cùng `requestId` trong lúc intent còn pending nhận `OPERATION_IN_PROGRESS` ngay. Khi intent đã hoàn tất, retry còn trong replay budget và còn đúng quyền vẫn đọc lại được kết quả. Ca flood gửi 512 retry trước khi native create hoàn tất và chỉ có một native call.
+
+Khi ghép coordinator, truyền `media: { revoke: service.cleanup }` để đóng transport và vô hiệu pending dưới gate mà không chờ slot create/connect. Ca tích hợp giữ đủ 8 slot native đang treo trong một phiên, xác nhận transport đã kết nối bị đóng ngay và các slot đang treo chỉ được trả sau khi native settle.
+
 ## Chạy lại trên loopback
 
 Chạy `pnpm --filter @colearnia/contracts build` một lần. Sau đó mở hai terminal ở root repo.
