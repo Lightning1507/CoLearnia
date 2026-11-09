@@ -23,7 +23,7 @@ await database.transaction(async (dbSession) => {
 });
 ```
 
-SCRUM-21 có thể tìm phiên bằng `AuthSession.findOne({ tokenHash, expiresAt: { $gt: now }, revokedAt: null })`, rồi xác nhận User tương ứng còn `ACTIVE` trước khi cấp danh tính. So sánh bằng `$gt` loại phiên ngay tại thời điểm hết hạn. MongoDB dọn phiên hết hạn theo lịch nên bản ghi có thể còn tồn tại sau mốc đó. SCRUM-21 chịu trách nhiệm đọc cookie, kiểm token, xác thực User, cấp danh tính và kiểm CSRF.
+SCRUM-21 tìm phiên bằng `AuthSession.findOne({ tokenHash, expiresAt: { $gt: now }, revokedAt: null })`, rồi xác nhận User tương ứng còn `ACTIVE`. Sau khi đọc User, tra lại cùng phiên để loại trường hợp thu hồi trong lúc chờ truy vấn User. So sánh bằng `$gt` loại phiên ngay tại thời điểm hết hạn. MongoDB dọn phiên hết hạn theo lịch nên bản ghi có thể còn tồn tại sau mốc đó.
 
 ## Chuẩn bị index trước khi bật luồng ghi
 
@@ -40,10 +40,10 @@ Sau khi chuẩn bị collection và index theo quy trình DB đã review, chạy
 
 Sprint 1 cần nhóm năm người đăng nhập, vào cùng Workspace, nhắn tin và gọi trên staging. SCRUM-16 cung cấp nền lưu tài khoản và phiên cho bước đăng nhập. Hai quan hệ chặn trực tiếp trong repo khớp danh sách Jira. Xem [Sprint Goal](../planning/sprint-1.md#sprint-1--nền-tảng-và-luồng-đầu-tiên) và [danh sách liên kết Jira](../planning/jira/sprint-1-jira-links.csv).
 
-| Ticket   | Đầu vào có từ SCRUM-16                                                                        | Phần ticket tiếp tục làm                                                                           |
-| -------- | --------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| SCRUM-18 | Model tài khoản và phiên dùng chung transaction, index chống email trùng, quy tắc validation. | Nối thuật toán băm đã được review ở SCRUM-17, luồng đăng ký, cấp phiên và ánh xạ lỗi API.          |
-| SCRUM-21 | Model tra phiên theo hash, ngày hết hạn, trạng thái thu hồi và liên kết đến User.             | Chờ SCRUM-18 cấp phiên thật, sau đó nối middleware HTTP, cookie, CSRF và kiểm quyền sử dụng phiên. |
+| Ticket   | Đầu vào có từ SCRUM-16                                                                        | Phần ticket tiếp tục làm                                                                  |
+| -------- | --------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| SCRUM-18 | Model tài khoản và phiên dùng chung transaction, index chống email trùng, quy tắc validation. | Nối thuật toán băm đã được review ở SCRUM-17, luồng đăng ký, cấp phiên và ánh xạ lỗi API. |
+| SCRUM-21 | Model tra phiên theo hash, ngày hết hạn, trạng thái thu hồi và liên kết đến User.             | `createSessionReader` cấp danh tính từ phiên còn hạn, chưa bị thu hồi và User ACTIVE.     |
 
 M1 review các trường dữ liệu, index và cách sử dụng model trước khi bàn giao. MongoDB validator cấp collection thuộc bước migration được review. Các bài kiểm của task chạy qua model Mongoose và kiểm index thật trên MongoDB.
 

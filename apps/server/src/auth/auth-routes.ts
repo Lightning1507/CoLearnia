@@ -1,19 +1,12 @@
 import { Router } from 'express';
-import type { Response } from 'express';
 import {
   authenticatedResponseSchema,
-  commonErrorHttpStatus,
   csrfResponseSchema,
   registerInputSchema,
 } from '@colearnia/contracts';
-import type { ApiError } from '@colearnia/contracts';
-import {
-  authCookieOptions,
-  createCsrf,
-  csrfCookie,
-  csrfCookieTtlSeconds,
-  readCookie,
-} from './csrf.js';
+import { authCookieOptions, setCsrfCookie } from './csrf.js';
+import { authFailure as fail, requireVerifiedSession } from './http-auth.js';
+import type { createHttpAuth } from './http-auth.js';
 import { isCommonPassword } from './password-hash.js';
 import {
   EmailExistsError,
@@ -23,63 +16,37 @@ import {
 import type { createRegistration } from './registration.js';
 import { authCookie } from './session-credentials.js';
 
-function fail(
-  res: Response,
-  code: keyof typeof commonErrorHttpStatus,
-  message: string,
-  fieldErrors?: ApiError['error']['fieldErrors'],
-) {
-  res.status(commonErrorHttpStatus[code]).json({
-    error: { code, message, fieldErrors },
-    requestId: res.locals.requestId,
-  });
-}
-
-export function createRegistrationRouter(
-  origin: string,
-  secret: string,
+export function createAuthRouter(
+  httpAuth: ReturnType<typeof createHttpAuth>,
   register: ReturnType<typeof createRegistration>,
 ) {
   const router = Router();
-  const csrf = createCsrf(secret);
   const attempts = new Map<string, number>();
   let nextWindow = performance.now() + 60_000;
 
   router.get('/csrf', (req, res) => {
-    const authToken = readCookie(req.headers.cookie, authCookie);
-    const existingCookie = readCookie(req.headers.cookie, csrfCookie);
-    const existingToken = existingCookie?.split('.', 1)[0];
-    if (csrf.validate(existingCookie, existingToken, authToken)) {
-      res.json(
-        csrfResponseSchema.parse({
-          data: { csrfToken: existingToken },
-          requestId: res.locals.requestId,
-        }),
-      );
-      return;
-    }
-    const next = csrf.issue(authToken);
-    res.cookie(csrfCookie, next.cookie, {
-      ...authCookieOptions,
-      maxAge: csrfCookieTtlSeconds * 1000,
+    const csrf = httpAuth.csrfForRequest(req);
+    const payload = csrfResponseSchema.parse({
+      data: { csrfToken: csrf.token },
+      requestId: res.locals.requestId,
     });
-    res.json(
-      csrfResponseSchema.parse({
-        data: { csrfToken: next.token },
-        requestId: res.locals.requestId,
-      }),
-    );
+    if (csrf.cookie) setCsrfCookie(res, csrf.cookie);
+    res.json(payload);
   });
 
-  router.post('/register', async (req, res, next) => {
-    const authToken = readCookie(req.headers.cookie, authCookie);
-    if (
-      req.get('Origin') !== origin ||
-      !csrf.validate(readCookie(req.headers.cookie, csrfCookie), req.get('X-CSRF-Token'), authToken)
-    ) {
-      fail(res, 'CSRF_INVALID', 'Nguồn yêu cầu hoặc mã CSRF không hợp lệ.');
-      return;
-    }
+  router.get('/me', httpAuth.requireAuth, (req, res) => {
+    const auth = requireVerifiedSession(res);
+    if (!auth) return;
+    const csrf = httpAuth.csrfForRequest(req);
+    const payload = authenticatedResponseSchema.parse({
+      data: { user: auth.user, expiresAt: auth.context.expiresAt, csrfToken: csrf.token },
+      requestId: res.locals.requestId,
+    });
+    if (csrf.cookie) setCsrfCookie(res, csrf.cookie);
+    res.json(payload);
+  });
+
+  router.post('/register', httpAuth.requireBootstrapCsrf, async (req, res, next) => {
     const now = performance.now();
     if (now >= nextWindow) {
       attempts.clear();
@@ -130,16 +97,13 @@ export function createRegistrationRouter(
         );
         return;
       }
-      const freshCsrf = csrf.issue(token);
+      const freshCsrf = httpAuth.issueCsrf(token);
       const payload = authenticatedResponseSchema.parse({
         data: { user, expiresAt: expiresAt.toISOString(), csrfToken: freshCsrf.token },
         requestId: res.locals.requestId,
       });
       res.cookie(authCookie, token, { ...authCookieOptions, expires: expiresAt });
-      res.cookie(csrfCookie, freshCsrf.cookie, {
-        ...authCookieOptions,
-        maxAge: csrfCookieTtlSeconds * 1000,
-      });
+      setCsrfCookie(res, freshCsrf.cookie);
       res.status(201).json(payload);
     } catch (error) {
       if (disconnect.signal.aborted) return;
