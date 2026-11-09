@@ -1,4 +1,5 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
+import type { Response } from 'express';
 import { hashAuthToken, newOpaqueToken } from './session-credentials.js';
 
 export const csrfCookie = '__Host-colearnia-csrf';
@@ -9,6 +10,10 @@ export const authCookieOptions = {
   sameSite: 'lax',
   path: '/',
 } as const;
+
+export function setCsrfCookie(res: Response, cookie: string) {
+  res.cookie(csrfCookie, cookie, { ...authCookieOptions, maxAge: csrfCookieTtlSeconds * 1000 });
+}
 
 export function readCookie(header: string | undefined, name: string) {
   const prefix = name + '=';
