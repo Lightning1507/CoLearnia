@@ -83,7 +83,7 @@ const service = createTransportSignaling({
     return transport;
   },
 });
-const pausedReady = createPausedReadySignaling(service.withMediaTransport);
+const pausedReady = createPausedReadySignaling(service);
 
 io.on('connection', (socket) => {
   const browser: unknown = socket.handshake.auth.browser;
