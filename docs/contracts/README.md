@@ -53,6 +53,8 @@ Countdown dùng roundId, deadline và server time; host đặt thời lượng k
 
 [Điều phối transition và cleanup (SCRUM-72)](session-transitions.md) cung cấp deny barrier, kiểm ack/token, retry/reconcile hữu hạn và commit dưới context gate của caller.
 
+[Slot chia sẻ và media gate (SCRUM-73)](share-lease.md) giữ slot MAIN/ACTIVITY, kiểm lease picker và ownership ở bước tạo/ready media, thu quyền theo transition và chặn callback cũ.
+
 [Snapshot và sự kiện theo người nhận (SCRUM-66)](session-projection.md) cung cấp schema công khai, cursor/sequence, chia và ghép snapshot nhất quán cùng quy tắc resync theo audience.
 
 [Contract thu quyền và cleanup media (SCRUM-56)](media-cleanup.md) dùng contract SCRUM-23 và có fixture cho ack, timeout và callback cũ.

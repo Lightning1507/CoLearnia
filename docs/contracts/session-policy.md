@@ -1,5 +1,7 @@
 # Policy và projection phiên — SCRUM-65
 
+Slot chia sẻ MAIN/ACTIVITY và gate Producer/Consumer bổ sung theo [SCRUM-73](share-lease.md).
+
 M4 cung cấp các hàm policy thuần trong [session-policy.ts](../../apps/server/src/live/policy/session-policy.ts). M3 review chính, M1 đối chiếu việc cung cấp danh tính và snapshot quyền. Quy tắc nghiệp vụ theo [quyền media và nhóm](../product/groups-media-policy.md), [vòng đời nhóm](../product/group-modes.md) và [contract context](session-context.md).
 
 ## Đầu vào và kết quả
