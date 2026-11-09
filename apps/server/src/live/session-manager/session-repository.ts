@@ -46,6 +46,7 @@ export function createSessionRepository(database: Database) {
     statuses: readonly ('ACTIVE' | 'ENDING')[],
     session: ClientSession,
     fields: { hostUserId?: Types.ObjectId | null; status?: 'ENDING' | 'ENDED'; endedAt?: Date },
+    excludedHostUserId?: Types.ObjectId,
   ) {
     const result = await LiveSession.updateOne(
       {
@@ -53,6 +54,7 @@ export function createSessionRepository(database: Database) {
         epoch: input.epoch,
         revision: input.expectedRevision,
         status: { $in: statuses },
+        ...(excludedHostUserId ? { hostUserId: { $ne: excludedHostUserId } } : {}),
       },
       { $set: { ...fields, updatedAt: input.at }, $inc: { revision: 1 } },
       { session, runValidators: true, timestamps: false },
@@ -144,7 +146,7 @@ export function createSessionRepository(database: Database) {
     async leave(raw: z.infer<typeof participation>) {
       const input = participation.parse(raw);
       return database.transaction(async (session) => {
-        const revision = await cas(input, ['ACTIVE', 'ENDING'], session, {});
+        const revision = await cas(input, ['ACTIVE', 'ENDING'], session, {}, input.userId);
         const result = await SessionParticipant.updateOne(
           { sessionId: input.sessionId, userId: input.userId, leftAt: null },
           { $set: { leftAt: input.at, updatedAt: input.at } },

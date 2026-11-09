@@ -26,7 +26,7 @@ Tất cả ID document là `Types.ObjectId`, epoch/groupId là UUID và thời g
 | `create`         | sessionId, participantId, workspaceId, channelId, epoch, hostUserId, at | Tạo ACTIVE revision 0 cùng host participation tại MAIN trong một transaction                          |
 | `join`           | sessionId, epoch, expectedRevision, userId, participantId, at           | Chỉ ACTIVE, upsert participation, trả participantId thực tế và revision mới                           |
 | `setScope`       | sessionId, epoch, expectedRevision, userId, scope, at                   | Chỉ ACTIVE và participation chưa rời, cập nhật metadata scope/thời điểm                               |
-| `leave`          | sessionId, epoch, expectedRevision, userId, at                          | ACTIVE/ENDING, ghi leftAt của participation hiện hành                                                 |
+| `leave`          | sessionId, epoch, expectedRevision, userId, at                          | ACTIVE/ENDING, chỉ ghi leftAt cho participant không phải host hiện hành                               |
 | `changeHost`     | sessionId, epoch, expectedRevision, hostUserId hoặc null, at            | Chỉ ACTIVE; host khác null phải có participation chưa rời                                             |
 | `beginEnding`    | sessionId, epoch, expectedRevision, at                                  | CAS ACTIVE → ENDING                                                                                   |
 | `completeEnding` | sessionId, epoch, expectedRevision, at                                  | CAS ENDING → ENDED, xóa metadata host và ghi leftAt cho participation chưa rời trong cùng transaction |
@@ -36,11 +36,15 @@ Mọi mutation sau create dùng CAS theo ID/epoch/status/revision và tăng revi
 
 CAS stale, sai đời phiên hoặc trạng thái không phù hợp trả `SessionMetadataConflictError` có code CONFLICT. Vi phạm unique vẫn là lỗi duplicate-key nội bộ để application service đối chiếu rồi ánh xạ lỗi API chung. Repository không tự chọn host, tạo Router/ticket, cấp quyền nhóm hoặc gửi event. Caller chỉ công bố kết quả sau commit đã xác nhận, kiểm lại quyền/deadline hiện tại theo SCRUM-72/82.
 
+`leave` chặn host hiện hành ngay trong filter CAS, kể cả khi phiên đang ENDING. Yêu cầu bị từ chối không đổi revision hay participation. Caller phải dùng luồng chuyển host hoặc end; `completeEnding` đóng metadata participation cùng lúc xóa hostUserId.
+
 ## Kết quả commit chưa rõ
 
 Nền transaction SCRUM-15 retry commit một lần khi có nhãn `UnknownTransactionCommitResult`. Nếu vẫn chưa rõ, repository truyền tiếp lỗi gốc, giữ nhãn để caller chuyển sang read-back/reconcile. Lỗi này không kích hoạt chạy lại callback tạo phiên hoặc phát side effect.
 
 Caller dùng ID/epoch đã chuẩn bị để đọc lại metadata bằng `readVersion`. Revision/trạng thái hiện tại giúp đối chiếu với intent đã lưu trong runtime. Nếu revision đã tiến xa hơn, không thể suy riêng thao tác nào đã được xác nhận chỉ từ số revision. Kết quả null là chưa thấy metadata trong lần đọc đó; khi chưa đủ căn cứ, giữ trạng thái chưa rõ và reconcile theo SCRUM-87. Bản đầu chưa thêm receipt/outbox bền cho mỗi thao tác.
+
+Ngay cả revision bằng đúng expectedRevision + 1 cũng chưa chứng minh intent cũ thành công. Ví dụ setScope ở revision 1 mất xác nhận và chưa commit, sau đó join của người khác commit revision 2. readVersion thấy revision 2 ở cả lịch sử này và lịch sử setScope đã commit. Caller cần đối chiếu đích participation/scope và bằng chứng intent tương ứng; readVersion đơn lẻ phải giữ UNKNOWN khi không đủ căn cứ. Test CAS mất ack kiểm cả hai lịch sử này, gồm scope thực được lưu.
 
 ## Provision và tích hợp
 
@@ -52,6 +56,6 @@ SCRUM-82 nối registry/join ticket với repository. SCRUM-80 xử lý bootstra
 
 [Unit test](../../apps/server/src/live/session-manager/session-models.test.ts) kiểm schema, defaults, runtime field bị từ chối, cặp scope/thời điểm và input repository. [Integration test](../../apps/server/test/session-repository.integration.ts) chạy unique/partial index, participation ổn định, CAS đồng thời, commit/rollback và validator MongoDB.
 
-Hai ca unknown commit được inject tại biên driver. Một ca thực hiện commit DB thật rồi mất xác nhận ở cả lần đầu và retry; ca còn lại không gọi commit và được abort khi kết thúc session. Cả hai xác nhận repository giữ lỗi và dữ liệu đọc lại đúng với ca đã inject. Chưa mô phỏng failover hoặc mất mạng giữa client và MongoDB.
+Các ca unknown commit được inject tại biên driver. Một ca thực hiện commit DB thật rồi mất xác nhận ở cả lần đầu và retry; ca còn lại không gọi commit và được abort khi kết thúc session. Cả hai xác nhận repository giữ lỗi và dữ liệu đọc lại đúng với ca đã inject. Chưa mô phỏng failover hoặc mất mạng giữa client và MongoDB.
 
 Lệnh kiểm DB riêng là `pnpm exec vitest run --config vitest.database.config.ts apps/server/test/session-repository.integration.ts`. Replica set test dùng rs0 trên localhost, đổi cổng qua `COLEARNIA_DB_TEST_PORT`. Kết quả local chạy trên MongoDB 8.2.6 tạm, loopback cổng 27179; bản 8.0.16 theo baseline cần được kiểm riêng.

@@ -72,6 +72,91 @@ afterAll(async () => {
 });
 
 describe('SCRUM-79 persistent session metadata', () => {
+  it('rejects current host leave atomically until transfer or completeEnding handles it', async () => {
+    const input = createInput();
+    await repository.create(input);
+    await expect(
+      repository.leave({ ...mutation(input, 0), userId: input.hostUserId }),
+    ).rejects.toBeInstanceOf(SessionMetadataConflictError);
+    expect(
+      await repository.readVersion({ sessionId: input.sessionId, epoch: input.epoch }),
+    ).toMatchObject({ revision: 0, status: 'ACTIVE', hostUserId: input.hostUserId });
+    expect(await models.SessionParticipant.findById(input.participantId).lean()).toMatchObject({
+      leftAt: null,
+    });
+    await repository.beginEnding(mutation(input, 0));
+    await expect(
+      repository.leave({ ...mutation(input, 1), userId: input.hostUserId }),
+    ).rejects.toBeInstanceOf(SessionMetadataConflictError);
+    expect(
+      (await repository.readVersion({ sessionId: input.sessionId, epoch: input.epoch }))?.revision,
+    ).toBe(1);
+    expect(
+      (await models.SessionParticipant.findById(input.participantId).lean())?.leftAt,
+    ).toBeNull();
+    await repository.completeEnding(mutation(input, 1));
+    expect(
+      await repository.readVersion({ sessionId: input.sessionId, epoch: input.epoch }),
+    ).toMatchObject({ revision: 2, hostUserId: null, status: 'ENDED' });
+    expect(
+      (await models.SessionParticipant.findById(input.participantId).lean())?.leftAt,
+    ).toBeInstanceOf(Date);
+  });
+
+  it.each([true, false])(
+    'does not infer a CAS intent from revision alone after lost ack, applied=%s',
+    async (applied) => {
+      const input = createInput();
+      await repository.create(input);
+      const userId = new Types.ObjectId();
+      const joined = await repository.join({
+        ...mutation(input, 0),
+        userId,
+        participantId: new Types.ObjectId(),
+      });
+      const scope = { kind: 'GROUP' as const, groupId: randomUUID() };
+      const intent = { ...mutation(input, 1), userId, scope };
+      const session = await database.connection.startSession();
+      const originalCommit = session.commitTransaction.bind(session);
+      const error = new mongo.MongoServerError({
+        message: 'Injected CAS acknowledgement loss',
+        code: 91,
+      });
+      error.addErrorLabel('UnknownTransactionCommitResult');
+      const commit = vi.spyOn(session, 'commitTransaction').mockImplementation(async () => {
+        if (applied && commit.mock.calls.length === 1) await originalCommit();
+        throw error;
+      });
+      const start = vi.spyOn(database.connection, 'startSession').mockResolvedValueOnce(session);
+      try {
+        await expect(repository.setScope(intent)).rejects.toBe(error);
+        expect(commit).toHaveBeenCalledTimes(2);
+        expect(start).toHaveBeenCalledOnce();
+      } finally {
+        start.mockRestore();
+        commit.mockRestore();
+      }
+      if (!applied)
+        await repository.join({
+          ...mutation(input, 1),
+          at: intent.at,
+          userId: new Types.ObjectId(),
+          participantId: new Types.ObjectId(),
+        });
+      // Both histories read revision 2, although only one applied the original scope intent.
+      expect(
+        await repository.readVersion({ sessionId: input.sessionId, epoch: input.epoch }),
+      ).toMatchObject({
+        revision: 2,
+        status: 'ACTIVE',
+        updatedAt: intent.at,
+        hostUserId: input.hostUserId,
+      });
+      expect(
+        (await models.SessionParticipant.findById(joined.participantId).lean())?.lastScope,
+      ).toEqual(applied ? scope : { kind: 'MAIN' });
+    },
+  );
   it('creates a session and its host participation atomically with reviewed indexes', async () => {
     expect(await preflightIndexes(database.connection, sessionIndexRequirements)).toEqual({
       ready: true,
