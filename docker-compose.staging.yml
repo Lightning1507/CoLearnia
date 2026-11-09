@@ -12,6 +12,9 @@ services:
       PORT: '3001'
       APP_ORIGIN: ${APP_ORIGIN:?Set the public HTTPS origin}
       MONGO_URI: ${MONGO_URI:?Provide the authenticated staging database URI}
+      SESSION_SECRET: ${SESSION_SECRET:-}
+      AUTH_TTL_SECONDS: ${AUTH_TTL_SECONDS:-604800}
+      AUTH_TRUST_PROXY: 'true'
       MEDIA_ENABLED: 'true'
       MEDIA_LISTEN_IP: 0.0.0.0
       MEDIA_ANNOUNCED_ADDRESS: ${MEDIA_ANNOUNCED_ADDRESS:?Set the public media address}

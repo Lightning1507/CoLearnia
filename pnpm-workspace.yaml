@@ -5,6 +5,7 @@ packages:
 saveExact: true
 strictPeerDependencies: true
 allowBuilds:
+  argon2: false
   mediasoup: true
   esbuild: true
   '@tailwindcss/oxide': true

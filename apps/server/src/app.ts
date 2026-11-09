@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import express from 'express';
-import type { ErrorRequestHandler } from 'express';
+import type { ErrorRequestHandler, Router } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import { commonErrorHttpStatus, systemStatusSchema } from '@colearnia/contracts';
@@ -8,9 +8,14 @@ import type { SystemStatus } from '@colearnia/contracts';
 import type { AppConfig } from './config/env.js';
 import { logger } from './lib/logger.js';
 
-export function createApp(config: AppConfig, getStatus: () => SystemStatus) {
+export function createApp(
+  config: AppConfig,
+  getStatus: () => SystemStatus,
+  registrationRouter?: Router,
+) {
   const app = express();
   app.disable('x-powered-by');
+  if (config.AUTH_TRUST_PROXY) app.set('trust proxy', 1);
   app.use((_req, res, next) => {
     res.locals.requestId = randomUUID();
     res.setHeader('X-Request-Id', res.locals.requestId as string);
@@ -18,7 +23,12 @@ export function createApp(config: AppConfig, getStatus: () => SystemStatus) {
   });
   app.use(helmet());
   app.use(cors({ origin: config.APP_ORIGIN, credentials: true }));
+  app.use('/api/v1/auth', (_req, res, next) => {
+    res.setHeader('Cache-Control', 'no-store');
+    next();
+  });
   app.use(express.json({ limit: '32kb' }));
+  if (registrationRouter) app.use('/api/v1/auth', registrationRouter);
 
   app.get('/health/live', (_req, res) => {
     res.json({ data: { status: 'alive' }, requestId: res.locals.requestId });
@@ -34,7 +44,7 @@ export function createApp(config: AppConfig, getStatus: () => SystemStatus) {
     res.json({ data: systemStatusSchema.parse(getStatus()), requestId: res.locals.requestId });
   });
 
-  // No placeholder auth/workspace/media endpoints: feature modules will register verified handlers.
+  // Feature modules register verified handlers before the generic 404.
   app.use((_req, res) => {
     res.status(commonErrorHttpStatus.NOT_FOUND).json({
       error: { code: 'NOT_FOUND', message: 'Không tìm thấy đường dẫn.' },
