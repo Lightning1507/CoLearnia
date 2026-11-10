@@ -50,3 +50,15 @@ PASS · subscriptions=20, remaining=0, video attach/detach=16/16, peak=1, call A
 - Fixture Chromium đổi bề rộng **cùng một RoomShell** theo chuỗi 1279 → 1280 → 1279 CSS px trong lúc call A `active`. Ở 1279 px panel mở thay sân khấu và có nút **Về sân khấu**. Ở 1280 px sân khấu và panel 320 px hiển thị cạnh nhau, nút quay lại ẩn. Toolbar vẫn hiển thị ở cả hai chế độ.
 - **Về sân khấu** đóng panel và chuyển focus về nút mở panel trên toolbar. Mở lại panel chuyển focus đến tiêu đề panel. Resize, quay về sân khấu và mở lại panel giữ nguyên video đang gắn, số subscription, hai track `live` và call handle. Cả lượt vẫn ghi 16 lần gắn, 16 lần tháo, tối đa một binding và 0 subscription sau unmount cuối.
 - Kiểm `/workspace` trong Chromium với viewport 390, 1280 và 1700 px. Bề rộng shell đo lần lượt 358, khoảng 898 và 1316 px. Hai lượt đầu hiển thị panel thay sân khấu, lượt cuối hiển thị cạnh nhau. Không thấy tràn ngang hoặc lỗi console. Bằng chứng call liên tục đến từ fixture dùng track tổng hợp.
+
+## Đối chiếu màu với bản xuất Figma
+
+Mở `/workspace` trong Chromium, chọn kênh TEXT rồi chọn kênh LIVE và đọc `backgroundColor` từng vùng. Đối chiếu với [CSS bản xuất Figma](../figma-ui/src/index.css) và [CSS WorkspaceShell](../../apps/web/src/features/workspaces/workspace-shell.css).
+
+| Vùng                        | Workspace hiện tại   | Figma                              | Phần xử lý                                                                                           |
+| --------------------------- | -------------------- | ---------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| Sidebar                     | `#173F35`            | `#F1F3F2` (`.sidebar`)             | WorkspaceShell `.workspace-sidebar`                                                                  |
+| Kênh đang chọn              | `#D9ECAC`            | `#DCEFE8` (`.sidebar-item-active`) | WorkspaceShell `.workspace-channel[aria-current='page']`                                             |
+| Vùng nội dung chat bên phải | `#F7F8F2` quanh card | `#FFFFFF` (`.conversation-shell`)  | WorkspaceShell `.workspace-main` và `.workspace-panel-host` trong suốt, để lộ nền `.workspace-shell` |
+
+Card Chat bên trong và card RoomShell đều đo được `#FFFFFF`. Chuyển màu ba vùng trong bảng là việc tiếp nối của Workspace shell/sidebar [M1-T7.2 / SCRUM-45](https://faker1652005.atlassian.net/browse/SCRUM-45). Ca nghiệm thu ở Workspace cần đo nền sidebar, trạng thái kênh đang chọn và toàn vùng nội dung bên phải khi mở TEXT, gồm phần bao quanh card Chat.
