@@ -16,21 +16,21 @@ Mục 9.1–9.2 giữ số từ [technical plan](../technical-plan.md) để tru
 
 Thiết kế có **13 collection**: 12 collection baseline và channelAccessGrants biểu diễn quyền PRIVATE theo UC-WS-15. Collection mới là quan hệ quyền đã được đồng ý, không thêm tính năng hay actor.
 
-| Collection          | Vai trò và quyết định chính                                                                                          |
-| ------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| users               | Danh tính và thông tin xác thực; không nhúng membership                                                              |
-| authSessions        | Phiên xác thực/tokenHash, expiry/revoke server                                                                       |
-| workspaces          | Owner duy nhất trong từng Workspace, revision và tombstone                                                           |
-| memberships         | Một cặp Workspace/user, role/status; incarnation tăng khi rejoin sau bị loại                                         |
-| invitations         | Một link hiện hành/Workspace, bật/tắt/tạo lại, không hạn/lượt; cách lưu/tái tạo token để sao chép lại còn chờ review |
-| channels            | TEXT/LIVE và WORKSPACE/PRIVATE; không nhúng mảng quyền                                                               |
-| channelAccessGrants | Grant theo channel/membership/incarnation; thay allowedUserIds, không tự phục hồi PRIVATE sau rejoin                 |
-| conversations       | CHANNEL/DIRECT/SESSION/GROUP/HOST_PRIVATE; scope theo kind, đóng/purge                                               |
-| messages            | Tin/reply độc lập, dedupe, root reference và attachment IDs                                                          |
-| files               | Metadata có purpose/scope/binding và lịch dọn; byte ở kho private                                                    |
-| liveSessions        | Metadata lifecycle/host/epoch; không thay SessionRuntime                                                             |
-| sessionParticipants | Metadata tham gia/vị trí gần nhất, không cấp quyền runtime                                                           |
-| auditEvents         | Actor/action/target/kết quả; không chép nội dung riêng                                                               |
+| Collection          | Vai trò và quyết định chính                                                                                                    |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| users               | Danh tính và thông tin xác thực; không nhúng membership                                                                        |
+| authSessions        | Phiên xác thực/tokenHash, expiry/revoke server                                                                                 |
+| workspaces          | Owner duy nhất trong từng Workspace, revision và tombstone                                                                     |
+| memberships         | Một cặp Workspace/user, role/status; incarnation tăng khi rejoin sau bị loại                                                   |
+| invitations         | Một link hiện hành/Workspace, bật/tắt/tạo lại, không hạn/lượt; tokenHash + encryptedToken theo [SCRUM-30](workspace-models.md) |
+| channels            | TEXT/LIVE và WORKSPACE/PRIVATE; không nhúng mảng quyền                                                                         |
+| channelAccessGrants | Grant theo channel/membership/incarnation; thay allowedUserIds, không tự phục hồi PRIVATE sau rejoin                           |
+| conversations       | CHANNEL/DIRECT/SESSION/GROUP/HOST_PRIVATE; scope theo kind, đóng/purge                                                         |
+| messages            | Tin/reply độc lập, dedupe, root reference và attachment IDs                                                                    |
+| files               | Metadata có purpose/scope/binding và lịch dọn; byte ở kho private                                                              |
+| liveSessions        | Metadata lifecycle/host/epoch; không thay SessionRuntime                                                                       |
+| sessionParticipants | Metadata tham gia/vị trí gần nhất, không cấp quyền runtime                                                                     |
+| auditEvents         | Actor/action/target/kết quả; không chép nội dung riêng                                                                         |
 
 Kiểu field, required/null, enum thiết kế và điều kiện theo loại ở [bước 4](collection-design.md). Không có SavedArtifact, polls, votes, timer, request/group/board/stroke collection trong thiết kế hiện tại. GroupRuntime và board/nét ở RAM; conversation/file giữ refs đủ để khóa và dọn sau khi runtime mất.
 
