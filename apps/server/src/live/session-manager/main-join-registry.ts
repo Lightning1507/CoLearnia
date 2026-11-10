@@ -53,7 +53,6 @@ type Ownership = {
   binding: Binding;
   room: Room;
   participant: PolicyParticipant;
-  joinRequestId: string;
 };
 type Intent = {
   key: string;
@@ -62,7 +61,7 @@ type Intent = {
   room: Room;
   authority: Authority;
   expiresAt: number;
-  consumed?: Ownership;
+  consumed?: { ownership: Ownership; requestId: string };
 };
 export class MainJoinError extends Error {
   constructor(readonly code: CommonErrorCode) {
@@ -613,9 +612,9 @@ export function createMainJoinRegistry(options: {
         const owned = ownerships.get(auth.userId);
         if (intent.consumed) {
           if (
-            intent.consumed !== owned ||
+            intent.consumed.ownership !== owned ||
             owned.binding.socketId !== binding.socketId ||
-            owned.joinRequestId !== input.requestId ||
+            intent.consumed.requestId !== input.requestId ||
             input.takeover
           )
             fail('CONFLICT');
@@ -634,8 +633,7 @@ export function createMainJoinRegistry(options: {
             owned.participant.auth.authSessionId !== auth.authSessionId
           )
             fail('CALL_ALREADY_ACTIVE');
-          intent.consumed = owned;
-          owned.joinRequestId = input.requestId;
+          intent.consumed = { ownership: owned, requestId: input.requestId };
           return delivery(owned, input.requestId, held);
         }
         if (input.takeover) fail('CONFLICT');
@@ -664,7 +662,7 @@ export function createMainJoinRegistry(options: {
             blocked: false,
             scope: { type: 'MAIN' as const },
           };
-          const owner: Ownership = { binding, room, participant, joinRequestId: input.requestId };
+          const owner: Ownership = { binding, room, participant };
           // Persist first. No runtime rights are exposed by metadata alone.
           try {
             const saved = await options.repository.join({
@@ -683,7 +681,7 @@ export function createMainJoinRegistry(options: {
             fail('DEPENDENCY_UNAVAILABLE');
           }
           // Keep this intent spent even when authority disappears after commit.
-          intent.consumed = owner;
+          intent.consumed = { ownership: owner, requestId: input.requestId };
           const confirmed = await authority(auth, destination, held);
           usable(room);
           if (

@@ -123,6 +123,48 @@ function setup(customRepository = repository) {
 }
 
 describe('MAIN registry with real MongoDB and mediasoup Router', () => {
+  it('replays each ticket/requestId pair without rewriting ownership or durable metadata', async () => {
+    let joinWrites = 0;
+    const f = setup({
+      ...repository,
+      join: async (input) => {
+        joinWrites++;
+        return repository.join(input);
+      },
+    });
+    const user = f.auth();
+    const socket = f.binding(user);
+    const firstTicket = await f.registry.issue(user, f.target, { requestId: randomUUID() });
+    const firstCommand = { ticket: firstTicket.ticket, requestId: randomUUID() };
+    const first = await f.registry.join(socket, firstCommand);
+    const sessionId = new Types.ObjectId(firstTicket.sessionId);
+    const originalSession = await models.LiveSession.findById(sessionId).lean();
+    const originalParticipant = await models.SessionParticipant.findOne({ sessionId }).lean();
+    const secondTicket = await f.registry.issue(user, f.target, { requestId: randomUUID() });
+    const secondCommand = { ticket: secondTicket.ticket, requestId: randomUUID() };
+    await f.registry.join(socket, secondCommand);
+
+    for (const command of [firstCommand, secondCommand]) {
+      const replay = await f.registry.join(socket, command);
+      expect(replay.ack.requestId).toBe(command.requestId);
+      expect(replay.ack.data.result.participantId).toBe(first.ack.data.result.participantId);
+      expect(replay.ack.data.result.callGeneration).toBe(first.ack.data.result.callGeneration);
+    }
+    for (const command of [
+      { ...firstCommand, requestId: secondCommand.requestId },
+      { ...secondCommand, requestId: firstCommand.requestId },
+    ]) {
+      await expect(f.registry.join(socket, command)).rejects.toMatchObject({ code: 'CONFLICT' });
+    }
+    expect(joinWrites).toBe(1);
+    expect(f.registry.stats().ownerships).toBe(1);
+    expect(f.routers).toHaveLength(1);
+    expect(await models.LiveSession.findById(sessionId).lean()).toEqual(originalSession);
+    expect(await models.SessionParticipant.find({ sessionId }).lean()).toEqual([
+      originalParticipant,
+    ]);
+  });
+
   it('filters a revoked publisher from another recipient policy and join replay snapshot', async () => {
     const f = setup();
     const a = f.auth();

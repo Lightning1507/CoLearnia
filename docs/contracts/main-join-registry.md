@@ -28,6 +28,8 @@ Ví dụ deny: ticket của authSession A dùng từ B bị FORBIDDEN; kênh TEX
 
 Ví dụ stale: ticket hết hạn 60 giây bị VALIDATION_ERROR. Ticket đã consume dùng bằng requestId hoặc socket khác bị CONFLICT. Cùng intent REST nhưng đổi kênh/stamp trong cửa sổ lưu cũng bị CONFLICT.
 
+Mỗi ticket đã consume giữ riêng `requestId` của lệnh socket và tham chiếu ownership. Khi cùng socket dùng T1/R1 rồi T2/R2 trong lúc cả hai ticket còn hạn, retry T1/R1 hoặc T2/R2 đều trả snapshot mới của cùng participant/generation; T1/R2 và T2/R1 bị CONFLICT. Ticket mới không ghi đè cặp replay của ticket cũ và không phát sinh lần ghi metadata mới.
+
 ## Thứ tự xử lý
 
 1. Giữ User rồi Workspace gate của coordinator chung; kiểm lại auth/access. Workspace gate serialize lifecycle các kênh trong Workspace, chưa có lock riêng cạnh tranh giữa các miền.

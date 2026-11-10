@@ -126,6 +126,36 @@ function projection(
 }
 
 describe('SCRUM-82 MAIN join registry', () => {
+  it('keeps each consumed ticket bound to its own requestId during same-socket recovery', async () => {
+    const f = setup();
+    const socket = f.binding();
+    const firstTicket = await f.issue();
+    const firstCommand = { ticket: firstTicket.ticket, requestId: randomUUID() };
+    const first = await f.registry.join(socket, firstCommand);
+    const secondTicket = await f.issue();
+    const secondCommand = { ticket: secondTicket.ticket, requestId: randomUUID() };
+    const second = await f.registry.join(socket, secondCommand);
+
+    for (const command of [firstCommand, secondCommand, firstCommand]) {
+      const replay = await f.registry.join(socket, command);
+      expect(replay.ack.requestId).toBe(command.requestId);
+      expect(replay.ack.data.result.participantId).toBe(first.ack.data.result.participantId);
+      expect(replay.ack.data.result.callGeneration).toBe(first.ack.data.result.callGeneration);
+      expect(projection(replay).participants).toHaveLength(1);
+    }
+    for (const command of [
+      { ...firstCommand, requestId: secondCommand.requestId },
+      { ...secondCommand, requestId: firstCommand.requestId },
+    ]) {
+      await expect(f.registry.join(socket, command)).rejects.toMatchObject({ code: 'CONFLICT' });
+    }
+    expect(second.ack.data.result.participantId).toBe(first.ack.data.result.participantId);
+    expect(second.ack.data.result.callGeneration).toBe(first.ack.data.result.callGeneration);
+    expect(f.registry.stats().ownerships).toBe(1);
+    expect(f.repository.create).toHaveBeenCalledTimes(1);
+    expect(f.repository.join).toHaveBeenCalledTimes(1);
+  });
+
   it('recovers the same socket with a new ticket after provider outage outlives replay expiry', async () => {
     const f = setup();
     const b = f.principal();
