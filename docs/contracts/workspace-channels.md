@@ -2,6 +2,8 @@
 
 Model kênh/PRIVATE grant, index, validator và cách tích hợp theo [SCRUM-26](../database/channel-models.md).
 
+Model Workspace, membership và invitation theo [SCRUM-30](../database/workspace-models.md). Invitation lưu thêm token mã hóa để lấy lại link hiện hành; chưa bổ sung endpoint/DTO lời mời trong contract này.
+
 **Trạng thái:** schema và chữ ký hàm để review; chưa có API/service thực thi. M4 review chính; M2 xác nhận phần conversation và thu chat/tệp trước khi tích hợp. Chưa ghi nhận xác nhận của hai miền trong task này.
 
 Nguồn: [proposal M1](../proposals/m1-workspace-auth.md), [quyền Workspace/kênh](../product/workspace-channels.md), [PRIVATE](../product/messaging.md), [quy ước API](api-conventions.md), [mã lỗi](error-codes.md). Schema ở `packages/contracts/src/workspace.ts`; chữ ký hàm server ở `apps/server/src/workspaces/ports.ts`.
@@ -137,7 +139,7 @@ Chưa có component render hoặc call controller trong SCRUM-13; hợp đồng 
 | SCRUM-82/83      | Snapshot cho join/recheck và scope thu quyền; M4 bổ sung runtime generation/context               |
 | SCRUM-45         | WorkspaceShellProps, SidebarChannel, panel và slot chat/cuộc gọi; dựng fixture trước khi nối data |
 
-Cần M2 xác nhận cùng connection/transaction và conversation TEXT; M4 xác nhận snapshot, sáu scope thu quyền và semantics revision. Pagination/limits list thuộc task endpoint; invitation token storage thuộc task invitation; migration dữ liệu RESTRICTED thuộc task DB có kế hoạch riêng nếu có dữ liệu cũ. Không reset DB hoặc tự chuyển dữ liệu trong SCRUM-13.
+Cần M2 xác nhận cùng connection/transaction và conversation TEXT; M4 xác nhận snapshot, sáu scope thu quyền và semantics revision. Pagination/limits list thuộc task endpoint; schema lưu invitation token theo SCRUM-30, mã hóa/giải mã và quản lý khóa thuộc task invitation; migration dữ liệu RESTRICTED thuộc task DB có kế hoạch riêng nếu có dữ liệu cũ. Không reset DB hoặc tự chuyển dữ liệu trong SCRUM-13.
 
 Kiểm local gồm schema valid/invalid, field quyền giả, type/access độc lập, revision/ID sai, snapshot admin không có quyền nội dung, scope revoke thiếu/thừa ID, chữ ký consumer server và ví dụ M2 từ chối đọc / M4 kiểm lại quyền sau await / cleanup chưa hoàn tất. Các ví dụ dùng fixture, không gọi adapter thật. Đây là kiểm contract/type, chưa phải kiểm ACL, transaction, cleanup hoặc LIVE tích hợp thật.
 
