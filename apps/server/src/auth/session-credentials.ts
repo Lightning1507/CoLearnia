@@ -2,6 +2,10 @@ import { createHash, randomBytes } from 'node:crypto';
 
 export const authCookie = '__Host-colearnia-session';
 
+export function isSessionToken(token: string | undefined): token is string {
+  return token !== undefined && /^[A-Za-z0-9_-]{43}$/.test(token);
+}
+
 export function newOpaqueToken() {
   return randomBytes(32).toString('base64url');
 }

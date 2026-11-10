@@ -10,6 +10,7 @@ export const commonErrorHttpStatus = {
   CSRF_INVALID: 403,
   NOT_FOUND: 404,
   CONFLICT: 409,
+  CALL_ALREADY_ACTIVE: 409,
   EMAIL_EXISTS: 409,
   INVITATION_UNAVAILABLE: 410,
   SESSION_ENDED: 410,
@@ -18,6 +19,7 @@ export const commonErrorHttpStatus = {
   RATE_LIMITED: 429,
   INTERNAL_ERROR: 500,
   DEPENDENCY_UNAVAILABLE: 503,
+  SERVER_BUSY: 503,
 } as const;
 
 export type CommonErrorCode = keyof typeof commonErrorHttpStatus;
