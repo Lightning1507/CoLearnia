@@ -138,7 +138,7 @@ describe('SCRUM-80 cold session bootstrap', () => {
     },
   );
 
-  it('bounds the whole multi-session cold start and ignores cleanup completing after its deadline', async () => {
+  it('bounds the whole multi-session cold start without assuming in-flight transactions rolled back', async () => {
     const old = [];
     for (let index = 0; index < 7; index++) old.push(await seed('ENDING'));
     const callback = vi.fn(
@@ -168,13 +168,118 @@ describe('SCRUM-80 cold session bootstrap', () => {
       status: 'ENDED',
     });
     expect(ended).toBeLessThan(7);
+    // A transaction already sent before the deadline may still commit. Do not
+    // assert a globally stable ENDED count while that transaction is in flight.
     await new Promise((resolve) => setTimeout(resolve, 250));
-    expect(
-      await models.LiveSession.countDocuments({ _id: { $in: sessionIds }, status: 'ENDED' }),
-    ).toBe(ended);
     expect((await request(app).get('/health/ready')).status).toBe(503);
     expect((await request(app).get('/health/live')).status).toBe(200);
     await expect(boot.run()).rejects.toThrow();
+    await bootstrap().run();
+  });
+  it('does not start completeEnding when cleanup returns after the total deadline', async () => {
+    const input = await seed('ENDING');
+    let release!: () => void;
+    let entered!: () => void;
+    let returned!: () => void;
+    const waiting = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const started = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const finished = new Promise<void>((resolve) => {
+      returned = resolve;
+    });
+    const boot = bootstrap({
+      totalTimeoutMs: 1000,
+      cleanupTimeoutMs: 5000,
+      prepareStaleSession: async (session, signal) => {
+        entered();
+        await waiting;
+        const result = await confirmed(session, signal);
+        returned();
+        return result;
+      },
+    });
+    const transactions = vi.spyOn(database, 'transaction');
+    const task = boot.run();
+    const rejected = expect(task).rejects.toThrow();
+    try {
+      await started;
+      await rejected;
+      release();
+      await finished;
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(transactions).not.toHaveBeenCalled();
+      expect((await models.LiveSession.findById(input.sessionId).lean())?.status).toBe('ENDING');
+      expect(
+        (await models.SessionParticipant.findById(input.participantId).lean())?.leftAt,
+      ).toBeNull();
+      expect(boot.stats().state).toBe('FAILED');
+      expect(boot.isReady()).toBe(false);
+    } finally {
+      release();
+      transactions.mockRestore();
+    }
+    await bootstrap().run();
+  });
+
+  it('keeps FAILED/readiness 503 when a transaction sent before deadline commits afterwards', async () => {
+    const input = await seed('ENDING');
+    let release!: () => void;
+    let entered!: () => void;
+    let settled!: () => void;
+    const waiting = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const commitStarted = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const transactionSettled = new Promise<void>((resolve) => {
+      settled = resolve;
+    });
+    const transaction = database.transaction.bind(database);
+    const spy = vi.spyOn(database, 'transaction').mockImplementationOnce(async (work) => {
+      try {
+        return await transaction(async (session) => {
+          const commit = session.commitTransaction.bind(session);
+          vi.spyOn(session, 'commitTransaction').mockImplementationOnce(async () => {
+            entered();
+            await waiting;
+            await commit();
+          });
+          return work(session);
+        });
+      } finally {
+        settled();
+      }
+    });
+    const boot = bootstrap({ totalTimeoutMs: 1000 });
+    const app = createApp(loadConfig({ NODE_ENV: 'test' }), () => ({
+      name: 'CoLearnia',
+      database: 'connected',
+      media: 'disconnected',
+      ready: boot.isReady(),
+    }));
+    const task = boot.run();
+    const rejected = expect(task).rejects.toThrow();
+    try {
+      await commitStarted;
+      await rejected;
+      expect(boot.isReady()).toBe(false);
+      release();
+      await transactionSettled;
+      expect((await models.LiveSession.findById(input.sessionId).lean())?.status).toBe('ENDED');
+      expect(
+        (await models.SessionParticipant.findById(input.participantId).lean())?.leftAt,
+      ).toBeInstanceOf(Date);
+      expect(boot.stats().state).toBe('FAILED');
+      expect((await request(app).get('/health/ready')).status).toBe(503);
+      await expect(boot.run()).rejects.toThrow();
+    } finally {
+      release();
+      spy.mockRestore();
+    }
     await bootstrap().run();
   });
   it('accepts a fresh database without auto creating schema or indexes', async () => {
