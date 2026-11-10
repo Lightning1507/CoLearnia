@@ -45,6 +45,10 @@ Provider M1 cần hai hàm: `resolveAuthority(auth,target,held)` đọc auth/acc
 
 Nhánh replay issuance kiểm lại expiresAt sau await kiểm quyền. Nếu ticket vừa hết hạn thì xóa intent/token và trả VALIDATION_ERROR, không trả response thành công chứa token cũ. Client đối chiếu trạng thái rồi dùng intent mới theo luồng hết hạn. Việc refresh authority peer nằm trong deadline/admission hiện có; chưa có bằng chứng capacity từ lượt đọc này.
 
+`isAuthorityCurrent(authority,held,committedAccess?)` còn xác nhận tính liên tục so với stamp đã commit khi có tham số thứ ba. Cùng membership/incarnation, revision không lùi và M1 xác nhận không có revoke/regrant gap thì registry cập nhật cả access/currentAccess sau revalidation, giữ nguyên participantId/callGeneration/scope. Revision tăng đơn thuần không đặt blocked. Provider phải kiểm lịch sử barrier/version của M1, không suy tính liên tục chỉ từ canReadContent=true ở lần đọc cuối. Đã blocked do thu quyền thật thì không tự mở lại khi callback sau trả true.
+
+Lỗi provider tạm thời trong lúc dựng snapshot làm lần join/replay trả DEPENDENCY_UNAVAILABLE, nhưng không tự biến ownership đã commit thành bị thu quyền. Retry cùng ticket/requestId/socket còn hạn sẽ đọc lại authority/continuity và dựng snapshot mới; không chạy lại repository.join hoặc cấp generation mới. Ticket đã consume không bị đối chiếu với stamp cấp ticket cũ để chặn một revision tăng hợp lệ; quyền của ownership hiện hành được kiểm lại thay thế. Nếu M1 từ chối quyền hoặc continuity thì vẫn giữ deny, không dùng nhánh phục hồi lỗi tạm để bỏ barrier.
+
 ## Lỗi và cleanup
 
 Create/join metadata thất bại làm phiên ở trạng thái chưa rõ, chặn ticket/grant mới. Create lỗi đóng Router vừa tạo. Không suy từ revision rằng intent đã commit; E11000 cũng không cho phép adopt phiên có trong DB. SCRUM-87 đối chiếu kết quả, SCRUM-80 bootstrap; không retry insert hoặc phục hồi runtime từ metadata mù.

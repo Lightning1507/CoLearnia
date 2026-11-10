@@ -126,6 +126,124 @@ function projection(
 }
 
 describe('SCRUM-82 MAIN join registry', () => {
+  it.each(['membershipRevision', 'channelRevision'] as const)(
+    'keeps uninterrupted access after %s increases, preserving ownership and retry',
+    async (field) => {
+      const f = setup();
+      const b = f.principal();
+      const aTicket = await f.issue();
+      const bTicket = await f.issue(b);
+      const aSocket = f.binding();
+      const bSocket = f.binding(b);
+      const aCommand = { ticket: aTicket.ticket, requestId: randomUUID() };
+      const a = await f.registry.join(aSocket, aCommand);
+      const joinedB = await f.registry.join(bSocket, {
+        ticket: bTicket.ticket,
+        requestId: randomUUID(),
+      });
+      f.resolveAuthority.mockImplementation(async (auth, destination) => ({
+        auth,
+        access: {
+          ...f.access(auth, destination),
+          ...(auth.userId === f.auth.userId ? { [field]: 2 } : {}),
+        },
+        displayName: 'Sinh viên',
+      }));
+      const context = {
+        sessionId: aTicket.sessionId,
+        epoch: aTicket.epoch,
+        callGeneration: a.ack.data.result.callGeneration,
+      };
+      expect(
+        await f.registry.withContext(
+          bSocket.socketId,
+          { ...context, callGeneration: joinedB.ack.data.result.callGeneration },
+          (resolved, _r, policy) => {
+            expect(resolved.ok).toBe(true);
+            return canReceiveMedia(policy!, a.ack.data.result.participantId, 'CAMERA');
+          },
+        ),
+      ).toBe(true);
+      expect(
+        await f.registry.withContext(aSocket.socketId, context, (result) => result),
+      ).toMatchObject({ ok: true });
+      const retry = await f.registry.join(aSocket, aCommand);
+      expect(retry.ack.data.result.participantId).toBe(a.ack.data.result.participantId);
+      expect(retry.ack.data.result.callGeneration).toBe(a.ack.data.result.callGeneration);
+      expect(f.repository.join).toHaveBeenCalledTimes(2);
+    },
+  );
+
+  it('rejects revoke/regrant gaps even when current membership and read permission look valid', async () => {
+    const f = setup();
+    const ticket = await f.issue();
+    const socket = f.binding();
+    const command = { ticket: ticket.ticket, requestId: randomUUID() };
+    const joined = await f.registry.join(socket, command);
+    f.isAuthorityCurrent.mockImplementation(
+      (_authority, _held, committed) => committed === undefined,
+    );
+    const context = {
+      sessionId: ticket.sessionId,
+      epoch: ticket.epoch,
+      callGeneration: joined.ack.data.result.callGeneration,
+    };
+    expect(
+      await f.registry.withContext(socket.socketId, context, (result) => result),
+    ).toMatchObject({ ok: false });
+    f.isAuthorityCurrent.mockReturnValue(true);
+    expect(
+      await f.registry.withContext(socket.socketId, context, (result) => result),
+    ).toMatchObject({ ok: false });
+    await expect(f.registry.join(socket, command)).rejects.toMatchObject({ code: 'CONFLICT' });
+  });
+
+  it('retries a committed join after a temporary peer-provider failure without writing metadata twice', async () => {
+    const f = setup();
+    const b = f.principal();
+    const aTicket = await f.issue();
+    await f.registry.join(f.binding(), { ticket: aTicket.ticket, requestId: randomUUID() });
+    const ticket = await f.issue(b);
+    const socket = f.binding(b);
+    const command = { ticket: ticket.ticket, requestId: randomUUID() };
+    const original = f.resolveAuthority.getMockImplementation()!;
+    f.resolveAuthority.mockImplementation(async (auth, destination) => {
+      if (auth.userId === f.auth.userId) throw new Error('Temporary DB failure');
+      return original(auth, destination);
+    });
+    await expect(f.registry.join(socket, command)).rejects.toMatchObject({
+      code: 'DEPENDENCY_UNAVAILABLE',
+    });
+    expect(f.registry.stats().ownerships).toBe(2);
+    f.resolveAuthority.mockImplementation(original);
+    const retry = await f.registry.join(socket, command);
+    expect(projection(retry).participants).toHaveLength(2);
+    expect(f.repository.join).toHaveBeenCalledTimes(2);
+    const again = await f.registry.join(socket, command);
+    expect(again.ack.data.result.callGeneration).toBe(retry.ack.data.result.callGeneration);
+  });
+
+  it('still refuses a committed join retry after real revocation during the provider outage', async () => {
+    const f = setup();
+    const b = f.principal();
+    const aTicket = await f.issue();
+    await f.registry.join(f.binding(), { ticket: aTicket.ticket, requestId: randomUUID() });
+    const ticket = await f.issue(b);
+    const socket = f.binding(b);
+    const command = { ticket: ticket.ticket, requestId: randomUUID() };
+    const original = f.resolveAuthority.getMockImplementation()!;
+    f.resolveAuthority.mockImplementation(async (auth, destination) => {
+      if (auth.userId === f.auth.userId) throw new Error('Temporary');
+      return original(auth, destination);
+    });
+    await expect(f.registry.join(socket, command)).rejects.toMatchObject({
+      code: 'DEPENDENCY_UNAVAILABLE',
+    });
+    f.resolveAuthority.mockImplementation(original);
+    f.isAuthorityCurrent.mockImplementation((current) => current.auth.userId !== b.userId);
+    await expect(f.registry.join(socket, command)).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    expect(f.repository.join).toHaveBeenCalledTimes(2);
+  });
   it('denies a connected revoked publisher and removes it from another member snapshot', async () => {
     const f = setup();
     const b = f.principal();
@@ -555,7 +673,7 @@ describe('SCRUM-82 MAIN join registry', () => {
     }));
     expect(
       await f.registry.withContext(binding.socketId, input, (context) => context),
-    ).toMatchObject({ ok: false, errorCode: 'CONFLICT' });
+    ).toMatchObject({ ok: true });
   });
 
   it('keeps uncertain create results denied instead of retrying an insert or restoring DB metadata', async () => {

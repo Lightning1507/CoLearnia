@@ -102,7 +102,11 @@ export function createMainJoinRegistry(options: {
     held: CoordinationContext,
   ): Promise<Authority>;
   // Synchronous M1 deny/version fence, including peers. Must not acquire another User gate.
-  isAuthorityCurrent(authority: Readonly<Authority>, held: CoordinationContext): boolean;
+  isAuthorityCurrent(
+    authority: Readonly<Authority>,
+    held: CoordinationContext,
+    committedAccess?: Readonly<ChannelAccessStamp>,
+  ): boolean;
   createRouter(): Promise<MediaTypes.Router>;
   now?: () => number;
   limits?: Partial<typeof defaults>;
@@ -242,10 +246,14 @@ export function createMainJoinRegistry(options: {
     if (!currentFence(resultAuthority, held)) fail('FORBIDDEN');
     return resultAuthority;
   }
-  function currentFence(current: Authority, held: CoordinationContext) {
+  function currentFence(
+    current: Authority,
+    held: CoordinationContext,
+    committedAccess?: ChannelAccessStamp,
+  ) {
     held.assertHeld({ workspaceId: current.access.workspaceId });
     try {
-      return options.isAuthorityCurrent(current, held) === true;
+      return options.isAuthorityCurrent(current, held, committedAccess) === true;
     } catch {
       fail('DEPENDENCY_UNAVAILABLE');
     }
@@ -347,9 +355,17 @@ export function createMainJoinRegistry(options: {
       participant.currentAccess = { ...participant.currentAccess, canReadContent: false };
       try {
         const current = await authority(participant.auth, destination, held, true);
+        const previous = participant.access;
+        const continuous =
+          previous.membershipId === current.access.membershipId &&
+          previous.membershipIncarnation === current.access.membershipIncarnation &&
+          current.access.membershipRevision >= previous.membershipRevision &&
+          current.access.channelRevision >= previous.channelRevision &&
+          currentFence(current, held, previous);
         participant.auth = current.auth;
         participant.currentAccess = current.access;
-        if (!sameStamp(participant.access, current.access)) blockPeer(room, participant);
+        if (!continuous) blockPeer(room, participant);
+        else participant.access = { ...current.access };
       } catch (error) {
         if (
           error instanceof MainJoinError &&
@@ -593,7 +609,6 @@ export function createMainJoinRegistry(options: {
           intent.authority.auth.authSessionId !== auth.authSessionId
         )
           fail('FORBIDDEN');
-        if (!sameStamp(intent.authority.access, current.access)) fail('CONFLICT');
         usable(intent.room);
         const owned = ownerships.get(auth.userId);
         if (intent.consumed) {
@@ -606,6 +621,7 @@ export function createMainJoinRegistry(options: {
             fail('CONFLICT');
           return delivery(owned, input.requestId, held);
         }
+        if (!sameStamp(intent.authority.access, current.access)) fail('CONFLICT');
         // Full takeover waits for old-generation cleanup/end (SCRUM-83/86).
         // A confirmation never bypasses that barrier in this minimal registry.
         if (owned) fail('CALL_ALREADY_ACTIVE');
@@ -669,12 +685,9 @@ export function createMainJoinRegistry(options: {
           const previous = room.state;
           room.state = { ...previous, participants, policyRevision: previous.policyRevision + 1 };
           ownerships.set(auth.userId, owner);
-          try {
-            return await delivery(owner, input.requestId, held);
-          } catch (error) {
-            participant.blocked = true;
-            throw error;
-          }
+          // Snapshot/provider failures do not revoke the committed ownership. Retry the
+          // same consumed intent revalidates all authority without writing DB again.
+          return await delivery(owner, input.requestId, held);
         } finally {
           joiningUsers.delete(auth.userId);
         }
