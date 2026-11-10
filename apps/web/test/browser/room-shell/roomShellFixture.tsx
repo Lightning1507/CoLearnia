@@ -61,6 +61,7 @@ export function Workspace({
       callPanel={
         <RoomShell
           channelName={isOtherRoom ? otherRoomName : roomName}
+          useWorkspaceWidth
           sessionId={isOtherRoom ? otherSessionId : liveContextFixture.sessionId}
           stageMedia={media}
           error={error}
@@ -284,14 +285,21 @@ async function verifyLifecycle(container: HTMLElement) {
     const stageLayout = activeStage?.parentElement;
     const backButton = activePanel?.querySelector('button');
     const toolbar = activeRoom?.querySelector('footer');
+    const workspace = activeRoom?.closest<HTMLElement>('.workspace-shell');
     check(
-      activeRoom && activeStage && activePanel && stageLayout && backButton && toolbar,
+      activeRoom && activeStage && activePanel && stageLayout && backButton && toolbar && workspace,
       'Thiếu sân khấu, panel hoặc toolbar',
     );
     const beforeResize = { attached, detached, subscriptions };
-    for (const width of [1279, 1280, 1279]) {
-      activeRoom.style.inlineSize = `${width}px`;
-      check(activeRoom.getBoundingClientRect().width === width, `Shell phải rộng ${width}px`);
+    workspace.style.inlineSize = '1279px';
+    backButton.focus();
+    check(
+      document.activeElement === backButton,
+      'Nút Về sân khấu phải nhận focus trước khi resize',
+    );
+    for (const width of [1280, 1279]) {
+      workspace.style.inlineSize = `${width}px`;
+      check(workspace.getBoundingClientRect().width === width, `Workspace phải rộng ${width}px`);
       const wide = width === 1280;
       check(
         isDisplayed(activeStage) === wide && isDisplayed(activePanel),
@@ -307,6 +315,15 @@ async function verifyLifecycle(container: HTMLElement) {
         `Sai số cột ở ${width}px`,
       );
       check(verifyActive() === roomAVideo, 'Đổi layout phải giữ video đang gắn');
+      if (wide) {
+        await new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        );
+        check(
+          document.activeElement === activePanel.querySelector('h3'),
+          'Focus phải chuyển từ nút bị ẩn sang tiêu đề panel',
+        );
+      }
     }
     await click('Về sân khấu');
     check(
@@ -329,6 +346,7 @@ async function verifyLifecycle(container: HTMLElement) {
       'Đổi layout không được thay binding hoặc subscription',
     );
     verifyCallPreserved();
+    workspace.style.removeProperty('inline-size');
 
     const beforeOtherRoom = attached;
     await click(otherRoomName);
@@ -421,18 +439,103 @@ async function verifyLifecycle(container: HTMLElement) {
   return `PASS · subscriptions=${subscriptions}, remaining=${listeners}, video attach/detach=${attached}/${detached}, peak=${peak}, call A init/dispose=${initializations}/${disposals}`;
 }
 
+function waitForElement<T extends Element>(document: Document, selector: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const observer = new MutationObserver(find);
+    const timeout = window.setTimeout(() => {
+      observer.disconnect();
+      reject(new Error(`Không tìm thấy ${selector} trong /workspace`));
+    }, 5000);
+
+    function find() {
+      const element = document.querySelector<T>(selector);
+      if (element) {
+        observer.disconnect();
+        window.clearTimeout(timeout);
+        resolve(element);
+      }
+    }
+
+    observer.observe(document, { childList: true, subtree: true });
+    find();
+  });
+}
+
+async function verifyWorkspaceRoute() {
+  const frame = document.createElement('iframe');
+  frame.title = 'Kiểm tra Workspace ở 1440 × 900';
+  frame.style.cssText = 'display:block;width:1440px;height:900px;border:0';
+  const loaded = new Promise<void>((resolve, reject) => {
+    const timeout = window.setTimeout(() => reject(new Error('/workspace chưa tải xong')), 10000);
+    frame.addEventListener(
+      'load',
+      () => {
+        window.clearTimeout(timeout);
+        resolve();
+      },
+      { once: true },
+    );
+  });
+  frame.src = '/workspace';
+  document.body.append(frame);
+  try {
+    await loaded;
+    const page = frame.contentDocument;
+    const view = frame.contentWindow;
+    check(
+      page && view && view.innerWidth === 1440 && view.innerHeight === 900,
+      'Viewport /workspace phải là 1440 × 900',
+    );
+    await waitForElement(page, '.workspace-channel');
+    const channel = [...page.querySelectorAll<HTMLButtonElement>('.workspace-channel')].find(
+      (button) => button.textContent?.includes(roomName),
+    );
+    check(channel, 'Không tìm thấy kênh LIVE trên /workspace');
+    channel.click();
+    const stage = await waitForElement(page, 'section[aria-label="Sân khấu cuộc gọi"]');
+    const room = stage.closest('article');
+    const panel = room?.querySelector('section[aria-labelledby]');
+    const back = panel?.querySelector('button');
+    check(room && panel && back, '/workspace phải mở panel Người tham gia');
+    const workspaceWidth = room.closest('.workspace-shell')?.getBoundingClientRect().width;
+    const roomWidth = room.getBoundingClientRect().width;
+    check(
+      workspaceWidth === 1440 && roomWidth < 1280,
+      'Ca kiểm cần Workspace rộng và RoomShell hẹp hơn ngưỡng',
+    );
+    check(
+      view.getComputedStyle(stage).display !== 'none' &&
+        view.getComputedStyle(back).display === 'none',
+      'Workspace 1440px phải hiện sân khấu và ẩn nút quay lại',
+    );
+    const stageRect = stage.getBoundingClientRect();
+    const panelRect = panel.getBoundingClientRect();
+    check(
+      panelRect.width === 320 &&
+        panelRect.left >= stageRect.right &&
+        panelRect.top === stageRect.top,
+      'Panel phải rộng 320px và nằm cạnh sân khấu',
+    );
+    return `workspace=${workspaceWidth}×${view.innerHeight}, room=${roomWidth}`;
+  } finally {
+    frame.remove();
+  }
+}
+
 if (import.meta.env.DEV) {
   const container = document.getElementById('root');
   const result = document.getElementById('result');
   check(container && result, 'Thiếu khung hiển thị kiểm thử');
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
-  void verifyLifecycle(container).then(
-    (message) => {
-      result.textContent = message;
-    },
-    (error: unknown) => {
-      result.textContent = `FAIL · ${String(error)}`;
-      console.error(error);
-    },
-  );
+  void verifyLifecycle(container)
+    .then(async (message) => `${message} · ${await verifyWorkspaceRoute()}`)
+    .then(
+      (message) => {
+        result.textContent = message;
+      },
+      (error: unknown) => {
+        result.textContent = `FAIL · ${String(error)}`;
+        console.error(error);
+      },
+    );
 }

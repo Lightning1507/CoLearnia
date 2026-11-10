@@ -12,6 +12,7 @@ const statusLabels: Record<CallSnapshot['status'], string> = {
 type RoomShellProps = {
   channelName: string;
   sessionId: CallIdentity['sessionId'] | undefined;
+  useWorkspaceWidth?: boolean;
   stage?: ReactNode;
   stageMedia?: { call: CallHandle; stream: MediaStream } | undefined;
   sidePanel?: { label: string; content: ReactNode; onBackToStage: () => void } | undefined;
@@ -48,6 +49,7 @@ function StageVideo({ stream }: { stream: MediaStream }) {
 export function RoomShell({
   channelName,
   sessionId,
+  useWorkspaceWidth = false,
   stage,
   stageMedia,
   sidePanel,
@@ -72,7 +74,10 @@ export function RoomShell({
       : undefined;
 
   return (
-    <article className="@container w-full min-w-0" aria-labelledby={titleId}>
+    <article
+      className={useWorkspaceWidth ? 'w-full min-w-0' : '@container/room-layout w-full min-w-0'}
+      aria-labelledby={titleId}
+    >
       <div className="grid min-w-0 gap-4 rounded-2xl border border-stone-200 bg-white p-[clamp(1rem,3vw,1.5rem)] [overflow-wrap:anywhere]">
         <header>
           <h2 id={titleId}>{channelName}</h2>
@@ -83,12 +88,12 @@ export function RoomShell({
         <div
           className={
             sidePanel
-              ? 'grid grid-cols-1 gap-4 @min-[1280px]:grid-cols-[minmax(0,1fr)_320px]'
+              ? 'grid grid-cols-1 gap-4 @min-[1280px]/room-layout:grid-cols-[minmax(0,1fr)_320px]'
               : 'grid grid-cols-1'
           }
         >
           <section
-            className={`min-h-48 min-w-0 place-items-center rounded-xl bg-stone-50 text-center ${sidePanel ? 'hidden @min-[1280px]:grid' : 'grid'}`}
+            className={`min-h-48 min-w-0 place-items-center rounded-xl bg-stone-50 text-center ${sidePanel ? 'hidden @min-[1280px]/room-layout:grid' : 'grid'}`}
             aria-label="Sân khấu cuộc gọi"
           >
             {error ? (
@@ -105,8 +110,15 @@ export function RoomShell({
               </h3>
               <button
                 type="button"
-                className="justify-self-start rounded-lg border border-stone-200 px-3 py-2 @min-[1280px]:hidden"
+                className="justify-self-start rounded-lg border border-stone-200 px-3 py-2 @min-[1280px]/room-layout:hidden"
                 onClick={sidePanel.onBackToStage}
+                onBlur={({ currentTarget, relatedTarget }) => {
+                  const blurredToDocument =
+                    !relatedTarget || relatedTarget === currentTarget.ownerDocument.body;
+                  if (blurredToDocument && currentTarget.getClientRects().length === 0) {
+                    panelHeading.current?.focus({ preventScroll: true });
+                  }
+                }}
               >
                 Về sân khấu
               </button>

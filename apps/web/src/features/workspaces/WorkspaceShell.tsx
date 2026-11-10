@@ -59,7 +59,7 @@ export function WorkspaceShell({
   const liveChannels = readable.map(({ channel }) => channel).filter(({ type }) => type === 'LIVE');
 
   return (
-    <div className="workspace-shell" data-testid="workspace-shell">
+    <div className="workspace-shell @container/room-layout" data-testid="workspace-shell">
       <aside className="workspace-sidebar" aria-label={`Kênh của ${workspace.name}`}>
         <div className="workspace-brand">
           <span className="workspace-brand-mark" aria-hidden="true">

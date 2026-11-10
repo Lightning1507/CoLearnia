@@ -55,6 +55,7 @@ function FixtureRoom({ channel }: { channel: ChannelSummary }) {
   return (
     <RoomShell
       channelName={channel.name}
+      useWorkspaceWidth
       sessionId={
         channel.id === liveContextFixture.access.channelId
           ? liveContextFixture.sessionId

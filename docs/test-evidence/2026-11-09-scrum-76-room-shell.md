@@ -62,3 +62,12 @@ Mở `/workspace` trong Chromium, chọn kênh TEXT rồi chọn kênh LIVE và 
 | Vùng nội dung chat bên phải | `#F7F8F2` quanh card | `#FFFFFF` (`.conversation-shell`)  | WorkspaceShell `.workspace-main` và `.workspace-panel-host` trong suốt, để lộ nền `.workspace-shell` |
 
 Card Chat bên trong và card RoomShell đều đo được `#FFFFFF`. Chuyển màu ba vùng trong bảng là việc tiếp nối của Workspace shell/sidebar [M1-T7.2 / SCRUM-45](https://faker1652005.atlassian.net/browse/SCRUM-45). Ca nghiệm thu ở Workspace cần đo nền sidebar, trạng thái kênh đang chọn và toàn vùng nội dung bên phải khi mở TEXT, gồm phần bao quanh card Chat.
+
+## Kiểm ngưỡng Workspace và focus sau review bổ sung
+
+- Fixture Chromium đổi bề rộng **WorkspaceShell** 1279 → 1280 → 1279 px trong lúc call A `active`. Khi nút **Về sân khấu** đang có focus rồi bị ẩn ở 1280 px, focus chuyển sang tiêu đề panel đang mở. Qua resize, quay về sân khấu và mở lại panel, call handle, hai track `live`, video binding và số subscription đều giữ nguyên.
+- Fixture tự mở route `/workspace` thật ở viewport 1440 × 900. WorkspaceShell đo được 1440 px, RoomShell đo được 1056 px sau sidebar và padding. Panel 320 px và sân khấu nằm cạnh nhau, nút quay lại ẩn. Kiểm trực tiếp route này trong Chromium cũng cho cùng kết quả và xác nhận focus khi tăng viewport từ 1279 lên 1280 px.
+
+```text
+PASS · subscriptions=20, remaining=0, video attach/detach=16/16, peak=1, call A init/dispose=1/1 · workspace=1440×900, room=1056
+```
