@@ -115,17 +115,20 @@ Không nhúng membershipIds vào User. Tombstone membership phải còn đủ đ
 
 Quyết định 04/11/2026: một document cho link hiện hành của mỗi Workspace; tối đa một link được bật. Link không hết hạn, không giới hạn lượt và owner/admin sao chép lại được. Tạo lại thay token; tắt hoặc tạo lại không loại thành viên hiện có.
 
-| Field           | Kiểu / điều kiện        | Ý nghĩa                                        |
-| --------------- | ----------------------- | ---------------------------------------------- |
-| workspaceId     | Id → workspaces, unique | Một cấu hình link mời/Workspace                |
-| createdByUserId | Id → users              | Người tạo link đầu tiên                        |
-| tokenHash       | String, private, unique | Xác minh token hiện hành; cập nhật khi tạo lại |
-| enabled         | Boolean                 | Tắt thì không nhận lượt gia nhập mới           |
-| revision        | Int ≥0                  | Tăng khi tạo lại/tắt; từ chối thao tác stale   |
+| Field           | Kiểu / điều kiện        | Ý nghĩa                                                                      |
+| --------------- | ----------------------- | ---------------------------------------------------------------------------- |
+| workspaceId     | Id → workspaces, unique | Một cấu hình link mời/Workspace                                              |
+| createdByUserId | Id → users              | Người tạo link đầu tiên                                                      |
+| tokenHash       | String, private, unique | SHA-256 của 32 byte token ngẫu nhiên; cập nhật khi tạo lại                   |
+| encryptedToken  | Object, private         | Token mã hóa AES-256-GCM để owner/admin lấy lại đúng link; cấu trúc bên dưới |
+| enabled         | Boolean                 | Tắt thì không nhận lượt gia nhập mới                                         |
+| revision        | Int ≥0                  | Tăng khi tạo lại/tắt; từ chối thao tác stale                                 |
 
 Tắt/tạo lại link nhận `expectedRevision` từ lần đọc invitation; cập nhật có điều kiện theo revision dưới Workspace gate và tăng revision khi có thay đổi. Yêu cầu cũ bị conflict, không được tắt hoặc thay link mới hơn. Retry cùng requestId không áp dụng lại thao tác; tắt link đã tắt tại đúng revision hiện hành không làm tăng revision.
 
-**Thiết kế chưa hoàn tất:** tokenHash không thể khôi phục link. M1 cần review cách lưu/tái tạo token an toàn để sao chép lại, field bổ sung và quản lý khóa trước schema/contract. Không giữ expiresAt/maxUses/uses từ thiết kế cũ; không TTL lời mời. createdAt/updatedAt theo quy ước chung. Không thêm lịch sử link hoặc gắn một email nhận trong MVP.
+**Schema SCRUM-30:** lưu `tokenHash` để tra link và `encryptedToken` để lấy lại token. Object mã hóa gồm `algorithm: AES-256-GCM`, `keyId`, `iv` (12 byte), `ciphertext` (32 byte) và `authTag` (16 byte); ba chuỗi byte dùng base64url không padding. Khóa 256 bit do server quản lý ngoài MongoDB; không lưu khóa hoặc token nguyên văn trong document. `keyId` chọn khóa khi đọc, không phải khóa bí mật. Chi tiết định dạng và quy tắc tích hợp ở [model Workspace](workspace-models.md).
+
+Không giữ expiresAt/maxUses/uses từ thiết kế cũ; không TTL lời mời. createdAt/updatedAt theo quy ước chung. Không thêm lịch sử link hoặc gắn một email nhận trong MVP. Model không tự mã hóa/giải mã hoặc cấp quyền lấy link; service lời mời triển khai ở T8, gồm quản lý khóa, kiểm quyền và thay hash/ciphertext nguyên tử. Chưa áp schema/migration vào DB hiện có.
 
 ### 3.6. channels
 
