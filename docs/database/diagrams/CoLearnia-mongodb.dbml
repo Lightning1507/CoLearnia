@@ -60,11 +60,12 @@ Table memberships {
 }
 
 Table invitations {
-  Note: 'Một link hiện hành/Workspace, không hạn/lượt. tokenHash chưa đủ để sao chép lại link; field lưu/tái tạo token còn chờ review M1 theo collection-design 3.5.'
+  Note: 'Một link hiện hành/Workspace, không hạn/lượt. tokenHash để tra cứu; encryptedToken để lấy lại link. Khóa ngoài DB; API/mã hóa triển khai T8.'
   _id ObjectId [pk, not null]
   workspaceId ObjectId [not null, unique]
   createdByUserId ObjectId [not null]
   tokenHash String [not null, unique, note: 'Xác minh token hiện hành; thay khi tạo lại']
+  encryptedToken EmbeddedDocument [not null, note: 'AES-256-GCM: algorithm/keyId/iv/ciphertext/authTag; base64url không padding, không lưu khóa']
   enabled Boolean [not null]
   revision Number [not null, note: 'Int >=0; tăng khi tắt/tạo lại']
   createdAt BSONDate [not null]
