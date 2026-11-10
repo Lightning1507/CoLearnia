@@ -22,6 +22,7 @@ import type { SessionPolicyInput } from '../policy/session-policy.js';
 import { randomUUID } from 'node:crypto';
 import { sessionCleanupAdmission } from '../session-manager/cleanup-admission.js';
 import type { CleanupAdmission } from '../session-manager/cleanup-admission.js';
+import { createPendingMediaOperations, matchesMediaCleanup } from './pending-media-operations.js';
 
 type Command =
   | { kind: 'create'; input: MediaTransportCreateInput }
@@ -116,7 +117,7 @@ export function createTransportSignaling({
   const slots = new Map<string, Slot>();
   const transports = new Map<string, Slot>();
   const intents = new Map<string, Intent>();
-  const pending = new Set<Slot>();
+  const pendingMedia = createPendingMediaOperations();
 
   function forget(slot: Slot) {
     slot.closed = true;
@@ -223,7 +224,6 @@ export function createTransportSignaling({
       if (!release) return reject('SERVER_BUSY');
       if (command.kind === 'create') slots.set(slot.key, slot);
       else slot.connecting = true;
-      pending.add(slot);
 
       const intent: Intent = { signature, slot, expiresAt: now + replayMs };
       let finish!: (result: Result) => void;
@@ -238,15 +238,22 @@ export function createTransportSignaling({
       let started = false;
       let expired = false;
       const releaseAdmission = () => {
-        pending.delete(slot);
+        untrack();
         release();
       };
-      const timeout = setTimeout(() => {
+      const cancel = (errorCode: string) => {
+        if (expired) return;
         expired = true;
+        clearTimeout(timeout);
         close(slot);
         if (!started) releaseAdmission();
-        finish(reject('DEPENDENCY_UNAVAILABLE'));
-      }, sessionControlBudget.cleanupAttemptTimeoutMs);
+        finish(reject(errorCode));
+      };
+      const untrack = pendingMedia.track([context], () => cancel('CONFLICT'));
+      const timeout = setTimeout(
+        () => cancel('DEPENDENCY_UNAVAILABLE'),
+        sessionControlBudget.cleanupAttemptTimeoutMs,
+      );
       return {
         ready,
         start: () => {
@@ -321,6 +328,8 @@ export function createTransportSignaling({
   }
 
   return {
+    pendingMedia,
+    admission,
     withMediaTransport<T>(
       socketId: string,
       input: MutationContext,
@@ -419,30 +428,9 @@ export function createTransportSignaling({
       });
     },
     cleanup(request: SessionCleanupRequest): SessionCleanupResult {
-      let cleanupPending = false;
-      for (const slot of new Set([...slots.values(), ...pending])) {
-        const context = slot.context;
-        const { target } = request;
-        if (context.sessionId !== request.sessionId || context.epoch !== request.epoch) continue;
-        if (
-          target.type !== 'SCOPE' &&
-          (context.participantId !== target.participantId ||
-            !('callGeneration' in request) ||
-            context.callGeneration !== request.callGeneration)
-        )
-          continue;
-        if (
-          target.type !== 'PARTICIPANT' &&
-          (context.scope.type !== target.scope.type ||
-            (context.scope.type === 'GROUP' &&
-              target.scope.type === 'GROUP' &&
-              context.scope.groupId !== target.scope.groupId))
-        )
-          continue;
-        if (target.type === 'PARTICIPANT_SCOPE' && context.audienceEpoch !== target.audienceEpoch)
-          continue;
-        cleanupPending ||= pending.has(slot);
-        close(slot);
+      const cleanupPending = pendingMedia.invalidate(request);
+      for (const slot of slots.values()) {
+        if (matchesMediaCleanup(slot.context, request)) close(slot);
       }
       const { reason, ...identity } = request;
       void reason;
