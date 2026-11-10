@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { argon2id, hash } from 'argon2';
+import { argon2id, hash, verify } from 'argon2';
 
 const commonPasswords = new Set([
   '123456789012345',
@@ -20,15 +20,31 @@ export function isCommonPassword(password: string) {
   return commonPasswords.has(password.toLowerCase());
 }
 
+const hashOptions = {
+  type: argon2id,
+  memoryCost: 32768,
+  timeCost: 2,
+  parallelism: 1,
+  hashLength: 32,
+} as const;
+
 export function hashPassword(password: string) {
   return hash(password, {
-    type: argon2id,
-    memoryCost: 32768,
-    timeCost: 2,
-    parallelism: 1,
+    ...hashOptions,
     salt: randomBytes(16),
-    hashLength: 32,
   });
+}
+
+// Synthetic PHC record with the same work factors. Its result never authenticates a user.
+const dummyHash =
+  `$argon2id$v=19$m=${hashOptions.memoryCost},t=${hashOptions.timeCost},p=${hashOptions.parallelism}$` +
+  Buffer.alloc(16).toString('base64').replace(/=+$/, '') +
+  '$' +
+  Buffer.alloc(hashOptions.hashLength).toString('base64').replace(/=+$/, '');
+
+export async function verifyPassword(password: string, passwordHash?: string): Promise<boolean> {
+  const matches = await verify(passwordHash ?? dummyHash, password);
+  return passwordHash !== undefined && matches;
 }
 
 export class PasswordWorkBusyError extends Error {}

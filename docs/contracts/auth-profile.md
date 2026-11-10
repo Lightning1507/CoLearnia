@@ -64,6 +64,10 @@ Route HTTP đọc dữ liệu riêng dùng `requireAuth`. Mutation yêu cầu đ
 
 Đăng ký từ chối mật khẩu thuộc danh sách cục bộ gồm các giá trị dễ đoán đã biết và chuỗi Unicode lỗi mã hóa bằng `400 VALIDATION_ERROR` tại field `password`. Giới hạn thử là 10 yêu cầu đã qua kiểm CSRF/phút/IP trong mỗi tiến trình. Khi vượt giới hạn, API trả `429 RATE_LIMITED` cùng `Retry-After`. Hàng chờ băm dùng chung trong tiến trình có một slot chạy, hai chỗ chờ và hạn chờ 250 ms. Đầy hoặc hết hạn chờ trả `503 DEPENDENCY_UNAVAILABLE`. Đây là cấu hình thử, cần đo thêm cùng tải MongoDB và media trên staging.
 
+SCRUM-20 giới hạn riêng đăng nhập ở 10 yêu cầu đã qua CSRF/Origin mỗi phút theo IP và 5 yêu cầu hợp lệ về cú pháp mỗi phút theo cặp email đã chuẩn hóa + IP. Vượt một trong hai ngưỡng trả `429 RATE_LIMITED` cùng `Retry-After` trước khi đọc DB hoặc xác minh mật khẩu. Bộ đếm dùng cửa sổ cố định trong bộ nhớ tiến trình và reset khi restart. Cấu hình IP dùng cùng `AUTH_TRUST_PROXY` với đăng ký.
+
+Đăng nhập thay phiên được gửi qua cookie trong cùng transaction cấp phiên mới. SCRUM-20 kiểm thu phiên ở DB và qua HTTP. Việc đóng socket/media đang dùng phiên bị thu cần tích hợp adapter ở luồng thu quyền M2/M4.
+
 ### Retry và mất kết nối
 
 - Hai tab có thể nhận token CSRF khác nhau khi cùng làm mới cookie. Với `403 CSRF_INVALID` từ guard, SCRUM-25 gọi lại `GET /auth/me` cho mutation cần đăng nhập hoặc `GET /auth/csrf` cho register/login. Gửi lại tối đa một lần với token mới, giữ nguyên payload và `requestId` nếu có. Với mutation cần đăng nhập, chỉ gửi lại khi `/auth/me` xác nhận cùng `user.id`. Nếu phiên mất hoặc tài khoản đã đổi, cập nhật trạng thái UI và dừng. Timeout hoặc lỗi mạng tiếp tục theo quy tắc riêng của từng mutation.
@@ -79,14 +83,16 @@ Route HTTP đọc dữ liệu riêng dùng `requireAuth`. Mutation yêu cầu đ
 | ------------------------------------------------ | -------------------------------------------- | -------------------------------------------------------------------- |
 | Sai input/thiếu field/field lạ                   | 400 `VALIDATION_ERROR`                       | FieldErrors chỉ có tên field và thông báo an toàn; không echo secret |
 | Email đăng ký trùng                              | 409 `EMAIL_EXISTS`                           | Không User/phiên dở; không dùng mã này khi login                     |
-| Email không tồn tại hoặc password sai            | 401 `INVALID_CREDENTIALS`                    | Cùng thông báo “Email hoặc mật khẩu không đúng.”                     |
+| Sai thông tin hoặc User DISABLED khi login       | 401 `INVALID_CREDENTIALS`                    | Cùng thông báo “Email hoặc mật khẩu không đúng.”                     |
 | Chưa có/giả/hết hạn/thu phiên hoặc User DISABLED | 401 `AUTH_REQUIRED`                          | Không trả hồ sơ, không nhận quyền socket cũ                          |
 | CSRF/Origin sai                                  | 403 `CSRF_INVALID`                           | Không cấp phiên hoặc ghi dữ liệu                                     |
 | `currentPassword` sai                            | 400 `VALIDATION_ERROR`                       | Không đổi hash hoặc thu phiên                                        |
-| Hash/version đổi sau khi xác minh                | 409 `CONFLICT`                               | Không ghi đè từ kiểm chứng cũ                                        |
+| Đổi mật khẩu gặp xung đột hash/version           | 409 `CONFLICT`                               | Không ghi đè từ kiểm chứng cũ                                        |
 | Body quá lớn / vượt số lần thử                   | 413 `PAYLOAD_TOO_LARGE` / 429 `RATE_LIMITED` | Theo cấu hình server; Retry-After khi có                             |
 | DB/cleanup không sẵn sàng                        | 503 `DEPENDENCY_UNAVAILABLE`                 | Nếu chưa rõ kết quả thì báo chưa xác nhận, không báo rollback giả    |
 | Lỗi không dự kiến                                | 500 `INTERNAL_ERROR`                         | Thông báo chung, requestId; không stack/Mongo error                  |
+
+Nếu login đã xác minh mật khẩu nhưng hash đổi trước khi kiểm lại dưới khóa User, trả `401 INVALID_CREDENTIALS` với cùng thông báo và không cấp phiên.
 
 Ví dụ register hợp lệ (tên/email được trim, password giữ nguyên):
 

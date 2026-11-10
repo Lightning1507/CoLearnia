@@ -14,7 +14,9 @@ import { createApp } from '../src/app.js';
 import { createAuthRouter } from '../src/auth/auth-routes.js';
 import { createCsrf, csrfCookie } from '../src/auth/csrf.js';
 import { createHttpAuth, requireVerifiedSession } from '../src/auth/http-auth.js';
+import { createLogin, InvalidCredentialsError } from '../src/auth/login.js';
 import { authIndexRequirements, authModels } from '../src/auth/models.js';
+import { hashPassword } from '../src/auth/password-hash.js';
 import { createSessionReader } from '../src/auth/read-session.js';
 import { createRegistration } from '../src/auth/registration.js';
 import {
@@ -25,6 +27,7 @@ import {
 import { loadConfig } from '../src/config/env.js';
 import { createDatabase } from '../src/lib/database.js';
 import { preflightIndexes } from '../src/lib/database-preflight.js';
+import { createOperationCoordinator } from '../src/lib/operation-coordinator.js';
 
 const port = Number(process.env.COLEARNIA_DB_TEST_PORT ?? '27017');
 if (!Number.isInteger(port) || port < 1024 || port > 65535) {
@@ -45,9 +48,10 @@ function client(
   register = createRegistration(database, () => true, 604800),
   readSession = createSessionReader(database, () => true),
   onMutation = vi.fn(),
+  login = createLogin(database, () => true, 604800, createOperationCoordinator()),
 ) {
   const httpAuth = createHttpAuth(origin, secret, readSession);
-  const router = createAuthRouter(httpAuth, register);
+  const router = createAuthRouter(httpAuth, register, login);
   router.post('/test-mutation', httpAuth.requireAuth, httpAuth.requireCsrf, (_req, res) => {
     onMutation();
     res.json(requireVerifiedSession(res)?.context);
@@ -110,18 +114,22 @@ beforeAll(async () => {
   expect((await preflightIndexes(database.connection, authIndexRequirements)).ready).toBe(true);
 });
 
-describe('SCRUM-21 HTTP session and CSRF with MongoDB', () => {
-  async function signUp(http: ReturnType<typeof client>) {
-    const response = await register(http, await bootstrap(http))
-      .send(input())
-      .expect(201);
-    return {
-      sessionCookie: cookie(response, authCookie).split(';', 1)[0]!,
-      csrfCookieValue: cookie(response, csrfCookie).split(';', 1)[0]!,
-      data: authenticatedResponseSchema.parse(response.body).data,
-    };
-  }
+function sessionFrom(response: Response) {
+  return {
+    sessionCookie: cookie(response, authCookie).split(';', 1)[0]!,
+    csrfCookieValue: cookie(response, csrfCookie).split(';', 1)[0]!,
+    data: authenticatedResponseSchema.parse(response.body).data,
+  };
+}
 
+async function signUp(http: ReturnType<typeof client>, body = input()) {
+  const response = await register(http, await bootstrap(http))
+    .send(body)
+    .expect(201);
+  return sessionFrom(response);
+}
+
+describe('SCRUM-21 HTTP session and CSRF with MongoDB', () => {
   it('reads the registered session and current profile without renewing either valid cookie', async () => {
     const http = client();
     const signedIn = await signUp(http);
@@ -564,5 +572,247 @@ describe('SCRUM-18 registration with MongoDB', () => {
       .expect(429);
     expect(apiErrorSchema.parse(response.body).error.code).toBe('RATE_LIMITED');
     expect(Number(response.headers['retry-after'])).toBeGreaterThan(0);
+  });
+});
+
+describe('SCRUM-20 password login with MongoDB', () => {
+  function deferred<T>() {
+    let resolve!: (value: T) => void;
+    const promise = new Promise<T>((done) => {
+      resolve = done;
+    });
+    return { promise, resolve };
+  }
+
+  function loginRequest(
+    http: ReturnType<typeof client>,
+    csrf: Awaited<ReturnType<typeof bootstrap>>,
+  ) {
+    return http
+      .post(prefix + '/login')
+      .set('Origin', origin)
+      .set('Cookie', csrf.cookie)
+      .set('X-CSRF-Token', csrf.csrfToken);
+  }
+
+  function loginWithSession(
+    http: ReturnType<typeof client>,
+    signedIn: ReturnType<typeof sessionFrom>,
+  ) {
+    return loginRequest(http, {
+      cookie: `${signedIn.sessionCookie}; ${signedIn.csrfCookieValue}`,
+      csrfToken: signedIn.data.csrfToken,
+    });
+  }
+
+  it('replaces the exact presented session on login and preserves other sessions', async () => {
+    const http = client();
+    const { displayName, ...credentials } = input();
+    const first = await signUp(http, { ...credentials, displayName });
+    const standalone = sessionFrom(
+      await loginRequest(http, await bootstrap(http))
+        .send(credentials)
+        .expect(200),
+    );
+    const response = await loginWithSession(http, first)
+      .send({ ...credentials, email: ` ${credentials.email.toUpperCase()} ` })
+      .expect(200);
+    const next = sessionFrom(response);
+
+    expect(response.headers['cache-control']).toBe('no-store');
+    expect(cookie(response, authCookie)).toMatch(
+      /Path=\/; Expires=.*; HttpOnly; Secure; SameSite=Lax/,
+    );
+    expect(next.data.user).toEqual(first.data.user);
+    expect(next.sessionCookie).not.toBe(first.sessionCookie);
+    expect(next.data.csrfToken).not.toBe(first.data.csrfToken);
+    expect(response.text).not.toContain(next.sessionCookie.split('=')[1]);
+    await http
+      .get(prefix + '/me')
+      .set('Cookie', first.sessionCookie)
+      .expect(401);
+    await http
+      .get(prefix + '/me')
+      .set('Cookie', standalone.sessionCookie)
+      .expect(200);
+    const me = await http
+      .get(prefix + '/me')
+      .set('Cookie', `${next.sessionCookie}; ${next.csrfCookieValue}`)
+      .expect(200);
+    expect(authenticatedResponseSchema.parse(me.body).data).toEqual(next.data);
+  });
+
+  it('checks CSRF and Origin and returns the same credential error for unknown, wrong or disabled users', async () => {
+    const http = client();
+    const { displayName, ...credentials } = input();
+    const signedIn = await signUp(http, { ...credentials, displayName });
+    const csrf = await bootstrap(http);
+    await loginRequest(http, csrf)
+      .set('Origin', 'https://wrong.example.test')
+      .send(credentials)
+      .expect(403);
+    await loginRequest(http, csrf).set('X-CSRF-Token', 'invalid').send(credentials).expect(403);
+    await loginRequest(http, csrf)
+      .send({ ...credentials, userId: signedIn.data.user.id })
+      .expect(400);
+    await loginRequest(http, csrf)
+      .send({ ...credentials, password: '\ud800' })
+      .expect(400);
+    const wrong = await loginWithSession(http, signedIn)
+      .send({ ...credentials, password: credentials.password.trim() })
+      .expect(401);
+    expect(wrong.headers['set-cookie']).toBeUndefined();
+    await http
+      .get(prefix + '/me')
+      .set('Cookie', signedIn.sessionCookie)
+      .expect(200);
+    const unknown = await loginRequest(http, csrf)
+      .send({ ...credentials, email: input().email })
+      .expect(401);
+    await User.updateOne({ _id: signedIn.data.user.id }, { status: 'DISABLED' });
+    const disabled = await loginRequest(http, csrf).send(credentials).expect(401);
+    expect(apiErrorSchema.parse(wrong.body).error.code).toBe('INVALID_CREDENTIALS');
+    expect(apiErrorSchema.parse(unknown.body).error).toEqual(
+      apiErrorSchema.parse(wrong.body).error,
+    );
+    expect(apiErrorSchema.parse(disabled.body).error).toEqual(
+      apiErrorSchema.parse(wrong.body).error,
+    );
+    expect(await AuthSession.countDocuments({ userId: signedIn.data.user.id })).toBe(1);
+  });
+
+  it('enforces both quotas before calling login and ignores spoofed forwarding headers', async () => {
+    const login = vi.fn(async () => {
+      throw new InvalidCredentialsError();
+    });
+    const http = client(undefined, undefined, undefined, login);
+    const csrf = await bootstrap(http);
+    const credentials = { email: input().email, password: input().password };
+    for (let i = 0; i < 5; i++) await loginRequest(http, csrf).send(credentials).expect(401);
+    const pair = await loginRequest(http, csrf)
+      .send({ ...credentials, email: ` ${credentials.email.toUpperCase()} ` })
+      .expect(429);
+    for (let i = 0; i < 4; i++) {
+      await loginRequest(http, csrf)
+        .send({ ...credentials, email: input().email })
+        .expect(401);
+    }
+    const ip = await loginRequest(http, csrf)
+      .set('X-Forwarded-For', '203.0.113.10')
+      .send({ ...credentials, email: input().email })
+      .expect(429);
+    for (const response of [pair, ip]) {
+      expect(apiErrorSchema.parse(response.body).error.code).toBe('RATE_LIMITED');
+      expect(Number(response.headers['retry-after'])).toBeGreaterThan(0);
+      expect(response.headers['set-cookie']).toBeUndefined();
+    }
+    expect(login).toHaveBeenCalledTimes(9);
+  });
+
+  it('rejects a verified old password when a password change commits under the User gate first', async () => {
+    const coordinator = createOperationCoordinator();
+    const verified = deferred<void>();
+    const signIn = createLogin(database, () => true, 604800, {
+      run(...args) {
+        verified.resolve();
+        return coordinator.run(...args);
+      },
+    });
+    const http = client(undefined, undefined, undefined, signIn);
+    const { displayName, ...credentials } = input();
+    const signedIn = await signUp(http, { ...credentials, displayName });
+    const userId = signedIn.data.user.id;
+    const newPassword = 'Mật khẩu thay thế cho ca đồng thời';
+    const newHash = await hashPassword(newPassword);
+    const csrf = await bootstrap(http);
+    const held = deferred<void>();
+    const write = deferred<boolean>();
+    const change = coordinator.run({ userId }, async () => {
+      held.resolve();
+      if (!(await write.promise)) return;
+      await database.transaction(async (session) => {
+        await User.updateOne({ _id: userId }, { passwordHash: newHash }, { session });
+        await AuthSession.updateMany(
+          { userId, revokedAt: null },
+          { revokedAt: new Date() },
+          { session },
+        );
+      });
+    });
+    await held.promise;
+    const response = loginRequest(http, csrf)
+      .send(credentials)
+      .then((result) => result);
+    try {
+      await Promise.race([
+        verified.promise,
+        response.then((result) => {
+          throw new Error(`Login bypassed the User gate (${result.status})`);
+        }),
+      ]);
+      write.resolve(true);
+    } finally {
+      write.resolve(false);
+      await change;
+    }
+    const rejected = await response;
+    expect(rejected.status).toBe(401);
+    expect(apiErrorSchema.parse(rejected.body).error.code).toBe('INVALID_CREDENTIALS');
+    expect(rejected.headers['set-cookie']).toBeUndefined();
+    expect(await AuthSession.countDocuments({ userId })).toBe(1);
+    await http
+      .get(prefix + '/me')
+      .set('Cookie', signedIn.sessionCookie)
+      .expect(401);
+    await loginRequest(http, csrf)
+      .send({ ...credentials, password: newPassword })
+      .expect(200);
+  });
+
+  it('rolls back the old session revocation when the new session insert fails', async () => {
+    const http = client();
+    const { displayName, ...credentials } = input();
+    const signedIn = await signUp(http, { ...credentials, displayName });
+    const db = database.connection.db!;
+    await db.command({
+      collMod: 'authSessions',
+      validator: { expiresAt: { $lt: new Date(0) } },
+      validationLevel: 'moderate',
+    });
+    try {
+      const response = await loginWithSession(http, signedIn).send(credentials).expect(500);
+      expect(response.headers['set-cookie']).toBeUndefined();
+      await http
+        .get(prefix + '/me')
+        .set('Cookie', signedIn.sessionCookie)
+        .expect(200);
+      expect(await AuthSession.countDocuments({ userId: signedIn.data.user.id })).toBe(1);
+    } finally {
+      await db.command({ collMod: 'authSessions', validator: {}, validationLevel: 'strict' });
+    }
+  });
+
+  it('withholds cookies when MongoDB did not confirm the login commit', async () => {
+    const login = createLogin(
+      {
+        ...database,
+        async transaction(work) {
+          await database.transaction(work);
+          const error = new mongoose.mongo.MongoServerError({ message: 'test commit outcome' });
+          error.addErrorLabel('UnknownTransactionCommitResult');
+          throw error;
+        },
+      },
+      () => true,
+      604800,
+      createOperationCoordinator(),
+    );
+    const http = client(undefined, undefined, undefined, login);
+    const { displayName, ...credentials } = input();
+    const signedIn = await signUp(http, { ...credentials, displayName });
+    const response = await loginWithSession(http, signedIn).send(credentials).expect(503);
+    expect(response.headers['set-cookie']).toBeUndefined();
+    expect(apiErrorSchema.parse(response.body).error.code).toBe('DEPENDENCY_UNAVAILABLE');
+    expect(await AuthSession.countDocuments({ userId: signedIn.data.user.id })).toBe(2);
   });
 });
