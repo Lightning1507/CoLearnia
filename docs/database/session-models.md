@@ -39,7 +39,7 @@ CAS stale, sai đời phiên hoặc trạng thái không phù hợp trả `Sessi
 
 `leave` chặn host hiện hành ngay trong filter CAS, kể cả khi phiên đang ENDING. Yêu cầu bị từ chối không đổi revision hay participation. Caller phải dùng luồng chuyển host hoặc end; `completeEnding` đóng metadata participation cùng lúc xóa hostUserId.
 
-`completeEnding(input, assertCurrent?)` nhận guard nội bộ tùy chọn cho caller có deadline/deny context. Guard được gọi trước transaction, đầu mỗi callback, sau CAS và sau ghi participant trước commit. Bootstrap SCRUM-80 truyền guard kiểm offline/abort/deadline; lỗi guard abort transaction, không gửi lệnh tiếp theo sau await đã quá hạn. Caller không có guard giữ hành vi repository trước đây; guard không thể rút lại commit đã gửi.
+`beginEnding(input, assertCurrent?)` và `completeEnding(input, assertCurrent?)` nhận guard nội bộ tùy chọn cho caller có deadline/deny context. Cả hai kiểm guard trước transaction, đầu mỗi callback kể cả retry, và sau CAS; `completeEnding` kiểm thêm sau ghi participant trước commit. Bootstrap SCRUM-80 truyền guard kiểm offline/abort/deadline. CAS trả lỗi transient sau deadline thì lượt retry bị chặn trước khi ghi lại; CAS trả thành công sau deadline thì guard ném lỗi trước commit và transaction rollback. Caller không có guard giữ hành vi repository trước đây; guard không thể rút lại commit đã gửi.
 
 ## Kết quả commit chưa rõ
 

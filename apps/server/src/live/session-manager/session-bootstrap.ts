@@ -191,11 +191,14 @@ export function createSessionBootstrap(
         const identity = { sessionId: session._id, epoch: session.epoch };
         let revision = session.revision;
         if (session.status === 'ACTIVE') {
-          const ending = await repository.beginEnding({
-            ...identity,
-            expectedRevision: revision,
-            at: timestamp(),
-          });
+          const ending = await repository.beginEnding(
+            {
+              ...identity,
+              expectedRevision: revision,
+              at: timestamp(),
+            },
+            offline,
+          );
           revision = ending.revision;
         }
         offline();

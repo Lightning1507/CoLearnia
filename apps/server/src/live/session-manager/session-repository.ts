@@ -175,11 +175,15 @@ export function createSessionRepository(database: Database) {
       });
     },
 
-    async beginEnding(raw: z.infer<typeof mutation>) {
+    async beginEnding(raw: z.infer<typeof mutation>, assertCurrent: () => void = () => {}) {
       const input = mutation.parse(raw);
-      return database.transaction(async (session) => ({
-        revision: await cas(input, ['ACTIVE'], session, { status: 'ENDING' }),
-      }));
+      assertCurrent();
+      return database.transaction(async (session) => {
+        assertCurrent();
+        const revision = await cas(input, ['ACTIVE'], session, { status: 'ENDING' });
+        assertCurrent();
+        return { revision };
+      });
     },
 
     async completeEnding(raw: z.infer<typeof mutation>, assertCurrent: () => void = () => {}) {

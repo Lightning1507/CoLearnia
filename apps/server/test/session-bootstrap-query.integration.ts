@@ -111,6 +111,98 @@ afterAll(async () => {
 });
 
 describe('SCRUM-80 cold session bootstrap', () => {
+  it.each(['transient error', 'success'] as const)(
+    'does not retry a write or commit when beginEnding CAS returns %s after the deadline',
+    async (outcome) => {
+      const input = await seed('ACTIVE');
+      let release!: () => void;
+      let entered!: () => void;
+      let settled!: () => void;
+      const waiting = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const firstWriteDone = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+      const transactionSettled = new Promise<void>((resolve) => {
+        settled = resolve;
+      });
+      const originalUpdate = models.LiveSession.updateOne.bind(models.LiveSession);
+      const update = vi.spyOn(models.LiveSession, 'updateOne').mockImplementationOnce((...args) => {
+        const delayed = originalUpdate(...args)
+          .exec()
+          .then(async (result) => {
+            entered();
+            await waiting;
+            if (outcome === 'transient error') {
+              const error = new mongo.MongoServerError({ message: 'Injected late CAS response' });
+              error.addErrorLabel('TransientTransactionError');
+              throw error;
+            }
+            return result;
+          });
+        return delayed as unknown as ReturnType<typeof models.LiveSession.updateOne>;
+      });
+      const commits = vi.fn();
+      const transaction = database.transaction.bind(database);
+      const transactionSpy = vi
+        .spyOn(database, 'transaction')
+        .mockImplementationOnce(async (work) => {
+          let restoreCommit: (() => void) | undefined;
+          try {
+            return await transaction(async (session) => {
+              if (!restoreCommit) {
+                const originalCommit = session.commitTransaction.bind(session);
+                const commitSpy = vi
+                  .spyOn(session, 'commitTransaction')
+                  .mockImplementation(async () => {
+                    commits();
+                    return originalCommit();
+                  });
+                restoreCommit = () => commitSpy.mockRestore();
+              }
+              return work(session);
+            });
+          } finally {
+            restoreCommit?.();
+            settled();
+          }
+        });
+      const boot = bootstrap({ totalTimeoutMs: 1000 });
+      const rejected = expect(boot.run()).rejects.toThrow();
+      try {
+        await firstWriteDone;
+        await rejected;
+        release();
+        await transactionSettled;
+        expect(update).toHaveBeenCalledTimes(1);
+        expect(commits).not.toHaveBeenCalled();
+        expect(await models.LiveSession.findById(input.sessionId).lean()).toMatchObject({
+          status: 'ACTIVE',
+          revision: 0,
+          hostUserId: input.hostUserId,
+        });
+        expect(
+          (await models.SessionParticipant.findById(input.participantId).lean())?.leftAt,
+        ).toBeNull();
+        expect(boot.stats().state).toBe('FAILED');
+        const app = createApp(loadConfig({ NODE_ENV: 'test' }), () => ({
+          name: 'CoLearnia',
+          database: 'connected',
+          media: 'disconnected',
+          ready: boot.isReady(),
+        }));
+        expect((await request(app).get('/health/ready')).status).toBe(503);
+      } finally {
+        release();
+        await transactionSettled;
+        update.mockRestore();
+        transactionSpy.mockRestore();
+        await bootstrap().run();
+      }
+    },
+  );
+
   it('does not send participant updates when completeEnding CAS returns after the deadline', async () => {
     const input = await seed('ENDING');
     let release!: () => void;
