@@ -1,5 +1,7 @@
 # Contract xác thực, context và cleanup phiên — SCRUM-23
 
+Persistence phiên/participant, CAS và cách đối chiếu commit theo [SCRUM-79](../database/session-models.md).
+
 M4 cung cấp context phiên và điều phối thu quyền. M3 là reviewer chính. M1 review phần danh tính, quyền kênh và thứ tự khóa. M2 và M5 review phạm vi cleanup của chat, tệp và board. Tên và giới hạn dưới đây là đề xuất để các bên review trước khi dùng trong handler. [Proposal M4, Appendix B](../proposals/m4-session-groups.md#b-đề-xuất-contract-và-profile-kỹ-thuật-khởi-đầu)
 
 Schema và interface nằm trong [session-context.ts](../../packages/contracts/src/session-context.ts). Các ca mẫu chạy được nằm trong [session-context.test.ts](../../packages/contracts/src/session-context.test.ts). Đây là giao tiếp nội bộ giữa các module backend. Handler lấy danh tính từ kết nối hoặc phiên đã xác thực và chỉ trả DTO công khai đã lọc cho client.

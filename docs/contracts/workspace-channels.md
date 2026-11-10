@@ -1,5 +1,7 @@
 # Contract Workspace, kênh và phối hợp M2/M4 — SCRUM-13
 
+Model kênh/PRIVATE grant, index, validator và cách tích hợp theo [SCRUM-26](../database/channel-models.md).
+
 **Trạng thái:** schema và chữ ký hàm để review; chưa có API/service thực thi. M4 review chính; M2 xác nhận phần conversation và thu chat/tệp trước khi tích hợp. Chưa ghi nhận xác nhận của hai miền trong task này.
 
 Nguồn: [proposal M1](../proposals/m1-workspace-auth.md), [quyền Workspace/kênh](../product/workspace-channels.md), [PRIVATE](../product/messaging.md), [quy ước API](api-conventions.md), [mã lỗi](error-codes.md). Schema ở `packages/contracts/src/workspace.ts`; chữ ký hàm server ở `apps/server/src/workspaces/ports.ts`.
