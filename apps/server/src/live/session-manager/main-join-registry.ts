@@ -101,6 +101,8 @@ export function createMainJoinRegistry(options: {
     target: Target,
     held: CoordinationContext,
   ): Promise<Authority>;
+  // Synchronous M1 deny/version fence, including peers. Must not acquire another User gate.
+  isAuthorityCurrent(authority: Readonly<Authority>, held: CoordinationContext): boolean;
   createRouter(): Promise<MediaTypes.Router>;
   now?: () => number;
   limits?: Partial<typeof defaults>;
@@ -187,8 +189,13 @@ export function createMainJoinRegistry(options: {
     auth: AuthenticatedContext,
     destination: Target,
     held: CoordinationContext,
+    peer = false,
   ) {
-    held.assertHeld({ userId: auth.userId, workspaceId: destination.workspaceId });
+    const required = {
+      workspaceId: destination.workspaceId,
+      ...(peer ? {} : { userId: auth.userId }),
+    };
+    held.assertHeld(required);
     assertRunning();
     if (clock() >= (deadlines.get(held) ?? Number.POSITIVE_INFINITY))
       fail('DEPENDENCY_UNAVAILABLE');
@@ -200,7 +207,7 @@ export function createMainJoinRegistry(options: {
       if (error instanceof MainJoinError) throw error;
       fail('DEPENDENCY_UNAVAILABLE');
     }
-    held.assertHeld({ userId: auth.userId, workspaceId: destination.workspaceId });
+    held.assertHeld(required);
     assertRunning();
     if (clock() >= (deadlines.get(held) ?? Number.POSITIVE_INFINITY))
       fail('DEPENDENCY_UNAVAILABLE');
@@ -231,7 +238,17 @@ export function createMainJoinRegistry(options: {
       Buffer.byteLength(result.displayName) > 512
     )
       fail('DEPENDENCY_UNAVAILABLE');
-    return { auth: currentAuth, access, displayName: result.displayName };
+    const resultAuthority = { auth: currentAuth, access, displayName: result.displayName };
+    if (!currentFence(resultAuthority, held)) fail('FORBIDDEN');
+    return resultAuthority;
+  }
+  function currentFence(current: Authority, held: CoordinationContext) {
+    held.assertHeld({ workspaceId: current.access.workspaceId });
+    try {
+      return options.isAuthorityCurrent(current, held) === true;
+    } catch {
+      fail('DEPENDENCY_UNAVAILABLE');
+    }
   }
   function usable(room: Room) {
     if (room.uncertain || room.router.closed) fail('DEPENDENCY_UNAVAILABLE');
@@ -311,6 +328,57 @@ export function createMainJoinRegistry(options: {
       clearTimeout(timer);
     }
   }
+  function blockPeer(room: Room, participant: PolicyParticipant) {
+    if (participant.blocked) return;
+    participant.blocked = true;
+    if (room.state.policyRevision >= Number.MAX_SAFE_INTEGER) {
+      room.uncertain = true;
+      fail('SERVER_BUSY');
+    }
+    room.state.policyRevision++;
+  }
+  async function refreshPeers(room: Room, held: CoordinationContext) {
+    const destination = { workspaceId: room.state.workspaceId, channelId: room.state.channelId };
+    for (const owner of ownerships.values()) {
+      if (owner.room !== room) continue;
+      const participant = owner.participant;
+      participant.connected = owner.binding.isConnected();
+      if (participant.blocked || !participant.connected) continue;
+      participant.currentAccess = { ...participant.currentAccess, canReadContent: false };
+      try {
+        const current = await authority(participant.auth, destination, held, true);
+        participant.auth = current.auth;
+        participant.currentAccess = current.access;
+        if (!sameStamp(participant.access, current.access)) blockPeer(room, participant);
+      } catch (error) {
+        if (
+          error instanceof MainJoinError &&
+          ['AUTH_REQUIRED', 'FORBIDDEN', 'NOT_FOUND', 'CONFLICT'].includes(error.code)
+        ) {
+          blockPeer(room, participant);
+        } else throw error;
+      }
+    }
+  }
+  function fencePeers(room: Room, held: CoordinationContext) {
+    for (const owner of ownerships.values()) {
+      if (owner.room !== room || owner.participant.blocked) continue;
+      const participant = owner.participant;
+      if (
+        !currentFence(
+          {
+            auth: participant.auth,
+            access: participant.currentAccess,
+            displayName: participant.displayName,
+          },
+          held,
+        )
+      ) {
+        participant.currentAccess = { ...participant.currentAccess, canReadContent: false };
+        blockPeer(room, participant);
+      }
+    }
+  }
   function policyInput(owner: Ownership, current: Authority): SessionPolicyInput {
     owner.participant.currentAccess = { ...current.access };
     for (const bound of ownerships.values())
@@ -327,8 +395,15 @@ export function createMainJoinRegistry(options: {
       nowMs: clock(),
     };
   }
-  function delivery(owner: Ownership, current: Authority, requestId: string) {
+  async function delivery(owner: Ownership, requestId: string, held: CoordinationContext) {
+    await refreshPeers(owner.room, held);
+    const current = await authority(
+      owner.participant.auth,
+      { workspaceId: owner.room.state.workspaceId, channelId: owner.room.state.channelId },
+      held,
+    );
     usable(owner.room);
+    fencePeers(owner.room, held);
     const input = policyInput(owner, current);
     const cursor = createSessionProjectionCursor(input);
     if (!cursor.ok) fail(cursor.errorCode);
@@ -373,6 +448,10 @@ export function createMainJoinRegistry(options: {
         const key = JSON.stringify([auth.userId, auth.authSessionId, input.requestId]);
         const existing = intents.get(key);
         if (existing) {
+          if (existing.expiresAt <= clock()) {
+            forget(existing);
+            fail('VALIDATION_ERROR');
+          }
           if (
             !sameStamp(existing.authority.access, current.access) ||
             existing.room.state.channelId !== destination.channelId
@@ -525,7 +604,7 @@ export function createMainJoinRegistry(options: {
             input.takeover
           )
             fail('CONFLICT');
-          return delivery(owned, current, input.requestId);
+          return delivery(owned, input.requestId, held);
         }
         // Full takeover waits for old-generation cleanup/end (SCRUM-83/86).
         // A confirmation never bypasses that barrier in this minimal registry.
@@ -591,7 +670,7 @@ export function createMainJoinRegistry(options: {
           room.state = { ...previous, participants, policyRevision: previous.policyRevision + 1 };
           ownerships.set(auth.userId, owner);
           try {
-            return delivery(owner, confirmed, input.requestId);
+            return await delivery(owner, input.requestId, held);
           } catch (error) {
             participant.blocked = true;
             throw error;
@@ -625,12 +704,14 @@ export function createMainJoinRegistry(options: {
           )
             return use({ ok: false, errorCode: 'CONFLICT' });
           usable(owner.room);
+          await refreshPeers(owner.room, held);
           const current = await authority(
             owner.participant.auth,
             { workspaceId: owner.room.state.workspaceId, channelId: owner.room.state.channelId },
             held,
           );
           usable(owner.room);
+          fencePeers(owner.room, held);
           const policy = policyInput(owner, current);
           const resolved = resolveSessionPolicyContext(policy);
           const result = use(

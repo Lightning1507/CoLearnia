@@ -10,6 +10,7 @@ import { sessionJoinAckSchema } from '@colearnia/contracts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createOperationCoordinator } from '../../lib/operation-coordinator.js';
 import { createMainJoinRegistry, MainJoinError } from './main-join-registry.js';
+import { canReceiveMedia } from '../policy/session-policy.js';
 
 const registries: ReturnType<typeof createMainJoinRegistry>[] = [];
 afterEach(() => {
@@ -51,6 +52,9 @@ function setup(limits: Parameters<typeof createMainJoinRegistry>[0]['limits'] = 
       displayName: 'Sinh viên',
     }),
   );
+  const isAuthorityCurrent = vi.fn<
+    Parameters<typeof createMainJoinRegistry>[0]['isAuthorityCurrent']
+  >(() => true);
   const routers: MediaTypes.Router[] = [];
   const createRouter = vi.fn(async () => {
     const router = {
@@ -84,6 +88,7 @@ function setup(limits: Parameters<typeof createMainJoinRegistry>[0]['limits'] = 
     coordinator: createOperationCoordinator(),
     repository,
     resolveAuthority,
+    isAuthorityCurrent,
     createRouter,
     now: () => time,
     limits,
@@ -104,6 +109,7 @@ function setup(limits: Parameters<typeof createMainJoinRegistry>[0]['limits'] = 
     binding,
     issue,
     resolveAuthority,
+    isAuthorityCurrent,
     repository,
     routers,
     createRouter,
@@ -120,6 +126,111 @@ function projection(
 }
 
 describe('SCRUM-82 MAIN join registry', () => {
+  it('denies a connected revoked publisher and removes it from another member snapshot', async () => {
+    const f = setup();
+    const b = f.principal();
+    const bSocket = f.binding(b);
+    const aTicket = await f.issue();
+    const bTicket = await f.issue(b);
+    const a = await f.registry.join(f.binding(), {
+      ticket: aTicket.ticket,
+      requestId: randomUUID(),
+    });
+    const bCommand = { ticket: bTicket.ticket, requestId: randomUUID() };
+    const joinedB = await f.registry.join(bSocket, bCommand);
+    f.resolveAuthority.mockImplementation(async (auth, destination) => ({
+      auth,
+      access: {
+        ...f.access(auth, destination),
+        canReadContent: auth.userId !== f.auth.userId,
+      },
+      displayName: 'Sinh viên',
+    }));
+    const canReceive = await f.registry.withContext(
+      bSocket.socketId,
+      {
+        sessionId: bTicket.sessionId,
+        epoch: bTicket.epoch,
+        callGeneration: joinedB.ack.data.result.callGeneration,
+      },
+      (resolved, _router, policy) => {
+        expect(resolved.ok).toBe(true);
+        expect(canReceiveMedia(policy!, joinedB.ack.data.result.participantId, 'CAMERA')).toBe(
+          true,
+        );
+        return canReceiveMedia(policy!, a.ack.data.result.participantId, 'CAMERA');
+      },
+    );
+    expect(canReceive).toBe(false);
+    const retry = await f.registry.join(bSocket, bCommand);
+    expect(projection(retry).policyRevision).toBeGreaterThan(projection(joinedB).policyRevision);
+    expect(projection(retry).participants.map((p) => p.participantId)).not.toContain(
+      a.ack.data.result.participantId,
+    );
+    expect(f.registry.stats().ownerships).toBe(2);
+    expect(f.repository.join).toHaveBeenCalledTimes(2);
+  });
+
+  it('rechecks synchronous peer deny fences after later participant awaits', async () => {
+    const f = setup();
+    const b = f.principal();
+    const bSocket = f.binding(b);
+    const aTicket = await f.issue();
+    const bTicket = await f.issue(b);
+    const a = await f.registry.join(f.binding(), {
+      ticket: aTicket.ticket,
+      requestId: randomUUID(),
+    });
+    const joinedB = await f.registry.join(bSocket, {
+      ticket: bTicket.ticket,
+      requestId: randomUUID(),
+    });
+    const revoked = new Set<string>();
+    f.isAuthorityCurrent.mockImplementation((current, held) => {
+      held.assertHeld({ workspaceId: f.target.workspaceId });
+      return !revoked.has(current.auth.userId);
+    });
+    f.resolveAuthority.mockImplementation(async (auth, destination) => {
+      if (auth.userId === b.userId) revoked.add(f.auth.userId);
+      return { auth, access: f.access(auth, destination), displayName: 'Sinh viên' };
+    });
+    expect(
+      await f.registry.withContext(
+        bSocket.socketId,
+        {
+          sessionId: bTicket.sessionId,
+          epoch: bTicket.epoch,
+          callGeneration: joinedB.ack.data.result.callGeneration,
+        },
+        (resolved, _router, policy) => {
+          expect(resolved.ok).toBe(true);
+          return canReceiveMedia(policy!, a.ack.data.result.participantId, 'CAMERA');
+        },
+      ),
+    ).toBe(false);
+  });
+
+  it('rejects ticket replay that expires during authority lookup instead of returning an expired token', async () => {
+    const f = setup();
+    const requestId = randomUUID();
+    const ticket = await f.issue(f.auth, f.target, requestId);
+    f.advance(59_999);
+    f.resolveAuthority.mockImplementation(async (auth, destination) => {
+      f.advance(2);
+      return { auth, access: f.access(auth, destination), displayName: 'Sinh viên' };
+    });
+    await expect(f.issue(f.auth, f.target, requestId)).rejects.toMatchObject({
+      code: 'VALIDATION_ERROR',
+    });
+    expect(f.registry.stats().intents).toBe(0);
+    await expect(
+      f.registry.join(f.binding(), { ticket: ticket.ticket, requestId: randomUUID() }),
+    ).rejects.toMatchObject({ code: 'VALIDATION_ERROR' });
+    const fresh = await f.issue();
+    await expect(
+      f.registry.join(f.binding(), { ticket: fresh.ticket, requestId: randomUUID() }),
+    ).resolves.toHaveProperty('ack.data.result');
+  });
   it('rejects admission over four operations for one user before creating side effects', async () => {
     const f = setup();
     const pending = deferred<MediaTypes.Router>();

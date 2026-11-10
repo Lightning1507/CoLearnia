@@ -39,6 +39,12 @@ Ví dụ stale: ticket hết hạn 60 giây bị VALIDATION_ERROR. Ticket đã c
 
 `withContext(socketId,{sessionId,epoch,callGeneration},use)` khớp authority transport/paused-ready M3. Nó kiểm binding, auth/access hiện hành, Router/epoch/generation và policy. Callback use phải đồng bộ, không mutate state/lấy gate ngược. Router chỉ trả nội bộ khi context hợp lệ. Binding dùng `isConnected()` hiện hành; socket đã rớt không được cấp quyền dù lifecycle reconnect chưa nối vào registry.
 
+Trước policy media hoặc snapshot, registry đọc lại authority của mọi participant có liên quan trong room, không chỉ người gọi. Peer mất auth/quyền/stamp bị đặt deny và tăng policyRevision; quyền đã bị thu không tự phục hồi từ snapshot join cũ. Publisher bị deny không được dùng cho canReceiveMedia và không còn trong projection của người khác, kể cả socket publisher vẫn connected. Provider lỗi bất thường làm thao tác thất bại an toàn, không dùng quyền peer đã cache.
+
+Provider M1 cần hai hàm: `resolveAuthority(auth,target,held)` đọc auth/access hiện hành, và `isAuthorityCurrent(authority,held)` kiểm đồng bộ deny/version fence ngay trước grant/projection. Lần đọc peer chạy dưới Workspace gate của người gọi; provider chỉ kiểm Workspace gate cho phần đọc này, không lấy User gate của peer từ bên trong để tránh đảo thứ tự khóa. Sau tất cả await, registry kiểm lại fence của cả room và auth người gọi. Fence phải đọc trạng thái/barrier thật của M1, không dùng callback luôn trả true trong composition production; callback true chỉ có trong fixture không có revocation. Port này bắt buộc, không có fallback bỏ qua.
+
+Nhánh replay issuance kiểm lại expiresAt sau await kiểm quyền. Nếu ticket vừa hết hạn thì xóa intent/token và trả VALIDATION_ERROR, không trả response thành công chứa token cũ. Client đối chiếu trạng thái rồi dùng intent mới theo luồng hết hạn. Việc refresh authority peer nằm trong deadline/admission hiện có; chưa có bằng chứng capacity từ lượt đọc này.
+
 ## Lỗi và cleanup
 
 Create/join metadata thất bại làm phiên ở trạng thái chưa rõ, chặn ticket/grant mới. Create lỗi đóng Router vừa tạo. Không suy từ revision rằng intent đã commit; E11000 cũng không cho phép adopt phiên có trong DB. SCRUM-87 đối chiếu kết quả, SCRUM-80 bootstrap; không retry insert hoặc phục hồi runtime từ metadata mù.

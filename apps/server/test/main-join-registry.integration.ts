@@ -8,6 +8,7 @@ import { createDatabase } from '../src/lib/database.js';
 import { createOperationCoordinator } from '../src/lib/operation-coordinator.js';
 import { mediaCodecs } from '../src/live/media/runtime.js';
 import { createMainJoinRegistry } from '../src/live/session-manager/main-join-registry.js';
+import { canReceiveMedia } from '../src/live/policy/session-policy.js';
 import { createSessionRepository } from '../src/live/session-manager/session-repository.js';
 import {
   sessionModels,
@@ -72,13 +73,14 @@ function setup(customRepository = repository) {
     expiresAt: new Date(time + 3600_000).toISOString(),
   });
   const routers: MediaTypes.Router[] = [];
+  const revoked = new Set<string>();
   const registry = createMainJoinRegistry({
     coordinator,
     repository: customRepository,
     now: () => time,
     // M1 authority is a fixture; DB session writes and native Routers are real.
     resolveAuthority: async (identity, destination, held) => {
-      held.assertHeld({ userId: identity.userId, workspaceId: destination.workspaceId });
+      held.assertHeld({ workspaceId: destination.workspaceId });
       const access: ChannelAccessStamp = {
         ...destination,
         channelType: 'LIVE',
@@ -86,10 +88,14 @@ function setup(customRepository = repository) {
         membershipIncarnation: 1,
         membershipRevision: 0,
         channelRevision: 0,
-        canReadContent: true,
+        canReadContent: !revoked.has(identity.userId),
         canManageChannel: false,
       };
       return { auth: identity, access, displayName: 'Sinh viên' };
+    },
+    isAuthorityCurrent: (current, held) => {
+      held.assertHeld({ workspaceId: current.access.workspaceId });
+      return !revoked.has(current.auth.userId);
     },
     createRouter: async () => {
       const router = await worker.createRouter({ mediaCodecs });
@@ -105,6 +111,7 @@ function setup(customRepository = repository) {
   });
   return {
     registry,
+    revoked,
     target,
     auth,
     routers,
@@ -116,6 +123,46 @@ function setup(customRepository = repository) {
 }
 
 describe('MAIN registry with real MongoDB and mediasoup Router', () => {
+  it('filters a revoked publisher from another recipient policy and join replay snapshot', async () => {
+    const f = setup();
+    const a = f.auth();
+    const b = f.auth();
+    const aTicket = await f.registry.issue(a, f.target, { requestId: randomUUID() });
+    const bTicket = await f.registry.issue(b, f.target, { requestId: randomUUID() });
+    const aJoin = await f.registry.join(f.binding(a), {
+      ticket: aTicket.ticket,
+      requestId: randomUUID(),
+    });
+    const bSocket = f.binding(b);
+    const bCommand = { ticket: bTicket.ticket, requestId: randomUUID() };
+    const bJoin = await f.registry.join(bSocket, bCommand);
+    f.revoked.add(a.userId);
+    const receives = await f.registry.withContext(
+      bSocket.socketId,
+      {
+        sessionId: bTicket.sessionId,
+        epoch: bTicket.epoch,
+        callGeneration: bJoin.ack.data.result.callGeneration,
+      },
+      (resolved, _router, policy) => {
+        expect(resolved.ok).toBe(true);
+        return canReceiveMedia(policy!, aJoin.ack.data.result.participantId, 'CAMERA');
+      },
+    );
+    expect(receives).toBe(false);
+    const snapshot = await f.registry.join(bSocket, bCommand);
+    const projection = JSON.parse(snapshot.parts.map((part) => part.fragment).join(''));
+    expect(
+      projection.participants.map(
+        (participant: { participantId: string }) => participant.participantId,
+      ),
+    ).not.toContain(aJoin.ack.data.result.participantId);
+    expect(
+      await models.SessionParticipant.countDocuments({
+        sessionId: new Types.ObjectId(bTicket.sessionId),
+      }),
+    ).toBe(2);
+  });
   it('creates one durable session/host/Router under concurrent issuance and commits two MAIN participants', async () => {
     const f = setup();
     const a = f.auth();
