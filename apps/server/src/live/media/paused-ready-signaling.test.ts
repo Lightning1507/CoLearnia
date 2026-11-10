@@ -1,13 +1,23 @@
 import { randomUUID } from 'node:crypto';
 import { mediaProducerCreateAckSchema } from '@colearnia/contracts';
-import type { LiveContext } from '@colearnia/contracts';
+import type { LiveContext, SessionCleanupRequest } from '@colearnia/contracts';
 import type { types as MediaTypes } from 'mediasoup';
 import { describe, expect, it, vi } from 'vitest';
 import type { PolicyParticipant, SessionPolicyInput } from '../policy/session-policy.js';
+import { CleanupAdmission } from '../session-manager/cleanup-admission.js';
 import { createPausedReadySignaling } from './paused-ready-signaling.js';
+import { createTransportSignaling } from './transport-signaling.js';
 
 type SocketPort = Parameters<ReturnType<typeof createPausedReadySignaling>['attach']>[0];
 type Event = Parameters<SocketPort['on']>[0];
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
 
 function fixture() {
   const sessionId = '1'.repeat(24);
@@ -63,24 +73,25 @@ function fixture() {
     codecs: [{ mimeType: 'audio/opus', payloadType: 111, clockRate: 48000 }],
   };
   let closeProducer: (() => void) | undefined;
-  const produce = vi.fn(async () => {
+  function makeProducer() {
+    let onClose: (() => void) | undefined;
     const producer = {
       id: randomUUID(),
       closed: false,
-      close: () => {
+      close: vi.fn(() => {
         producer.closed = true;
         onClose?.();
-      },
+      }),
       observer: {
         once: (_event: string, close: () => void) => {
           onClose = close;
         },
       },
     };
-    let onClose: (() => void) | undefined;
     closeProducer = producer.close;
     return producer;
-  });
+  }
+  const produce = vi.fn(async () => makeProducer());
   let closeObserver: (() => void) | undefined;
   const native = {
     id: 'consumer',
@@ -103,36 +114,86 @@ function fixture() {
   };
   const consume = vi.fn(async (_options: MediaTypes.ConsumerOptions) => native);
   const canConsume = vi.fn(() => true);
-  const service = createPausedReadySignaling(async (socket, input, transport, direction, use) => {
-    const context = contexts.get(socket);
-    if (!context || transport !== direction || input.callGeneration !== context.callGeneration) {
-      return { errorCode: 'CONFLICT' };
-    }
-    const policy: SessionPolicyInput = {
-      request: { auth: context.auth, sessionId, epoch, callGeneration: 1 },
-      access,
-      nowMs: Date.now(),
-      session: {
-        sessionId,
-        epoch,
-        workspaceId: access.workspaceId,
-        channelId: access.channelId,
-        state: 'ACTIVE',
-        phase: 'GUIDANCE',
-        policyRevision: 0,
-        hostParticipantId: null,
-        helpingGroupId: null,
-        round: null,
-        groups: new Map(),
-        participants,
-      },
-    };
-    return use(context, { canConsume } as unknown as MediaTypes.Router, policy, {
-      id: transport,
-      produce: produce as unknown as MediaTypes.WebRtcTransport['produce'],
-      consume: consume as unknown as MediaTypes.WebRtcTransport['consume'],
-    });
+  const admission = new CleanupAdmission();
+  const transportService = createTransportSignaling({
+    admission,
+    async withContext() {
+      throw new Error('Fixture supplies its own media context');
+    },
+    async createTransport() {
+      throw new Error('Fixture supplies its own media transport');
+    },
   });
+  let nextGate: Promise<void> | undefined;
+  let afterSettle: (() => void) | undefined;
+  const service = createPausedReadySignaling({
+    ...transportService,
+    pendingMedia: {
+      ...transportService.pendingMedia,
+      track(...args) {
+        const untrack = transportService.pendingMedia.track(...args);
+        return () => {
+          untrack();
+          const callback = afterSettle;
+          afterSettle = undefined;
+          if (callback) queueMicrotask(callback);
+        };
+      },
+    },
+    async withMediaTransport(socket, input, transport, direction, use) {
+      const gate = nextGate;
+      nextGate = undefined;
+      if (gate) await gate;
+      const context = contexts.get(socket);
+      if (
+        !context ||
+        ![direction, `${direction}-new`].includes(transport) ||
+        input.callGeneration !== context.callGeneration
+      ) {
+        return { errorCode: 'CONFLICT' };
+      }
+      const policy: SessionPolicyInput = {
+        request: { auth: context.auth, sessionId, epoch, callGeneration: 1 },
+        access,
+        nowMs: Date.now(),
+        session: {
+          sessionId,
+          epoch,
+          workspaceId: access.workspaceId,
+          channelId: access.channelId,
+          state: 'ACTIVE',
+          phase: 'GUIDANCE',
+          policyRevision: 0,
+          hostParticipantId: null,
+          helpingGroupId: null,
+          round: null,
+          groups: new Map(),
+          participants,
+        },
+      };
+      return use(context, { canConsume } as unknown as MediaTypes.Router, policy, {
+        id: transport,
+        produce: produce as unknown as MediaTypes.WebRtcTransport['produce'],
+        consume: consume as unknown as MediaTypes.WebRtcTransport['consume'],
+      });
+    },
+  });
+  function cleanup(user: 'a' | 'b', callGeneration = 1, audienceEpoch?: number) {
+    const participantId = user.repeat(24);
+    const request: SessionCleanupRequest = {
+      operationId: randomUUID(),
+      transitionToken: randomUUID(),
+      sessionId,
+      epoch,
+      callGeneration,
+      target:
+        audienceEpoch === undefined
+          ? { type: 'PARTICIPANT', participantId }
+          : { type: 'PARTICIPANT_SCOPE', participantId, audienceEpoch, scope: { type: 'MAIN' } },
+      reason: 'ACCESS_REVOKED',
+    };
+    return transportService.cleanup(request).outcome;
+  }
   function attach(id: string) {
     const handlers = new Map<Event, Parameters<SocketPort['on']>[1]>();
     service.attach({ id, on: (event, listener) => handlers.set(event, listener) });
@@ -157,12 +218,8 @@ function fixture() {
   }
   const send = attach('a');
   const receive = attach('b');
-  const publish = (requestId?: string) =>
-    send(
-      'media.producer.create',
-      { transportId: 'SEND', sourceKind: 'MIC', rtpParameters },
-      requestId,
-    );
+  const publish = (requestId?: string, transportId = 'SEND') =>
+    send('media.producer.create', { transportId, sourceKind: 'MIC', rtpParameters }, requestId);
   async function consumerPayload() {
     const ack = mediaProducerCreateAckSchema.parse(await publish());
     if ('error' in ack) throw new Error(ack.error.code);
@@ -201,6 +258,22 @@ function fixture() {
     canConsume,
     publish,
     produce,
+    makeProducer,
+    cleanup,
+    admission,
+    advanceAudience() {
+      const context = contexts.get('a');
+      const participant = participants.get('a'.repeat(24));
+      if (!context || !participant) throw new Error('Missing fixture publisher');
+      contexts.set('a', { ...context, audienceEpoch: 1 });
+      participant.audienceEpoch = 1;
+    },
+    holdNextGate: (gate: Promise<void>) => {
+      nextGate = gate;
+    },
+    afterNextSettle(callback: () => void) {
+      afterSettle = callback;
+    },
     closeProducer: () => closeProducer?.(),
     consumerPayload,
     consume,
@@ -212,6 +285,122 @@ function fixture() {
 }
 
 describe('paused-ready media signaling', () => {
+  it('rejects a Producer ACK if its owner loses access after native settlement', async () => {
+    const f = fixture();
+    const producer = f.makeProducer();
+    f.produce.mockResolvedValueOnce(producer);
+    let revoked: ReturnType<typeof f.cleanup> | undefined;
+    f.afterNextSettle(() => {
+      f.blockPublisher();
+      revoked = f.cleanup('a');
+    });
+    expect(await f.publish()).toMatchObject({ error: { code: 'FORBIDDEN' } });
+    expect(revoked).toMatchObject({ pendingInvalidated: true, cleanupPending: false });
+    expect(f.admission.stats().active).toBe(0);
+    expect(producer.close).toHaveBeenCalledOnce();
+  });
+
+  it.each(['create', 'ready'] as const)(
+    'rejects a Consumer %s ACK if the source is revoked after native settlement',
+    async (stage) => {
+      const f = fixture();
+      const payload = stage === 'create' ? await f.consumerPayload() : await f.createPaused();
+      let revoked: ReturnType<typeof f.cleanup> | undefined;
+      f.afterNextSettle(() => {
+        f.blockPublisher();
+        revoked = f.cleanup('a');
+      });
+      expect(await f.receive(`media.consumer.${stage}`, payload)).toMatchObject({
+        error: { code: stage === 'create' ? 'NOT_FOUND' : 'FORBIDDEN' },
+      });
+      expect(revoked).toMatchObject({ pendingInvalidated: true, cleanupPending: false });
+      expect(f.admission.stats().active).toBe(0);
+      expect(f.native.close).toHaveBeenCalledOnce();
+    },
+  );
+
+  it('invalidates a pending Producer at revoke and closes its late result before releasing admission', async () => {
+    const f = fixture();
+    const late = deferred<ReturnType<typeof f.makeProducer>>();
+    const producer = f.makeProducer();
+    f.produce.mockReturnValueOnce(late.promise);
+    const ack = f.publish();
+    expect(f.produce).toHaveBeenCalledOnce();
+    expect(f.cleanup('a', 2).cleanupPending).toBe(false);
+    expect(f.cleanup('a', 1, 0)).toEqual({
+      permissionRevoked: true,
+      pendingInvalidated: true,
+      cleanupPending: true,
+    });
+    expect(await ack).toMatchObject({ error: { code: 'CONFLICT' } });
+    expect(f.admission.stats().active).toBe(1);
+    f.advanceAudience();
+    const current = f.makeProducer();
+    f.produce.mockResolvedValueOnce(current);
+    expect(await f.publish(undefined, 'SEND-new')).toMatchObject({
+      data: { result: { producerId: current.id } },
+    });
+    expect(f.cleanup('a', 1, 0).cleanupPending).toBe(true);
+    late.resolve(producer);
+    await vi.waitFor(() => expect(f.admission.stats().active).toBe(0));
+    expect(producer.close).toHaveBeenCalledOnce();
+    expect(f.cleanup('a', 1, 0).cleanupPending).toBe(false);
+    expect(current.close).not.toHaveBeenCalled();
+    f.closeProducer();
+  });
+
+  it('invalidates a pending Consumer when the publisher is revoked on a different transport', async () => {
+    const f = fixture();
+    const payload = await f.consumerPayload();
+    const late = deferred<typeof f.native>();
+    f.consume.mockReturnValueOnce(late.promise);
+    const ack = f.receive('media.consumer.create', payload);
+    expect(f.consume).toHaveBeenCalledWith(expect.objectContaining({ paused: true }));
+    expect(f.cleanup('a').cleanupPending).toBe(true);
+    expect(await ack).toMatchObject({ error: { code: 'CONFLICT' } });
+    expect(f.admission.stats().active).toBe(1);
+    late.resolve(f.native);
+    await vi.waitFor(() => expect(f.admission.stats().active).toBe(0));
+    expect(f.native.close).toHaveBeenCalledOnce();
+    expect(f.native.resume).not.toHaveBeenCalled();
+    expect(f.cleanup('a').cleanupPending).toBe(false);
+  });
+
+  it('closes the bound Consumer immediately when revoked during native resume', async () => {
+    const f = fixture();
+    const binding = await f.createPaused();
+    const late = deferred<void>();
+    f.native.resume.mockReturnValueOnce(late.promise);
+    const ack = f.receive('media.consumer.ready', binding);
+    expect(f.native.resume).toHaveBeenCalledOnce();
+    expect(f.cleanup('b').cleanupPending).toBe(true);
+    expect(f.native.close).toHaveBeenCalledOnce();
+    expect(await ack).toMatchObject({ error: { code: 'CONFLICT' } });
+    expect(f.admission.stats().active).toBe(1);
+    late.resolve();
+    await vi.waitFor(() => expect(f.admission.stats().active).toBe(0));
+    expect(f.native.close).toHaveBeenCalledOnce();
+    expect(f.cleanup('b').cleanupPending).toBe(false);
+  });
+
+  it('closes a Producer that already returned from native I/O while its recheck is still queued', async () => {
+    const f = fixture();
+    const late = deferred<ReturnType<typeof f.makeProducer>>();
+    const gate = deferred<void>();
+    const producer = f.makeProducer();
+    f.produce.mockReturnValueOnce(late.promise);
+    const ack = f.publish();
+    f.holdNextGate(gate.promise);
+    late.resolve(producer);
+    await Promise.resolve();
+    expect(f.cleanup('a').cleanupPending).toBe(true);
+    expect(producer.close).toHaveBeenCalledOnce();
+    expect(await ack).toMatchObject({ error: { code: 'CONFLICT' } });
+    gate.resolve();
+    await vi.waitFor(() => expect(f.admission.stats().active).toBe(0));
+    expect(producer.close).toHaveBeenCalledOnce();
+  });
+
   it('returns the same error for a hidden source and an unknown Producer ID', async () => {
     const { consumerPayload, receive, blockPublisher, canConsume, consume } = fixture();
     const payload = await consumerPayload();
