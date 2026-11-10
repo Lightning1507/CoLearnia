@@ -126,6 +126,60 @@ function projection(
 }
 
 describe('SCRUM-82 MAIN join registry', () => {
+  it('recovers the same socket with a new ticket after provider outage outlives replay expiry', async () => {
+    const f = setup();
+    const b = f.principal();
+    const aTicket = await f.issue();
+    await f.registry.join(f.binding(), { ticket: aTicket.ticket, requestId: randomUUID() });
+    const ticket = await f.issue(b);
+    const socket = f.binding(b);
+    const command = { ticket: ticket.ticket, requestId: randomUUID() };
+    const original = f.resolveAuthority.getMockImplementation()!;
+    f.resolveAuthority.mockImplementation(async (auth, destination) => {
+      if (auth.userId === f.auth.userId) throw new Error('Temporary');
+      return original(auth, destination);
+    });
+    await expect(f.registry.join(socket, command)).rejects.toMatchObject({
+      code: 'DEPENDENCY_UNAVAILABLE',
+    });
+    const participantId = f.repository.join.mock.calls[1]![0].participantId.toHexString();
+    expect(f.registry.stats().ownerships).toBe(2);
+    f.advance(60_000);
+    await f.registry.sweepExpired();
+    f.resolveAuthority.mockImplementation(original);
+    await expect(f.registry.join(socket, command)).rejects.toMatchObject({
+      code: 'VALIDATION_ERROR',
+    });
+    const fresh = await f.issue(b);
+    const recovery = { ticket: fresh.ticket, requestId: randomUUID() };
+    await expect(f.registry.join(f.binding(b), recovery)).rejects.toMatchObject({
+      code: 'CALL_ALREADY_ACTIVE',
+    });
+    const joined = await f.registry.join(socket, recovery);
+    expect(joined.ack.data.result.participantId).toBe(participantId);
+    expect(joined.ack.data.result.callGeneration).toBe(2);
+    expect(projection(joined).participants).toHaveLength(2);
+    expect(f.repository.join).toHaveBeenCalledTimes(2);
+    const again = await f.registry.join(socket, recovery);
+    expect(again.ack.data.result.callGeneration).toBe(joined.ack.data.result.callGeneration);
+  });
+
+  it('does not restore a revoked/regranted ownership through a fresh recovery ticket', async () => {
+    const f = setup();
+    const ticket = await f.issue();
+    const socket = f.binding();
+    await f.registry.join(socket, { ticket: ticket.ticket, requestId: randomUUID() });
+    f.advance(60_000);
+    await f.registry.sweepExpired();
+    const fresh = await f.issue();
+    f.isAuthorityCurrent.mockImplementation(
+      (_authority, _held, committed) => committed === undefined,
+    );
+    await expect(
+      f.registry.join(socket, { ticket: fresh.ticket, requestId: randomUUID() }),
+    ).rejects.toMatchObject({ code: 'CONFLICT' });
+    expect(f.repository.join).toHaveBeenCalledOnce();
+  });
   it.each(['membershipRevision', 'channelRevision'] as const)(
     'keeps uninterrupted access after %s increases, preserving ownership and retry',
     async (field) => {

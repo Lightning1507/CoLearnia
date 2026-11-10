@@ -624,7 +624,20 @@ export function createMainJoinRegistry(options: {
         if (!sameStamp(intent.authority.access, current.access)) fail('CONFLICT');
         // Full takeover waits for old-generation cleanup/end (SCRUM-83/86).
         // A confirmation never bypasses that barrier in this minimal registry.
-        if (owned) fail('CALL_ALREADY_ACTIVE');
+        if (owned) {
+          // A fresh ticket may recover the SAME socket/epoch after an earlier ack
+          // failed and its replay ticket expired. Never transfer a different call.
+          if (
+            input.takeover ||
+            owned.room !== intent.room ||
+            owned.binding.socketId !== binding.socketId ||
+            owned.participant.auth.authSessionId !== auth.authSessionId
+          )
+            fail('CALL_ALREADY_ACTIVE');
+          intent.consumed = owned;
+          owned.joinRequestId = input.requestId;
+          return delivery(owned, input.requestId, held);
+        }
         if (input.takeover) fail('CONFLICT');
         if (
           ownerships.size + joiningUsers.size >= limits.maxOwnerships ||

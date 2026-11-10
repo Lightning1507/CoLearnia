@@ -74,6 +74,8 @@ Router create timeout sau 2 giây nhưng slot pending giữ tới khi native I/O
 
 `stats()` chỉ trả số lượng room/ownership/intent/pending/queue, không ID/token. Sweep chỉ dùng Workspace gate, không lấy ngược User gate.
 
+Khi lỗi provider khiến ACK join chưa gửi được và ticket đã hết hạn sau sweep, đúng socket/authSession có thể xin ticket mới cho cùng room/epoch rồi gọi join. Registry kiểm auth/access/stamp/continuity hiện hành và dựng lại snapshot của ownership cũ, không ghi participant hoặc tăng generation lần nữa. Ticket mới được gắn với intent mới; retry cùng intent tiếp tục hội tụ. Socket khác, authSession khác, room khác hoặc takeover không đi đường này và vẫn CALL_ALREADY_ACTIVE. Ticket cũ hết hạn vẫn VALIDATION_ERROR; expiry không tự kết thúc người đã vào phòng hoặc phục hồi ownership đã bị revoke.
+
 ## Kiểm chứng
 
 Unit kiểm race, replay đúng socket, expiry/auth/stamp, revoke/disconnect qua await, queue/cap đồng thời, Router muộn/shutdown và deny khi DB chưa rõ. Adapter socket kiểm ack, identity giả, lỗi an toàn và chặn snapshot trước fanout khi mất quyền. Integration dùng replica set riêng + mediasoup native: một phiên/host khi join đồng thời, hai participant MAIN, DB unique ngăn registry khác adopt phiên, lost-ack mô phỏng sau commit thật và dọn orphan hết hạn.
