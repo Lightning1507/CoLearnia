@@ -1,5 +1,5 @@
 import { useId, useLayoutEffect, useRef } from 'react';
-import type { ReactNode } from 'react';
+import type { FocusEvent, ReactNode } from 'react';
 import type { CallHandle, CallIdentity, CallSnapshot } from '../runtime/callController';
 import { useCallSnapshot } from '../runtime/callControllerContext';
 
@@ -66,6 +66,13 @@ export function RoomShell({
     if (panelLabel) panelHeading.current?.focus({ preventScroll: true });
   }, [panelLabel]);
 
+  function restorePanelFocus({ currentTarget, relatedTarget }: FocusEvent<HTMLElement>) {
+    const blurredToDocument = !relatedTarget || relatedTarget === currentTarget.ownerDocument.body;
+    if (blurredToDocument && currentTarget.getClientRects().length === 0) {
+      panelHeading.current?.focus({ preventScroll: true });
+    }
+  }
+
   const roomCall = call.status !== 'idle' && call.identity.sessionId === sessionId ? call : null;
   // The handle and snapshot share the identity of the same call generation.
   const stream =
@@ -95,6 +102,7 @@ export function RoomShell({
           <section
             className={`min-h-48 min-w-0 place-items-center rounded-xl bg-stone-50 text-center ${sidePanel ? 'hidden @min-[1280px]/room-layout:grid' : 'grid'}`}
             aria-label="Sân khấu cuộc gọi"
+            onBlur={restorePanelFocus}
           >
             {error ? (
               <p role="alert">{error}</p>
@@ -112,13 +120,7 @@ export function RoomShell({
                 type="button"
                 className="justify-self-start rounded-lg border border-stone-200 px-3 py-2 @min-[1280px]/room-layout:hidden"
                 onClick={sidePanel.onBackToStage}
-                onBlur={({ currentTarget, relatedTarget }) => {
-                  const blurredToDocument =
-                    !relatedTarget || relatedTarget === currentTarget.ownerDocument.body;
-                  if (blurredToDocument && currentTarget.getClientRects().length === 0) {
-                    panelHeading.current?.focus({ preventScroll: true });
-                  }
-                }}
+                onBlur={restorePanelFocus}
               >
                 Về sân khấu
               </button>

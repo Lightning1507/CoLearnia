@@ -1,6 +1,9 @@
 @import 'tailwindcss';
 
 :root {
+  --workspace-sidebar-bg: #f1f3f2;
+  --workspace-channel-selected-bg: #e0efe8;
+  --workspace-content-bg: #ffffff;
   font-family: 'Segoe UI', system-ui, sans-serif;
   color: #193e35;
   background: #f7f8f2;

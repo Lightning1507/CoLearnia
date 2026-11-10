@@ -71,3 +71,12 @@ Card Chat bên trong và card RoomShell đều đo được `#FFFFFF`. Chuyển 
 ```text
 PASS · subscriptions=20, remaining=0, video attach/detach=16/16, peak=1, call A init/dispose=1/1 · workspace=1440×900, room=1056
 ```
+
+## Kiểm chiều thu hẹp và màu Workspace ngày 11/11/2026
+
+- Khi WorkspaceShell giảm từ 1280 xuống 1279 px, focus từ nút trong sân khấu chuyển sang tiêu đề panel sau khi sân khấu bị ẩn. Lặp lại resize với focus trên toolbar giữ focus tại toolbar. Fixture cũng kiểm lại chiều mở rộng từ nút **Về sân khấu**, bảo toàn call A và dọn binding khi rời phòng.
+- Trên `/workspace` ở kênh TEXT, Chromium đo sidebar `#F1F3F2`, kênh được chọn `#E0EFE8` và vùng nội dung bên phải `#FFFFFF`. Vùng chứa card Chat trong suốt để lộ nền trắng của `.workspace-main` ở khoảng trống quanh card. Ba màu lấy từ token trong `global.css`. Giá trị `#E0EFE8` theo ảnh review mới ngày 11/11.
+
+```text
+PASS · subscriptions=22, remaining=0, video attach/detach=16/16, peak=1, call A init/dispose=1/1 · workspace=1440×900, room=1056
+```

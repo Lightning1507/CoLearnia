@@ -64,6 +64,7 @@ export function Workspace({
           useWorkspaceWidth
           sessionId={isOtherRoom ? otherSessionId : liveContextFixture.sessionId}
           stageMedia={media}
+          stage={media ? undefined : <button type="button">Điều khiển sân khấu kiểm thử</button>}
           error={error}
           sidePanel={
             sidePanelOpen
@@ -99,6 +100,12 @@ async function click(label: string) {
   );
   check(element, `Thiếu điều khiển ${label}`);
   await act(() => element.click());
+}
+
+function afterLayout() {
+  return new Promise<void>((resolve) =>
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+  );
 }
 
 async function verifyLifecycle(container: HTMLElement) {
@@ -248,6 +255,38 @@ async function verifyLifecycle(container: HTMLElement) {
       });
       return { call: await ready, stream };
     });
+    await click(roomName);
+    const focusRoom = room();
+    const focusWorkspace = focusRoom?.closest<HTMLElement>('.workspace-shell');
+    const stageButton = focusRoom?.querySelector<HTMLButtonElement>('section[aria-label] button');
+    const panelHeading = focusRoom?.querySelector('section[aria-labelledby] h3');
+    const toolbarButton = focusRoom?.querySelector<HTMLButtonElement>('footer button');
+    check(
+      focusWorkspace && stageButton && panelHeading && toolbarButton,
+      'Thiếu nút để kiểm focus khi thu hẹp',
+    );
+    focusWorkspace.style.inlineSize = '1280px';
+    stageButton.focus();
+    check(document.activeElement === stageButton, 'Nút trên sân khấu phải nhận focus ở 1280px');
+    focusWorkspace.style.inlineSize = '1279px';
+    await afterLayout();
+    check(
+      stageButton.getClientRects().length === 0 && document.activeElement === panelHeading,
+      'Focus phải chuyển sang heading khi sân khấu bị ẩn',
+    );
+
+    focusWorkspace.style.inlineSize = '1280px';
+    toolbarButton.focus();
+    check(document.activeElement === toolbarButton, 'Toolbar phải nhận focus trước khi thu hẹp');
+    focusWorkspace.style.inlineSize = '1279px';
+    await afterLayout();
+    check(
+      document.activeElement === toolbarButton,
+      'Resize phải giữ focus trên toolbar đang hiển thị',
+    );
+    verifyCallPreserved();
+    focusWorkspace.style.removeProperty('inline-size');
+    await click(chatName);
     await render(media);
     check(!video() && bindings.size === 0, 'Runtime hoàn tất muộn khi chat không gắn media');
 
@@ -316,9 +355,7 @@ async function verifyLifecycle(container: HTMLElement) {
       );
       check(verifyActive() === roomAVideo, 'Đổi layout phải giữ video đang gắn');
       if (wide) {
-        await new Promise<void>((resolve) =>
-          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
-        );
+        await afterLayout();
         check(
           document.activeElement === activePanel.querySelector('h3'),
           'Focus phải chuyển từ nút bị ẩn sang tiêu đề panel',
@@ -487,9 +524,8 @@ async function verifyWorkspaceRoute() {
       'Viewport /workspace phải là 1440 × 900',
     );
     await waitForElement(page, '.workspace-channel');
-    const channel = [...page.querySelectorAll<HTMLButtonElement>('.workspace-channel')].find(
-      (button) => button.textContent?.includes(roomName),
-    );
+    const channels = [...page.querySelectorAll<HTMLButtonElement>('.workspace-channel')];
+    const channel = channels.find((button) => button.textContent?.includes(roomName));
     check(channel, 'Không tìm thấy kênh LIVE trên /workspace');
     channel.click();
     const stage = await waitForElement(page, 'section[aria-label="Sân khấu cuộc gọi"]');
@@ -515,6 +551,28 @@ async function verifyWorkspaceRoute() {
         panelRect.left >= stageRect.right &&
         panelRect.top === stageRect.top,
       'Panel phải rộng 320px và nằm cạnh sân khấu',
+    );
+
+    const textChannel = channels.find((button) => button.textContent?.includes(chatName));
+    check(textChannel, 'Không tìm thấy kênh TEXT trên /workspace');
+    textChannel.click();
+    const chatCard = await waitForElement(page, '.workspace-fixture-panel');
+    const host = chatCard.closest('.workspace-panel-host');
+    const main = host?.closest('.workspace-main');
+    const sidebar = page.querySelector('.workspace-sidebar');
+    check(host && main && sidebar, 'Thiếu sidebar hoặc vùng nền quanh Chat');
+    const background = (element: Element) => view.getComputedStyle(element).backgroundColor;
+    check(background(sidebar) === 'rgb(241, 243, 242)', 'Sidebar phải có nền #F1F3F2');
+    check(
+      textChannel.getAttribute('aria-current') === 'page' &&
+        background(textChannel) === 'rgb(224, 239, 232)',
+      'Kênh TEXT đang chọn phải có nền #E0EFE8',
+    );
+    check(
+      host.getBoundingClientRect().width > chatCard.getBoundingClientRect().width &&
+        background(host) === 'rgba(0, 0, 0, 0)' &&
+        background(main) === 'rgb(255, 255, 255)',
+      'Vùng bao quanh card Chat phải có nền #FFFFFF',
     );
     return `workspace=${workspaceWidth}×${view.innerHeight}, room=${roomWidth}`;
   } finally {
