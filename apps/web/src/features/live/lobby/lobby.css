@@ -1,7 +1,168 @@
-/* Scoped rules override the existing unlayered global button focus styles.
-   The white halo keeps the dark outline visible on the camera surface too. */
+/* The global minimum leaves no room for a scrollbar on narrow standalone pages. */
+body:has(> #root > .lobby-device-check) {
+  min-width: 0;
+}
+
+.lobby-device-check {
+  /* Match the app and Workspace surfaces. Keep the tokens scoped to the lobby. */
+  --lobby-canvas: #f7f8f2;
+  --lobby-surface: #fff;
+  --lobby-ink: #193e35;
+  --lobby-muted: #63756b;
+  --lobby-border: #dce3d6;
+  --lobby-control-border: #648272;
+  --lobby-action: #173f35;
+  --lobby-action-hover: #285649;
+  --lobby-accent: #d9ecac;
+  --lobby-subtle: #edf2dd;
+  --lobby-warning: #754b26;
+  --lobby-warning-surface: #fff4e5;
+  --lobby-error: #8e3333;
+  --lobby-error-surface: #fff0ef;
+
+  background: var(--lobby-canvas);
+  color: var(--lobby-ink);
+}
+
+.lobby-device-check .lobby-topbar {
+  border-bottom: 1px solid var(--lobby-border);
+  background: var(--lobby-surface);
+}
+
+.lobby-device-check .lobby-title {
+  margin: 0;
+  font-size: 1.5rem;
+  line-height: 1.3;
+  letter-spacing: -0.02em;
+  font-weight: 700;
+}
+
+.lobby-device-check .lobby-muted,
+.lobby-device-check .lobby-device-message {
+  color: var(--lobby-muted);
+}
+
+.lobby-device-check .lobby-card {
+  border: 1px solid var(--lobby-border);
+  border-radius: 1rem;
+  background: var(--lobby-surface);
+}
+
+.lobby-device-check .lobby-stage {
+  border-radius: 0 0 calc(1rem - 1px) calc(1rem - 1px);
+  background: var(--lobby-action);
+  color: var(--lobby-surface);
+}
+
+.lobby-device-check .lobby-stage-icon {
+  background: var(--lobby-accent);
+  color: var(--lobby-action);
+}
+
+.lobby-device-check .lobby-device {
+  border: 1px solid var(--lobby-border);
+}
+
+.lobby-device-check :is(.lobby-button, .lobby-select) {
+  min-height: 2.75rem;
+  min-width: 0;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--lobby-control-border);
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  line-height: 1.4;
+}
+
+.lobby-device-check .lobby-select {
+  background: var(--lobby-surface);
+}
+
+.lobby-device-check .lobby-button {
+  background: var(--lobby-subtle);
+  color: var(--lobby-ink);
+  font-weight: 600;
+}
+
+.lobby-device-check .lobby-button:enabled:hover {
+  background: var(--lobby-accent);
+}
+
+.lobby-device-check .lobby-button-ghost {
+  border-color: transparent;
+  background: transparent;
+}
+
+.lobby-device-check .lobby-button-primary {
+  border-color: var(--lobby-action);
+  background: var(--lobby-action);
+  color: var(--lobby-surface);
+}
+
+.lobby-device-check .lobby-button-primary:enabled:hover {
+  background: var(--lobby-action-hover);
+}
+
+.lobby-device-check .lobby-device-toggle {
+  background: var(--lobby-error-surface);
+  color: var(--lobby-error);
+}
+
+.lobby-device-check .lobby-device-toggle[aria-pressed='true'] {
+  background: var(--lobby-accent);
+  color: var(--lobby-action);
+}
+
+.lobby-device-check .lobby-device-toggle:enabled:hover {
+  filter: brightness(0.94);
+}
+
+.lobby-device-check :is(.lobby-button, .lobby-select, .lobby-device-toggle):disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.lobby-device-check .lobby-status {
+  display: inline-block;
+  border-radius: 999px;
+  padding: 0.25rem 0.5rem;
+  background: var(--lobby-canvas);
+  color: var(--lobby-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.lobby-device-check .lobby-status:is([data-status='ready'], [data-status='requesting']) {
+  background: var(--lobby-subtle);
+  color: var(--lobby-action);
+}
+
+.lobby-device-check
+  :is(.lobby-status, .lobby-device-message):is(
+    [data-status='denied'],
+    [data-status='unavailable'],
+    [data-status='busy']
+  ) {
+  color: var(--lobby-warning);
+}
+
+.lobby-device-check
+  .lobby-status:is([data-status='denied'], [data-status='unavailable'], [data-status='busy']) {
+  background: var(--lobby-warning-surface);
+}
+
+.lobby-device-check :is(.lobby-status, .lobby-device-message)[data-status='error'],
+.lobby-device-check .lobby-notice {
+  color: var(--lobby-error);
+}
+
+.lobby-device-check .lobby-status[data-status='error'],
+.lobby-device-check .lobby-notice {
+  background: var(--lobby-error-surface);
+}
+
+/* The halo separates the dark outline from the dark camera surface. */
 .lobby-device-check :is(button, select):focus-visible {
-  outline: 3px solid #173f35;
+  outline: 3px solid var(--lobby-action);
   outline-offset: 3px;
-  box-shadow: 0 0 0 3px #ffffff;
+  box-shadow: 0 0 0 3px var(--lobby-surface);
 }

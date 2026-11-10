@@ -1,12 +1,56 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import type { RefObject } from 'react';
-import type { DeviceKind } from './lobbyPreview';
+import type { DeviceKind, PreviewStatus } from './lobbyPreview';
 import { useLobbyPreview } from './useLobbyPreview';
 import './lobby.css';
 
-const controlClass =
-  'min-h-11 max-w-full rounded-lg border border-[#d5dfc7] px-3 py-2 font-[inherit] disabled:cursor-not-allowed!';
-const buttonClass = `${controlClass} bg-[#edf2dd] text-[#193e35]`;
+const deviceControls = [
+  { kind: 'microphone', name: 'Microphone' },
+  { kind: 'camera', name: 'Camera' },
+] as const;
+
+const deviceStatusLabel: Record<PreviewStatus, string> = {
+  off: 'Đang tắt',
+  requesting: 'Đang mở',
+  ready: 'Đang bật',
+  denied: 'Chưa có quyền',
+  unavailable: 'Không khả dụng',
+  busy: 'Không mở được',
+  error: 'Có lỗi',
+};
+
+function DeviceIcon({ kind, off = false }: { kind: DeviceKind; off?: boolean }) {
+  return (
+    <svg
+      aria-hidden="true"
+      className="size-5 shrink-0"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      {kind === 'camera' ? (
+        <>
+          <rect x="3" y="6" width="13" height="12" rx="2" />
+          <path d="m16 10 5-3v10l-5-3" />
+        </>
+      ) : (
+        <>
+          <rect x="9" y="3" width="6" height="12" rx="3" />
+          <path d="M5 11v1a7 7 0 0 0 14 0v-1m-7 8v3m-3 0h6" />
+        </>
+      )}
+      {off && (
+        <>
+          <path d="M3 3l18 18" stroke="var(--lobby-error-surface)" strokeWidth="4" />
+          <path d="M3 3l18 18" />
+        </>
+      )}
+    </svg>
+  );
+}
 
 export type LobbyDevicePreferences = {
   camera: { enabled: boolean; deviceId: string };
@@ -46,7 +90,7 @@ function CameraPreview({
   return (
     <>
       <video
-        className="h-full w-full object-cover"
+        className="absolute inset-0 h-full w-full object-cover"
         ref={videoRef}
         autoPlay
         playsInline
@@ -55,7 +99,7 @@ function CameraPreview({
       />
       {playbackError && (
         <button
-          className={`${buttonClass} absolute bottom-5`}
+          className="lobby-button absolute bottom-20 left-1/2 max-w-[calc(100%-2rem)] -translate-x-1/2"
           type="button"
           onClick={() => {
             const video = videoRef.current;
@@ -86,6 +130,7 @@ export function LobbyDeviceCheck({
   const { state, preview } = useLobbyPreview();
   const videoRef = useRef<HTMLVideoElement>(null);
   const id = useId();
+  const deviceControlsDisabled = !!state.environmentError || continuePending;
   const continueToSession = () => {
     const preferences: LobbyDevicePreferences = {
       camera: {
@@ -110,118 +155,196 @@ export function LobbyDeviceCheck({
 
   return (
     <section
-      className="lobby-device-check min-h-dvh bg-[#f7f8f2] leading-[1.6] text-[#193e35]"
+      className="lobby-device-check flex min-h-dvh flex-col leading-normal"
       aria-labelledby={`${id}-title`}
     >
-      <header className="flex flex-wrap items-center justify-between gap-4 border-b border-[#dce3d6] bg-white px-6 py-4">
-        <button className={buttonClass} type="button" onClick={back} disabled={continuePending}>
-          ← Quay lại Phòng học
-        </button>
-        <strong>CoLearnia</strong>
-      </header>
-      <div className="mx-auto grid max-w-7xl grid-cols-[minmax(0,1fr)] items-center gap-6 px-4 py-6 min-[801px]:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)] min-[801px]:gap-12 min-[801px]:px-6 min-[801px]:py-12">
-        <div
-          className="relative grid aspect-[16/10] place-items-center overflow-hidden rounded-2xl bg-[#222927] text-[#eff4df]"
-          aria-label="Khu vực xem trước camera"
-        >
-          {state.videoStream ? (
-            <CameraPreview
-              key={state.videoStream.id}
-              stream={state.videoStream}
-              videoRef={videoRef}
-            />
-          ) : (
-            <div className="p-6 text-center">
-              <span className="block text-[40px]" aria-hidden="true">
-                ◉
-              </span>
-              <strong>
-                {state.camera.status === 'requesting' ? 'Đang mở camera…' : 'Camera chưa bật'}
-              </strong>
-              <p className="text-sm">Hình ảnh chỉ xuất hiện sau khi camera mở thành công.</p>
-            </div>
-          )}
-        </div>
-        <div className="min-w-0 wrap-anywhere">
-          <p className="text-xs font-bold text-[#63756b]">{channelName}</p>
-          <h1 className="mt-2! mb-4! text-[30px]! tracking-[-0.8px]!" id={`${id}-title`}>
-            Sẵn sàng tham gia?
-          </h1>
-          <p>Kiểm tra camera và microphone trước khi vào phòng. Chỉ bật thiết bị khi bạn muốn.</p>
-          {state.environmentError && <p role="alert">{state.environmentError}</p>}
-          <p role="status">
-            {state.enumerating ? 'Đang đọc danh sách thiết bị…' : state.enumerationError}
-          </p>
-          {(['microphone', 'camera'] as const).map((kind: DeviceKind) => {
-            const device = state[kind];
-            const name = kind === 'camera' ? 'Camera' : 'Microphone';
-            const running = device.status === 'ready' || device.status === 'requesting';
-            return (
-              <fieldset
-                className="my-5 rounded-xl border border-[#dce3d6] p-4 text-sm"
-                key={kind}
-                disabled={!!state.environmentError || continuePending}
-              >
-                <legend className="px-1.5 font-bold text-base">{name}</legend>
-                <label className="mb-1.5 block text-base" htmlFor={`${id}-${kind}`}>
-                  Chọn {name.toLowerCase()}
-                </label>
-                <select
-                  className={`${controlClass} w-full bg-white text-base`}
-                  id={`${id}-${kind}`}
-                  value={device.selectedId}
-                  aria-describedby={`${id}-${kind}-status`}
-                  onChange={(event) => preview.select(kind, event.target.value)}
-                >
-                  <option value="">Mặc định của trình duyệt</option>
-                  {device.devices.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.label}
-                    </option>
-                  ))}
-                </select>
-                <p id={`${id}-${kind}-status`} role="status">
-                  {device.message}
-                </p>
-                {!device.devices.length && !state.enumerating && (
-                  <p>
-                    Chưa có thiết bị được liệt kê. Bấm Bật để kiểm tra thiết bị mặc định và quyền
-                    truy cập.
-                  </p>
-                )}
-                <button
-                  className={`${buttonClass} text-base`}
-                  type="button"
-                  aria-pressed={device.status === 'ready'}
-                  onClick={() => (running ? preview.stop(kind) : void preview.open(kind))}
-                >
-                  {running ? (device.status === 'requesting' ? 'Hủy mở' : 'Tắt') : 'Bật / thử lại'}{' '}
-                  {name.toLowerCase()}
-                </button>
-              </fieldset>
-            );
-          })}
+      <header className="lobby-topbar">
+        <div className="mx-auto grid max-w-7xl items-center gap-2 px-4 py-3 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] sm:gap-4 sm:px-6 lg:px-8">
           <button
-            className={buttonClass}
+            className="lobby-button lobby-button-ghost justify-self-start sm:col-start-1 sm:row-start-1"
             type="button"
-            disabled={!!state.environmentError || state.enumerating || continuePending}
-            onClick={() => void preview.refreshDevices()}
+            onClick={back}
+            disabled={continuePending}
           >
-            Làm mới thiết bị
+            <span aria-hidden="true">←</span> Quay lại Phòng học
           </button>
-          {onContinue && (
-            <>
-              <p>Bạn vẫn có thể tiếp tục để xem nội dung mà không bật camera hoặc microphone.</p>
-              <button
-                className={`${controlClass} w-full bg-[#173f35] text-[#eff4df]`}
-                type="button"
-                onClick={continueToSession}
-                disabled={continuePending}
+          <div className="brand row-start-1 justify-self-center sm:col-start-2">
+            <span className="brand-mark" aria-hidden="true">
+              C
+            </span>
+            <span>CoLearnia</span>
+          </div>
+        </div>
+      </header>
+      <div className="mx-auto grid w-full max-w-7xl flex-1 content-center px-4 py-6 sm:px-6 lg:px-8 lg:py-10">
+        <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,24rem)] lg:items-center lg:gap-12 xl:gap-16">
+          <section className="lobby-card min-w-0" aria-labelledby={`${id}-preview-title`}>
+            <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 sm:px-5">
+              <h2 className="flex items-center gap-2 font-semibold" id={`${id}-preview-title`}>
+                <DeviceIcon kind="camera" /> Xem trước camera
+              </h2>
+              <span className="lobby-status">Chỉ trên máy này</span>
+            </div>
+            <div className="lobby-stage relative isolate flex aspect-[16/10] min-h-72 w-full flex-col overflow-hidden">
+              <div className="grid flex-1 place-items-center">
+                {state.videoStream ? (
+                  <CameraPreview
+                    key={state.videoStream.id}
+                    stream={state.videoStream}
+                    videoRef={videoRef}
+                  />
+                ) : (
+                  <div className="grid justify-items-center gap-2 p-4 text-center sm:p-6">
+                    <span className="lobby-stage-icon mb-1 grid size-11 place-items-center rounded-xl">
+                      <DeviceIcon kind="camera" />
+                    </span>
+                    <strong>
+                      {state.camera.status === 'requesting' ? 'Đang mở camera…' : 'Camera chưa bật'}
+                    </strong>
+                    <p className="text-sm">Hình ảnh sẽ xuất hiện khi camera mở thành công.</p>
+                  </div>
+                )}
+              </div>
+              <div
+                className="relative z-10 flex flex-wrap justify-center gap-2 px-3 pb-4"
+                role="group"
+                aria-label="Bật hoặc tắt thiết bị"
               >
-                {continuePending ? 'Đang tiếp tục…' : 'Tiếp tục vào phiên'}
-              </button>
-            </>
-          )}
+                {deviceControls.map(({ kind, name }) => {
+                  const { status } = state[kind];
+                  const enabled = status === 'ready';
+                  const requesting = status === 'requesting';
+                  const action = enabled ? 'Tắt' : requesting ? 'Hủy mở' : 'Bật';
+                  return (
+                    <button
+                      key={kind}
+                      className="lobby-device-toggle grid size-11 place-items-center rounded-full shadow-md"
+                      type="button"
+                      aria-label={`${action} ${name.toLowerCase()}`}
+                      aria-pressed={enabled}
+                      aria-describedby={`${id}-${kind}-status`}
+                      disabled={deviceControlsDisabled}
+                      onClick={() =>
+                        enabled || requesting ? preview.stop(kind) : void preview.open(kind)
+                      }
+                    >
+                      <DeviceIcon kind={kind} off={!enabled} />
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </section>
+          <div className="grid min-w-0 gap-4">
+            <div className="grid gap-2 wrap-anywhere">
+              <p className="lobby-muted text-xs font-semibold">{channelName}</p>
+              <h1 className="lobby-title" id={`${id}-title`}>
+                Sẵn sàng tham gia?
+              </h1>
+              <p className="lobby-muted text-sm">
+                Kiểm tra camera và microphone trước khi vào phòng. Chỉ bật thiết bị khi bạn muốn.
+              </p>
+            </div>
+            <section
+              className="lobby-card grid min-w-0 gap-4 p-4 sm:p-5"
+              aria-labelledby={`${id}-devices-title`}
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h2 className="text-lg font-semibold" id={`${id}-devices-title`}>
+                  Thiết bị
+                </h2>
+                <button
+                  className="lobby-button lobby-button-ghost"
+                  type="button"
+                  disabled={!!state.environmentError || state.enumerating || continuePending}
+                  onClick={() => void preview.refreshDevices()}
+                >
+                  Làm mới thiết bị
+                </button>
+              </div>
+              {state.environmentError && (
+                <p className="lobby-notice rounded-lg p-3 text-sm" role="alert">
+                  {state.environmentError}
+                </p>
+              )}
+              <p
+                className={
+                  state.enumerating || state.enumerationError ? 'lobby-muted text-sm' : 'sr-only'
+                }
+                role="status"
+              >
+                {state.enumerating ? 'Đang đọc danh sách thiết bị…' : state.enumerationError}
+              </p>
+              {deviceControls.map(({ kind, name }) => {
+                const device = state[kind];
+                return (
+                  <fieldset
+                    className="lobby-device min-w-0 rounded-lg px-3 pb-3 sm:px-4 sm:pb-4"
+                    key={kind}
+                    disabled={deviceControlsDisabled}
+                  >
+                    <legend className="px-1 text-sm font-semibold">
+                      <span className="inline-flex items-center gap-2">
+                        <DeviceIcon kind={kind} />
+                        {name}
+                      </span>
+                    </legend>
+                    <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                      <label className="lobby-muted text-sm font-medium" htmlFor={`${id}-${kind}`}>
+                        Chọn {name.toLowerCase()}
+                      </label>
+                      <span className="lobby-status" data-status={device.status} aria-hidden="true">
+                        {deviceStatusLabel[device.status]}
+                      </span>
+                    </div>
+                    <select
+                      className="lobby-select mt-2 w-full"
+                      id={`${id}-${kind}`}
+                      value={device.selectedId}
+                      aria-describedby={`${id}-${kind}-status`}
+                      onChange={(event) => preview.select(kind, event.target.value)}
+                    >
+                      <option value="">Mặc định của trình duyệt</option>
+                      {device.devices.map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.label}
+                        </option>
+                      ))}
+                    </select>
+                    <p
+                      className="lobby-device-message mt-2 text-sm"
+                      data-status={device.status}
+                      id={`${id}-${kind}-status`}
+                      role="status"
+                    >
+                      {device.message}
+                    </p>
+                    {!device.devices.length && !state.enumerating && (
+                      <p className="lobby-muted mt-1 text-sm">
+                        Chưa có thiết bị được liệt kê. Bấm Bật để kiểm tra thiết bị mặc định và
+                        quyền truy cập.
+                      </p>
+                    )}
+                  </fieldset>
+                );
+              })}
+              {onContinue && (
+                <>
+                  <p className="lobby-muted text-sm">
+                    Bạn vẫn có thể tiếp tục để xem nội dung mà không bật camera hoặc microphone.
+                  </p>
+                  <button
+                    className="lobby-button lobby-button-primary w-full"
+                    type="button"
+                    onClick={continueToSession}
+                    disabled={continuePending}
+                  >
+                    {continuePending ? 'Đang tiếp tục…' : 'Tiếp tục vào phiên'}
+                  </button>
+                </>
+              )}
+            </section>
+          </div>
         </div>
       </div>
     </section>
