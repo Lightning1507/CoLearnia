@@ -182,19 +182,25 @@ export function createSessionRepository(database: Database) {
       }));
     },
 
-    async completeEnding(raw: z.infer<typeof mutation>) {
+    async completeEnding(raw: z.infer<typeof mutation>, assertCurrent: () => void = () => {}) {
       const input = mutation.parse(raw);
+      assertCurrent();
       return database.transaction(async (session) => {
+        assertCurrent();
         const revision = await cas(input, ['ENDING'], session, {
           status: 'ENDED',
           hostUserId: null,
           endedAt: input.at,
         });
+        // The first write may finish after a caller deadline/revocation. Do not
+        // send a second write, or let this callback reach commit, without rechecking.
+        assertCurrent();
         await SessionParticipant.updateMany(
           { sessionId: input.sessionId, leftAt: null },
           { $set: { leftAt: input.at, updatedAt: input.at } },
           { session, timestamps: false },
         );
+        assertCurrent();
         return { revision };
       });
     },

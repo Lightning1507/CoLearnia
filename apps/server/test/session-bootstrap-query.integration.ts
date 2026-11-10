@@ -111,6 +111,65 @@ afterAll(async () => {
 });
 
 describe('SCRUM-80 cold session bootstrap', () => {
+  it('does not send participant updates when completeEnding CAS returns after the deadline', async () => {
+    const input = await seed('ENDING');
+    let release!: () => void;
+    let entered!: () => void;
+    let settled!: () => void;
+    const waiting = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const firstWriteDone = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const transactionSettled = new Promise<void>((resolve) => {
+      settled = resolve;
+    });
+    const originalUpdate = models.LiveSession.updateOne.bind(models.LiveSession);
+    const update = vi.spyOn(models.LiveSession, 'updateOne').mockImplementationOnce((...args) => {
+      const query = originalUpdate(...args);
+      const delayed = query.exec().then(async (result) => {
+        entered();
+        await waiting;
+        return result;
+      });
+      return delayed as unknown as ReturnType<typeof models.LiveSession.updateOne>;
+    });
+    const participantWrites = vi.spyOn(models.SessionParticipant, 'updateMany');
+    const transaction = database.transaction.bind(database);
+    const transactionSpy = vi
+      .spyOn(database, 'transaction')
+      .mockImplementationOnce(async (work) => {
+        try {
+          return await transaction(work);
+        } finally {
+          settled();
+        }
+      });
+    const boot = bootstrap({ totalTimeoutMs: 1000 });
+    const task = boot.run();
+    const rejected = expect(task).rejects.toThrow();
+    try {
+      await firstWriteDone;
+      await rejected;
+      expect(boot.isReady()).toBe(false);
+      release();
+      await transactionSettled;
+      expect(participantWrites).not.toHaveBeenCalled();
+      const stored = await models.LiveSession.findById(input.sessionId).lean();
+      expect(stored).toMatchObject({ status: 'ENDING', revision: 1, hostUserId: input.hostUserId });
+      expect(
+        (await models.SessionParticipant.findById(input.participantId).lean())?.leftAt,
+      ).toBeNull();
+      expect(boot.stats().state).toBe('FAILED');
+    } finally {
+      release();
+      update.mockRestore();
+      participantWrites.mockRestore();
+      transactionSpy.mockRestore();
+    }
+    await bootstrap().run();
+  });
   it.each(['conversation', 'frame'] as const)(
     'keeps malformed date arrays in %s pending rather than accepting them as scalar dates',
     async (kind) => {

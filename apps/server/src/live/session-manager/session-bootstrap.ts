@@ -207,11 +207,14 @@ export function createSessionBootstrap(
         });
         offline();
         // Participant leftAt and host=null are committed together, never restored as grants.
-        await repository.completeEnding({
-          ...identity,
-          expectedRevision: revision,
-          at: timestamp(),
-        });
+        await repository.completeEnding(
+          {
+            ...identity,
+            expectedRevision: revision,
+            at: timestamp(),
+          },
+          offline,
+        );
         offline();
         ended++;
         cursor = session._id;
