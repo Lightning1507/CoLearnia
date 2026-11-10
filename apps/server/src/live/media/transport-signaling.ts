@@ -18,28 +18,32 @@ import type {
   SessionCleanupResult,
 } from '@colearnia/contracts';
 import type { types as MediaTypes } from 'mediasoup';
+import type { SessionPolicyInput } from '../policy/session-policy.js';
 import { randomUUID } from 'node:crypto';
 import { sessionCleanupAdmission } from '../session-manager/cleanup-admission.js';
 import type { CleanupAdmission } from '../session-manager/cleanup-admission.js';
+import { createPendingMediaOperations, matchesMediaCleanup } from './pending-media-operations.js';
 
 type Command =
   | { kind: 'create'; input: MediaTransportCreateInput }
   | { kind: 'connect'; input: MediaTransportConnectInput };
 type ContextInput = Pick<Command['input'], 'sessionId' | 'epoch' | 'callGeneration'>;
+type MutationContext = ContextInput & { expectedPolicyRevision: number };
 type Authority = <T>(
   socketId: string,
   input: ContextInput,
   // Called synchronously under the M4 gate with current socket binding and access.
-  use: (resolved: LiveContextResult, router?: MediaTypes.Router) => T,
+  use: (resolved: LiveContextResult, router?: MediaTypes.Router, policy?: SessionPolicyInput) => T,
 ) => Promise<T>;
 type Direction = MediaTransportCreateInput['payload']['direction'];
 type Transport = Pick<
   MediaTypes.WebRtcTransport,
   'id' | 'closed' | 'iceParameters' | 'iceCandidates' | 'dtlsParameters' | 'connect' | 'close'
-> & {
-  observer: { once(event: 'close', listener: () => void): unknown };
-  on(event: 'dtlsstatechange', listener: (state: MediaTypes.DtlsState) => void): unknown;
-};
+> &
+  Partial<Pick<MediaTypes.WebRtcTransport, 'produce' | 'consume'>> & {
+    observer: { once(event: 'close', listener: () => void): unknown };
+    on(event: 'dtlsstatechange', listener: (state: MediaTypes.DtlsState) => void): unknown;
+  };
 type SocketPort = {
   id: string;
   on(
@@ -53,6 +57,7 @@ type Slot = {
   socketId: string;
   context: LiveContext;
   direction: Direction;
+  router?: MediaTypes.Router;
   transport?: Transport;
   descriptor?: MediaTransportCreateResult;
   connectedWith?: string;
@@ -112,7 +117,7 @@ export function createTransportSignaling({
   const slots = new Map<string, Slot>();
   const transports = new Map<string, Slot>();
   const intents = new Map<string, Intent>();
-  const pending = new Set<Slot>();
+  const pendingMedia = createPendingMediaOperations();
 
   function forget(slot: Slot) {
     slot.closed = true;
@@ -130,7 +135,7 @@ export function createTransportSignaling({
     transport?.close();
   }
 
-  function authorize(socketId: string, input: Command['input'], resolved: LiveContextResult) {
+  function authorize(socketId: string, input: MutationContext, resolved: LiveContextResult) {
     if (!resolved.ok) return reject(resolved.errorCode);
     const { context } = resolved;
     if (!(Date.parse(context.auth.expiresAt) > Date.now())) return reject('AUTH_REQUIRED');
@@ -219,7 +224,6 @@ export function createTransportSignaling({
       if (!release) return reject('SERVER_BUSY');
       if (command.kind === 'create') slots.set(slot.key, slot);
       else slot.connecting = true;
-      pending.add(slot);
 
       const intent: Intent = { signature, slot, expiresAt: now + replayMs };
       let finish!: (result: Result) => void;
@@ -234,15 +238,22 @@ export function createTransportSignaling({
       let started = false;
       let expired = false;
       const releaseAdmission = () => {
-        pending.delete(slot);
+        untrack();
         release();
       };
-      const timeout = setTimeout(() => {
+      const cancel = (errorCode: string) => {
+        if (expired) return;
         expired = true;
+        clearTimeout(timeout);
         close(slot);
         if (!started) releaseAdmission();
-        finish(reject('DEPENDENCY_UNAVAILABLE'));
-      }, sessionControlBudget.cleanupAttemptTimeoutMs);
+        finish(reject(errorCode));
+      };
+      const untrack = pendingMedia.track([context], () => cancel('CONFLICT'));
+      const timeout = setTimeout(
+        () => cancel('DEPENDENCY_UNAVAILABLE'),
+        sessionControlBudget.cleanupAttemptTimeoutMs,
+      );
       return {
         ready,
         start: () => {
@@ -257,6 +268,7 @@ export function createTransportSignaling({
                 native.close();
                 return reject('CONFLICT');
               }
+              slot.router = router;
               slot.transport = native;
               native.observer.once('close', () => forget(slot));
               native.on('dtlsstatechange', (state) => {
@@ -316,6 +328,51 @@ export function createTransportSignaling({
   }
 
   return {
+    pendingMedia,
+    admission,
+    withMediaTransport<T>(
+      socketId: string,
+      input: MutationContext,
+      transportId: string,
+      direction: Direction,
+      use: (
+        context: LiveContext,
+        router: MediaTypes.Router,
+        policy: SessionPolicyInput,
+        transport: Pick<MediaTypes.WebRtcTransport, 'id' | 'produce' | 'consume'>,
+      ) => T,
+    ): Promise<T | Failure> {
+      return withContext(socketId, input, (resolved, router, policy) => {
+        const access = authorize(socketId, input, resolved);
+        if ('errorCode' in access) return access;
+        const slot = transports.get(transportId);
+        const transport = slot?.transport;
+        if (
+          !slot ||
+          !access.owns(slot) ||
+          slot.direction !== direction ||
+          !transport ||
+          transport.closed
+        ) {
+          return reject('CONFLICT');
+        }
+        if (
+          !router ||
+          router.closed ||
+          router !== slot.router ||
+          !policy ||
+          !transport.produce ||
+          !transport.consume
+        ) {
+          return reject('DEPENDENCY_UNAVAILABLE');
+        }
+        return use(access.context, router, policy, {
+          id: transport.id,
+          produce: transport.produce.bind(transport),
+          consume: transport.consume.bind(transport),
+        });
+      });
+    },
     attach(socket: SocketPort) {
       const register = (kind: Command['kind'], decode: (value: unknown) => Command | null) => {
         socket.on(`media.transport.${kind}`, (raw: unknown, ack?: (value: unknown) => void) => {
@@ -371,30 +428,9 @@ export function createTransportSignaling({
       });
     },
     cleanup(request: SessionCleanupRequest): SessionCleanupResult {
-      let cleanupPending = false;
-      for (const slot of new Set([...slots.values(), ...pending])) {
-        const context = slot.context;
-        const { target } = request;
-        if (context.sessionId !== request.sessionId || context.epoch !== request.epoch) continue;
-        if (
-          target.type !== 'SCOPE' &&
-          (context.participantId !== target.participantId ||
-            !('callGeneration' in request) ||
-            context.callGeneration !== request.callGeneration)
-        )
-          continue;
-        if (
-          target.type !== 'PARTICIPANT' &&
-          (context.scope.type !== target.scope.type ||
-            (context.scope.type === 'GROUP' &&
-              target.scope.type === 'GROUP' &&
-              context.scope.groupId !== target.scope.groupId))
-        )
-          continue;
-        if (target.type === 'PARTICIPANT_SCOPE' && context.audienceEpoch !== target.audienceEpoch)
-          continue;
-        cleanupPending ||= pending.has(slot);
-        close(slot);
+      const cleanupPending = pendingMedia.invalidate(request);
+      for (const slot of slots.values()) {
+        if (matchesMediaCleanup(slot.context, request)) close(slot);
       }
       const { reason, ...identity } = request;
       void reason;
