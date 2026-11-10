@@ -11,6 +11,10 @@ import { preflightIndexes } from './lib/database-preflight.js';
 import { logger } from './lib/logger.js';
 import { operationCoordinator } from './lib/shared-coordination.js';
 import { createRealtime } from './realtime/server.js';
+import {
+  createColdSessionArtifactGuard,
+  createSessionBootstrap,
+} from './live/session-manager/session-bootstrap.js';
 import type { createMediaRuntime } from './live/media/runtime.js';
 import type { SystemStatus } from '@colearnia/contracts';
 
@@ -24,6 +28,11 @@ const database = createDatabase(config.MONGO_URI, {
 let media: Awaited<ReturnType<typeof createMediaRuntime>> | undefined;
 let stopping = false;
 let authIndexesReady = false;
+let acceptingLiveRuntime = false;
+const sessionBootstrap = createSessionBootstrap(database, {
+  isOffline: () => !acceptingLiveRuntime && !stopping,
+  prepareStaleSession: createColdSessionArtifactGuard(database),
+});
 
 const status = (): SystemStatus => ({
   name: 'CoLearnia',
@@ -31,6 +40,7 @@ const status = (): SystemStatus => ({
   media: config.MEDIA_ENABLED ? (media?.isReady() ? 'connected' : 'disconnected') : 'disabled',
   ready:
     !stopping &&
+    sessionBootstrap.isReady() &&
     database.isConnected() &&
     Boolean(media?.isReady()) &&
     (!config.SESSION_SECRET || authIndexesReady),
@@ -68,17 +78,32 @@ async function start() {
     }
   }
 
-  if (config.MEDIA_ENABLED) {
+  if (database.isConnected()) {
+    try {
+      await sessionBootstrap.run();
+      logger.info({ sessions: sessionBootstrap.stats() }, 'Cold session metadata checked.');
+    } catch {
+      logger.warn(
+        'Cold session reconciliation is incomplete; readiness remains 503. Check session indexes and M2/M5 cleanup before restarting.',
+      );
+    }
+  }
+
+  if (!stopping && config.MEDIA_ENABLED && sessionBootstrap.isReady()) {
+    acceptingLiveRuntime = true;
     try {
       const { createMediaRuntime: startMedia } = await import('./live/media/runtime.js');
       media = await startMedia(config);
+      if (stopping) media.close();
     } catch {
+      acceptingLiveRuntime = false;
       logger.error(
         'Media worker unavailable; readiness remains 503. Run media:smoke for diagnosis.',
       );
     }
   }
 
+  if (stopping) return;
   httpServer.listen(config.PORT, config.HOST, () => {
     logger.info({ host: config.HOST, port: config.PORT }, 'CoLearnia server listening');
   });

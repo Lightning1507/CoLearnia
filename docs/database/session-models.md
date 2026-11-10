@@ -12,6 +12,7 @@ ENDED yêu cầu endedAt và hostUserId null. ACTIVE/ENDING có endedAt null. UU
 | --------------------- | ---------------------------------------------------------------------------------------------------- |
 | `liveSessions`        | Unique `uq_live_open_channel` trên channelId, partial filter `status: { $in: ['ACTIVE', 'ENDING'] }` |
 | `liveSessions`        | `ix_live_reconcile` trên status/_id                                                                  |
+| `liveSessions`        | `ix_live_channel_metadata` trên workspaceId/channelId/startedAt giảm dần/_id giảm dần, theo SCRUM-80 |
 | `sessionParticipants` | Unique `uq_participant_pair` trên sessionId/userId                                                   |
 | `sessionParticipants` | `ix_participant_user` trên userId/sessionId                                                          |
 
@@ -50,7 +51,7 @@ Ngay cả revision bằng đúng expectedRevision + 1 cũng chưa chứng minh i
 
 `sessionIndexRequirements` dùng với `preflightIndexes`; `sessionCollectionValidators` dùng cho migration/test được review. Factory đăng ký model, không tự provision hoặc sửa DB ứng dụng. Connection chung tắt autoCreate/autoIndex. Trước khi consumer dùng persistence trên DB có dữ liệu, cần kiểm dữ liệu/index/validator theo [kế hoạch integrity](integrity-and-migrations.md), áp manifest và đọc lại options.
 
-SCRUM-82 nối registry/join ticket với repository. SCRUM-80 xử lý bootstrap/query có ACL. SCRUM-86/87/91 phối hợp end/reconcile/worker lifecycle. Metadata lastScope/host/status không cấp lại grant runtime sau reconnect hoặc restart.
+SCRUM-82 nối registry/join ticket với repository. [SCRUM-80](../contracts/session-bootstrap-metadata.md) xử lý bootstrap/query có ACL và thêm index pagination theo Workspace/kênh. SCRUM-86/87/91 phối hợp end/reconcile/worker lifecycle. Metadata lastScope/host/status không cấp lại grant runtime sau reconnect hoặc restart.
 
 ## Kiểm chứng
 
