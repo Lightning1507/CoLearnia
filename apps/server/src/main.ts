@@ -61,6 +61,10 @@ const httpServer = createServer(createApp(config, status, authRouter));
 const io = createRealtime(httpServer, config);
 
 async function start() {
+  // Health endpoints respond during cold bootstrap; LIVE stays gated by readiness.
+  httpServer.listen(config.PORT, config.HOST, () => {
+    logger.info({ host: config.HOST, port: config.PORT }, 'CoLearnia server listening');
+  });
   try {
     await database.connect();
   } catch {
@@ -102,11 +106,6 @@ async function start() {
       );
     }
   }
-
-  if (stopping) return;
-  httpServer.listen(config.PORT, config.HOST, () => {
-    logger.info({ host: config.HOST, port: config.PORT }, 'CoLearnia server listening');
-  });
 }
 
 async function shutdown() {

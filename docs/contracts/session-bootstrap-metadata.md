@@ -4,7 +4,7 @@ Source: `apps/server/src/live/session-manager/session-bootstrap.ts`, `session-me
 
 ## Bootstrap trước readiness
 
-`main.ts` chạy bootstrap sau khi kết nối MongoDB, trước khi tạo media runtime và listen HTTP. Readiness chỉ đạt khi bootstrap READY cùng các điều kiện DB/media/auth hiện có. Lỗi được giữ thành `503`; liveness vẫn `200` khi HTTP đã khởi động. Không tạo Router, participant runtime, ticket, grant, nhóm hoặc board từ metadata cũ.
+`main.ts` mở HTTP health trước khi kết nối MongoDB/chạy bootstrap. Trong lúc đối soát, liveness trả `200`, readiness trả `503` và chưa tạo media runtime. Readiness chỉ đạt khi bootstrap READY cùng các điều kiện DB/media/auth hiện có. Không tạo Router, participant runtime, ticket, grant, nhóm hoặc board từ metadata cũ.
 
 `createSessionBootstrap(database,{isOffline,prepareStaleSession,...})` có state IDLE/RUNNING/READY/FAILED, `run()`, `isReady()` và `stats()` chỉ chứa state/số phiên đã kết thúc. Run single-flight, một attempt/process; lỗi/timeout không khởi động chồng callback cleanup khác. Worker chết khi server đang chạy dùng SCRUM-91, không gọi cold bootstrap này.
 
@@ -14,14 +14,16 @@ Source: `apps/server/src/live/session-manager/session-bootstrap.ts`, `session-me
 4. Gọi prepareStaleSession với `{sessionId,epoch,workspaceId,channelId}`. Kết quả phải echo đúng session/epoch, permissionRevoked=true và pendingInvalidated=true. cleanupPending=true được phép vì byte/ref có thể dọn sau. Không giữ transaction DB khi chờ adapter.
 5. Chỉ sau xác nhận, completeEnding commit ENDED, hostUserId=null và leftAt của participation chưa rời trong một transaction. LastScope lịch sử vẫn là metadata, không phục hồi quyền nhóm/host.
 
-Callback có deadline mặc định 10 giây và AbortSignal. Quá hạn/mất xác nhận hoặc DB commit chưa rõ đều giữ readiness false; callback đến muộn không tiếp tục commit. Không suy rollback hoặc sửa ENDED về ACTIVE. Restart sau khi đối soát đọc lại trạng thái hiện hành; phiên đã ENDED không bị ghi lại. Một run xử lý tối đa 10.000 phiên, vượt budget thì giữ FAILED để xử lý phần còn lại qua lần startup sau, không báo READY với dữ liệu còn dở.
+Toàn lượt bootstrap có deadline monotonic mặc định **30 giây**, gồm preflight, đọc từng lô, cleanup và chờ DB. Mỗi callback cleanup vẫn tối đa 10 giây nhưng không vượt thời gian còn lại của lượt. Quá hạn tổng thì chuyển FAILED, báo lỗi cho startup và abort tín hiệu provider; không tự retry hoặc chuyển READY khi I/O đến muộn. Các điểm tiếp tục sau await kiểm deadline/abort trước mutation tiếp theo. DB transaction đã gửi đi có thể vẫn commit: không suy timeout là rollback, restart phải đọc lại state.
+
+Một run xử lý tối đa 10.000 phiên; vượt số lượng hoặc thời gian thì giữ FAILED để đối soát phần còn lại, không báo READY với dữ liệu dở. Healthcheck staging vẫn interval 10 giây/retries 6, thêm start_period 60 giây cho thời gian kết nối/auth preflight, bootstrap 30 giây và khởi động native media. Hết budget không tự mở readiness hoặc tăng timeout theo số phiên; staging cần kiểm log và xử lý backlog/provider trước lần restart sau. Start period chỉ miễn đếm failure khởi động, không biến 503 thành healthy hoặc cho web vượt điều kiện service_healthy.
 
 ### Phối hợp M2/M5
 
 Main hiện inject `createColdSessionArtifactGuard`, chỉ đọc để xác minh:
 
-- Không còn conversation SESSION/GROUP/HOST_PRIVATE của session chưa có closedAt dạng Date.
-- FRAME cùng session đã DELETE_PENDING hoặc có cleanupAfter dạng Date; metadata thiếu/sai trường này chưa được coi là đã xử lý.
+- Không còn conversation SESSION/GROUP/HOST_PRIVATE của session chưa có closedAt là Date đơn.
+- FRAME cùng session có state đúng chuỗi DELETE_PENDING hoặc cleanupAfter là Date đơn; mảng chứa Date, field thiếu/sai kiểu chưa được coi là đã xử lý. Guard dùng `$expr`/`$type` để kiểm kiểu chính trường, không dùng predicate `$type` khớp phần tử mảng.
 
 Còn artifact chưa xử lý thì trả chưa xác nhận, phiên giữ ENDING và readiness `503`. M4 không tự update conversation, frame, lịch purge, quota hoặc xóa byte. M2/M5 cung cấp provider cleanup theo cùng signature để thay guard khi tích hợp. Provider phải xử lý idempotent theo sessionId/epoch và nhận AbortSignal; timeout không chứng minh I/O đã dừng. Guard giữ cleanupPending=true vì không chứng minh dọn byte đã hoàn tất. Recording/file finalization thuộc miền phụ trách, không đánh READY video từ bootstrap metadata.
 

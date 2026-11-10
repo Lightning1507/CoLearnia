@@ -1,4 +1,5 @@
 import { Types } from 'mongoose';
+import { performance } from 'node:perf_hooks';
 import { z } from 'zod';
 import { sessionEpochSchema } from '@colearnia/contracts';
 import type { Database } from '../../lib/database.js';
@@ -41,7 +42,7 @@ export function createColdSessionArtifactGuard(database: Database): PrepareStale
       {
         kind: { $in: ['SESSION', 'GROUP', 'HOST_PRIVATE'] },
         'scope.sessionId': sessionId,
-        closedAt: { $not: { $type: 'date' } },
+        $expr: { $ne: [{ $type: '$closedAt' }, 'date'] },
       },
       { projection: { _id: 1 }, maxTimeMS: 5000 },
     );
@@ -49,7 +50,12 @@ export function createColdSessionArtifactGuard(database: Database): PrepareStale
       {
         purpose: 'FRAME',
         'scope.sessionId': sessionId,
-        $nor: [{ state: 'DELETE_PENDING' }, { cleanupAfter: { $type: 'date' } }],
+        $expr: {
+          $and: [
+            { $ne: ['$state', 'DELETE_PENDING'] },
+            { $ne: [{ $type: '$cleanupAfter' }, 'date'] },
+          ],
+        },
       },
       { projection: { _id: 1 }, maxTimeMS: 5000 },
     );
@@ -65,7 +71,7 @@ export function createColdSessionArtifactGuard(database: Database): PrepareStale
   };
 }
 
-// Cold startup only, before listening/creating any live runtime. Never call on worker death.
+// Cold startup only, before accepting live runtime. Health HTTP can already listen.
 export function createSessionBootstrap(
   database: Database,
   options: {
@@ -75,6 +81,7 @@ export function createSessionBootstrap(
     pageSize?: number;
     maxSessions?: number;
     cleanupTimeoutMs?: number;
+    totalTimeoutMs?: number;
   },
 ) {
   const { LiveSession } = sessionModels(database.connection);
@@ -83,8 +90,9 @@ export function createSessionBootstrap(
   const pageSize = options.pageSize ?? 25;
   const maxSessions = options.maxSessions ?? 10_000;
   const timeoutMs = options.cleanupTimeoutMs ?? 10_000;
+  const totalTimeoutMs = options.totalTimeoutMs ?? 30_000;
   if (
-    ![pageSize, maxSessions, timeoutMs].every(
+    ![pageSize, maxSessions, timeoutMs, totalTimeoutMs].every(
       (value) => Number.isSafeInteger(value) && value > 0,
     ) ||
     pageSize > 100
@@ -93,8 +101,16 @@ export function createSessionBootstrap(
   let state: 'IDLE' | 'RUNNING' | 'READY' | 'FAILED' = 'IDLE';
   let ended = 0;
   let task: Promise<void> | undefined;
+  const totalAbort = new AbortController();
+  let deadline = Number.POSITIVE_INFINITY;
   function offline() {
-    if (!options.isOffline() || !database.isConnected()) throw new SessionBootstrapError();
+    if (
+      totalAbort.signal.aborted ||
+      performance.now() >= deadline ||
+      !options.isOffline() ||
+      !database.isConnected()
+    )
+      throw new SessionBootstrapError();
   }
   const timestamp = () => {
     const at = new Date(now());
@@ -108,13 +124,19 @@ export function createSessionBootstrap(
     try {
       const result = await Promise.race([
         Promise.resolve().then(() =>
-          options.prepareStaleSession(Object.freeze({ ...input }), abort.signal),
+          options.prepareStaleSession(
+            Object.freeze({ ...input }),
+            AbortSignal.any([abort.signal, totalAbort.signal]),
+          ),
         ),
         new Promise<never>((_, reject) => {
-          timer = setTimeout(() => {
-            abort.abort();
-            reject(new SessionBootstrapError());
-          }, timeoutMs);
+          timer = setTimeout(
+            () => {
+              abort.abort();
+              reject(new SessionBootstrapError());
+            },
+            Math.min(timeoutMs, Math.max(0, deadline - performance.now())),
+          );
         }),
       ]);
       const parsed = cleanupResultSchema.safeParse(result);
@@ -203,15 +225,25 @@ export function createSessionBootstrap(
       // Single-flight and one attempt per process. Failed/late cleanup never overlaps a retry.
       if (!task) {
         state = 'RUNNING';
-        task = execute().then(
-          () => {
-            state = 'READY';
-          },
-          () => {
-            state = 'FAILED';
-            throw new SessionBootstrapError();
-          },
-        );
+        deadline = performance.now() + totalTimeoutMs;
+        let timer: ReturnType<typeof setTimeout>;
+        const timedOut = new Promise<never>((_, reject) => {
+          timer = setTimeout(() => {
+            totalAbort.abort();
+            reject(new SessionBootstrapError());
+          }, totalTimeoutMs);
+        });
+        task = Promise.race([execute(), timedOut])
+          .then(
+            () => {
+              state = 'READY';
+            },
+            () => {
+              state = 'FAILED';
+              throw new SessionBootstrapError();
+            },
+          )
+          .finally(() => clearTimeout(timer));
       }
       return task;
     },

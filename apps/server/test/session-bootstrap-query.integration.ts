@@ -111,6 +111,72 @@ afterAll(async () => {
 });
 
 describe('SCRUM-80 cold session bootstrap', () => {
+  it.each(['conversation', 'frame'] as const)(
+    'keeps malformed date arrays in %s pending rather than accepting them as scalar dates',
+    async (kind) => {
+      const input = await seed();
+      const db = database.connection.db!;
+      const collection = db.collection(kind === 'conversation' ? 'conversations' : 'files');
+      const artifactId = id();
+      const field = kind === 'conversation' ? 'closedAt' : 'cleanupAfter';
+      await collection.insertOne({
+        _id: artifactId,
+        scope: { sessionId: input.sessionId },
+        ...(kind === 'conversation' ? { kind: 'GROUP' } : { purpose: 'FRAME', state: 'READY' }),
+        [field]: [new Date()],
+      });
+      const boot = bootstrap({ prepareStaleSession: createColdSessionArtifactGuard(database) });
+      await expect(boot.run()).rejects.toThrow();
+      expect(boot.isReady()).toBe(false);
+      expect((await models.LiveSession.findById(input.sessionId).lean())?.status).toBe('ENDING');
+      expect(
+        (await models.SessionParticipant.findById(input.participantId).lean())?.leftAt,
+      ).toBeNull();
+      expect(Array.isArray((await collection.findOne({ _id: artifactId }))?.[field])).toBe(true);
+      await collection.updateOne({ _id: artifactId }, { $set: { [field]: new Date() } });
+      await bootstrap({ prepareStaleSession: createColdSessionArtifactGuard(database) }).run();
+    },
+  );
+
+  it('bounds the whole multi-session cold start and ignores cleanup completing after its deadline', async () => {
+    const old = [];
+    for (let index = 0; index < 7; index++) old.push(await seed('ENDING'));
+    const callback = vi.fn(
+      async (session: Parameters<PrepareStaleSession>[0], signal: AbortSignal) => {
+        await new Promise((resolve) => setTimeout(resolve, 200));
+        return confirmed(session, signal);
+      },
+    );
+    const boot = bootstrap({
+      prepareStaleSession: callback,
+      cleanupTimeoutMs: 500,
+      totalTimeoutMs: 1000,
+    });
+    const app = createApp(loadConfig({ NODE_ENV: 'test' }), () => ({
+      name: 'CoLearnia',
+      database: 'connected',
+      media: 'disconnected',
+      ready: boot.isReady(),
+    }));
+    await expect(boot.run()).rejects.toThrow();
+    expect(boot.stats().state).toBe('FAILED');
+    expect(callback.mock.calls.length).toBeLessThan(7);
+    expect(callback.mock.calls.at(-1)?.[1].aborted).toBe(true);
+    const sessionIds = old.map((value) => value.sessionId);
+    const ended = await models.LiveSession.countDocuments({
+      _id: { $in: sessionIds },
+      status: 'ENDED',
+    });
+    expect(ended).toBeLessThan(7);
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    expect(
+      await models.LiveSession.countDocuments({ _id: { $in: sessionIds }, status: 'ENDED' }),
+    ).toBe(ended);
+    expect((await request(app).get('/health/ready')).status).toBe(503);
+    expect((await request(app).get('/health/live')).status).toBe(200);
+    await expect(boot.run()).rejects.toThrow();
+    await bootstrap().run();
+  });
   it('accepts a fresh database without auto creating schema or indexes', async () => {
     const name = `colearnia_test_scrum80_${randomUUID().replaceAll('-', '')}`;
     const fresh = createDatabase(testReplicaUri(name));
