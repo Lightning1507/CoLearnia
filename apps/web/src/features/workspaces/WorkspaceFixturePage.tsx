@@ -7,6 +7,7 @@ import type { WorkspacePanel } from './shell-contract';
 import {
   accessFixture,
   currentUserFixture,
+  liveContextFixture,
   sidebarFixture,
   workspaceFixture,
 } from './workspace-fixture';
@@ -70,7 +71,22 @@ export function WorkspaceFixturePage() {
           <ChatPanel channel={selected} identity={currentUserFixture} access={selectedAccess} />
         ) : null
       }
-      callPanel={selected?.type === 'LIVE' ? <RoomShell channelName={selected.name} /> : null}
+      callPanel={
+        selected?.type === 'LIVE' ? (
+          <RoomShell
+            channelName={selected.name}
+            sessionId={
+              selected.id === liveContextFixture.access.channelId
+                ? liveContextFixture.sessionId
+                : undefined
+            }
+            sidePanel={{
+              label: 'Người tham gia',
+              content: <p className="text-stone-600">Chưa có danh sách người tham gia.</p>,
+            }}
+          />
+        ) : null
+      }
       persistentCallControls={<PersistentCallStatus />}
     />
   );

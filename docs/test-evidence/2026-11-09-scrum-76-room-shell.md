@@ -30,3 +30,17 @@ PASS · subscriptions=14, remaining=0, video attach/detach=12/12, peak=1, call A
 | Truyền và phát audio cuộc gọi thật                 | Xác minh audio end-to-end và một output/track qua AudioGraph.                           | RoomShell chưa có nguồn media từ adapter production. Ca Chrome kiểm binding DOM với track tổng hợp.                                                                                                     | NOT TESTED |
 
 [Fixture SCRUM-59](http://127.0.0.1:5176/test/browser/call-controller/) cũng đạt. `pnpm media:smoke` khởi động được native worker và Router Opus/VP8. Hai kết quả này không đo playback audio cuộc gọi hoặc TURN. AudioGraph MAIN và nguồn media production sẽ được ghép ở các task tích hợp riêng.
+
+## Kiểm lại sau review ngày 10/11/2026
+
+Chạy lại fixture RoomShell ở 1280 × 800 và 390 × 844 trong trình duyệt Chromium của Codex. Cả hai lượt trả cùng kết quả:
+
+```text
+PASS · subscriptions=20, remaining=0, video attach/detach=16/16, peak=1, call A init/dispose=1/1
+```
+
+| Ca bổ sung                             | Kết quả thực tế                                                                                                                                                                                                 |
+| -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Hai kênh LIVE có `sessionId` khác nhau | Mở B trong lúc A active, vẫn cố tình truyền stream A. B hiện trạng thái chưa tham gia, có 0 binding và video A đã nhả stream. Badge vẫn active, hai track A còn `live` và khi quay lại A nhận cùng call handle. |
+| Slot panel bên                         | A có vùng Người tham gia. B dùng đúng nhãn Bảng và nội dung do fixture truyền. Bản độc lập không truyền slot nên stage chiếm toàn bộ chiều ngang.                                                               |
+| Tailwind và màu sắc ngoài Workspace    | Trong Workspace, stage và panel bên hiển thị hai cột ở 1280 px và một cột ở 390 px. Bản độc lập có viền hiện cùng màu với bản trong Workspace và nền stage có hiệu lực ở cả hai kích thước.                     |

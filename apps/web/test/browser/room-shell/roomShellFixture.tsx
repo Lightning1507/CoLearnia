@@ -1,4 +1,5 @@
 import { StrictMode, act, useState } from 'react';
+import { channelSummarySchema } from '@colearnia/contracts';
 import { createRoot } from 'react-dom/client';
 import { Link, MemoryRouter, Route, Routes } from 'react-router-dom';
 import { RoomShell } from '../../../src/features/live/room/RoomShell';
@@ -16,7 +17,21 @@ import {
 import '../../../src/styles/global.css';
 
 const roomName = 'Phòng học cuối tuần';
+const otherRoomName = 'Phòng ôn tập';
 const chatName = 'thảo-luận-chung';
+const otherSessionId = '100000000000000000000012';
+const otherRoom = channelSummarySchema.parse({
+  id: '100000000000000000000011',
+  workspaceId: workspaceFixture.id,
+  name: otherRoomName,
+  type: 'LIVE',
+  accessMode: 'WORKSPACE',
+  revision: 1,
+});
+const channels = [
+  ...sidebarFixture,
+  { channel: otherRoom, canReadContent: true, canManageChannel: false },
+];
 type StageMedia = { call: CallHandle; stream: MediaStream };
 
 function CallBadge() {
@@ -31,10 +46,11 @@ export function Workspace({
   error?: string | undefined;
 }) {
   const [panel, setPanel] = useState<WorkspacePanel>({ kind: 'empty' });
+  const isOtherRoom = panel.kind === 'live' && panel.channelId === otherRoom.id;
   return (
     <WorkspaceShell
       workspace={workspaceFixture}
-      channels={sidebarFixture}
+      channels={channels}
       panel={panel}
       onSelectChannel={(channel) =>
         setPanel({ kind: channel.type === 'LIVE' ? 'live' : 'text', channelId: channel.id })
@@ -42,10 +58,15 @@ export function Workspace({
       chatPanel={<section aria-label="Chat kiểm thử">Trò chuyện</section>}
       callPanel={
         <RoomShell
-          channelName={roomName}
+          channelName={isOtherRoom ? otherRoomName : roomName}
+          sessionId={isOtherRoom ? otherSessionId : liveContextFixture.sessionId}
           stageMedia={media}
           error={error}
-          participants={<p>Danh sách kiểm thử</p>}
+          sidePanel={
+            isOtherRoom
+              ? { label: 'Bảng', content: <p>Nội dung bảng kiểm thử</p> }
+              : { label: 'Người tham gia', content: <p>Danh sách kiểm thử</p> }
+          }
           controls={<button type="button">Điều khiển kiểm thử</button>}
         />
       }
@@ -122,7 +143,28 @@ async function verifyLifecycle(container: HTMLElement) {
             <MemoryRouter>
               <Routes>
                 <Route path="/" element={<Workspace media={media} error={error} />} />
-                <Route path="/overview" element={<Link to="/">Về danh sách kênh</Link>} />
+                <Route
+                  path="/overview"
+                  element={
+                    <>
+                      <Link to="/">Về danh sách kênh</Link>
+                      <Link to="/standalone">Mở phòng độc lập</Link>
+                    </>
+                  }
+                />
+                <Route
+                  path="/standalone"
+                  element={
+                    <>
+                      <Link to="/">Về danh sách kênh</Link>
+                      <RoomShell
+                        channelName={roomName}
+                        sessionId={liveContextFixture.sessionId}
+                        stageMedia={media}
+                      />
+                    </>
+                  }
+                />
               </Routes>
             </MemoryRouter>
           </CallControllerProvider>
@@ -130,21 +172,24 @@ async function verifyLifecycle(container: HTMLElement) {
       );
     });
 
-  const room = () => container.querySelector('.room-shell');
+  const room = () => container.querySelector('article');
   const status = () => room()?.querySelector('[role="status"]')?.textContent;
   const video = () => room()?.querySelector('video');
   const verifyListeners = (expected: number) => {
     check(listeners === expected, `Số subscription đang hoạt động phải là ${expected}`);
   };
-  const verifyHidden = (previousVideo: HTMLVideoElement | undefined | null) => {
-    check(!room() && listeners === 1 && bindings.size === 0, 'Chỉ còn subscription badge');
-    check(previousVideo?.srcObject === null, 'Video đã tháo phải nhả stream');
+  const verifyCallPreserved = () => {
     check(
       tracks.every((track) => track.readyState === 'live'),
       'Track của call vẫn phải live',
     );
     check(disposals === 0 && audio.state !== 'closed', 'Runtime và audio fixture vẫn phải sống');
     check(container.querySelector('#call-status')?.textContent === 'active', 'Badge vẫn active');
+  };
+  const verifyHidden = (previousVideo: HTMLVideoElement | undefined | null) => {
+    check(!room() && listeners === 1 && bindings.size === 0, 'Chỉ còn subscription badge');
+    check(previousVideo?.srcObject === null, 'Video đã tháo phải nhả stream');
+    verifyCallPreserved();
   };
 
   try {
@@ -157,6 +202,15 @@ async function verifyLifecycle(container: HTMLElement) {
       room()?.querySelectorAll('section, footer').length === 3,
       'Thiếu vùng stage/panel/controls',
     );
+    const workspaceRoom = room();
+    const body = workspaceRoom?.querySelector('section')?.parentElement;
+    check(workspaceRoom && body, 'Thiếu bố cục phòng trong Workspace');
+    const columns = getComputedStyle(body).gridTemplateColumns.trim().split(/\s+/).length;
+    check(
+      columns === (window.innerWidth >= 861 ? 2 : 1),
+      'Panel bên phải theo breakpoint Tailwind',
+    );
+    const borderColor = getComputedStyle(workspaceRoom).borderTopColor;
     verifyListeners(2);
     check(
       subscriptions - subscriptionsBeforeRoom === 2,
@@ -215,10 +269,54 @@ async function verifyLifecycle(container: HTMLElement) {
     }
 
     await click(roomName);
+    const roomAVideo = verifyActive();
+    const beforeOtherRoom = attached;
+    await click(otherRoomName);
+    check(room()?.querySelector('h2')?.textContent === otherRoomName, 'Phải mở đúng phòng B');
+    check(status() === 'Chưa tham gia cuộc gọi', 'Phòng B không hiển thị trạng thái cuộc gọi A');
+    check(
+      !video() && bindings.size === 0 && attached === beforeOtherRoom,
+      'Phòng B không được gắn stream cũ của A',
+    );
+    check(roomAVideo.srcObject === null, 'Video của phòng A phải nhả stream');
+    const boardPanel = room()?.querySelector('section[aria-labelledby]');
+    check(
+      boardPanel?.querySelector('h3')?.textContent === 'Bảng' &&
+        boardPanel.textContent.includes('Nội dung bảng kiểm thử'),
+      'Panel bên phải lấy nhãn và nội dung từ bên gọi',
+    );
+    verifyListeners(2);
+    verifyCallPreserved();
+    await click(roomName);
     const routeVideo = verifyActive();
     await click('Tổng quan Workspace');
     verifyHidden(routeVideo);
+    await click('Mở phòng độc lập');
+    const standaloneVideo = verifyActive();
+    const standaloneRoom = room();
+    check(
+      standaloneRoom && !standaloneRoom.closest('.workspace-shell'),
+      'Phòng độc lập phải nằm ngoài Workspace',
+    );
+    check(
+      !standaloneRoom.querySelector('section[aria-labelledby]'),
+      'Panel bên phải được bỏ khi không truyền slot',
+    );
+    const standaloneStyle = getComputedStyle(standaloneRoom);
+    check(
+      standaloneStyle.display === 'grid' &&
+        parseFloat(standaloneStyle.borderTopWidth) > 0 &&
+        standaloneStyle.borderTopColor === borderColor &&
+        standaloneStyle.borderTopColor !== 'rgba(0, 0, 0, 0)',
+      `Tailwind layout và token viền phải có hiệu lực ngoài Workspace (${standaloneStyle.display}, ${standaloneStyle.borderTopWidth}, ${standaloneStyle.borderTopColor}, Workspace ${borderColor})`,
+    );
+    const stage = standaloneVideo.parentElement;
+    check(
+      stage && getComputedStyle(stage).backgroundColor !== 'rgba(0, 0, 0, 0)',
+      'Token nền stage phải có hiệu lực ngoài Workspace',
+    );
     await click('Về danh sách kênh');
+    verifyHidden(standaloneVideo);
     await click(roomName);
     const previousVideo = verifyActive();
     check(
