@@ -172,43 +172,55 @@ describe('SCRUM-30 workspace persistence on MongoDB', () => {
     expect(await Invitation.exists({ workspaceId })).toBeNull();
   });
 
-  it('keeps one membership per pair through removal/rejoin and rejects stale CAS', async () => {
-    const input = memberInput();
-    const member = await Membership.create(input);
-    await expect(Membership.create(input)).rejects.toMatchObject({ code: 11000 });
-    await Membership.updateOne(
-      { _id: member._id, revision: 0, status: 'ACTIVE' },
-      { $set: { status: 'REMOVED', removedAt: new Date() }, $inc: { revision: 1 } },
-    );
-    await expect(Membership.create(input)).rejects.toMatchObject({ code: 11000 });
-    const rejoin = () =>
-      Membership.updateOne(
-        { _id: member._id, revision: 1, status: 'REMOVED' },
-        {
-          $set: { status: 'ACTIVE', removedAt: null, joinedAt: new Date() },
-          $inc: { revision: 1, incarnation: 1 },
-        },
+  it.each(['MEMBER', 'ADMIN'] as const)(
+    'rejoins a removed %s as MEMBER without duplicating membership',
+    async (role) => {
+      const input = { ...memberInput(), role };
+      const member = await Membership.create(input);
+      await expect(Membership.create(input)).rejects.toMatchObject({ code: 11000 });
+      await Membership.updateOne(
+        { _id: member._id, revision: 0, status: 'ACTIVE' },
+        { $set: { status: 'REMOVED', removedAt: new Date() }, $inc: { revision: 1 } },
       );
-    const results = await Promise.all([rejoin(), rejoin()]);
-    expect(results.reduce((sum, result) => sum + result.modifiedCount, 0)).toBe(1);
-    expect(await Membership.findById(member._id).lean()).toMatchObject({
-      incarnation: 2,
-      revision: 2,
-      removedAt: null,
-    });
-    await Membership.updateOne(
-      { _id: member._id, revision: 2 },
-      { $set: { role: 'ADMIN' }, $inc: { revision: 1 } },
-    );
-    expect(await Membership.findById(member._id).lean()).toMatchObject({
-      incarnation: 2,
-      revision: 3,
-      role: 'ADMIN',
-    });
-    expect(
-      await Membership.countDocuments({ workspaceId: input.workspaceId, userId: input.userId }),
-    ).toBe(1);
-  });
+      await expect(Membership.create(input)).rejects.toMatchObject({ code: 11000 });
+      const rejoin = () =>
+        Membership.updateOne(
+          { _id: member._id, revision: 1, status: 'REMOVED' },
+          {
+            $set: { status: 'ACTIVE', role: 'MEMBER', removedAt: null, joinedAt: new Date() },
+            $inc: { revision: 1, incarnation: 1 },
+          },
+        );
+      const results = await Promise.all([rejoin(), rejoin()]);
+      expect(results.reduce((sum, result) => sum + result.modifiedCount, 0)).toBe(1);
+      expect(await Membership.findById(member._id).lean()).toMatchObject({
+        incarnation: 2,
+        revision: 2,
+        removedAt: null,
+        status: 'ACTIVE',
+        role: 'MEMBER',
+      });
+      await Membership.updateOne(
+        { _id: member._id, revision: 2 },
+        { $set: { role: 'ADMIN' }, $inc: { revision: 1 } },
+      );
+      expect(await Membership.findById(member._id).lean()).toMatchObject({
+        incarnation: 2,
+        revision: 3,
+        role: 'ADMIN',
+      });
+      expect((await rejoin()).modifiedCount).toBe(0);
+      expect(await Membership.findById(member._id).lean()).toMatchObject({
+        incarnation: 2,
+        revision: 3,
+        role: 'ADMIN',
+        status: 'ACTIVE',
+      });
+      expect(
+        await Membership.countDocuments({ workspaceId: input.workspaceId, userId: input.userId }),
+      ).toBe(1);
+    },
+  );
 
   it('keeps Workspace owner and membership identity immutable through Mongoose updates', async () => {
     const workspace = await Workspace.create(workspaceInput());
