@@ -44,3 +44,9 @@ PASS · subscriptions=20, remaining=0, video attach/detach=16/16, peak=1, call A
 | Hai kênh LIVE có `sessionId` khác nhau | Mở B trong lúc A active, vẫn cố tình truyền stream A. B hiện trạng thái chưa tham gia, có 0 binding và video A đã nhả stream. Badge vẫn active, hai track A còn `live` và khi quay lại A nhận cùng call handle. |
 | Slot panel bên                         | A có vùng Người tham gia. B dùng đúng nhãn Bảng và nội dung do fixture truyền. Bản độc lập không truyền slot nên stage chiếm toàn bộ chiều ngang.                                                               |
 | Tailwind và màu sắc ngoài Workspace    | Trong Workspace, stage và panel bên hiển thị hai cột ở 1280 px và một cột ở 390 px. Bản độc lập có viền hiện cùng màu với bản trong Workspace và nền stage có hiệu lực ở cả hai kích thước.                     |
+
+## Kiểm ngưỡng bề rộng RoomShell sau góp ý responsive
+
+- Fixture Chromium đổi bề rộng **cùng một RoomShell** theo chuỗi 1279 → 1280 → 1279 CSS px trong lúc call A `active`. Ở 1279 px panel mở thay sân khấu và có nút **Về sân khấu**. Ở 1280 px sân khấu và panel 320 px hiển thị cạnh nhau, nút quay lại ẩn. Toolbar vẫn hiển thị ở cả hai chế độ.
+- **Về sân khấu** đóng panel và chuyển focus về nút mở panel trên toolbar. Mở lại panel chuyển focus đến tiêu đề panel. Resize, quay về sân khấu và mở lại panel giữ nguyên video đang gắn, số subscription, hai track `live` và call handle. Cả lượt vẫn ghi 16 lần gắn, 16 lần tháo, tối đa một binding và 0 subscription sau unmount cuối.
+- Kiểm `/workspace` trong Chromium với viewport 390, 1280 và 1700 px. Bề rộng shell đo lần lượt 358, khoảng 898 và 1316 px. Hai lượt đầu hiển thị panel thay sân khấu, lượt cuối hiển thị cạnh nhau. Không thấy tràn ngang hoặc lỗi console. Bằng chứng call liên tục đến từ fixture dùng track tổng hợp.

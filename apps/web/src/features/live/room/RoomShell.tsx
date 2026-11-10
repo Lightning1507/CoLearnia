@@ -14,7 +14,7 @@ type RoomShellProps = {
   sessionId: CallIdentity['sessionId'] | undefined;
   stage?: ReactNode;
   stageMedia?: { call: CallHandle; stream: MediaStream } | undefined;
-  sidePanel?: { label: string; content: ReactNode };
+  sidePanel?: { label: string; content: ReactNode; onBackToStage: () => void } | undefined;
   controls?: ReactNode;
   error?: string | undefined;
 };
@@ -57,6 +57,13 @@ export function RoomShell({
   const call = useCallSnapshot();
   const titleId = useId();
   const panelId = useId();
+  const panelHeading = useRef<HTMLHeadingElement>(null);
+  const panelLabel = sidePanel?.label;
+
+  useLayoutEffect(() => {
+    if (panelLabel) panelHeading.current?.focus({ preventScroll: true });
+  }, [panelLabel]);
+
   const roomCall = call.status !== 'idle' && call.identity.sessionId === sessionId ? call : null;
   // The handle and snapshot share the identity of the same call generation.
   const stream =
@@ -65,48 +72,55 @@ export function RoomShell({
       : undefined;
 
   return (
-    <article
-      className="mx-auto grid min-w-0 max-w-[900px] gap-4 rounded-2xl border border-stone-200 bg-white p-[clamp(1rem,3vw,1.5rem)] [overflow-wrap:anywhere]"
-      aria-labelledby={titleId}
-    >
-      <header>
-        <h2 id={titleId}>{channelName}</h2>
-        <p className="mt-2 text-stone-600" role="status">
-          {statusLabels[roomCall?.status ?? 'idle']}
-        </p>
-      </header>
-      <div
-        className={
-          sidePanel
-            ? 'grid grid-cols-1 gap-4 min-[861px]:grid-cols-[minmax(0,3fr)_minmax(0,1fr)]'
-            : 'grid grid-cols-1'
-        }
-      >
-        <section
-          className="grid min-h-48 min-w-0 place-items-center rounded-xl bg-stone-50 text-center"
-          aria-label="Sân khấu cuộc gọi"
+    <article className="@container w-full min-w-0" aria-labelledby={titleId}>
+      <div className="grid min-w-0 gap-4 rounded-2xl border border-stone-200 bg-white p-[clamp(1rem,3vw,1.5rem)] [overflow-wrap:anywhere]">
+        <header>
+          <h2 id={titleId}>{channelName}</h2>
+          <p className="mt-2 text-stone-600" role="status">
+            {statusLabels[roomCall?.status ?? 'idle']}
+          </p>
+        </header>
+        <div
+          className={
+            sidePanel
+              ? 'grid grid-cols-1 gap-4 @min-[1280px]:grid-cols-[minmax(0,1fr)_320px]'
+              : 'grid grid-cols-1'
+          }
         >
-          {error ? (
-            <p role="alert">{error}</p>
-          ) : (
-            (stage ?? (stream ? <StageVideo stream={stream} /> : <p>Chưa có hình ảnh sân khấu.</p>))
-          )}
-        </section>
-        {sidePanel && (
-          <section className="grid min-w-0 content-start gap-2" aria-labelledby={panelId}>
-            <h3 className="text-base font-semibold" id={panelId}>
-              {sidePanel.label}
-            </h3>
-            {sidePanel.content}
+          <section
+            className={`min-h-48 min-w-0 place-items-center rounded-xl bg-stone-50 text-center ${sidePanel ? 'hidden @min-[1280px]:grid' : 'grid'}`}
+            aria-label="Sân khấu cuộc gọi"
+          >
+            {error ? (
+              <p role="alert">{error}</p>
+            ) : (
+              (stage ??
+              (stream ? <StageVideo stream={stream} /> : <p>Chưa có hình ảnh sân khấu.</p>))
+            )}
           </section>
-        )}
+          {sidePanel && (
+            <section className="grid min-w-0 content-start gap-2" aria-labelledby={panelId}>
+              <h3 className="text-base font-semibold" id={panelId} ref={panelHeading} tabIndex={-1}>
+                {sidePanel.label}
+              </h3>
+              <button
+                type="button"
+                className="justify-self-start rounded-lg border border-stone-200 px-3 py-2 @min-[1280px]:hidden"
+                onClick={sidePanel.onBackToStage}
+              >
+                Về sân khấu
+              </button>
+              {sidePanel.content}
+            </section>
+          )}
+        </div>
+        <footer
+          className="flex flex-wrap gap-3 border-t border-stone-200 pt-4"
+          aria-label="Điều khiển cuộc gọi"
+        >
+          {controls ?? <p>Chưa có điều khiển cuộc gọi khả dụng.</p>}
+        </footer>
       </div>
-      <footer
-        className="flex flex-wrap gap-3 border-t border-stone-200 pt-4"
-        aria-label="Điều khiển cuộc gọi"
-      >
-        {controls ?? <p>Chưa có điều khiển cuộc gọi khả dụng.</p>}
-      </footer>
     </article>
   );
 }

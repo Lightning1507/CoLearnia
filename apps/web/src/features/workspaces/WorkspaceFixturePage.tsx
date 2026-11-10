@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import type { ChannelAccessSnapshot, ChannelSummary, OwnUser } from '@colearnia/contracts';
 import { RoomShell } from '../live/room/RoomShell';
 import { useCallSnapshot } from '../live/runtime/callControllerContext';
@@ -48,6 +48,45 @@ function PersistentCallStatus() {
   );
 }
 
+function FixtureRoom({ channel }: { channel: ChannelSummary }) {
+  const [participantsOpen, setParticipantsOpen] = useState(true);
+  const participantsButton = useRef<HTMLButtonElement>(null);
+
+  return (
+    <RoomShell
+      channelName={channel.name}
+      sessionId={
+        channel.id === liveContextFixture.access.channelId
+          ? liveContextFixture.sessionId
+          : undefined
+      }
+      sidePanel={
+        participantsOpen
+          ? {
+              label: 'Người tham gia',
+              content: <p className="text-stone-600">Chưa có danh sách người tham gia.</p>,
+              onBackToStage: () => {
+                setParticipantsOpen(false);
+                participantsButton.current?.focus();
+              },
+            }
+          : undefined
+      }
+      controls={
+        <button
+          type="button"
+          className="rounded-lg border border-stone-200 px-3 py-2"
+          ref={participantsButton}
+          aria-expanded={participantsOpen}
+          onClick={() => setParticipantsOpen(!participantsOpen)}
+        >
+          Người tham gia
+        </button>
+      }
+    />
+  );
+}
+
 export function WorkspaceFixturePage() {
   const [panel, setPanel] = useState<WorkspacePanel>({ kind: 'empty' });
   const selected =
@@ -71,22 +110,7 @@ export function WorkspaceFixturePage() {
           <ChatPanel channel={selected} identity={currentUserFixture} access={selectedAccess} />
         ) : null
       }
-      callPanel={
-        selected?.type === 'LIVE' ? (
-          <RoomShell
-            channelName={selected.name}
-            sessionId={
-              selected.id === liveContextFixture.access.channelId
-                ? liveContextFixture.sessionId
-                : undefined
-            }
-            sidePanel={{
-              label: 'Người tham gia',
-              content: <p className="text-stone-600">Chưa có danh sách người tham gia.</p>,
-            }}
-          />
-        ) : null
-      }
+      callPanel={selected?.type === 'LIVE' ? <FixtureRoom channel={selected} /> : null}
       persistentCallControls={<PersistentCallStatus />}
     />
   );

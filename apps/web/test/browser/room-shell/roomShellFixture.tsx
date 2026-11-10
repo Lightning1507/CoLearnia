@@ -1,4 +1,4 @@
-import { StrictMode, act, useState } from 'react';
+import { StrictMode, act, useRef, useState } from 'react';
 import { channelSummarySchema } from '@colearnia/contracts';
 import { createRoot } from 'react-dom/client';
 import { Link, MemoryRouter, Route, Routes } from 'react-router-dom';
@@ -46,6 +46,8 @@ export function Workspace({
   error?: string | undefined;
 }) {
   const [panel, setPanel] = useState<WorkspacePanel>({ kind: 'empty' });
+  const [sidePanelOpen, setSidePanelOpen] = useState(true);
+  const panelButton = useRef<HTMLButtonElement>(null);
   const isOtherRoom = panel.kind === 'live' && panel.channelId === otherRoom.id;
   return (
     <WorkspaceShell
@@ -63,11 +65,22 @@ export function Workspace({
           stageMedia={media}
           error={error}
           sidePanel={
-            isOtherRoom
-              ? { label: 'Bảng', content: <p>Nội dung bảng kiểm thử</p> }
-              : { label: 'Người tham gia', content: <p>Danh sách kiểm thử</p> }
+            sidePanelOpen
+              ? {
+                  label: isOtherRoom ? 'Bảng' : 'Người tham gia',
+                  content: <p>{isOtherRoom ? 'Nội dung bảng kiểm thử' : 'Danh sách kiểm thử'}</p>,
+                  onBackToStage: () => {
+                    setSidePanelOpen(false);
+                    panelButton.current?.focus();
+                  },
+                }
+              : undefined
           }
-          controls={<button type="button">Điều khiển kiểm thử</button>}
+          controls={
+            <button ref={panelButton} type="button" onClick={() => setSidePanelOpen(true)}>
+              Mở panel kiểm thử
+            </button>
+          }
         />
       }
       persistentCallControls={<Link to="/overview">Tổng quan Workspace</Link>}
@@ -175,6 +188,7 @@ async function verifyLifecycle(container: HTMLElement) {
   const room = () => container.querySelector('article');
   const status = () => room()?.querySelector('[role="status"]')?.textContent;
   const video = () => room()?.querySelector('video');
+  const isDisplayed = (element: Element) => getComputedStyle(element).display !== 'none';
   const verifyListeners = (expected: number) => {
     check(listeners === expected, `Số subscription đang hoạt động phải là ${expected}`);
   };
@@ -202,15 +216,9 @@ async function verifyLifecycle(container: HTMLElement) {
       room()?.querySelectorAll('section, footer').length === 3,
       'Thiếu vùng stage/panel/controls',
     );
-    const workspaceRoom = room();
-    const body = workspaceRoom?.querySelector('section')?.parentElement;
-    check(workspaceRoom && body, 'Thiếu bố cục phòng trong Workspace');
-    const columns = getComputedStyle(body).gridTemplateColumns.trim().split(/\s+/).length;
-    check(
-      columns === (window.innerWidth >= 861 ? 2 : 1),
-      'Panel bên phải theo breakpoint Tailwind',
-    );
-    const borderColor = getComputedStyle(workspaceRoom).borderTopColor;
+    const workspaceCard = room()?.firstElementChild;
+    check(workspaceCard, 'Thiếu bố cục phòng trong Workspace');
+    const borderColor = getComputedStyle(workspaceCard).borderTopColor;
     verifyListeners(2);
     check(
       subscriptions - subscriptionsBeforeRoom === 2,
@@ -270,6 +278,58 @@ async function verifyLifecycle(container: HTMLElement) {
 
     await click(roomName);
     const roomAVideo = verifyActive();
+    const activeRoom = room();
+    const activeStage = roomAVideo.parentElement;
+    const activePanel = activeRoom?.querySelector('section[aria-labelledby]');
+    const stageLayout = activeStage?.parentElement;
+    const backButton = activePanel?.querySelector('button');
+    const toolbar = activeRoom?.querySelector('footer');
+    check(
+      activeRoom && activeStage && activePanel && stageLayout && backButton && toolbar,
+      'Thiếu sân khấu, panel hoặc toolbar',
+    );
+    const beforeResize = { attached, detached, subscriptions };
+    for (const width of [1279, 1280, 1279]) {
+      activeRoom.style.inlineSize = `${width}px`;
+      check(activeRoom.getBoundingClientRect().width === width, `Shell phải rộng ${width}px`);
+      const wide = width === 1280;
+      check(
+        isDisplayed(activeStage) === wide && isDisplayed(activePanel),
+        `Sai bố cục ở ${width}px`,
+      );
+      check(
+        isDisplayed(backButton) === !wide && isDisplayed(toolbar),
+        `Sai điều khiển ở ${width}px`,
+      );
+      const columns = getComputedStyle(stageLayout).gridTemplateColumns.split(' ');
+      check(
+        wide ? columns.length === 2 && columns[1] === '320px' : columns.length === 1,
+        `Sai số cột ở ${width}px`,
+      );
+      check(verifyActive() === roomAVideo, 'Đổi layout phải giữ video đang gắn');
+    }
+    await click('Về sân khấu');
+    check(
+      isDisplayed(activeStage) && !activePanel.isConnected,
+      'Về sân khấu phải đóng panel và hiện sân khấu',
+    );
+    check(document.activeElement === toolbar.querySelector('button'), 'Focus phải về nút mở panel');
+    await click('Mở panel kiểm thử');
+    const reopenedPanel = activeRoom.querySelector('section[aria-labelledby]');
+    check(reopenedPanel && !isDisplayed(activeStage), 'Mở lại panel phải thay sân khấu ở 1279px');
+    check(
+      document.activeElement === reopenedPanel.querySelector('h3'),
+      'Focus phải đến tiêu đề panel',
+    );
+    check(verifyActive() === roomAVideo, 'Về sân khấu và mở lại panel phải giữ video đang gắn');
+    check(
+      attached === beforeResize.attached &&
+        detached === beforeResize.detached &&
+        subscriptions === beforeResize.subscriptions,
+      'Đổi layout không được thay binding hoặc subscription',
+    );
+    verifyCallPreserved();
+
     const beforeOtherRoom = attached;
     await click(otherRoomName);
     check(room()?.querySelector('h2')?.textContent === otherRoomName, 'Phải mở đúng phòng B');
@@ -302,7 +362,9 @@ async function verifyLifecycle(container: HTMLElement) {
       !standaloneRoom.querySelector('section[aria-labelledby]'),
       'Panel bên phải được bỏ khi không truyền slot',
     );
-    const standaloneStyle = getComputedStyle(standaloneRoom);
+    const standaloneCard = standaloneRoom.firstElementChild;
+    check(standaloneCard, 'Thiếu khung phòng độc lập');
+    const standaloneStyle = getComputedStyle(standaloneCard);
     check(
       standaloneStyle.display === 'grid' &&
         parseFloat(standaloneStyle.borderTopWidth) > 0 &&
