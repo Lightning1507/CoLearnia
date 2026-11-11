@@ -121,7 +121,7 @@ Các kết quả trên xác nhận stack Compose local qua HTTP. Staging vẫn c
 ### Bàn giao staging cho các task tiếp theo
 
 - **M4 review SCRUM-55.** URL kiểm là `https://colearnia-staging.duckdns.org`. Nhờ người quản trị Security Group thêm IP công khai của máy review vào TCP 443 trước khi thử từ máy khác. Đối chiếu Web, `/api/v1/system/status`, readiness nội bộ và bằng chứng transaction ở mục trên. Bản chạy dùng commit `50eec8f`. Khi deploy bản mới, ghi commit và image thực tế, rồi kiểm lại HTTPS và readiness. Nếu EC2 đổi IP công khai, cập nhật DuckDNS và `MEDIA_ANNOUNCED_ADDRESS` trước khi thử lại.
-- **[SCRUM-63](https://faker1652005.atlassian.net/browse/SCRUM-63).** Dùng staging để cấu hình TURN theo [runbook coturn](../../infra/coturn/README.md). Chốt hostname hoặc IP TURN, cổng lắng nghe và dải relay với người quản trị mạng. Kiểm credential ngắn hạn dùng được và credential hết hạn bị từ chối. Bàn giao candidate loại `relay`, cặp mạng đã thử và bằng chứng luồng media thật cho SCRUM-64 và SCRUM-81. Worker đã sẵn sàng mới xác nhận tiến trình khởi động.
+- **[SCRUM-63](https://faker1652005.atlassian.net/browse/SCRUM-63).** Hoàn tất cấu hình và kiểm Cloudflare TURN theo [runbook](cloudflare-turn.md), với TTL bàn giao 14.400 giây và ngưỡng cấp mới 3.600 giây. Có bằng chứng xác thực và candidate `relay`; giới hạn hết hạn đã được chấp nhận trong phạm vi nghiệm thu ngày 11/11/2026, chưa coi kiểm hết hạn đạt. SCRUM-64 tích hợp cấp ICE; SCRUM-81 tiếp tục kiểm cuộc gọi thật hai mạng và rollback.
 - **[SCRUM-81](https://faker1652005.atlassian.net/browse/SCRUM-81).** Sau khi các phụ thuộc trong Jira sẵn sàng, cấp quyền HTTPS cho cả hai mạng thử, kiểm kết nối trực tiếp và relay, rồi diễn tập quay về image app trước đã ghi nhận. Giữ volume và dữ liệu MongoDB xuyên suốt. Ghi commit/image trước và sau rollback cùng kết quả HTTPS, readiness và kết nối trên từng mạng. Bài kiểm media 5 người có tiêu chí riêng.
 
 ### SCRUM-63 kiểm khi có TURN
@@ -129,7 +129,7 @@ Các kết quả trên xác nhận stack Compose local qua HTTP. Staging vẫn c
 Với TURN app Cloudflare `colearnia-staging`, xem [cấu hình và cách kiểm Cloudflare TURN](cloudflare-turn.md). Không áp cổng/secret coturn cho dịch vụ Cloudflare; kết quả thực tế nằm trong [báo cáo SCRUM-63](../test-evidence/2026-11-11-scrum-63-turn.md).
 
 1. Xác nhận DNS/IP, NAT, cổng lắng nghe và dải relay theo hạ tầng thật.
-2. Kiểm thông tin truy cập ngắn hạn, từ chối khi hết hạn, thu bằng chứng kết nối relay và lượng dữ liệu đi qua relay. Ghi kết quả đúng phạm vi TURN để SCRUM-81 tiếp tục thử hai mạng và rollback.
+2. Kiểm thông tin truy cập ngắn hạn và thu bằng chứng kết nối relay, dữ liệu đi qua relay. Giữ phép kiểm hết hạn riêng và ghi rõ giới hạn đã quan sát. Xem phạm vi nghiệm thu SCRUM-63 trong runbook Cloudflare; SCRUM-81 tiếp tục thử cuộc gọi hai mạng và rollback.
 
 ## Kết quả của SCRUM-54
 

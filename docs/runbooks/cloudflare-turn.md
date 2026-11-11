@@ -2,6 +2,8 @@
 
 SCRUM-63 kiểm relay có xác thực và thời hạn credential. Cloudflare phục vụ TURN; EC2 vẫn chạy ứng dụng, MongoDB và media worker. TURN không thay thế SFU hoặc đưa RTP qua Nginx. Kết quả theo từng môi trường nằm trong [báo cáo kiểm tra](../test-evidence/2026-11-11-scrum-63-turn.md).
 
+SCRUM-63 hoàn tất theo phạm vi nghiệm thu chốt ngày 11/11/2026: cấu hình Cloudflare TURN, kiểm xác thực và đường relay, ghi bằng chứng và bàn giao cấu hình credential. Hành vi từ chối credential sau TTL được ghi nhận là giới hạn còn tồn tại, không chặn hoàn tất phần cấu hình này; chưa coi kiểm hết hạn hoặc gate media tích hợp đã đạt.
+
 ## Địa chỉ và quyền truy cập
 
 - Ứng dụng: `https://colearnia-staging.duckdns.org`.
@@ -16,9 +18,9 @@ Cloudflare cấp credential qua [API chính thức](https://developers.cloudflar
 
 ### Thời hạn dùng cho buổi học
 
-TTL đề xuất cho credential buổi học là **14.400 giây (4 giờ)**. SCRUM-64 cần cấp mới khi credential còn tối đa 1 giờ và cập nhật ICE servers theo đời kết nối hiện hành. Đây là thời hạn của credential, không phải giới hạn thời lượng cuộc họp. Cấp mới credential không tự thực hiện ICE restart, không tự cấp lại quyền đã bị thu và không bảo đảm allocation cũ được gia hạn; adapter tích hợp phải kiểm lại đường truyền và xử lý phục hồi theo contract.
+TTL chốt cho credential buổi học là **14.400 giây (4 giờ)**. SCRUM-64 cần cấp mới khi credential còn tối đa **3.600 giây (1 giờ)** và cập nhật ICE servers theo đời kết nối hiện hành. Đây là thời hạn của credential, không phải giới hạn thời lượng cuộc họp. Cấp mới credential không tự thực hiện ICE restart, không tự cấp lại quyền đã bị thu và không bảo đảm allocation cũ được gia hạn; adapter tích hợp phải kiểm lại đường truyền và xử lý phục hồi theo contract.
 
-Mốc **60 giây chỉ dành cho phép thử hết hạn nhanh**, không phải cấu hình người học. TTL 4 giờ hiện áp dụng cho công cụ kiểm và đề xuất bàn giao; endpoint cấp ICE của ứng dụng chưa được triển khai trong SCRUM-63. Không ghi cấu hình này là đã áp dụng cho cuộc gọi thực.
+Mốc **60 giây chỉ dành cho phép thử hết hạn nhanh**, không phải cấu hình người học. TTL 14.400 giây hiện áp dụng cho công cụ kiểm và cấu hình bàn giao; endpoint cấp ICE của ứng dụng thuộc SCRUM-64, chưa được triển khai trong SCRUM-63. Không ghi cấu hình này là đã áp dụng cho cuộc gọi thực.
 
 ### Kiểm credential 4 giờ
 
@@ -36,7 +38,7 @@ Trên Linux, sau khi môi trường đã có hai biến, chạy:
 python3 -u scripts/verify-cloudflare-turn.py --auth-only
 ```
 
-`--auth-only` kiểm credential 4 giờ dùng được và mật khẩu sai bị từ chối, rồi thu hồi credential thử. Kết quả ghi rõ `scope=authentication`, `expiryVerified=false`. Exit 0 của chế độ này chỉ xác nhận xác thực đạt, không phải SCRUM-63 hoặc kiểm hết hạn đạt.
+`--auth-only` kiểm credential 14.400 giây dùng được và mật khẩu sai bị từ chối, rồi thu hồi credential thử. Kết quả ghi rõ `scope=authentication`, `expiryVerified=false`. Exit 0 của chế độ này chỉ xác nhận xác thực đạt, không xác nhận kiểm hết hạn đạt.
 
 ### Kiểm hết hạn riêng
 
@@ -61,7 +63,7 @@ Công cụ chỉ xuất JSON với trạng thái, tuổi credential, giao thức
 
 Cloudflare mô tả credential có TTL và allocation đang dùng có thể bị ngắt sau một khoảng trễ khi credential hết hạn trong [FAQ](https://developers.cloudflare.com/realtime/turn/faq/). Việc credential còn cấp được allocation mới sau TTL phải được ghi là kết quả chưa đạt; không thay tiêu chí bằng “API thu hồi trả 404”.
 
-Credential TURN chỉ cho phép dùng relay, không cấp quyền vào cuộc họp. Server CoLearnia vẫn phải kiểm ownership/access và đóng tài nguyên khi thu quyền. Dù vậy, credential còn dùng được ngoài thời hạn có thể cho phép dùng relay ngoài dự kiến và phát sinh lưu lượng; kiểm quyền ứng dụng không thay thế tiêu chí hết hạn của SCRUM-63.
+Credential TURN chỉ cho phép dùng relay, không cấp quyền vào cuộc họp. Server CoLearnia vẫn phải kiểm ownership/access và đóng tài nguyên khi thu quyền. Dù vậy, credential còn dùng được ngoài thời hạn có thể cho phép dùng relay ngoài dự kiến và phát sinh lưu lượng. Việc chấp nhận giới hạn này để hoàn tất phần cấu hình không chứng minh Cloudflare đã thực thi đúng TTL; vẫn cần làm rõ và theo dõi riêng.
 
 ## Kiểm trên trình duyệt
 
