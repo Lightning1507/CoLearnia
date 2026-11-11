@@ -117,3 +117,5 @@ Không triển khai `participant.move`. `group.join` kiểm DISCUSSION roster/GU
 Điều phối User/Workspace trên server: xem
 [runbook SCRUM-19](../runbooks/operation-coordination.md) để dùng chung instance,
 context khóa, giới hạn hàng chờ và điểm nối M2/M4.
+
+**Session bootstrap/query (SCRUM-80):** [cold startup và metadata theo kênh](session-bootstrap-metadata.md), schema `session-metadata.ts`. Main giữ readiness tới khi phiên cũ được đối soát; query nội bộ có pagination và kiểm quyền trước/sau await.
