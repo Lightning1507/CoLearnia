@@ -350,6 +350,36 @@ function fixture() {
 }
 
 describe('paused-ready media signaling', () => {
+  it.each(['before create', 'after create', 'after close'] as const)(
+    'publishes a Consumer close only to its owner after create ACK, resync %s',
+    async (resyncAt) => {
+      const f = fixture();
+      const owner = f.attachSync('b');
+      const peer = f.attachSync('a');
+      await peer.resync();
+      if (resyncAt !== 'after create') await owner.resync();
+      const { consumerId, sourceId, sourceGeneration } = await f.createPaused();
+      if (resyncAt === 'after create') await owner.resync();
+      f.cleanup('b');
+      if (resyncAt === 'after close') await owner.resync();
+
+      const closed = { consumerId, sourceId, sourceGeneration, reason: 'USER_STOP' } as const;
+      await expect(peer.publish('media.consumer.closed', closed)).resolves.toBe(false);
+      await expect(
+        owner.publish('media.consumer.closed', {
+          ...closed,
+          sourceGeneration: sourceGeneration + 1,
+        }),
+      ).resolves.toBe(false);
+      await expect(owner.publish('media.consumer.closed', closed)).resolves.toBe(true);
+      expect(owner.emit).toHaveBeenLastCalledWith(
+        'media.consumer.closed',
+        expect.objectContaining({ mediaSequence: 1, payload: closed }),
+      );
+      await expect(owner.publish('media.consumer.closed', closed)).resolves.toBe(false);
+    },
+  );
+
   it('takes a filtered media snapshot with a distinct stream and watermark for each recipient', async () => {
     const f = fixture();
     const publisher = f.attachSync('a');

@@ -5,6 +5,7 @@ import {
   mediaSourcesResyncInputSchema,
   mediaSourcesSnapshotSchema,
   requestIdSchema,
+  sameSessionScope,
   sessionControlBudget,
 } from '@colearnia/contracts';
 import type {
@@ -17,7 +18,7 @@ import type {
 import { MainJoinError } from '../session-manager/main-join-registry.js';
 import type { createMainJoinRegistry } from '../session-manager/main-join-registry.js';
 import type { createPausedReadySignaling } from './paused-ready-signaling.js';
-import type { createTransportSignaling } from './transport-signaling.js';
+import type { createTransportSignaling, ResourceGrant } from './transport-signaling.js';
 
 type Payload = MediaSourcesSnapshot['payload'];
 type Socket = {
@@ -39,6 +40,7 @@ type Stream = {
   id: string;
   sequence: number;
   visible: Payload;
+  acknowledged: Set<string>;
   requiresSnapshot: boolean;
 };
 const empty = (): Payload => ({
@@ -52,6 +54,8 @@ const { maxControlBytes, maxSnapshotPartBytes, maxSnapshotBytes, maxSnapshotPart
   sessionControlBudget;
 // Bound concurrent snapshot copies, independently of the per-recipient latch.
 const maxResyncsInFlight = 64;
+// Bound retained ACK identities when close publication falls behind.
+const maxAcknowledgedResources = 1024;
 
 function sameAudience(left: LiveContext, right: LiveContext) {
   return (
@@ -60,8 +64,21 @@ function sameAudience(left: LiveContext, right: LiveContext) {
     left.participantId === right.participantId &&
     left.callGeneration === right.callGeneration &&
     left.audienceEpoch === right.audienceEpoch &&
-    left.auth.authSessionId === right.auth.authSessionId
+    left.auth.userId === right.auth.userId &&
+    left.auth.authSessionId === right.auth.authSessionId &&
+    sameSessionScope(left.scope, right.scope)
   );
+}
+
+function grantKey(resource: ResourceGrant) {
+  return 'consumerId' in resource
+    ? JSON.stringify([
+        'consumer',
+        resource.consumerId,
+        resource.sourceId,
+        resource.sourceGeneration,
+      ])
+    : JSON.stringify(['transport', resource.transportId]);
 }
 
 function pack(header: SnapshotHeader, projection: Payload) {
@@ -98,7 +115,7 @@ function pack(header: SnapshotHeader, projection: Payload) {
   if (parts.reduce((sum, part) => sum + bytes(part), 0) <= maxSnapshotBytes) return parts;
 }
 
-function isVisible(delta: Delta, current: Payload, sent: Payload) {
+function isVisible(delta: Delta, current: Payload, { visible: sent, acknowledged }: Stream) {
   switch (delta.name) {
     case 'media.source.changed':
       return current.sources.some((source) =>
@@ -129,16 +146,22 @@ function isVisible(delta: Delta, current: Payload, sent: Payload) {
     }
     case 'media.consumer.closed': {
       const { consumerId, sourceId, sourceGeneration } = delta.packet.payload;
-      return sent.ownConsumers.some(
-        (consumer) =>
-          consumer.consumerId === consumerId &&
-          consumer.sourceId === sourceId &&
-          consumer.sourceGeneration === sourceGeneration,
+      return (
+        acknowledged.has(grantKey(delta.packet.payload)) ||
+        sent.ownConsumers.some(
+          (consumer) =>
+            consumer.consumerId === consumerId &&
+            consumer.sourceId === sourceId &&
+            consumer.sourceGeneration === sourceGeneration,
+        )
       );
     }
     case 'media.transport.closed':
-      return sent.ownTransports.some(
-        (transport) => transport.transportId === delta.packet.payload.transportId,
+      return (
+        acknowledged.has(grantKey(delta.packet.payload)) ||
+        sent.ownTransports.some(
+          (transport) => transport.transportId === delta.packet.payload.transportId,
+        )
       );
   }
 }
@@ -192,7 +215,10 @@ export function createMediaSourceSync({
   media,
 }: {
   withContext: ReturnType<typeof createMainJoinRegistry>['withContext'];
-  transports: Pick<ReturnType<typeof createTransportSignaling>, 'readOwnTransports'>;
+  transports: Pick<
+    ReturnType<typeof createTransportSignaling>,
+    'readOwnTransports' | 'resourceGrants'
+  >;
   media: Pick<ReturnType<typeof createPausedReadySignaling>, 'readOwnSources' | 'visibleSources'>;
 }) {
   let resyncsInFlight = 0;
@@ -225,6 +251,7 @@ export function createMediaSourceSync({
               id: randomUUID(),
               sequence: 0,
               visible: empty(),
+              acknowledged: new Set(),
               requiresSnapshot: true,
             };
           }
@@ -232,7 +259,17 @@ export function createMediaSourceSync({
         });
       }
 
+      const unsubscribe = transports.resourceGrants.subscribe(socket.id, (context, grant) => {
+        if (!stream || stream.requiresSnapshot || !sameAudience(stream.context, context)) return;
+        const key = grantKey(grant);
+        if (stream.acknowledged.size >= maxAcknowledgedResources && !stream.acknowledged.has(key)) {
+          stream.requiresSnapshot = true;
+          return;
+        }
+        stream.acknowledged.add(key);
+      });
       socket.once('disconnect', () => {
+        unsubscribe();
         stream = undefined;
       });
       socket.on('media.sources.resync', (raw, ack) => {
@@ -292,6 +329,7 @@ export function createMediaSourceSync({
                 throw new MainJoinError('SERVER_BUSY');
 
               stream.visible = projection;
+              if (stream.requiresSnapshot) stream.acknowledged.clear();
               stream.requiresSnapshot = false;
               const { snapshotId, mediaStreamId, mediaSequence, audienceEpoch, policyRevision } =
                 header;
@@ -362,13 +400,15 @@ export function createMediaSourceSync({
             });
             if (!result.success) return false;
             const delta = { name, packet: result.data } as Delta;
-            if (!isVisible(delta, projection, previous.visible)) return false;
+            if (!isVisible(delta, projection, previous)) return false;
             if (bytes(result.data) > maxControlBytes) {
               previous.requiresSnapshot = true;
               return false;
             }
             previous.sequence++;
             recordDelta(delta, projection, previous.visible);
+            if (delta.name === 'media.consumer.closed' || delta.name === 'media.transport.closed')
+              previous.acknowledged.delete(grantKey(delta.packet.payload));
             socket.emit(name, result.data);
             return true;
           });

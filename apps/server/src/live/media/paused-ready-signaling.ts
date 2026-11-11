@@ -15,7 +15,7 @@ import type { types as MediaTypes } from 'mediasoup';
 import type { z } from 'zod';
 import { canPublishMedia, canReceiveMedia } from '../policy/session-policy.js';
 import type { SessionPolicyInput } from '../policy/session-policy.js';
-import type { createTransportSignaling } from './transport-signaling.js';
+import type { createTransportSignaling, ResourceGrant } from './transport-signaling.js';
 
 type Produce = z.infer<typeof mediaProducerCreateInputSchema>;
 type Consume = z.infer<typeof mediaConsumerCreateInputSchema>;
@@ -23,7 +23,7 @@ type Ready = z.infer<typeof mediaConsumerReadyInputSchema>;
 type Binding = Ready['payload'];
 type TransportService = Pick<
   ReturnType<typeof createTransportSignaling>,
-  'withMediaTransport' | 'pendingMedia' | 'admission'
+  'withMediaTransport' | 'pendingMedia' | 'admission' | 'resourceGrants'
 >;
 type Failure = { errorCode: string };
 type Work<T> = { work: Promise<T | Failure> };
@@ -31,6 +31,7 @@ type Grant = {
   payload: object;
   transportId: string;
   direction: 'SEND' | 'RECV';
+  resource?: ResourceGrant;
   validate(current: LiveContext, policy: SessionPolicyInput): Failure | undefined;
 };
 type NativeResource = Pick<MediaTypes.Producer, 'closed' | 'close'>;
@@ -110,6 +111,7 @@ export function createPausedReadySignaling({
   withMediaTransport: withTransport,
   pendingMedia,
   admission,
+  resourceGrants,
 }: TransportService) {
   const sources = new Map<string, Source>();
   const receivers = new Map<string, Receiver>();
@@ -124,6 +126,11 @@ export function createPausedReadySignaling({
       payload,
       transportId,
       direction: 'RECV',
+      resource: {
+        consumerId: native.id,
+        sourceId: source.descriptor.sourceId,
+        sourceGeneration: source.descriptor.sourceGeneration,
+      },
       validate(current, policy) {
         if (native.closed || receivers.get(native.id) !== receiver || !sameReceiver(owner, current))
           return fail('CONFLICT');
@@ -592,12 +599,13 @@ export function createPausedReadySignaling({
                 (current, _, policy) => {
                   const failure = result.validate(current, policy);
                   if (failure) return reject(failure.errorCode);
-                  reply(
-                    ackSchema.parse({
-                      requestId,
-                      data: { status: 'completed', result: result.payload },
-                    }),
-                  );
+                  const response = ackSchema.parse({
+                    requestId,
+                    data: { status: 'completed', result: result.payload },
+                  });
+                  if (result.resource)
+                    resourceGrants.acknowledge(socket.id, current, result.resource);
+                  reply(response);
                 },
               );
               if (error) reject(error.errorCode);

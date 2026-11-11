@@ -20,6 +20,21 @@ export function parseMediaDelta(name: MediaSourceEventName, raw: unknown): Media
 
 type Source = MediaSnapshotPayload['sources'][number];
 type Version = Pick<Source, 'sourceId' | 'sourceGeneration' | 'sourceRevision'>;
+type OwnProducer = MediaSnapshotPayload['ownProducers'][number];
+
+function replacementFor(source: Source, own?: OwnProducer) {
+  if (source.publicationState !== 'SWITCHING') return null;
+  if (
+    own?.replacement?.sourceRevision === source.sourceRevision &&
+    sameSourceBinding(own.source, source) &&
+    own.source.ownerParticipantId === source.ownerParticipantId &&
+    own.source.sourceKind === source.sourceKind &&
+    sameSessionScope(own.source.scope, source.scope)
+  )
+    return own.replacement;
+  // The public delta omits the owner-only token. A snapshot must reconcile it.
+  return undefined;
+}
 
 function matchesVersion(source: Version, version: Version) {
   return (
@@ -74,12 +89,8 @@ export function applyMediaDelta(
           matchesVersion(own.source, source) ||
           own.source.sourceGeneration < source.sourceGeneration)
       ) {
-        const replacement =
-          source.publicationState === 'SWITCHING' &&
-          own?.replacement?.sourceRevision === source.sourceRevision &&
-          sameSourceBinding(own.source, source)
-            ? own.replacement
-            : null;
+        const replacement = replacementFor(source, own);
+        if (replacement === undefined) return;
         ownProducers = [...ownProducers.filter((value) => value !== own), { source, replacement }];
       }
       return {
@@ -132,19 +143,12 @@ export function applyMediaDelta(
         publicationState: update.state,
         sourceRevision: update.sourceRevision,
       };
+      const replacement = replacementFor(source, own);
+      if (replacement === undefined) return;
       return {
         ...current,
         ownProducers: current.ownProducers.map((value) =>
-          value === own
-            ? {
-                source,
-                replacement:
-                  update.state === 'SWITCHING' &&
-                  own.replacement?.sourceRevision === update.sourceRevision
-                    ? own.replacement
-                    : null,
-              }
-            : value,
+          value === own ? { source, replacement } : value,
         ),
       };
     }

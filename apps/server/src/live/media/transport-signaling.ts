@@ -52,6 +52,9 @@ type SocketPort = {
   ): unknown;
   once(event: 'disconnect', listener: () => void): unknown;
 };
+export type ResourceGrant =
+  { transportId: string } | { consumerId: string; sourceId: string; sourceGeneration: number };
+type GrantListener = (context: LiveContext, grant: ResourceGrant) => void;
 type Slot = {
   key: string;
   socketId: string;
@@ -118,6 +121,18 @@ export function createTransportSignaling({
   const transports = new Map<string, Slot>();
   const intents = new Map<string, Intent>();
   const pendingMedia = createPendingMediaOperations();
+  const grantListeners = new Map<string, GrantListener>();
+  const resourceGrants = {
+    subscribe(socketId: string, listener: GrantListener) {
+      grantListeners.set(socketId, listener);
+      return () => {
+        if (grantListeners.get(socketId) === listener) grantListeners.delete(socketId);
+      };
+    },
+    acknowledge(socketId: string, context: LiveContext, grant: ResourceGrant) {
+      grantListeners.get(socketId)?.(context, grant);
+    },
+  };
 
   function forget(slot: Slot) {
     slot.closed = true;
@@ -330,6 +345,7 @@ export function createTransportSignaling({
   return {
     pendingMedia,
     admission,
+    resourceGrants,
     readOwnTransports(socketId: string, context: LiveContext) {
       const access = authorize(
         socketId,
@@ -429,7 +445,14 @@ export function createTransportSignaling({
               command.kind === 'create'
                 ? mediaTransportCreateAckSchema
                 : mediaTransportConnectAckSchema;
-            reply(schema.parse({ requestId, data: { status: 'completed', result: payload } }));
+            const response = schema.parse({
+              requestId,
+              data: { status: 'completed', result: payload },
+            });
+            resourceGrants.acknowledge(socket.id, result.context, {
+              transportId: payload.transportId,
+            });
+            reply(response);
           }).catch(() => fail('DEPENDENCY_UNAVAILABLE'));
         });
       };

@@ -431,6 +431,82 @@ describe('SCRUM-68 media delta and resync', () => {
     };
   }
 
+  it.each(['media.source.changed', 'media.producer.stateChanged'] as const)(
+    'resyncs %s when an own SWITCHING delta arrives before the matching prepare ACK',
+    async (event) => {
+      const runtime = setup();
+      const source = { ...mic, ownerParticipantId: context.participantId };
+      const oldReplacement = {
+        replacementId: uuid(81),
+        sourceRevision: source.sourceRevision,
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      };
+      const initialPayload = {
+        ...empty,
+        ownProducers: [
+          {
+            source: { ...source, publicationState: 'SWITCHING' as const },
+            replacement: oldReplacement,
+          },
+        ],
+      };
+      type Port = Parameters<MediaSnapshotRuntime['bindResync']>[0];
+      const send = vi.fn<Port>();
+      const disconnect = runtime.bindResync(send);
+      try {
+        await vi.waitFor(() => expect(send).toHaveBeenCalledOnce());
+        const [firstInput, first] = send.mock.calls[0]!;
+        first.acceptAck(ack({}, firstInput.requestId));
+        first.acceptPart(part(initialPayload, { requestId: firstInput.requestId }));
+        const before = runtime.getSnapshot()!;
+        expect(before.mediaSequence).toBe(12);
+        const handle = { close: vi.fn() };
+        expect(
+          runtime.trackOwnProducer(before, initialPayload.ownProducers[0]!.source, handle),
+        ).toBe(true);
+
+        const switching = { ...source, sourceRevision: 3, publicationState: 'SWITCHING' } as const;
+        const payload =
+          event === 'media.source.changed'
+            ? { source: switching }
+            : {
+                sourceId: switching.sourceId,
+                sourceGeneration: switching.sourceGeneration,
+                sourceRevision: switching.sourceRevision,
+                producerId: switching.producerId,
+                state: 'SWITCHING',
+              };
+        runtime.acceptEvent(event, { ...delta(13), payload });
+        expect(runtime.getSnapshot()).toBe(before);
+        await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(2));
+        const [input, response] = send.mock.calls[1]!;
+        expect(input.payload.lastMediaSequence).toBe(12);
+        const replacement = { ...oldReplacement, replacementId: uuid(82), sourceRevision: 3 };
+        const snapshot = { snapshotId: uuid(83), mediaSequence: 13 };
+        response.acceptAck(ack(snapshot, input.requestId));
+        response.acceptPart(
+          part(
+            { ...empty, ownProducers: [{ source: switching, replacement }] },
+            { ...snapshot, requestId: input.requestId },
+          ),
+        );
+        const cancel = vi.fn();
+        const finish = runtime.trackReplacement(before, switching.producerId, replacement, cancel);
+        expect(finish).toBeTypeOf('function');
+        runtime.acceptEvent(event, { ...delta(14), payload });
+        expect(runtime.getSnapshot()).toMatchObject({
+          mediaSequence: 14,
+          payload: { ownProducers: [{ source: switching, replacement }] },
+        });
+        expect(cancel).not.toHaveBeenCalled();
+        expect(handle.close).not.toHaveBeenCalled();
+        finish?.();
+      } finally {
+        disconnect();
+      }
+    },
+  );
+
   it('drops duplicates and replays contiguous buffered deltas after the watermark', async () => {
     const runtime = setup();
     const request = runtime.begin(requestId)!;
