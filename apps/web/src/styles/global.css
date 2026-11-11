@@ -1,36 +1,55 @@
 @import 'tailwindcss';
 
-:root {
-  font-family: 'Segoe UI', system-ui, sans-serif;
-  color: #193e35;
-  background: #f7f8f2;
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
+@theme {
+  --color-canvas: #f7f8f2;
+  --color-surface: #fff;
+  --color-surface-subtle: #edf2dd;
+  --color-text-primary: #193e35;
+  --color-text-secondary: #63756b;
+  --color-border-subtle: #dce3d6;
+  --color-border-control: #648272;
+  --color-action-primary: #173f35;
+  --color-action-primary-hover: #285649;
+  --color-action-accent: #d9ecac;
+  --color-feedback-warning: #754b26;
+  --color-feedback-warning-surface: #fff4e5;
+  --color-feedback-error: #8e3333;
+  --color-feedback-error-surface: #fff0ef;
 }
 
-* {
-  box-sizing: border-box;
-}
-body {
-  margin: 0;
-  min-width: 320px;
-}
-a {
-  color: inherit;
-}
-button {
-  font: inherit;
-  cursor: pointer;
-}
-button:disabled {
-  opacity: 0.6;
-  cursor: wait;
-}
-a:focus-visible,
-button:focus-visible {
-  outline: 3px solid #a2b949;
-  outline-offset: 5px;
+@layer base {
+  :root {
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    color: var(--color-text-primary);
+    background: var(--color-canvas);
+    font-synthesis: none;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+  body {
+    margin: 0;
+    min-width: 0;
+  }
+  a {
+    color: inherit;
+  }
+  button {
+    font: inherit;
+    cursor: pointer;
+  }
+  button:disabled {
+    opacity: 0.6;
+    cursor: wait;
+  }
+  a:focus-visible,
+  button:focus-visible {
+    outline: 3px solid #a2b949;
+    outline-offset: 5px;
+  }
 }
 .shell {
   min-height: 100dvh;
@@ -128,12 +147,14 @@ button:focus-visible {
   color: #687d61;
   margin: 0 0 15px;
 }
-h1 {
-  font-size: clamp(34px, 4.5vw, 64px);
-  line-height: 1.15;
-  font-weight: 750;
-  letter-spacing: -2px;
-  margin: 0 0 24px;
+@layer base {
+  h1 {
+    font-size: clamp(34px, 4.5vw, 64px);
+    line-height: 1.15;
+    font-weight: 750;
+    letter-spacing: -2px;
+    margin: 0 0 24px;
+  }
 }
 .lead {
   max-width: 640px;
@@ -266,8 +287,10 @@ h1 {
   .welcome {
     padding-top: 34px;
   }
-  h1 {
-    letter-spacing: -1px;
+  @layer base {
+    h1 {
+      letter-spacing: -1px;
+    }
   }
   .status-panel {
     padding: 18px;

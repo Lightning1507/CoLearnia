@@ -1,6 +1,6 @@
 # 3. Design Tokens
 
-**Thiết kế đề xuất · 07/11/2026.** Chưa tạo file CSS runtime. Palette/scale ở [foundations](foundations.md) còn cần visual review và contrast check.
+**Thiết kế đề xuất · 07/11/2026.** Palette/scale ở [foundations](foundations.md) còn cần visual review và contrast check. Palette đang dùng cho lobby đã được đưa vào `@theme` trong [global.css](../../../apps/web/src/styles/global.css), với các nhóm canvas/surface, text, border, action và feedback. Các token này giữ giá trị màu của implementation hiện có; danh mục mở rộng bên dưới vẫn là đề xuất.
 
 ## Ba tầng, một hướng tham chiếu
 

@@ -2,7 +2,13 @@ import { useEffect, useId, useRef, useState } from 'react';
 import type { RefObject } from 'react';
 import type { DeviceKind, PreviewStatus } from './lobbyPreview';
 import { useLobbyPreview } from './useLobbyPreview';
-import './lobby.css';
+
+const focusClass =
+  'focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-action-primary focus-visible:ring-3 focus-visible:ring-surface';
+const controlClass = `min-h-11 min-w-0 rounded-lg border px-3 py-2 text-sm leading-[1.4] disabled:cursor-not-allowed disabled:opacity-60 ${focusClass}`;
+const buttonClass = `${controlClass} border-border-control bg-surface-subtle font-semibold text-text-primary enabled:hover:bg-action-accent`;
+const ghostButtonClass = `${controlClass} border-transparent bg-transparent font-semibold text-text-primary enabled:hover:bg-action-accent`;
+const primaryButtonClass = `${controlClass} border-action-primary bg-action-primary font-semibold text-surface enabled:hover:bg-action-primary-hover`;
 
 const deviceControls = [
   { kind: 'microphone', name: 'Microphone' },
@@ -17,6 +23,16 @@ const deviceStatusLabel: Record<PreviewStatus, string> = {
   unavailable: 'Không khả dụng',
   busy: 'Không mở được',
   error: 'Có lỗi',
+};
+
+const deviceStatusClass: Record<PreviewStatus, string> = {
+  off: 'bg-canvas text-text-secondary',
+  requesting: 'bg-surface-subtle text-action-primary',
+  ready: 'bg-surface-subtle text-action-primary',
+  denied: 'bg-feedback-warning-surface text-feedback-warning',
+  unavailable: 'bg-feedback-warning-surface text-feedback-warning',
+  busy: 'bg-feedback-warning-surface text-feedback-warning',
+  error: 'bg-feedback-error-surface text-feedback-error',
 };
 
 function DeviceIcon({ kind, off = false }: { kind: DeviceKind; off?: boolean }) {
@@ -44,7 +60,7 @@ function DeviceIcon({ kind, off = false }: { kind: DeviceKind; off?: boolean }) 
       )}
       {off && (
         <>
-          <path d="M3 3l18 18" stroke="var(--lobby-error-surface)" strokeWidth="4" />
+          <path d="M3 3l18 18" className="stroke-feedback-error-surface" strokeWidth="4" />
           <path d="M3 3l18 18" />
         </>
       )}
@@ -99,7 +115,7 @@ function CameraPreview({
       />
       {playbackError && (
         <button
-          className="lobby-button absolute bottom-20 left-1/2 max-w-[calc(100%-2rem)] -translate-x-1/2"
+          className={`${buttonClass} absolute bottom-20 left-1/2 max-w-[calc(100%-2rem)] -translate-x-1/2`}
           type="button"
           onClick={() => {
             const video = videoRef.current;
@@ -134,11 +150,11 @@ export function LobbyDeviceCheck({
   const continueToSession = () => {
     const preferences: LobbyDevicePreferences = {
       camera: {
-        enabled: state.camera.status === 'ready',
+        enabled: state.camera.isActive,
         deviceId: state.camera.openedId ?? state.camera.selectedId,
       },
       microphone: {
-        enabled: state.microphone.status === 'ready',
+        enabled: state.microphone.isActive,
         deviceId: state.microphone.openedId ?? state.microphone.selectedId,
       },
     };
@@ -155,13 +171,13 @@ export function LobbyDeviceCheck({
 
   return (
     <section
-      className="lobby-device-check flex min-h-dvh flex-col leading-normal"
+      className="flex min-h-dvh flex-col bg-canvas leading-normal text-text-primary"
       aria-labelledby={`${id}-title`}
     >
-      <header className="lobby-topbar">
+      <header className="border-b border-border-subtle bg-surface">
         <div className="mx-auto grid max-w-7xl items-center gap-2 px-4 py-3 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] sm:gap-4 sm:px-6 lg:px-8">
           <button
-            className="lobby-button lobby-button-ghost justify-self-start sm:col-start-1 sm:row-start-1"
+            className={`${ghostButtonClass} justify-self-start sm:col-start-1 sm:row-start-1`}
             type="button"
             onClick={back}
             disabled={continuePending}
@@ -178,14 +194,19 @@ export function LobbyDeviceCheck({
       </header>
       <div className="mx-auto grid w-full max-w-7xl flex-1 content-center px-4 py-6 sm:px-6 lg:px-8 lg:py-10">
         <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,24rem)] lg:items-center lg:gap-12 xl:gap-16">
-          <section className="lobby-card min-w-0" aria-labelledby={`${id}-preview-title`}>
+          <section
+            className="min-w-0 rounded-2xl border border-border-subtle bg-surface"
+            aria-labelledby={`${id}-preview-title`}
+          >
             <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 sm:px-5">
               <h2 className="flex items-center gap-2 font-semibold" id={`${id}-preview-title`}>
                 <DeviceIcon kind="camera" /> Xem trước camera
               </h2>
-              <span className="lobby-status">Chỉ trên máy này</span>
+              <span className="rounded-full bg-canvas px-2 py-1 text-xs font-semibold text-text-secondary">
+                Chỉ trên máy này
+              </span>
             </div>
-            <div className="lobby-stage relative isolate flex aspect-[16/10] min-h-72 w-full flex-col overflow-hidden">
+            <div className="relative isolate flex aspect-[16/10] min-h-72 w-full flex-col overflow-hidden rounded-b-[calc(1rem-1px)] bg-action-primary text-surface">
               <div className="grid flex-1 place-items-center">
                 {state.videoStream ? (
                   <CameraPreview
@@ -195,7 +216,7 @@ export function LobbyDeviceCheck({
                   />
                 ) : (
                   <div className="grid justify-items-center gap-2 p-4 text-center sm:p-6">
-                    <span className="lobby-stage-icon mb-1 grid size-11 place-items-center rounded-xl">
+                    <span className="mb-1 grid size-11 place-items-center rounded-xl bg-action-accent text-action-primary">
                       <DeviceIcon kind="camera" />
                     </span>
                     <strong>
@@ -211,14 +232,13 @@ export function LobbyDeviceCheck({
                 aria-label="Bật hoặc tắt thiết bị"
               >
                 {deviceControls.map(({ kind, name }) => {
-                  const { status } = state[kind];
-                  const enabled = status === 'ready';
+                  const { status, isActive: enabled } = state[kind];
                   const requesting = status === 'requesting';
                   const action = enabled ? 'Tắt' : requesting ? 'Hủy mở' : 'Bật';
                   return (
                     <button
                       key={kind}
-                      className="lobby-device-toggle grid size-11 place-items-center rounded-full shadow-md"
+                      className={`grid size-11 place-items-center rounded-full bg-feedback-error-surface text-feedback-error shadow-md enabled:hover:brightness-95 aria-pressed:bg-action-accent aria-pressed:text-action-primary disabled:cursor-not-allowed disabled:opacity-60 ${focusClass}`}
                       type="button"
                       aria-label={`${action} ${name.toLowerCase()}`}
                       aria-pressed={enabled}
@@ -237,16 +257,19 @@ export function LobbyDeviceCheck({
           </section>
           <div className="grid min-w-0 gap-4">
             <div className="grid gap-2 wrap-anywhere">
-              <p className="lobby-muted text-xs font-semibold">{channelName}</p>
-              <h1 className="lobby-title" id={`${id}-title`}>
+              <p className="text-xs font-semibold text-text-secondary">{channelName}</p>
+              <h1
+                className="m-0 text-2xl leading-[1.3] font-bold tracking-[-0.02em]"
+                id={`${id}-title`}
+              >
                 Sẵn sàng tham gia?
               </h1>
-              <p className="lobby-muted text-sm">
+              <p className="text-sm text-text-secondary">
                 Kiểm tra camera và microphone trước khi vào phòng. Chỉ bật thiết bị khi bạn muốn.
               </p>
             </div>
             <section
-              className="lobby-card grid min-w-0 gap-4 p-4 sm:p-5"
+              className="grid min-w-0 gap-4 rounded-2xl border border-border-subtle bg-surface p-4 sm:p-5"
               aria-labelledby={`${id}-devices-title`}
             >
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -254,7 +277,7 @@ export function LobbyDeviceCheck({
                   Thiết bị
                 </h2>
                 <button
-                  className="lobby-button lobby-button-ghost"
+                  className={ghostButtonClass}
                   type="button"
                   disabled={!!state.environmentError || state.enumerating || continuePending}
                   onClick={() => void preview.refreshDevices()}
@@ -263,13 +286,18 @@ export function LobbyDeviceCheck({
                 </button>
               </div>
               {state.environmentError && (
-                <p className="lobby-notice rounded-lg p-3 text-sm" role="alert">
+                <p
+                  className="rounded-lg bg-feedback-error-surface p-3 text-sm text-feedback-error"
+                  role="alert"
+                >
                   {state.environmentError}
                 </p>
               )}
               <p
                 className={
-                  state.enumerating || state.enumerationError ? 'lobby-muted text-sm' : 'sr-only'
+                  state.enumerating || state.enumerationError
+                    ? 'text-sm text-text-secondary'
+                    : 'sr-only'
                 }
                 role="status"
               >
@@ -279,7 +307,7 @@ export function LobbyDeviceCheck({
                 const device = state[kind];
                 return (
                   <fieldset
-                    className="lobby-device min-w-0 rounded-lg px-3 pb-3 sm:px-4 sm:pb-4"
+                    className="min-w-0 rounded-lg border border-border-subtle px-3 pb-3 sm:px-4 sm:pb-4"
                     key={kind}
                     disabled={deviceControlsDisabled}
                   >
@@ -290,15 +318,23 @@ export function LobbyDeviceCheck({
                       </span>
                     </legend>
                     <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-                      <label className="lobby-muted text-sm font-medium" htmlFor={`${id}-${kind}`}>
+                      <label
+                        className="text-sm font-medium text-text-secondary"
+                        htmlFor={`${id}-${kind}`}
+                      >
                         Chọn {name.toLowerCase()}
                       </label>
-                      <span className="lobby-status" data-status={device.status} aria-hidden="true">
-                        {deviceStatusLabel[device.status]}
+                      <span
+                        className={`inline-block rounded-full px-2 py-1 text-xs font-semibold ${deviceStatusClass[device.status]}`}
+                        aria-hidden="true"
+                      >
+                        {device.status === 'requesting' && device.isActive
+                          ? 'Đang đổi thiết bị'
+                          : deviceStatusLabel[device.status]}
                       </span>
                     </div>
                     <select
-                      className="lobby-select mt-2 w-full"
+                      className={`${controlClass} mt-2 w-full border-border-control bg-surface`}
                       id={`${id}-${kind}`}
                       value={device.selectedId}
                       aria-describedby={`${id}-${kind}-status`}
@@ -312,15 +348,14 @@ export function LobbyDeviceCheck({
                       ))}
                     </select>
                     <p
-                      className="lobby-device-message mt-2 text-sm"
-                      data-status={device.status}
+                      className="mt-2 text-sm text-text-secondary"
                       id={`${id}-${kind}-status`}
                       role="status"
                     >
                       {device.message}
                     </p>
                     {!device.devices.length && !state.enumerating && (
-                      <p className="lobby-muted mt-1 text-sm">
+                      <p className="mt-1 text-sm text-text-secondary">
                         Chưa có thiết bị được liệt kê. Bấm Bật để kiểm tra thiết bị mặc định và
                         quyền truy cập.
                       </p>
@@ -330,11 +365,11 @@ export function LobbyDeviceCheck({
               })}
               {onContinue && (
                 <>
-                  <p className="lobby-muted text-sm">
+                  <p className="text-sm text-text-secondary">
                     Bạn vẫn có thể tiếp tục để xem nội dung mà không bật camera hoặc microphone.
                   </p>
                   <button
-                    className="lobby-button lobby-button-primary w-full"
+                    className={`${primaryButtonClass} w-full`}
                     type="button"
                     onClick={continueToSession}
                     disabled={continuePending}
