@@ -330,6 +330,26 @@ export function createTransportSignaling({
   return {
     pendingMedia,
     admission,
+    readOwnTransports(socketId: string, context: LiveContext) {
+      const access = authorize(
+        socketId,
+        { ...context, expectedPolicyRevision: context.policyRevision },
+        { ok: true, context },
+      );
+      if ('errorCode' in access) return [];
+      return [...transports.values()].flatMap((slot) => {
+        if (!access.owns(slot) || !slot.transport || slot.transport.closed || !slot.descriptor)
+          return [];
+        return [
+          {
+            transportId: slot.transport.id,
+            direction: slot.direction,
+            iceGeneration: slot.descriptor.iceGeneration,
+            restartPending: false,
+          },
+        ];
+      });
+    },
     withMediaTransport<T>(
       socketId: string,
       input: MutationContext,

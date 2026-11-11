@@ -3,6 +3,7 @@ import { sessionControlBudget } from '@colearnia/contracts';
 import type { MediaSourcesSnapshot, SessionProjectionCursor } from '@colearnia/contracts';
 import { CallControllerOwner } from './callController';
 import { MediaSnapshotRuntime } from './mediaSnapshotRuntime';
+import { bindMediaSourceSocket } from './mediaSourceSocket';
 import type { ConsumerBinding } from './mediaSnapshot';
 
 const uuid = (suffix: number) => `10000000-0000-4000-8000-${String(suffix).padStart(12, '0')}`;
@@ -413,5 +414,297 @@ describe('SCRUM-67 media snapshot runtime', () => {
     expect(currentHandle.close).toHaveBeenCalledOnce();
     expect(runtime.getSnapshot()).toBeUndefined();
     expect(runtime.begin(requestId)).toBeUndefined();
+  });
+});
+
+describe('SCRUM-68 media delta and resync', () => {
+  function delta(sequence: number, revision = 3) {
+    return {
+      sessionId: context.sessionId,
+      epoch: context.epoch,
+      callGeneration: context.callGeneration,
+      mediaStreamId: descriptor.mediaStreamId,
+      audienceEpoch: context.audienceEpoch,
+      mediaSequence: sequence,
+      policyRevision: context.policyRevision + 5,
+      payload: { source: { ...mic, sourceRevision: revision } },
+    };
+  }
+
+  it('drops duplicates and replays contiguous buffered deltas after the watermark', async () => {
+    const runtime = setup();
+    const request = runtime.begin(requestId)!;
+    runtime.acceptEvent('media.source.changed', delta(14, 4));
+    runtime.acceptEvent('media.source.changed', delta(12, 1));
+    runtime.acceptEvent('media.source.changed', delta(13, 3));
+    runtime.acceptEvent('media.source.changed', delta(13, 3));
+    request.acceptPart(part({ ...empty, sources: [mic] }));
+    request.acceptAck(ack());
+    await expect(request.result).resolves.toMatchObject({
+      status: 'applied',
+      snapshot: { mediaSequence: 14, payload: { sources: [{ sourceRevision: 4 }] } },
+    });
+    runtime.acceptEvent('media.source.changed', delta(14, 4));
+    expect(runtime.getSnapshot()?.mediaSequence).toBe(14);
+  });
+
+  it('requests one full resync for gaps and refuses conflicting replay', async () => {
+    const runtime = setup();
+    await apply(runtime, { ...empty, sources: [mic] });
+    type Port = Parameters<MediaSnapshotRuntime['bindResync']>[0];
+    const send = vi.fn<Port>();
+    const disconnect = runtime.bindResync(send);
+    await vi.waitFor(() => expect(send).toHaveBeenCalledOnce());
+    const [input, receive] = send.mock.calls[0]!;
+    receive.acceptAck(ack({}, input.requestId));
+    receive.acceptPart(part({ ...empty, sources: [mic] }, { requestId: input.requestId }));
+    await Promise.resolve();
+    runtime.acceptEvent('media.source.changed', delta(13));
+    runtime.acceptEvent('media.source.changed', delta(13, 4));
+    await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(2));
+    expect(send.mock.calls[1]![0].payload.lastMediaSequence).toBe(13);
+    runtime.acceptEvent('media.source.changed', delta(15, 5));
+    const [retry, response] = send.mock.calls[1]!;
+    response.acceptPart(
+      part({ ...empty, sources: [mic] }, { requestId: retry.requestId, mediaSequence: 13 }),
+    );
+    response.acceptAck(ack({ mediaSequence: 13 }, retry.requestId));
+    expect(runtime.getSnapshot()?.mediaSequence).toBe(13);
+    disconnect();
+  });
+
+  it('bounds buffered events and aborts the snapshot on overflow', async () => {
+    const runtime = setup();
+    const request = runtime.begin(requestId)!;
+    for (let seq = 1; seq <= sessionControlBudget.maxBufferedEvents + 1; seq++) {
+      runtime.acceptEvent('media.source.changed', delta(seq));
+    }
+    await expect(request.result).resolves.toEqual({ status: 'cancelled' });
+    request.acceptAck(ack());
+    request.acceptPart(part());
+    expect(runtime.getSnapshot()).toBeUndefined();
+  });
+
+  it('discards old audience data and closes local consumers immediately on audience change', async () => {
+    const runtime = setup();
+    const initial = await apply(runtime, { ...empty, sources: [mic], ownConsumers: [binding] });
+    const handle = { attach: vi.fn(), close: vi.fn() };
+    expect(runtime.attachConsumer(initial, binding, handle)).toBe(true);
+    const pending = runtime.begin(uuid(31))!;
+    runtime.acceptEvent('media.source.changed', delta(13));
+    runtime.updateContext({
+      ...context,
+      audienceEpoch: 5,
+      policyRevision: 10,
+      projectionSequence: 13,
+    });
+    await expect(pending.result).resolves.toEqual({ status: 'cancelled' });
+    expect(handle.close).toHaveBeenCalledOnce();
+    const next = runtime.begin(uuid(32))!;
+    runtime.acceptEvent('media.source.changed', delta(13));
+    const fresh = {
+      audienceEpoch: 5,
+      policyRevision: 10,
+      mediaStreamId: uuid(33),
+      mediaSequence: 0,
+    };
+    next.acceptAck(ack(fresh, next.input.requestId));
+    next.acceptPart(part(empty, { ...fresh, requestId: next.input.requestId }));
+    await expect(next.result).resolves.toMatchObject({
+      status: 'applied',
+      snapshot: { payload: empty },
+    });
+  });
+
+  it('closes only the matching consumer and never resurrects a source from an ended generation', async () => {
+    const runtime = setup();
+    const initial = await apply(runtime, { ...empty, sources: [mic], ownConsumers: [binding] });
+    const handle = { attach: vi.fn(), close: vi.fn() };
+    expect(runtime.attachConsumer(initial, binding, handle)).toBe(true);
+    runtime.acceptEvent('media.consumer.closed', {
+      ...delta(13),
+      payload: {
+        consumerId: 'older-consumer',
+        sourceId: mic.sourceId,
+        sourceGeneration: 1,
+        reason: 'USER_STOP',
+      },
+    });
+    expect(handle.close).not.toHaveBeenCalled();
+    runtime.acceptEvent('media.source.ended', {
+      ...delta(14),
+      payload: {
+        sourceId: mic.sourceId,
+        sourceGeneration: 1,
+        sourceRevision: 3,
+        reason: 'SOURCE_ENDED',
+      },
+    });
+    runtime.acceptEvent('media.source.changed', delta(15));
+    expect(handle.close).toHaveBeenCalledOnce();
+    expect(runtime.getSnapshot()?.payload.sources).toEqual([]);
+    expect(runtime.getSnapshot()?.mediaSequence).toBe(15);
+  });
+
+  it('closes the current receive transport and its local consumer without removing the source', async () => {
+    const runtime = setup();
+    const transport = {
+      transportId: 'recv',
+      direction: 'RECV',
+      iceGeneration: 0,
+      restartPending: false,
+    } as const;
+    const initial = await apply(runtime, {
+      ...empty,
+      sources: [mic],
+      ownTransports: [transport],
+      ownConsumers: [binding],
+    });
+    const consumer = { attach: vi.fn(), close: vi.fn() };
+    const handle = { close: vi.fn() };
+    expect(runtime.attachConsumer(initial, binding, consumer)).toBe(true);
+    expect(runtime.trackOwnTransport(initial, transport, handle)).toBe(true);
+    runtime.acceptEvent('media.transport.closed', {
+      ...delta(13),
+      payload: { transportId: 'old-recv', reason: 'TRANSPORT_FAILED' },
+    });
+    expect(consumer.close).not.toHaveBeenCalled();
+    runtime.acceptEvent('media.transport.closed', {
+      ...delta(14),
+      payload: { transportId: 'recv', reason: 'TRANSPORT_FAILED' },
+    });
+    expect(consumer.close).toHaveBeenCalledOnce();
+    expect(handle.close).toHaveBeenCalledOnce();
+    expect(runtime.getSnapshot()?.payload).toEqual({ ...empty, sources: [mic] });
+  });
+
+  it.each(['consumer', 'transport'] as const)(
+    'rejects a late Consumer callback after its %s was closed',
+    async (resource) => {
+      const runtime = setup();
+      const transport = {
+        transportId: 'recv',
+        direction: 'RECV',
+        iceGeneration: 0,
+        restartPending: false,
+      } as const;
+      const initial = await apply(runtime, {
+        ...empty,
+        sources: [mic],
+        ownTransports: [transport],
+      });
+      if (resource === 'consumer') {
+        runtime.acceptEvent('media.consumer.closed', {
+          ...delta(13),
+          payload: {
+            consumerId: binding.consumerId,
+            sourceId: binding.sourceId,
+            sourceGeneration: binding.sourceGeneration,
+            reason: 'USER_STOP',
+          },
+        });
+      } else {
+        runtime.acceptEvent('media.transport.closed', {
+          ...delta(13),
+          payload: { transportId: transport.transportId, reason: 'TRANSPORT_FAILED' },
+        });
+      }
+      const handle = { attach: vi.fn(), close: vi.fn() };
+      expect(runtime.attachConsumer(initial, binding, handle)).toBe(false);
+      expect(handle.attach).not.toHaveBeenCalled();
+      expect(handle.close).toHaveBeenCalledOnce();
+    },
+  );
+
+  it('keeps the prior snapshot and bindings when a buffered delta conflicts', async () => {
+    const runtime = setup();
+    const initial = await apply(runtime, { ...empty, sources: [mic], ownConsumers: [binding] });
+    const handle = { attach: vi.fn(), close: vi.fn() };
+    expect(runtime.attachConsumer(initial, binding, handle)).toBe(true);
+    const request = runtime.begin(uuid(80))!;
+    runtime.acceptEvent('media.source.changed', delta(13, 3));
+    runtime.acceptEvent('media.source.changed', {
+      ...delta(14, 3),
+      payload: { source: { ...mic, sourceRevision: 3, publicationState: 'PAUSED' } },
+    });
+    request.acceptAck(ack({ snapshotId: uuid(81) }, request.input.requestId));
+    request.acceptPart(
+      part(
+        { ...empty, sources: [mic] },
+        { snapshotId: uuid(81), requestId: request.input.requestId },
+      ),
+    );
+    await expect(request.result).resolves.toEqual({ status: 'invalid' });
+    expect(runtime.getSnapshot()).toBe(initial);
+    expect(handle.close).not.toHaveBeenCalled();
+  });
+
+  it('stops after three retries and permits a new explicit resync', async () => {
+    vi.useFakeTimers();
+    vi.spyOn(Math, 'random').mockReturnValue(0.5);
+    const runtime = setup();
+    const send = vi.fn(() => Promise.reject(new Error('Offline')));
+    const disconnect = runtime.bindResync(send);
+    try {
+      await vi.advanceTimersByTimeAsync(0);
+      expect(send).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(500);
+      expect(send).toHaveBeenCalledTimes(2);
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(send).toHaveBeenCalledTimes(3);
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(send).toHaveBeenCalledTimes(4);
+      runtime.acceptEvent('media.source.changed', delta(13));
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(send).toHaveBeenCalledTimes(4);
+      runtime.resync();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(send).toHaveBeenCalledTimes(5);
+    } finally {
+      disconnect();
+      vi.useRealTimers();
+      vi.restoreAllMocks();
+    }
+  });
+
+  it('routes socket packets to the current request and stops on an authority denial or abort', async () => {
+    const owner = new CallControllerOwner();
+    type Socket = Parameters<typeof bindMediaSourceSocket>[1];
+    const listeners = new Map<string, (value: unknown) => void>();
+    const emit = vi.fn<Socket['emit']>();
+    const socket = {
+      connected: true,
+      on: vi.fn<Socket['on']>((event, listener) => listeners.set(event, listener)),
+      off: vi.fn<Socket['off']>((event) => listeners.delete(event)),
+      emit,
+    };
+    const initialized = vi.fn((runtime: MediaSnapshotRuntime) => runtime);
+    await owner.acquire(context, (_identity, signal, runtime) => {
+      initialized(runtime);
+      runtime.updateContext(context);
+      return bindMediaSourceSocket(runtime, socket, signal);
+    });
+    const runtime = initialized.mock.results[0]!.value;
+    expect(emit).toHaveBeenCalledOnce();
+    const [, input, receiveAck] = emit.mock.calls[0]!;
+    listeners.get('media.sources.snapshot')?.(part({ ...empty, sources: [mic] }));
+    receiveAck(ack({}, input.requestId));
+    expect(runtime.getSnapshot()).toBeUndefined();
+    listeners.get('media.sources.snapshot')?.(
+      part({ ...empty, sources: [mic], ownConsumers: [binding] }, { requestId: input.requestId }),
+    );
+    const current = runtime.getSnapshot()!;
+    const handle = { attach: vi.fn(), close: vi.fn() };
+    expect(runtime.attachConsumer(current, binding, handle)).toBe(true);
+    listeners.get('media.source.changed')?.(delta(14));
+    await vi.waitFor(() => expect(emit).toHaveBeenCalledTimes(2));
+    const [, retry, deny] = emit.mock.calls[1]!;
+    deny({ requestId: retry.requestId, error: { code: 'FORBIDDEN', message: 'Denied' } });
+    expect(runtime.getSnapshot()).toBeUndefined();
+    expect(handle.close).toHaveBeenCalledOnce();
+    listeners.get('media.source.changed')?.(delta(15));
+    owner.end(context);
+    expect(listeners.size).toBe(0);
+    expect(emit).toHaveBeenCalledTimes(2);
   });
 });

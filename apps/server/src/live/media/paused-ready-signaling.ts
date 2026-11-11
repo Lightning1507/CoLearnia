@@ -55,6 +55,7 @@ type Receiver = {
   socketId: string;
   transportId: string;
   capabilities: MediaTypes.RtpCapabilities;
+  ready: boolean;
   timer: ReturnType<typeof setTimeout>;
 };
 type Event = 'media.producer.create' | 'media.consumer.create' | 'media.consumer.ready';
@@ -412,6 +413,7 @@ export function createPausedReadySignaling({
                   socketId,
                   transportId,
                   capabilities,
+                  ready: false,
                   timer,
                 };
                 const result = receiverGrant(receiver, input, payload);
@@ -494,6 +496,7 @@ export function createPausedReadySignaling({
                   return fail('MEDIA_UNAVAILABLE');
                 }
                 clearTimeout(receiver.timer);
+                receiver.ready = true;
                 completed = true;
                 return result;
               },
@@ -519,6 +522,34 @@ export function createPausedReadySignaling({
       return [...sources.values()]
         .filter((source) => mayReceive(policy, source))
         .map(({ descriptor }) => descriptor);
+    },
+    readOwnSources(context: LiveContext, policy: SessionPolicyInput) {
+      return {
+        ownProducers: [...sources.values()]
+          .filter(
+            (source) =>
+              !source.native.closed &&
+              sameReceiver(source.owner, context) &&
+              canPublishMedia(policy, source.descriptor.sourceKind),
+          )
+          .map(({ descriptor: source }) => ({ source, replacement: null })),
+        ownConsumers: [...receivers.values()]
+          .filter(
+            (receiver) =>
+              !receiver.native.closed &&
+              sameReceiver(receiver.owner, context) &&
+              mayReceive(policy, receiver.source),
+          )
+          .map(({ native, ready, source: { descriptor } }) => ({
+            sourceId: descriptor.sourceId,
+            sourceGeneration: descriptor.sourceGeneration,
+            sourceRevision: descriptor.sourceRevision,
+            consumerId: native.id,
+            producerId: descriptor.producerId,
+            ready,
+            paused: !ready || native.paused,
+          })),
+      };
     },
     attach(socket: SocketPort) {
       function register<T extends Produce | Consume | Ready>(
