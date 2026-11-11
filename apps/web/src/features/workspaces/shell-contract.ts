@@ -16,6 +16,7 @@ export type WorkspaceShellProps = {
   channels: readonly SidebarChannel[];
   panel: WorkspacePanel;
   onSelectChannel: (channel: ChannelSummary) => void;
+  onOpenWorkspaceList: () => void;
   // M2 owns chat rendering; M3/M4 own call state outside the selected panel.
   chatPanel: ReactNode;
   callPanel: ReactNode;

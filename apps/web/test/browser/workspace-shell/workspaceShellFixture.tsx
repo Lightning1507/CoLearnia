@@ -47,12 +47,20 @@ function CallControls() {
 
 export function WorkspaceShellFixture() {
   const [channelId, setChannelId] = useState(channelB.channel.id);
+  const [listOpen, setListOpen] = useState(false);
+  if (listOpen)
+    return (
+      <button type="button" onClick={() => setListOpen(false)}>
+        Danh sách Workspace fixture · Quay lại
+      </button>
+    );
   return (
     <WorkspaceShell
       workspace={workspaceFixture}
       channels={channels}
       panel={{ kind: 'text', channelId }}
       onSelectChannel={(channel) => setChannelId(channel.id)}
+      onOpenWorkspaceList={() => setListOpen(true)}
       chatPanel={<DraftComposer />}
       callPanel={null}
       persistentCallControls={<CallControls />}

@@ -92,6 +92,7 @@ function FixtureRoom({ channel }: { channel: ChannelSummary }) {
 
 export function WorkspaceFixturePage() {
   const [panel, setPanel] = useState<WorkspacePanel>({ kind: 'empty' });
+  const [showWorkspaceList, setShowWorkspaceList] = useState(false);
   const selected =
     panel.kind === 'empty'
       ? undefined
@@ -100,11 +101,30 @@ export function WorkspaceFixturePage() {
     ? accessFixture.find(({ channelId }) => channelId === selected.id)
     : undefined;
 
+  if (showWorkspaceList) {
+    return (
+      <main className="grid content-start gap-4 p-5" aria-label="Danh sách Workspace fixture">
+        <h1 className="m-0 text-xl font-semibold tracking-normal">Danh sách Workspace</h1>
+        <p className="text-sm text-[color:var(--workspace-muted)]">
+          Dữ liệu minh họa · Chọn Workspace để tiếp tục.
+        </p>
+        <button
+          type="button"
+          className="justify-self-start rounded-lg border border-[color:var(--workspace-border)] px-4 py-3 text-sm"
+          onClick={() => setShowWorkspaceList(false)}
+        >
+          {workspaceFixture.name}
+        </button>
+      </main>
+    );
+  }
+
   return (
     <WorkspaceShell
       workspace={workspaceFixture}
       channels={sidebarFixture}
       panel={panel}
+      onOpenWorkspaceList={() => setShowWorkspaceList(true)}
       onSelectChannel={(channel) =>
         setPanel({ kind: channel.type === 'TEXT' ? 'text' : 'live', channelId: channel.id })
       }

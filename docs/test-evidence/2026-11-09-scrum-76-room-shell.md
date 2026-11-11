@@ -91,3 +91,17 @@ PASS · subscriptions=22, remaining=0, video attach/detach=16/16, peak=1, call A
 ```text
 PASS · subscriptions=24, remaining=0, video attach/detach=16/16, peak=1, call A init/dispose=1/1 · workspace=1440×900, room=1184
 ```
+
+## Kiểm tương phản, menu Workspace và focus ngày 12/11/2026
+
+- Đối chiếu menu chọn Workspace trong `docs/figma-ui/src/App.tsx`. Tên Workspace trên sidebar là nút mở menu; menu hiển thị Workspace hiện tại và mục **Danh sách Workspace**. Trên `/workspace`, kiểm mở menu, Escape đóng và trả focus về trigger, chọn mục danh sách gọi callback điều hướng do bên nhúng truyền. Màn danh sách ở route này chỉ là fixture chọn lại Workspace mẫu; chức năng danh sách/tạo Workspace production vẫn thuộc M1-T7.1.
+- `--workspace-muted` đổi thành `#5F7067`. Đọc màu thực trên `/workspace` và tính theo luminance sRGB của [WCAG G18](https://www.w3.org/WAI/WCAG21/Techniques/general/G18): đạt **4,71:1** trên sidebar `#F1F3F2` và **5,25:1** trên nền `#FFFFFF`, đều vượt 4,5:1 cho chữ thường. Token và chỗ sử dụng vẫn nằm trong `global.css`/Tailwind, không thêm CSS riêng.
+- RoomShell theo dõi phần tử đã focus và quan sát kích thước phòng, sân khấu, nút quay lại. Khi phần tử đó bị ẩn qua breakpoint, chuyển focus đến heading panel kể cả khi trình duyệt không phát blur ngay. Giữ focus nếu phần tử vẫn hiển thị; ngắt observer và listener khi đóng panel hoặc unmount.
+- Fixture trên **Chrome 157.0.8103.39**, viewport 1440 × 900, kiểm cả chiều mở rộng và thu hẹp 1280/1279 px. Hai lượt thu hẹp gồm phát blur bình thường và chặn capture `blur`/`focusout`. Lượt đối chứng bật focus emulation đo `document.hasFocus() = true` ngay trước mỗi resize. Lượt mất focus chạy fixture trong iframe cùng origin luôn hiển thị và chuyển focus sang document cha qua CDP sau focus của con; đo `document.hasFocus() = false` ngay trước mỗi resize, không ghi đè hàm này. Cả hai lượt đều PASS, focus về heading và focus trên toolbar vẫn giữ nguyên. Fixture chờ layout sau khi focus trước khi đổi kích thước, mô phỏng thao tác focus rồi resize.
+- Cả hai lượt kiểm lại route `/workspace`, menu/callback điều hướng, hai kênh LIVE và lifecycle StrictMode. Track tổng hợp và call handle A vẫn được giữ qua resize; observer còn lại sau unmount bằng 0.
+- `pnpm check` đạt format, lint, typecheck, **650/650 test** và build; harness đạt 54 ca, skip một ca symlink trên Windows. `pnpm media:smoke` đạt native worker và Router Opus/VP8. Các lệnh này không chứng minh camera/mic/TURN hay audio cuộc gọi end-to-end.
+
+```text
+PASS · subscriptions=24, remaining=0, video attach/detach=16/16, peak=1, call A init/dispose=1/1, observers=0, resizeFocus=true/true · workspace=1440×900, room=1184
+PASS · subscriptions=24, remaining=0, video attach/detach=16/16, peak=1, call A init/dispose=1/1, observers=0, resizeFocus=false/false · workspace=1440×900, room=1184
+```

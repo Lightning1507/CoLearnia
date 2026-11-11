@@ -20,6 +20,7 @@ function renderShell(panel: WorkspacePanel, channels = sidebarFixture) {
     channels,
     panel,
     onSelectChannel: vi.fn(),
+    onOpenWorkspaceList: vi.fn(),
     chatPanel: createElement('div', null, 'Nội dung chat nhạy cảm'),
     callPanel: createElement('div', null, 'Sân khấu cuộc gọi'),
     persistentCallControls: createElement('output', null, 'Call runtime ổn định'),

@@ -60,10 +60,49 @@ export function RoomShell({
   const titleId = useId();
   const panelId = useId();
   const panelHeading = useRef<HTMLHeadingElement>(null);
+  const roomElement = useRef<HTMLElement>(null);
+  const stageElement = useRef<HTMLElement>(null);
+  const backButton = useRef<HTMLButtonElement>(null);
   const panelLabel = sidePanel?.label;
 
   useLayoutEffect(() => {
     if (panelLabel) panelHeading.current?.focus({ preventScroll: true });
+  }, [panelLabel]);
+
+  useLayoutEffect(() => {
+    const room = roomElement.current;
+    if (!room || !panelLabel) return;
+    const document = room.ownerDocument;
+    let lastFocused = document.activeElement;
+
+    const rememberFocus = () => {
+      const active = document.activeElement;
+      if (active !== document.body) lastFocused = room.contains(active) ? active : null;
+    };
+    const restoreHiddenFocus = () => {
+      rememberFocus();
+      const active = document.activeElement;
+      if (
+        lastFocused &&
+        room.contains(lastFocused) &&
+        lastFocused.getClientRects().length === 0 &&
+        (active === lastFocused || active === document.body)
+      ) {
+        panelHeading.current?.focus({ preventScroll: true });
+        lastFocused = panelHeading.current;
+      }
+    };
+    const observer = new ResizeObserver(restoreHiddenFocus);
+    observer.observe(room);
+    if (stageElement.current) observer.observe(stageElement.current);
+    if (backButton.current) observer.observe(backButton.current);
+    document.addEventListener('focusin', rememberFocus);
+    document.defaultView?.addEventListener('blur', rememberFocus);
+    return () => {
+      observer.disconnect();
+      document.removeEventListener('focusin', rememberFocus);
+      document.defaultView?.removeEventListener('blur', rememberFocus);
+    };
   }, [panelLabel]);
 
   function restorePanelFocus({ currentTarget, relatedTarget }: FocusEvent<HTMLElement>) {
@@ -84,6 +123,7 @@ export function RoomShell({
     <article
       className={useWorkspaceWidth ? 'w-full min-w-0' : '@container/room-layout w-full min-w-0'}
       aria-labelledby={titleId}
+      ref={roomElement}
     >
       <div
         className={`grid min-w-0 gap-4 bg-[var(--workspace-content-bg)] [overflow-wrap:anywhere] ${useWorkspaceWidth ? 'p-5' : 'rounded-2xl border border-[color:var(--workspace-border)] p-5'}`}
@@ -106,6 +146,7 @@ export function RoomShell({
           <section
             className={`min-h-48 min-w-0 place-items-center rounded-xl bg-stone-50 text-center ${sidePanel ? 'hidden @min-[1280px]/room-layout:grid' : 'grid'}`}
             aria-label="Sân khấu cuộc gọi"
+            ref={stageElement}
             onBlur={restorePanelFocus}
           >
             {error ? (
@@ -124,6 +165,7 @@ export function RoomShell({
                 type="button"
                 className="justify-self-start rounded-lg border border-stone-200 px-3 py-2 @min-[1280px]/room-layout:hidden"
                 onClick={sidePanel.onBackToStage}
+                ref={backButton}
                 onBlur={restorePanelFocus}
               >
                 Về sân khấu

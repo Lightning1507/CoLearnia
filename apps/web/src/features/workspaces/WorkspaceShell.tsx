@@ -1,5 +1,5 @@
-import type { ChannelSummary } from '@colearnia/contracts';
-import { Fragment } from 'react';
+import type { ChannelSummary, WorkspaceSummary } from '@colearnia/contracts';
+import { Fragment, useEffect, useId, useRef, useState } from 'react';
 import type { WorkspaceShellProps } from './shell-contract';
 import { readableSidebarChannels, resolvePanelChannel } from './shell-contract';
 
@@ -33,6 +33,97 @@ function ChannelIcon({ channel }: { channel: ChannelSummary }) {
     >
       {channelIconPaths[icon]}
     </svg>
+  );
+}
+
+function WorkspaceMenu({
+  workspace,
+  onOpenWorkspaceList,
+}: {
+  workspace: WorkspaceSummary;
+  onOpenWorkspaceList: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const container = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const listButton = useRef<HTMLButtonElement>(null);
+  const menuId = useId();
+
+  useEffect(() => {
+    if (!open) return;
+    const document = container.current?.ownerDocument;
+    if (!document) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (!container.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setOpen(false);
+        trigger.current?.focus();
+      }
+    };
+    listButton.current?.focus();
+    document.addEventListener('pointerdown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [open]);
+
+  return (
+    <div className="relative" ref={container}>
+      <button
+        type="button"
+        className="flex h-16 w-full min-w-0 items-center gap-2.5 border-b border-[color:var(--workspace-border)] px-3.5 text-left hover:bg-[var(--workspace-channel-hover-bg)]"
+        ref={trigger}
+        aria-label={`Mở menu Workspace ${workspace.name}`}
+        aria-expanded={open}
+        aria-controls={open ? menuId : undefined}
+        onClick={() => setOpen(!open)}
+      >
+        <span
+          className="grid size-[34px] shrink-0 place-items-center rounded-lg bg-[var(--workspace-brand-bg)] text-xs font-bold text-[color:var(--workspace-brand-text)]"
+          aria-hidden="true"
+        >
+          C
+        </span>
+        <strong className="min-w-0 flex-1 truncate text-sm">{workspace.name}</strong>
+        <svg
+          aria-hidden="true"
+          className="size-4 shrink-0"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+        >
+          <path d="m7 10 5 5 5-5" />
+        </svg>
+      </button>
+      {open && (
+        <nav
+          id={menuId}
+          aria-label="Menu Workspace"
+          className="absolute inset-x-2 top-[60px] z-20 grid gap-2 rounded-lg border border-[color:var(--workspace-border)] bg-[var(--workspace-content-bg)] p-3 shadow-lg"
+        >
+          <div className="grid gap-1 border-b border-[color:var(--workspace-border)] pb-3">
+            <p className="text-xs text-[color:var(--workspace-muted)]">Workspace hiện tại</p>
+            <strong className="truncate text-sm">{workspace.name}</strong>
+          </div>
+          <button
+            type="button"
+            className="rounded-md px-2 py-2 text-left text-sm hover:bg-[var(--workspace-channel-hover-bg)]"
+            ref={listButton}
+            onClick={() => {
+              setOpen(false);
+              onOpenWorkspaceList();
+            }}
+          >
+            Danh sách Workspace
+          </button>
+        </nav>
+      )}
+    </div>
   );
 }
 
@@ -86,6 +177,7 @@ export function WorkspaceShell({
   channels,
   panel,
   onSelectChannel,
+  onOpenWorkspaceList,
   chatPanel,
   callPanel,
   persistentCallControls,
@@ -104,15 +196,7 @@ export function WorkspaceShell({
         className="workspace-sidebar min-w-0 border-b border-[color:var(--workspace-border)] bg-[var(--workspace-sidebar-bg)] min-[721px]:border-r min-[721px]:border-b-0"
         aria-label={`Kênh của ${workspace.name}`}
       >
-        <div className="flex h-16 min-w-0 items-center gap-2.5 border-b border-[color:var(--workspace-border)] px-3.5">
-          <span
-            className="grid size-[34px] shrink-0 place-items-center rounded-lg bg-[var(--workspace-brand-bg)] text-xs font-bold text-[color:var(--workspace-brand-text)]"
-            aria-hidden="true"
-          >
-            C
-          </span>
-          <strong className="min-w-0 truncate text-sm">{workspace.name}</strong>
-        </div>
+        <WorkspaceMenu workspace={workspace} onOpenWorkspaceList={onOpenWorkspaceList} />
 
         {readable.length === 0 ? (
           <p className="px-4 py-6 text-sm text-[color:var(--workspace-muted)]">

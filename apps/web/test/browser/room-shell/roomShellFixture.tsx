@@ -1,7 +1,7 @@
 import { StrictMode, act, useRef, useState } from 'react';
 import { channelSummarySchema } from '@colearnia/contracts';
 import { createRoot } from 'react-dom/client';
-import { Link, MemoryRouter, Route, Routes } from 'react-router-dom';
+import { Link, MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom';
 import { RoomShell } from '../../../src/features/live/room/RoomShell';
 import { CallControllerProvider } from '../../../src/features/live/runtime/CallControllerProvider';
 import { CallControllerOwner } from '../../../src/features/live/runtime/callController';
@@ -57,6 +57,7 @@ export function Workspace({
   media?: StageMedia | undefined;
   error?: string | undefined;
 }) {
+  const navigate = useNavigate();
   const [panel, setPanel] = useState<WorkspacePanel>({ kind: 'empty' });
   const [sidePanelOpen, setSidePanelOpen] = useState(true);
   const panelButton = useRef<HTMLButtonElement>(null);
@@ -66,6 +67,7 @@ export function Workspace({
       workspace={workspaceFixture}
       channels={channels}
       panel={panel}
+      onOpenWorkspaceList={() => navigate('/overview')}
       onSelectChannel={(channel) =>
         setPanel({ kind: channel.type === 'LIVE' ? 'live' : 'text', channelId: channel.id })
       }
@@ -134,6 +136,7 @@ async function verifyLifecycle(container: HTMLElement) {
   let subscriptions = 0;
   let initializations = 0;
   let disposals = 0;
+  const resizeFocus: boolean[] = [];
   const subscribe = owner.subscribe;
   owner.subscribe = (listener) => {
     const unsubscribe = subscribe(listener);
@@ -152,6 +155,19 @@ async function verifyLifecycle(container: HTMLElement) {
   let attached = 0;
   let detached = 0;
   let peak = 0;
+  const NativeResizeObserver = ResizeObserver;
+  const observers = new Set<ResizeObserver>();
+  class TrackedResizeObserver extends NativeResizeObserver {
+    constructor(callback: ResizeObserverCallback) {
+      super(callback);
+      observers.add(this);
+    }
+    override disconnect() {
+      super.disconnect();
+      observers.delete(this);
+    }
+  }
+  window.ResizeObserver = TrackedResizeObserver;
   Object.defineProperty(HTMLMediaElement.prototype, 'srcObject', {
     ...descriptor,
     set(this: HTMLMediaElement, source: MediaStream | null) {
@@ -292,15 +308,29 @@ async function verifyLifecycle(container: HTMLElement) {
       focusWorkspace && stageButton && panelHeading && toolbarButton,
       'Thiếu nút để kiểm focus khi thu hẹp',
     );
-    focusWorkspace.style.inlineSize = '1280px';
-    stageButton.focus();
-    check(document.activeElement === stageButton, 'Nút trên sân khấu phải nhận focus ở 1280px');
-    focusWorkspace.style.inlineSize = '1279px';
-    await afterLayout();
-    check(
-      stageButton.getClientRects().length === 0 && document.activeElement === panelHeading,
-      'Focus phải chuyển sang heading khi sân khấu bị ẩn',
-    );
+    for (const suppressBlur of [false, true]) {
+      const blockBlur = (event: Event) => event.stopImmediatePropagation();
+      if (suppressBlur) {
+        document.addEventListener('blur', blockBlur, true);
+        document.addEventListener('focusout', blockBlur, true);
+      }
+      try {
+        focusWorkspace.style.inlineSize = '1280px';
+        stageButton.focus();
+        check(document.activeElement === stageButton, 'Nút trên sân khấu phải nhận focus ở 1280px');
+        await afterLayout();
+        resizeFocus.push(document.hasFocus());
+        focusWorkspace.style.inlineSize = '1279px';
+        await afterLayout();
+        check(
+          stageButton.getClientRects().length === 0 && document.activeElement === panelHeading,
+          `Focus phải tới heading khi sân khấu ẩn, suppressBlur=${suppressBlur}`,
+        );
+      } finally {
+        document.removeEventListener('blur', blockBlur, true);
+        document.removeEventListener('focusout', blockBlur, true);
+      }
+    }
 
     focusWorkspace.style.inlineSize = '1280px';
     toolbarButton.focus();
@@ -363,6 +393,7 @@ async function verifyLifecycle(container: HTMLElement) {
       document.activeElement === backButton,
       'Nút Về sân khấu phải nhận focus trước khi resize',
     );
+    await afterLayout();
     for (const width of [1280, 1279]) {
       workspace.style.inlineSize = `${width}px`;
       check(workspace.getBoundingClientRect().width === width, `Workspace phải rộng ${width}px`);
@@ -494,13 +525,18 @@ async function verifyLifecycle(container: HTMLElement) {
     for (const track of tracks) track.stop();
     await audio.close();
     Object.defineProperty(HTMLMediaElement.prototype, 'srcObject', descriptor);
+    window.ResizeObserver = NativeResizeObserver;
   }
 
   check(
-    listeners === 0 && bindings.size === 0 && attached === detached && peak === 1,
+    listeners === 0 &&
+      bindings.size === 0 &&
+      attached === detached &&
+      peak === 1 &&
+      observers.size === 0,
     'Tài nguyên UI phải về baseline',
   );
-  return `PASS · subscriptions=${subscriptions}, remaining=${listeners}, video attach/detach=${attached}/${detached}, peak=${peak}, call A init/dispose=${initializations}/${disposals}`;
+  return `PASS · subscriptions=${subscriptions}, remaining=${listeners}, video attach/detach=${attached}/${detached}, peak=${peak}, call A init/dispose=${initializations}/${disposals}, observers=${observers.size}, resizeFocus=${resizeFocus.join('/')}`;
 }
 
 function waitForElement<T extends Element>(document: Document, selector: string): Promise<T> {
@@ -645,6 +681,35 @@ async function verifyWorkspaceRoute() {
       header.getBoundingClientRect().left === textHeaderRect.left &&
         header.getBoundingClientRect().height === textHeaderRect.height,
       'Chuyển TEXT trở lại LIVE phải giữ khung header',
+    );
+    const menuTrigger = sidebar.querySelector<HTMLButtonElement>(
+      'button[aria-label^="Mở menu Workspace"]',
+    );
+    check(menuTrigger, 'Tên Workspace phải là nút mở menu');
+    menuTrigger.click();
+    const workspaceMenu = await waitForElement(page, 'nav[aria-label="Menu Workspace"]');
+    check(
+      workspaceMenu.textContent?.includes(workspaceFixture.name),
+      'Menu phải hiển thị Workspace hiện tại',
+    );
+    const listAction = workspaceMenu.querySelector('button');
+    check(
+      listAction?.textContent === 'Danh sách Workspace',
+      'Menu phải có mục Danh sách Workspace',
+    );
+    listAction.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await afterLayout();
+    check(
+      !workspaceMenu.isConnected && page.activeElement === menuTrigger,
+      'Escape phải đóng menu và trả focus về nút mở',
+    );
+    menuTrigger.click();
+    const reopenedMenu = await waitForElement(page, 'nav[aria-label="Menu Workspace"]');
+    reopenedMenu.querySelector('button')?.click();
+    const listScreen = await waitForElement(page, 'main[aria-label="Danh sách Workspace fixture"]');
+    check(
+      listScreen.querySelector('h1')?.textContent === 'Danh sách Workspace',
+      'Mục menu phải gọi callback điều hướng của bên nhúng',
     );
     return `workspace=${workspaceWidth}×${view.innerHeight}, room=${roomWidth}`;
   } finally {
