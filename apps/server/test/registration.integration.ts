@@ -1,4 +1,6 @@
 import { randomBytes, randomUUID } from 'node:crypto';
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import {
   apiErrorSchema,
   authenticatedContextSchema,
@@ -7,6 +9,7 @@ import {
 } from '@colearnia/contracts';
 import { verify } from 'argon2';
 import mongoose from 'mongoose';
+import { io as connectSocket } from 'socket.io-client';
 import request from 'supertest';
 import type { Response } from 'supertest';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -28,6 +31,7 @@ import { loadConfig } from '../src/config/env.js';
 import { createDatabase } from '../src/lib/database.js';
 import { preflightIndexes } from '../src/lib/database-preflight.js';
 import { createOperationCoordinator } from '../src/lib/operation-coordinator.js';
+import { createRealtime } from '../src/realtime/server.js';
 
 const port = Number(process.env.COLEARNIA_DB_TEST_PORT ?? '27017');
 if (!Number.isInteger(port) || port < 1024 || port > 65535) {
@@ -44,7 +48,7 @@ const origin = 'https://colearnia.example.test';
 const config = loadConfig({ NODE_ENV: 'test', APP_ORIGIN: origin });
 const prefix = '/api/v1/auth';
 
-function client(
+function app(
   register = createRegistration(database, () => true, 604800),
   readSession = createSessionReader(database, () => true),
   onMutation = vi.fn(),
@@ -56,18 +60,20 @@ function client(
     onMutation();
     res.json(requireVerifiedSession(res)?.context);
   });
-  return request(
-    createApp(
-      config,
-      () => ({
-        name: 'CoLearnia',
-        database: 'connected',
-        media: 'disabled',
-        ready: false,
-      }),
-      router,
-    ),
+  return createApp(
+    config,
+    () => ({
+      name: 'CoLearnia',
+      database: 'connected',
+      media: 'disabled',
+      ready: false,
+    }),
+    router,
   );
+}
+
+function client(...args: Parameters<typeof app>) {
+  return request(app(...args));
 }
 
 function cookie(response: Response, name: string) {
@@ -128,6 +134,145 @@ async function signUp(http: ReturnType<typeof client>, body = input()) {
     .expect(201);
   return sessionFrom(response);
 }
+
+describe('SCRUM-24 Socket.IO session authentication with MongoDB', () => {
+  let indexesReady = true;
+  const readSession = createSessionReader(database, () => indexesReady);
+  const server = createServer(app(undefined, readSession));
+  const realtime = createRealtime(server, { ...config, SESSION_SECRET: secret }, readSession);
+  const http = request(server);
+
+  beforeAll(async () => {
+    await new Promise<void>((resolve, reject) => {
+      server.once('error', reject);
+      server.listen(0, '127.0.0.1', resolve);
+    });
+  });
+
+  afterAll(async () => {
+    await realtime.close();
+  });
+
+  function sessionCookies(session: Awaited<ReturnType<typeof signUp>>) {
+    return `${session.sessionCookie}; ${session.csrfCookieValue}`;
+  }
+
+  async function handshake(cookie: string, csrfToken: unknown, requestOrigin = origin) {
+    const socket = connectSocket(`http://127.0.0.1:${(server.address() as AddressInfo).port}`, {
+      transports: ['websocket'],
+      extraHeaders: requestOrigin ? { Cookie: cookie, Origin: requestOrigin } : { Cookie: cookie },
+      auth: { csrfToken, userId: 'ignored-client-identity' },
+      reconnection: false,
+      timeout: 3000,
+      autoConnect: false,
+    });
+    try {
+      return await new Promise((resolve, reject) => {
+        socket.once('connect', () => {
+          resolve(realtime.sockets.sockets.get(socket.id!)?.data);
+        });
+        socket.once('connect_error', reject);
+        socket.connect();
+      });
+    } finally {
+      socket.disconnect();
+    }
+  }
+
+  it('binds the same server context as HTTP with the session cookies and CSRF token', async () => {
+    const signedIn = await signUp(http);
+    const cookie = sessionCookies(signedIn);
+    const me = await http
+      .get(prefix + '/me')
+      .set('Cookie', cookie)
+      .expect(200);
+    const current = authenticatedResponseSchema.parse(me.body).data;
+    const mutation = await http
+      .post(prefix + '/test-mutation')
+      .set('Cookie', cookie)
+      .set('Origin', origin)
+      .set('X-CSRF-Token', current.csrfToken)
+      .expect(200);
+    await expect(handshake(cookie, current.csrfToken)).resolves.toEqual({
+      auth: authenticatedContextSchema.parse(mutation.body),
+    });
+  });
+
+  it('rejects missing and unexpected Origins at the transport layer', async () => {
+    const signedIn = await signUp(http);
+    for (const rejectedOrigin of ['', 'https://other.example.test']) {
+      await expect(
+        handshake(sessionCookies(signedIn), signedIn.data.csrfToken, rejectedOrigin),
+      ).rejects.toThrow('websocket error');
+    }
+  });
+
+  it('rejects absent, invalid and cross-session CSRF proofs', async () => {
+    const signedIn = await signUp(http);
+    const other = await signUp(http);
+    for (const [cookie, token] of [
+      [sessionCookies(signedIn), undefined],
+      [sessionCookies(signedIn), 123],
+      [signedIn.sessionCookie, signedIn.data.csrfToken],
+      [`${signedIn.sessionCookie}; ${other.csrfCookieValue}`, other.data.csrfToken],
+    ] as const) {
+      await expect(handshake(cookie, token)).rejects.toMatchObject({
+        data: { code: 'CSRF_INVALID' },
+      });
+    }
+  });
+
+  it('rejects forged and expired sessions and rechecks a previously accepted session after revoke', async () => {
+    const signedIn = await signUp(http);
+    const { csrfToken, user } = signedIn.data;
+    const cookie = sessionCookies(signedIn);
+    await expect(handshake(cookie, csrfToken)).resolves.toHaveProperty('auth.userId', user.id);
+    for (const invalid of [
+      signedIn.csrfCookieValue,
+      `${authCookie}=${newSessionCredentials(60).token}; ${signedIn.csrfCookieValue}`,
+    ]) {
+      await expect(handshake(invalid, csrfToken)).rejects.toMatchObject({
+        data: { code: 'AUTH_REQUIRED' },
+      });
+    }
+    const session = await AuthSession.findOne({ userId: user.id }).orFail();
+    await AuthSession.updateOne({ _id: session._id }, { expiresAt: new Date(Date.now() - 1000) });
+    await expect(handshake(cookie, csrfToken)).rejects.toMatchObject({
+      data: { code: 'AUTH_REQUIRED' },
+    });
+    await AuthSession.updateOne(
+      { _id: session._id },
+      { expiresAt: session.expiresAt, revokedAt: new Date() },
+    );
+    await expect(handshake(cookie, csrfToken)).rejects.toMatchObject({
+      data: { code: 'AUTH_REQUIRED' },
+    });
+  });
+
+  it('fails closed when authentication indexes are unavailable', async () => {
+    const signedIn = await signUp(http);
+    indexesReady = false;
+    try {
+      await expect(
+        handshake(sessionCookies(signedIn), signedIn.data.csrfToken),
+      ).rejects.toMatchObject({
+        data: { code: 'DEPENDENCY_UNAVAILABLE' },
+      });
+    } finally {
+      indexesReady = true;
+    }
+  });
+
+  it('rejects an otherwise valid session for a disabled account', async () => {
+    const signedIn = await signUp(http);
+    await User.updateOne({ _id: signedIn.data.user.id }, { status: 'DISABLED' });
+    await expect(
+      handshake(sessionCookies(signedIn), signedIn.data.csrfToken),
+    ).rejects.toMatchObject({
+      data: { code: 'AUTH_REQUIRED' },
+    });
+  });
+});
 
 describe('SCRUM-21 HTTP session and CSRF with MongoDB', () => {
   it('reads the registered session and current profile without renewing either valid cookie', async () => {
