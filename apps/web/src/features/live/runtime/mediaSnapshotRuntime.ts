@@ -146,6 +146,16 @@ export class MediaSnapshotRuntime {
       if (previous && previous.fingerprint !== fingerprint) this.#requestResync();
       return;
     }
+    if (
+      snapshot &&
+      delta.name === 'media.transport.closed' &&
+      !snapshot.payload.ownTransports.some(
+        ({ transportId }) => transportId === delta.packet.payload.transportId,
+      )
+    ) {
+      // Fence in-flight Consumer completions while resync determines what survived.
+      this.#consumerCallbackFloor = Math.max(this.#consumerCallbackFloor, sequence);
+    }
     if (this.#cancel) {
       const previous = this.#buffer.get(sequence);
       if (previous?.fingerprint === fingerprint) return;
@@ -262,7 +272,7 @@ export class MediaSnapshotRuntime {
         .map(({ part }) => part)
         .sort((a, b) => a.partIndex - b.partIndex);
       const snapshot = joinMediaSnapshot(ordered, context.participantId);
-      if (!snapshot) return invalid();
+      if (!snapshot || snapshot.mediaSequence < this.#consumerCallbackFloor) return invalid();
       const buffered = [...this.#buffer.values()]
         .filter(({ delta }) => delta.packet.mediaSequence > snapshot.mediaSequence)
         .sort((left, right) => left.delta.packet.mediaSequence - right.delta.packet.mediaSequence);
@@ -541,7 +551,14 @@ export class MediaSnapshotRuntime {
         delta.packet.payload.source.sourceGeneration
     ) {
       const next = applyMediaDelta(payload, delta, this.identity.participantId);
-      if (!next) return;
+      if (!next) {
+        if (delta.name === 'media.transport.closed')
+          this.#consumerCallbackFloor = Math.max(
+            this.#consumerCallbackFloor,
+            delta.packet.mediaSequence,
+          );
+        return;
+      }
       payload = next;
     }
     if (delta.name === 'media.source.ended') {

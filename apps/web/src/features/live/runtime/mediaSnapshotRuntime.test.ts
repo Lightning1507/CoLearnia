@@ -642,16 +642,70 @@ describe('SCRUM-68 media delta and resync', () => {
     expect(runtime.trackOwnTransport(initial, transport, handle)).toBe(true);
     runtime.acceptEvent('media.transport.closed', {
       ...delta(13),
-      payload: { transportId: 'old-recv', reason: 'TRANSPORT_FAILED' },
-    });
-    expect(consumer.close).not.toHaveBeenCalled();
-    runtime.acceptEvent('media.transport.closed', {
-      ...delta(14),
       payload: { transportId: 'recv', reason: 'TRANSPORT_FAILED' },
     });
     expect(consumer.close).toHaveBeenCalledOnce();
     expect(handle.close).toHaveBeenCalledOnce();
     expect(runtime.getSnapshot()?.payload).toEqual({ ...empty, sources: [mic] });
+  });
+
+  it.each([false, true])(
+    'resyncs a Transport close after snapshot and fences the Consumer, already attached=%s',
+    async (attached) => {
+      const runtime = setup();
+      const payload = { ...empty, sources: [mic] };
+      const initial = await apply(runtime, payload);
+      const local = { attach: vi.fn(), close: vi.fn() };
+      if (attached) expect(runtime.attachConsumer(initial, binding, local)).toBe(true);
+
+      runtime.acceptEvent('media.transport.closed', {
+        ...delta(13),
+        payload: { transportId: 'recv-created-after-snapshot', reason: 'TRANSPORT_FAILED' },
+      });
+      expect(runtime.getSnapshot()).toBe(initial);
+      if (!attached) expect(runtime.attachConsumer(initial, binding, local)).toBe(false);
+
+      const stale = runtime.begin(requestId)!;
+      stale.acceptAck(ack());
+      stale.acceptPart(part(payload));
+      await expect(stale.result).resolves.toEqual({ status: 'invalid' });
+
+      await apply(runtime, payload, { snapshotId: uuid(84), mediaSequence: 13 });
+      const late = { attach: vi.fn(), close: vi.fn() };
+      expect(runtime.attachConsumer(initial, binding, late)).toBe(false);
+      expect(late.attach).not.toHaveBeenCalled();
+      expect(late.close).toHaveBeenCalledOnce();
+      expect(local.close).toHaveBeenCalledOnce();
+    },
+  );
+
+  it('preserves the new receive transport and its Consumer when resync confirms them', async () => {
+    const runtime = setup();
+    const transport = {
+      transportId: 'new-recv',
+      direction: 'RECV',
+      iceGeneration: 0,
+      restartPending: false,
+    } as const;
+    const payload = {
+      ...empty,
+      sources: [mic],
+      ownTransports: [transport],
+      ownConsumers: [binding],
+    };
+    const initial = await apply(runtime, payload);
+    const consumer = { attach: vi.fn(), close: vi.fn() };
+    const handle = { close: vi.fn() };
+    expect(runtime.attachConsumer(initial, binding, consumer)).toBe(true);
+    expect(runtime.trackOwnTransport(initial, transport, handle)).toBe(true);
+
+    runtime.acceptEvent('media.transport.closed', {
+      ...delta(13),
+      payload: { transportId: 'old-recv', reason: 'TRANSPORT_FAILED' },
+    });
+    await apply(runtime, payload, { snapshotId: uuid(85), mediaSequence: 13 });
+    expect(consumer.close).not.toHaveBeenCalled();
+    expect(handle.close).not.toHaveBeenCalled();
   });
 
   it.each(['consumer', 'transport'] as const)(

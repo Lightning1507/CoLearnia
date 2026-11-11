@@ -167,7 +167,8 @@ export function applyMediaDelta(
     case 'media.transport.closed': {
       const { transportId } = delta.packet.payload;
       const closed = current.ownTransports.find((value) => value.transportId === transportId);
-      if (!closed) return current;
+      // The close payload does not identify the direction of a Transport issued after the snapshot.
+      if (!closed) return;
       // The current binding has one transport per direction.
       const closesSend = closed.direction === 'SEND';
       return {
