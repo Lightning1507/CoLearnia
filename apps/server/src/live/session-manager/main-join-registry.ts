@@ -6,6 +6,7 @@ import {
   sessionJoinAckSchema,
   sessionJoinInputSchema,
   sessionJoinTicketInputSchema,
+  sessionEndInputSchema,
   workspaceDocumentIdSchema,
   liveAccessRevocationSchema,
   accessCleanupResultSchema,
@@ -17,6 +18,7 @@ import type {
   LiveContextRequest,
   LiveContextResult,
   SessionSnapshotPart,
+  SessionCleanupRequest,
   LiveAccessRevocation,
   AccessCleanupResult,
 } from '@colearnia/contracts';
@@ -35,6 +37,8 @@ import type {
 } from '../policy/session-policy.js';
 import type { createSessionRepository } from './session-repository.js';
 import { beginSessionTransition, createSessionTransitionTiming } from './session-transition.js';
+import { createSessionEndOperation } from './session-end-operation.js';
+import type { SessionTransitionAdapters } from './session-transition.js';
 import { matchesMainRevocation, mayMatchMainRevocation } from './main-revocation.js';
 
 type Target = { workspaceId: string; channelId: string };
@@ -56,6 +60,14 @@ type Room = {
   hostParticipantId: string;
   hostReservation: Authority | null;
   uncertain: boolean;
+  endToken?: string;
+};
+type EndRecord = {
+  destination: Target;
+  binding: Binding;
+  command: string;
+  operation: ReturnType<typeof createSessionEndOperation>;
+  expiresAt: number;
 };
 type Ownership = {
   binding: Binding;
@@ -103,6 +115,8 @@ const defaults = {
   perRoomIntents: 1024,
   ticketTtlMs: 60_000,
   routerTimeoutMs: 2000,
+  maxEndRecords: 128,
+  endReplayTtlMs: 60_000,
   maxRevocations: 128,
   revocationReplayTtlMs: 60_000,
 };
@@ -124,6 +138,7 @@ export function createMainJoinRegistry(options: {
     committedAccess?: Readonly<ChannelAccessStamp>,
   ): boolean;
   createRouter(): Promise<MediaTypes.Router>;
+  endCleanup?: SessionTransitionAdapters;
   revocationCleanup?: Parameters<typeof beginSessionTransition>[2];
   // Exact cohort committed by M1 for this user/operation/revision. Never infer
   // logout-all targets from the sessions present when its notification arrives.
@@ -144,6 +159,7 @@ export function createMainJoinRegistry(options: {
   const ownerships = new Map<string, Ownership>();
   const intents = new Map<string, Intent>();
   const tickets = new Map<string, Intent>();
+  const endRecords = new Map<string, EndRecord>();
   const revocations = new Map<string, Revocation>();
   const inFlight = new Map<symbol, { auth: AuthenticatedContext; target: Target }>();
   const pendingRouters = new Set<string>();
@@ -329,6 +345,7 @@ export function createMainJoinRegistry(options: {
   function sweep() {
     const time = clock();
     for (const intent of intents.values()) if (intent.expiresAt <= time) forget(intent);
+    for (const [key, record] of endRecords) if (record.expiresAt <= time) endRecords.delete(key);
     for (const [key, record] of revocations) if (record.expiresAt <= time) revocations.delete(key);
   }
   async function retireOrphan(room: Room | undefined) {
@@ -513,6 +530,7 @@ export function createMainJoinRegistry(options: {
       pendingOwnerships: joiningUsers.size,
       queued,
       revocations: revocations.size,
+      endRecords: endRecords.size,
     }),
 
     async issue(rawAuth: AuthenticatedContext, rawTarget: Target, raw: unknown) {
@@ -1014,6 +1032,190 @@ export function createMainJoinRegistry(options: {
       return structuredClone(await record.task);
     },
 
+    async end(rawBinding: Binding, raw: unknown) {
+      const timing = createSessionTransitionTiming();
+      const input = sessionEndInputSchema.parse(raw);
+      const auth = identity(rawBinding.auth);
+      if (!rawBinding.socketId || rawBinding.socketId.length > 256) fail('VALIDATION_ERROR');
+      const key = JSON.stringify([input.sessionId, input.epoch]);
+      const owned = ownerships.get(auth.userId);
+      const replay = endRecords.get(key);
+      const room = owned?.room;
+      // Replay after completion has no ownership; retain only bounded operation metadata.
+      const destination =
+        room?.state.sessionId === input.sessionId && room.state.epoch === input.epoch
+          ? { workspaceId: room.state.workspaceId, channelId: room.state.channelId }
+          : replay
+            ? replay.destination
+            : undefined;
+      if (!destination) fail('CONFLICT');
+      const record = await run(auth, destination, async (held) => {
+        sweep();
+        await authority(auth, destination, held);
+        if (!rawBinding.isConnected()) fail('CONFLICT');
+        const previous = endRecords.get(key);
+        if (previous) {
+          if (previous.expiresAt <= clock()) {
+            endRecords.delete(key);
+            fail('CONFLICT');
+          }
+          if (
+            previous.binding.auth.userId !== auth.userId ||
+            previous.binding.auth.authSessionId !== auth.authSessionId ||
+            previous.binding.socketId !== rawBinding.socketId ||
+            previous.command !== JSON.stringify(input)
+          )
+            fail('CONFLICT');
+          return previous;
+        }
+        const owner = ownerships.get(auth.userId);
+        if (
+          !owner ||
+          owner.binding.socketId !== rawBinding.socketId ||
+          owner.participant.auth.authSessionId !== auth.authSessionId ||
+          owner.room.state.sessionId !== input.sessionId ||
+          owner.room.state.epoch !== input.epoch ||
+          owner.participant.callGeneration !== input.callGeneration
+        )
+          fail('CONFLICT');
+        const currentRoom = owner.room;
+        usable(currentRoom);
+        await refreshPeers(currentRoom, held);
+        const current = await authority(auth, destination, held);
+        usable(currentRoom);
+        fencePeers(currentRoom, held);
+        const policy = resolveSessionPolicyContext(policyInput(owner, current));
+        if (!policy.ok) fail(policy.errorCode);
+        if (policy.context.role !== 'HOST') fail('FORBIDDEN');
+        if (currentRoom.state.policyRevision !== input.expectedPolicyRevision) fail('CONFLICT');
+        const adapters = options.endCleanup;
+        if (
+          !adapters ||
+          typeof adapters.messaging !== 'function' ||
+          typeof adapters.board !== 'function' ||
+          !(
+            typeof adapters.media === 'function' ||
+            (adapters.media && typeof adapters.media.revoke === 'function')
+          )
+        )
+          fail('DEPENDENCY_UNAVAILABLE');
+        if (
+          endRecords.size >= limits.maxEndRecords ||
+          currentRoom.state.policyRevision >= Number.MAX_SAFE_INTEGER
+        )
+          fail('SERVER_BUSY');
+        const owners = [...ownerships.values()].filter((value) => value.room === currentRoom);
+        const token = randomUUID();
+        const cleanupIdentity = {
+          operationId: input.requestId,
+          transitionToken: token,
+          sessionId: input.sessionId,
+          epoch: input.epoch,
+          reason: 'SESSION_ENDED' as const,
+        };
+        const targets: { userId: string; request: SessionCleanupRequest }[] = owners.map(
+          (value) => ({
+            userId: value.participant.auth.userId,
+            request: {
+              ...cleanupIdentity,
+              callGeneration: value.participant.callGeneration,
+              target: { type: 'PARTICIPANT', participantId: value.participant.participantId },
+            },
+          }),
+        );
+        targets.push({
+          userId: auth.userId,
+          request: { ...cleanupIdentity, target: { type: 'SCOPE', scope: { type: 'MAIN' } } },
+        });
+        for (const groupId of currentRoom.state.groups.keys())
+          targets.push({
+            userId: auth.userId,
+            request: {
+              ...cleanupIdentity,
+              target: { type: 'SCOPE', scope: { type: 'GROUP', groupId } },
+            },
+          });
+        // Last acceptance check under the gate, before any state/resource change.
+        if (performance.now() >= timing.deadlineMs) fail('DEPENDENCY_UNAVAILABLE');
+        currentRoom.endToken = token;
+        currentRoom.state.state = 'ENDING';
+        currentRoom.state.policyRevision++;
+        for (const value of owners) value.participant.blocked = true;
+        for (const intent of [...intents.values()]) if (intent.room === currentRoom) forget(intent);
+        currentRoom.router.close();
+        const isCurrent = () =>
+          !closed &&
+          rooms.get(destination.channelId) === currentRoom &&
+          currentRoom.state.state === 'ENDING' &&
+          currentRoom.endToken === token;
+        const metadata = { sessionId: new Types.ObjectId(input.sessionId), epoch: input.epoch };
+        const operation = createSessionEndOperation({
+          input,
+          timing,
+          context: {
+            assertHeld: () => held.assertHeld({ workspaceId: destination.workspaceId }),
+            isCurrent,
+          },
+          targets,
+          adapters,
+          beginEnding: async (guard) => {
+            try {
+              const result = await options.repository.beginEnding(
+                { ...metadata, expectedRevision: currentRoom.revision, at: new Date(clock()) },
+                guard,
+              );
+              guard();
+              currentRoom.revision = result.revision;
+            } catch (error) {
+              currentRoom.uncertain = true;
+              throw error;
+            }
+          },
+          completeEnding: async (guard) => {
+            try {
+              const result = await options.repository.completeEnding(
+                { ...metadata, expectedRevision: currentRoom.revision, at: new Date(clock()) },
+                guard,
+              );
+              guard();
+              currentRoom.revision = result.revision;
+            } catch (error) {
+              currentRoom.uncertain = true;
+              throw error;
+            }
+          },
+          finalize: (guard) =>
+            options.coordinator.run({ workspaceId: destination.workspaceId }, async () => {
+              guard();
+              currentRoom.state.state = 'ENDED';
+              currentRoom.state.hostParticipantId = null;
+              for (const value of owners)
+                if (ownerships.get(value.participant.auth.userId) === value)
+                  ownerships.delete(value.participant.auth.userId);
+              if (rooms.get(destination.channelId) === currentRoom)
+                rooms.delete(destination.channelId);
+            }),
+        });
+        const accepted = {
+          binding: { ...rawBinding, auth },
+          command: JSON.stringify(input),
+          operation,
+          expiresAt: Number.POSITIVE_INFINITY,
+          destination,
+        };
+        endRecords.set(key, accepted);
+        return accepted;
+      });
+      const result = await record.operation.run();
+      if (
+        'data' in result &&
+        result.data.status === 'completed' &&
+        record.expiresAt === Number.POSITIVE_INFINITY
+      )
+        record.expiresAt = clock() + limits.endReplayTtlMs;
+      return structuredClone(result);
+    },
+
     async withContext<T>(
       socketId: string,
       input: Omit<LiveContextRequest, 'auth'>,
@@ -1078,6 +1280,7 @@ export function createMainJoinRegistry(options: {
       tickets.clear();
       intents.clear();
       revocations.clear();
+      endRecords.clear();
       ownerships.clear();
       rooms.clear();
     },

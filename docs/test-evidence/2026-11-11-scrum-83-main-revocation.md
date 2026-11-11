@@ -1,14 +1,14 @@
 # SCRUM-83 — Thu quyền MAIN và hủy pending
 
-Nền: main `134d2cd`. Nhánh riêng, không dựa trên PR SCRUM-86. Windows, Node 26.12.1, pnpm 11.5.2; MongoDB 8.2.6 replica set tạm trên loopback. Không thay staging, env hoặc schema/index ứng dụng.
+Nền cập nhật: main `83dfaf2`, gồm SCRUM-86 và history-sync. Đã giải conflict giữ cả end/revocation. Windows, Node 26.12.1, pnpm 11.5.2; MongoDB 8.2.6 replica set tạm trên loopback. Không thay staging, env hoặc schema/index ứng dụng.
 
 ## Kiểm tra
 
 | Phần                     | Kết quả                                                                                                                                                                               |
 | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Registry và matching mới | 38 test mới: sáu scope M1, stale revision/incarnation/ticket, pending Router/DB, peer còn quyền, cleanup lỗi, replay/cap/TTL, reservation host, cohort M1 và callback khác generation |
-| Test thường              | 592 test, 37 file đạt                                                                                                                                                                 |
-| DB integration           | 130 test, 9 file đạt, gồm ba ca mới, trong đó hai ca nối registry → M3 transport service → native mediasoup                                                                           |
+| Registry và matching mới | 39 test mới: sáu scope M1, stale revision/incarnation/ticket, pending Router/DB, peer còn quyền, cleanup lỗi, replay/cap/TTL, reservation host, cohort M1 và callback khác generation |
+| Test thường              | 626 test, 40 file đạt                                                                                                                                                                 |
+| DB integration           | 141 test, 10 file đạt, gồm ba ca mới, trong đó hai ca nối registry → M3 transport service → native mediasoup                                                                          |
 | Check repo               | Các bước tương đương pnpm check qua entrypoint Node: harness, format, lint, typecheck contracts/server/web và build đạt. Harness 54 đạt, 1 ca symlink bỏ qua trên Windows             |
 | Media smoke              | Native worker/Router khởi động với Opus/VP8                                                                                                                                           |
 
@@ -20,6 +20,8 @@ Nền: main `134d2cd`. Nhánh riêng, không dựa trên PR SCRUM-86. Windows, N
 Các ca dùng MongoDB repository, coordinator, registry, M3 transport service và native Router/transport thật. Authority M1 và cleanup messaging/board là fixture; chưa kiểm auth logout/ACL publisher production hoặc media browser.
 
 Ca mới dùng MongoDB thật: A reserve host, B join trước; login mới của A đến trước thông báo revoke vẫn vào MEMBER và host pointer null, dù repository trả lại participant metadata đã reserve. Bốn fixture kiểm authSession/stamp đổi và fence M1 mất tính liên tục trước/sau DB await; không công bố host cũ.
+
+Ca ghép end/revocation dùng cùng cleanup adapters và coordinator: end đang chờ messaging thì AUTH_SESSION bị thu; end chỉ gọi begin/complete một lần, kết thúc không còn ownership và replay từ auth cũ bị từ chối.
 
 ## Giới hạn
 
