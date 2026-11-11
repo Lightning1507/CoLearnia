@@ -33,12 +33,15 @@ afterAll(async () => {
 });
 
 describe('session metadata models', () => {
-  it('uses shared connection models and exactly the four reviewed indexes', () => {
+  it('uses shared connection models and the metadata/query index manifest', () => {
     expect(sessionModels(connection).LiveSession).toBe(LiveSession);
     expect(sessionModels(connection).SessionParticipant).toBe(SessionParticipant);
     expect(LiveSession.db).toBe(connection);
     expect(SessionParticipant.db).toBe(connection);
-    expect(sessionIndexRequirements).toHaveLength(4);
+    expect(sessionIndexRequirements).toHaveLength(5);
+    expect(
+      sessionIndexRequirements.find((index) => index.name === 'ix_live_channel_metadata')?.key,
+    ).toEqual({ workspaceId: 1, channelId: 1, startedAt: -1, _id: -1 });
     expect(
       LiveSession.schema.indexes().find(([, options]) => options.name === 'uq_live_open_channel'),
     ).toMatchObject([
