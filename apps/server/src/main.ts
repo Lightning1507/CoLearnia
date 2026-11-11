@@ -97,6 +97,12 @@ async function start() {
     try {
       const { createMediaRuntime: startMedia } = await import('./live/media/runtime.js');
       media = await startMedia(config);
+      media.onFailure(() => {
+        acceptingLiveRuntime = false;
+        logger.error(
+          'LIVE runtime admission closed after media worker failure; restart requires cold session reconciliation.',
+        );
+      });
       if (stopping) media.close();
     } catch {
       acceptingLiveRuntime = false;

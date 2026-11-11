@@ -21,7 +21,12 @@ import {
   sessionCollectionValidators,
 } from '../src/live/session-manager/session-models.js';
 import { testReplicaUri } from './replica-uri.js';
+import request from 'supertest';
+import { createApp } from '../src/app.js';
 import { createTransportSignaling } from '../src/live/media/transport-signaling.js';
+import { createMediaRuntime } from '../src/live/media/runtime.js';
+import { bindWorkerFailure } from '../src/live/media/worker-failure.js';
+import { loadConfig } from '../src/config/env.js';
 
 const databaseName = `colearnia_test_scrum82_${randomUUID().replaceAll('-', '')}`;
 const database = createDatabase(testReplicaUri(databaseName));
@@ -91,6 +96,7 @@ function setup(
   customRepository = repository,
   revocationCleanup?: Parameters<typeof createMainJoinRegistry>[0]['revocationCleanup'],
   endCleanup?: Parameters<typeof createMainJoinRegistry>[0]['endCleanup'],
+  routerFactory?: () => Promise<MediaTypes.Router>,
 ) {
   let time = Date.now();
   const coordinator = createOperationCoordinator();
@@ -128,7 +134,7 @@ function setup(
       return !revoked.has(current.auth.userId);
     },
     createRouter: async () => {
-      const router = await worker.createRouter({ mediaCodecs });
+      const router = await (routerFactory?.() ?? worker.createRouter({ mediaCodecs }));
       routers.push(router);
       return router;
     },
@@ -153,6 +159,68 @@ function setup(
 }
 
 describe('MAIN registry with real MongoDB and mediasoup Router', () => {
+  it('ends affected durable sessions after a real mediasoup worker process dies', async () => {
+    const ownedWorker = await createWorker({ logLevel: 'error' });
+    const runtime = await createMediaRuntime(
+      loadConfig({
+        NODE_ENV: 'test',
+        MEDIA_PORT: String(45000 + Math.floor(Math.random() * 15000)),
+        MEDIA_LISTEN_IP: '127.0.0.1',
+        MEDIA_ANNOUNCED_ADDRESS: '127.0.0.1',
+      }),
+      { createWorker: async () => ownedWorker },
+    );
+    const f = setup(
+      repository,
+      undefined,
+      { media: endCleanup, messaging: endCleanup, board: endCleanup },
+      runtime.createSessionRouter,
+    );
+    const report = vi.fn();
+    const app = createApp(loadConfig({ NODE_ENV: 'test' }), () => ({
+      name: 'CoLearnia',
+      database: 'connected',
+      media: runtime.isReady() ? 'connected' : 'disconnected',
+      ready: runtime.isReady(),
+    }));
+    const unbind = bindWorkerFailure(runtime, f.registry, report);
+    const user = f.auth();
+    const ticket = await f.registry.issue(user, f.target, { requestId: randomUUID() });
+    await f.registry.join(f.binding(user), { ticket: ticket.ticket, requestId: randomUUID() });
+    try {
+      expect(runtime.isReady()).toBe(true);
+      expect((await request(app).get('/health/ready')).status).toBe(200);
+      // This PID belongs only to the worker created in this test.
+      process.kill(ownedWorker.pid, 'SIGKILL');
+      await vi.waitFor(() => expect(report).toHaveBeenCalledWith('SETTLED'), { timeout: 15000 });
+      expect(runtime.isReady()).toBe(false);
+      expect((await request(app).get('/health/ready')).status).toBe(503);
+      expect((await request(app).get('/health/live')).status).toBe(200);
+      expect(f.routers[0]!.closed).toBe(true);
+      expect(await models.LiveSession.findById(ticket.sessionId).lean()).toMatchObject({
+        status: 'ENDED',
+        hostUserId: null,
+        revision: 3,
+      });
+      expect(
+        (
+          await models.SessionParticipant.findOne({
+            sessionId: new Types.ObjectId(ticket.sessionId),
+          }).lean()
+        )?.leftAt,
+      ).toBeInstanceOf(Date);
+      expect(f.registry.stats().ownerships).toBe(0);
+      await expect(runtime.createSessionRouter()).rejects.toThrow();
+      const lateListener = vi.fn();
+      runtime.onFailure(lateListener);
+      expect(lateListener).toHaveBeenCalledWith(
+        expect.objectContaining({ routerIds: [f.routers[0]!.id] }),
+      );
+    } finally {
+      unbind();
+      runtime.close();
+    }
+  });
   it('keeps a committed end with a lost acknowledgement pending without repeating writes', async () => {
     let completes = 0;
     const f = setup(
