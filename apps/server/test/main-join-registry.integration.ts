@@ -8,7 +8,8 @@ import type {
   SessionCleanupRequest,
   SessionCleanupResult,
 } from '@colearnia/contracts';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { mediaTransportCreateAckSchema } from '@colearnia/contracts';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createDatabase } from '../src/lib/database.js';
 import { createOperationCoordinator } from '../src/lib/operation-coordinator.js';
 import { mediaCodecs } from '../src/live/media/runtime.js';
@@ -20,6 +21,7 @@ import {
   sessionCollectionValidators,
 } from '../src/live/session-manager/session-models.js';
 import { testReplicaUri } from './replica-uri.js';
+import { createTransportSignaling } from '../src/live/media/transport-signaling.js';
 
 const databaseName = `colearnia_test_scrum82_${randomUUID().replaceAll('-', '')}`;
 const database = createDatabase(testReplicaUri(databaseName));
@@ -29,6 +31,7 @@ const registries: ReturnType<typeof createMainJoinRegistry>[] = [];
 let worker: MediaTypes.Worker;
 let ownsDatabase = false;
 const id = () => new Types.ObjectId().toHexString();
+
 async function endCleanup(value: SessionCleanupRequest): Promise<SessionCleanupResult> {
   const base = {
     operationId: value.operationId,
@@ -86,6 +89,7 @@ afterAll(async () => {
 
 function setup(
   customRepository = repository,
+  revocationCleanup?: Parameters<typeof createMainJoinRegistry>[0]['revocationCleanup'],
   endCleanup?: Parameters<typeof createMainJoinRegistry>[0]['endCleanup'],
 ) {
   let time = Date.now();
@@ -100,6 +104,7 @@ function setup(
   const revoked = new Set<string>();
   const registry = createMainJoinRegistry({
     coordinator,
+    ...(revocationCleanup ? { revocationCleanup } : {}),
     ...(endCleanup ? { endCleanup } : {}),
     repository: customRepository,
     now: () => time,
@@ -163,6 +168,7 @@ describe('MAIN registry with real MongoDB and mediasoup Router', () => {
           throw error;
         },
       },
+      undefined,
       { media: endCleanup, messaging: endCleanup, board: endCleanup },
     );
     const user = f.auth();
@@ -232,6 +238,7 @@ describe('MAIN registry with real MongoDB and mediasoup Router', () => {
           return repository.completeEnding(...args);
         },
       },
+      undefined,
       { media: cleanup, messaging: cleanup, board: cleanup },
     );
     const host = f.auth();
@@ -279,6 +286,136 @@ describe('MAIN registry with real MongoDB and mediasoup Router', () => {
     expect(await f.registry.end(socket, command)).toEqual(one);
     expect(f.routers[1]!.closed).toBe(false);
   });
+
+  it('does not grant a reserved host identity to a new login before revocation delivery', async () => {
+    const f = setup();
+    const host = f.auth();
+    const peer = f.auth();
+    const reserved = await f.registry.issue(host, f.target, { requestId: randomUUID() });
+    const peerTicket = await f.registry.issue(peer, f.target, { requestId: randomUUID() });
+    await f.registry.join(f.binding(peer), { ticket: peerTicket.ticket, requestId: randomUUID() });
+    // M1 has rotated/revoked the previous authSession, while M4 notification is delayed.
+    const login = { ...host, authSessionId: id() };
+    const fresh = await f.registry.issue(login, f.target, { requestId: randomUUID() });
+    const joined = await f.registry.join(f.binding(login), {
+      ticket: fresh.ticket,
+      requestId: randomUUID(),
+    });
+    const snapshot = JSON.parse(joined.parts.map((part) => part.fragment).join(''));
+    expect(snapshot.viewer.role).toBe('MEMBER');
+    expect(snapshot.hostParticipantId).toBeNull();
+    expect(fresh.sessionId).toBe(reserved.sessionId);
+    expect(
+      await models.SessionParticipant.countDocuments({
+        sessionId: new Types.ObjectId(fresh.sessionId),
+        userId: new Types.ObjectId(host.userId),
+      }),
+    ).toBe(1);
+    expect(f.registry.stats().ownerships).toBe(2);
+  });
+  it.each([false, true])(
+    'revokes real M3 transport resources with native creation delayed=%s',
+    async (delayed) => {
+      const confirmed = async (value: SessionCleanupRequest): Promise<SessionCleanupResult> => {
+        const { reason, ...identity } = value;
+        void reason;
+        return {
+          ...identity,
+          outcome: { permissionRevoked: true, pendingInvalidated: true, cleanupPending: false },
+        };
+      };
+      const f = setup(repository, {
+        media: { revoke: (value) => transportService.cleanup(value) },
+        messaging: confirmed,
+        board: confirmed,
+      });
+      const host = f.auth();
+      const peer = f.auth();
+      const socket = f.binding(host);
+      const peerSocket = f.binding(peer);
+      const ticket = await f.registry.issue(host, f.target, { requestId: randomUUID() });
+      const joined = await f.registry.join(socket, {
+        ticket: ticket.ticket,
+        requestId: randomUUID(),
+      });
+      const peerTicket = await f.registry.issue(peer, f.target, { requestId: randomUUID() });
+      const peerJoin = await f.registry.join(peerSocket, {
+        ticket: peerTicket.ticket,
+        requestId: randomUUID(),
+      });
+      let release!: () => void;
+      let entered!: () => void;
+      const waiting = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const created = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+      const native: MediaTypes.WebRtcTransport[] = [];
+      const transportService = createTransportSignaling({
+        withContext: f.registry.withContext,
+        createTransport: async (router) => {
+          const transport = await router.createWebRtcTransport({
+            listenInfos: [{ protocol: 'udp', ip: '127.0.0.1' }],
+          });
+          native.push(transport);
+          entered();
+          if (delayed) await waiting;
+          return transport;
+        },
+      });
+      const handlers = new Map<string, (raw: unknown, ack?: (value: unknown) => void) => void>();
+      transportService.attach({
+        id: socket.socketId,
+        on: (name, listener) => handlers.set(name, listener),
+        once: () => {},
+      });
+      const response = new Promise<unknown>((resolve) =>
+        handlers.get('media.transport.create')!(
+          {
+            requestId: randomUUID(),
+            sessionId: ticket.sessionId,
+            epoch: ticket.epoch,
+            callGeneration: joined.ack.data.result.callGeneration,
+            expectedPolicyRevision: 2,
+            payload: { direction: 'SEND' },
+          },
+          resolve,
+        ),
+      );
+      try {
+        await created;
+        if (!delayed)
+          expect(mediaTransportCreateAckSchema.parse(await response)).toHaveProperty('data');
+        const result = await f.registry.revoke({
+          operationId: randomUUID(),
+          kind: 'AUTH_SESSION',
+          authSessionId: host.authSessionId,
+          revision: 1,
+        });
+        expect(result).toMatchObject({
+          permissionRevoked: true,
+          pendingInvalidated: true,
+          cleanupPending: delayed,
+        });
+        release();
+        if (delayed)
+          expect(mediaTransportCreateAckSchema.parse(await response)).toHaveProperty('error');
+        await vi.waitFor(() => expect(native[0]!.closed).toBe(true));
+        expect(f.routers[0]!.closed).toBe(false);
+        expect(
+          await f.registry.withContext(
+            peerSocket.socketId,
+            { ...peerTicket, callGeneration: peerJoin.ack.data.result.callGeneration },
+            (result) => result.ok,
+          ),
+        ).toBe(true);
+        expect(f.registry.stats().ownerships).toBe(1);
+      } finally {
+        release();
+      }
+    },
+  );
   it('replays each ticket/requestId pair without rewriting ownership or durable metadata', async () => {
     let joinWrites = 0;
     const f = setup({
