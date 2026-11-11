@@ -2,7 +2,12 @@ import { randomUUID } from 'node:crypto';
 import { Types, mongo } from 'mongoose';
 import { createWorker } from 'mediasoup';
 import type { types as MediaTypes } from 'mediasoup';
-import type { AuthenticatedContext, ChannelAccessStamp } from '@colearnia/contracts';
+import type {
+  AuthenticatedContext,
+  ChannelAccessStamp,
+  SessionCleanupRequest,
+  SessionCleanupResult,
+} from '@colearnia/contracts';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createDatabase } from '../src/lib/database.js';
 import { createOperationCoordinator } from '../src/lib/operation-coordinator.js';
@@ -24,6 +29,22 @@ const registries: ReturnType<typeof createMainJoinRegistry>[] = [];
 let worker: MediaTypes.Worker;
 let ownsDatabase = false;
 const id = () => new Types.ObjectId().toHexString();
+async function endCleanup(value: SessionCleanupRequest): Promise<SessionCleanupResult> {
+  const base = {
+    operationId: value.operationId,
+    sessionId: value.sessionId,
+    epoch: value.epoch,
+    transitionToken: value.transitionToken,
+    outcome: {
+      permissionRevoked: true as const,
+      pendingInvalidated: true as const,
+      cleanupPending: false,
+    },
+  };
+  return 'callGeneration' in value
+    ? { ...base, callGeneration: value.callGeneration, target: value.target }
+    : { ...base, target: value.target };
+}
 
 beforeAll(async () => {
   await database.connect();
@@ -63,7 +84,10 @@ afterAll(async () => {
   }
 });
 
-function setup(customRepository = repository) {
+function setup(
+  customRepository = repository,
+  endCleanup?: Parameters<typeof createMainJoinRegistry>[0]['endCleanup'],
+) {
   let time = Date.now();
   const coordinator = createOperationCoordinator();
   const target = { workspaceId: id(), channelId: id() };
@@ -76,6 +100,7 @@ function setup(customRepository = repository) {
   const revoked = new Set<string>();
   const registry = createMainJoinRegistry({
     coordinator,
+    ...(endCleanup ? { endCleanup } : {}),
     repository: customRepository,
     now: () => time,
     // M1 authority is a fixture; DB session writes and native Routers are real.
@@ -123,6 +148,137 @@ function setup(customRepository = repository) {
 }
 
 describe('MAIN registry with real MongoDB and mediasoup Router', () => {
+  it('keeps a committed end with a lost acknowledgement pending without repeating writes', async () => {
+    let completes = 0;
+    const f = setup(
+      {
+        ...repository,
+        completeEnding: async (...args) => {
+          completes++;
+          await repository.completeEnding(...args);
+          const error = new mongo.MongoServerError({
+            message: 'Injected lost end acknowledgement',
+          });
+          error.addErrorLabel('UnknownTransactionCommitResult');
+          throw error;
+        },
+      },
+      { media: endCleanup, messaging: endCleanup, board: endCleanup },
+    );
+    const user = f.auth();
+    const socket = f.binding(user);
+    const ticket = await f.registry.issue(user, f.target, { requestId: randomUUID() });
+    const joined = await f.registry.join(socket, {
+      ticket: ticket.ticket,
+      requestId: randomUUID(),
+    });
+    const command = {
+      requestId: randomUUID(),
+      sessionId: ticket.sessionId,
+      epoch: ticket.epoch,
+      callGeneration: joined.ack.data.result.callGeneration,
+      expectedPolicyRevision: 1,
+      action: 'END',
+    };
+    const result = await f.registry.end(socket, command);
+    expect(result).toMatchObject({ data: { status: 'pending', result: { state: 'ENDING' } } });
+    expect(await f.registry.end(socket, command)).toEqual(result);
+    expect(completes).toBe(1);
+    expect(await models.LiveSession.findById(ticket.sessionId).lean()).toMatchObject({
+      status: 'ENDED',
+      hostUserId: null,
+      revision: 3,
+    });
+    expect(
+      (
+        await models.SessionParticipant.findOne({
+          sessionId: new Types.ObjectId(ticket.sessionId),
+        }).lean()
+      )?.leftAt,
+    ).toBeInstanceOf(Date);
+    expect(f.routers[0]!.closed).toBe(true);
+    await expect(
+      f.registry.issue(user, f.target, { requestId: randomUUID() }),
+    ).rejects.toMatchObject({ code: 'DEPENDENCY_UNAVAILABLE' });
+  });
+  it('ends real MAIN metadata and closes the Router once for concurrent host leave retries', async () => {
+    const cleanup = async (value: SessionCleanupRequest): Promise<SessionCleanupResult> => {
+      const base = {
+        operationId: value.operationId,
+        sessionId: value.sessionId,
+        epoch: value.epoch,
+        transitionToken: value.transitionToken,
+        outcome: {
+          permissionRevoked: true as const,
+          pendingInvalidated: true as const,
+          cleanupPending: false,
+        },
+      };
+      return 'callGeneration' in value
+        ? { ...base, callGeneration: value.callGeneration, target: value.target }
+        : { ...base, target: value.target };
+    };
+    let begins = 0;
+    let completes = 0;
+    const f = setup(
+      {
+        ...repository,
+        beginEnding: async (...args) => {
+          begins++;
+          return repository.beginEnding(...args);
+        },
+        completeEnding: async (...args) => {
+          completes++;
+          return repository.completeEnding(...args);
+        },
+      },
+      { media: cleanup, messaging: cleanup, board: cleanup },
+    );
+    const host = f.auth();
+    const member = f.auth();
+    const ticket = await f.registry.issue(host, f.target, { requestId: randomUUID() });
+    const memberTicket = await f.registry.issue(member, f.target, { requestId: randomUUID() });
+    const socket = f.binding(host);
+    const joined = await f.registry.join(socket, {
+      ticket: ticket.ticket,
+      requestId: randomUUID(),
+    });
+    await f.registry.join(f.binding(member), {
+      ticket: memberTicket.ticket,
+      requestId: randomUUID(),
+    });
+    const command = {
+      requestId: randomUUID(),
+      sessionId: ticket.sessionId,
+      epoch: ticket.epoch,
+      callGeneration: joined.ack.data.result.callGeneration,
+      expectedPolicyRevision: 2,
+      action: 'HOST_LEAVE',
+    };
+    const [one, two] = await Promise.all([
+      f.registry.end(socket, command),
+      f.registry.end(socket, command),
+    ]);
+    expect(one).toEqual(two);
+    expect(one).toMatchObject({ data: { status: 'completed', result: { state: 'ENDED' } } });
+    expect(begins).toBe(1);
+    expect(completes).toBe(1);
+    expect(await models.LiveSession.findById(ticket.sessionId).lean()).toMatchObject({
+      status: 'ENDED',
+      revision: 4,
+      hostUserId: null,
+    });
+    const participants = await models.SessionParticipant.find({
+      sessionId: new Types.ObjectId(ticket.sessionId),
+    }).lean();
+    expect(participants).toHaveLength(2);
+    expect(participants.every((value) => value.leftAt instanceof Date)).toBe(true);
+    expect(f.routers[0]!.closed).toBe(true);
+    const next = await f.registry.issue(host, f.target, { requestId: randomUUID() });
+    expect(next.sessionId).not.toBe(ticket.sessionId);
+    expect(await f.registry.end(socket, command)).toEqual(one);
+    expect(f.routers[1]!.closed).toBe(false);
+  });
   it('replays each ticket/requestId pair without rewriting ownership or durable metadata', async () => {
     let joinWrites = 0;
     const f = setup({
