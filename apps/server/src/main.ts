@@ -38,19 +38,16 @@ const status = (): SystemStatus => ({
 });
 
 const canUseAuthIndexes = () => authIndexesReady && !stopping;
+const readSession = createSessionReader(database, canUseAuthIndexes);
 const authRouter = config.SESSION_SECRET
   ? createAuthRouter(
-      createHttpAuth(
-        config.APP_ORIGIN,
-        config.SESSION_SECRET,
-        createSessionReader(database, canUseAuthIndexes),
-      ),
+      createHttpAuth(config.APP_ORIGIN, config.SESSION_SECRET, readSession),
       createRegistration(database, canUseAuthIndexes, config.AUTH_TTL_SECONDS),
       createLogin(database, canUseAuthIndexes, config.AUTH_TTL_SECONDS, operationCoordinator),
     )
   : undefined;
 const httpServer = createServer(createApp(config, status, authRouter));
-const io = createRealtime(httpServer, config);
+const io = createRealtime(httpServer, config, readSession);
 
 async function start() {
   try {
