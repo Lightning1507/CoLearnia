@@ -155,6 +155,8 @@ Về kỹ thuật, khóa chống trùng gồm hội thoại + người gửi + m
 
 **Nối lịch sử với realtime khi mở hội thoại/reconnect — hướng đề xuất Q9:**
 
+Xem [phép thử SCRUM-38 và đề xuất mốc commit](../test-evidence/2026-11-09-scrum-38-history-sync.md) để review trước khi chốt Q9 và triển khai các task phụ thuộc.
+
 Nếu tải lịch sử xong mới đăng ký nhận realtime, tin được lưu giữa hai bước có thể bị sót. Socket.IO mặc định không tự gửi lại sự kiện server mà client đã bỏ lỡ; phần bù tin do ứng dụng thực hiện. Theo [delivery guarantees](https://socket.io/docs/v4/delivery-guarantees/), proposal chọn subscribe trước rồi tải bù có mốc, không bật replay packet private.
 
 | Bước                     | Client và server thực hiện                                                                                                                                                                                                                     | Điều kiện để đi tiếp                                                                                                                                                         |

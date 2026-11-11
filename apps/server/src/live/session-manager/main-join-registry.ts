@@ -1,11 +1,15 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { performance } from 'node:perf_hooks';
 import {
   authenticatedContextSchema,
   channelAccessStampSchema,
   sessionJoinAckSchema,
   sessionJoinInputSchema,
   sessionJoinTicketInputSchema,
+  sessionEndInputSchema,
   workspaceDocumentIdSchema,
+  liveAccessRevocationSchema,
+  accessCleanupResultSchema,
 } from '@colearnia/contracts';
 import type {
   AuthenticatedContext,
@@ -14,6 +18,9 @@ import type {
   LiveContextRequest,
   LiveContextResult,
   SessionSnapshotPart,
+  SessionCleanupRequest,
+  LiveAccessRevocation,
+  AccessCleanupResult,
 } from '@colearnia/contracts';
 import { Types } from 'mongoose';
 import type { types as MediaTypes } from 'mediasoup';
@@ -29,6 +36,10 @@ import type {
   SessionPolicyState,
 } from '../policy/session-policy.js';
 import type { createSessionRepository } from './session-repository.js';
+import { beginSessionTransition, createSessionTransitionTiming } from './session-transition.js';
+import { createSessionEndOperation } from './session-end-operation.js';
+import type { SessionTransitionAdapters } from './session-transition.js';
+import { matchesMainRevocation, mayMatchMainRevocation } from './main-revocation.js';
 
 type Target = { workspaceId: string; channelId: string };
 type Authority = { auth: AuthenticatedContext; access: ChannelAccessStamp; displayName: string };
@@ -47,7 +58,16 @@ type Room = {
   revision: number;
   hostUserId: string;
   hostParticipantId: string;
+  hostReservation: Authority | null;
   uncertain: boolean;
+  endToken?: string;
+};
+type EndRecord = {
+  destination: Target;
+  binding: Binding;
+  command: string;
+  operation: ReturnType<typeof createSessionEndOperation>;
+  expiresAt: number;
 };
 type Ownership = {
   binding: Binding;
@@ -62,6 +82,13 @@ type Intent = {
   authority: Authority;
   expiresAt: number;
   consumed?: { ownership: Ownership; requestId: string };
+};
+type Revocation = {
+  event: LiveAccessRevocation;
+  authSessions: Set<string>;
+  command: string;
+  expiresAt: number;
+  task?: Promise<AccessCleanupResult>;
 };
 export class MainJoinError extends Error {
   constructor(readonly code: CommonErrorCode) {
@@ -88,6 +115,10 @@ const defaults = {
   perRoomIntents: 1024,
   ticketTtlMs: 60_000,
   routerTimeoutMs: 2000,
+  maxEndRecords: 128,
+  endReplayTtlMs: 60_000,
+  maxRevocations: 128,
+  revocationReplayTtlMs: 60_000,
 };
 
 // Construct once at composition, with the SAME coordinator used by M1/M2.
@@ -107,6 +138,13 @@ export function createMainJoinRegistry(options: {
     committedAccess?: Readonly<ChannelAccessStamp>,
   ): boolean;
   createRouter(): Promise<MediaTypes.Router>;
+  endCleanup?: SessionTransitionAdapters;
+  revocationCleanup?: Parameters<typeof beginSessionTransition>[2];
+  // Exact cohort committed by M1 for this user/operation/revision. Never infer
+  // logout-all targets from the sessions present when its notification arrives.
+  revokedAuthSessions?(
+    event: Extract<LiveAccessRevocation, { kind: 'USER_AUTH_SESSIONS' }>,
+  ): readonly string[];
   now?: () => number;
   limits?: Partial<typeof defaults>;
 }) {
@@ -121,6 +159,9 @@ export function createMainJoinRegistry(options: {
   const ownerships = new Map<string, Ownership>();
   const intents = new Map<string, Intent>();
   const tickets = new Map<string, Intent>();
+  const endRecords = new Map<string, EndRecord>();
+  const revocations = new Map<string, Revocation>();
+  const inFlight = new Map<symbol, { auth: AuthenticatedContext; target: Target }>();
   const pendingRouters = new Set<string>();
   const creatingRooms = new Set<string>();
   const joiningUsers = new Set<string>();
@@ -164,6 +205,8 @@ export function createMainJoinRegistry(options: {
     const channelCount = queuedChannels.get(destination.channelId) ?? 0;
     if (userCount >= 4 || channelCount >= 64 || queued >= 512) fail('SERVER_BUSY');
     const deadline = clock() + 10_000;
+    const operation = Symbol();
+    inFlight.set(operation, { auth, target: destination });
     queued++;
     queuedUsers.set(auth.userId, userCount + 1);
     queuedChannels.set(destination.channelId, channelCount + 1);
@@ -177,6 +220,7 @@ export function createMainJoinRegistry(options: {
         { waitTimeoutMs: 2000 },
       );
     } finally {
+      inFlight.delete(operation);
       queued--;
       for (const [map, key] of [
         [queuedUsers, auth.userId],
@@ -251,6 +295,17 @@ export function createMainJoinRegistry(options: {
     committedAccess?: ChannelAccessStamp,
   ) {
     held.assertHeld({ workspaceId: current.access.workspaceId });
+    if (
+      [...revocations.values()].some((record) =>
+        matchesMainRevocation(
+          record.event,
+          current.auth,
+          committedAccess ?? current.access,
+          record.authSessions,
+        ),
+      )
+    )
+      return false;
     try {
       return options.isAuthorityCurrent(current, held, committedAccess) === true;
     } catch {
@@ -261,6 +316,32 @@ export function createMainJoinRegistry(options: {
     if (room.uncertain || room.router.closed) fail('DEPENDENCY_UNAVAILABLE');
     if (room.state.state !== 'ACTIVE') fail('SESSION_ENDED');
   }
+  function reservedHostCurrent(room: Room, current: Authority, held: CoordinationContext) {
+    const reserved = room.hostReservation;
+    return (
+      !!reserved &&
+      room.state.hostParticipantId === room.hostParticipantId &&
+      reserved.auth.userId === current.auth.userId &&
+      reserved.auth.authSessionId === current.auth.authSessionId &&
+      Date.parse(reserved.auth.expiresAt) > clock() &&
+      reserved.access.workspaceId === current.access.workspaceId &&
+      reserved.access.channelId === current.access.channelId &&
+      reserved.access.membershipId === current.access.membershipId &&
+      reserved.access.membershipIncarnation === current.access.membershipIncarnation &&
+      current.access.membershipRevision >= reserved.access.membershipRevision &&
+      current.access.channelRevision >= reserved.access.channelRevision &&
+      currentFence(current, held, reserved.access)
+    );
+  }
+  function clearHostReservation(room: Room) {
+    room.hostReservation = null;
+    room.state.hostParticipantId = null;
+    if (room.state.policyRevision >= Number.MAX_SAFE_INTEGER) {
+      room.uncertain = true;
+      fail('SERVER_BUSY');
+    }
+    room.state.policyRevision++;
+  }
   function forget(intent: Intent) {
     if (intents.get(intent.key) === intent) intents.delete(intent.key);
     if (tickets.get(intent.digest) === intent) tickets.delete(intent.digest);
@@ -269,6 +350,8 @@ export function createMainJoinRegistry(options: {
   function sweep() {
     const time = clock();
     for (const intent of intents.values()) if (intent.expiresAt <= time) forget(intent);
+    for (const [key, record] of endRecords) if (record.expiresAt <= time) endRecords.delete(key);
+    for (const [key, record] of revocations) if (record.expiresAt <= time) revocations.delete(key);
   }
   async function retireOrphan(room: Room | undefined) {
     if (
@@ -451,6 +534,8 @@ export function createMainJoinRegistry(options: {
       creatingRooms: creatingRooms.size,
       pendingOwnerships: joiningUsers.size,
       queued,
+      revocations: revocations.size,
+      endRecords: endRecords.size,
     }),
 
     async issue(rawAuth: AuthenticatedContext, rawTarget: Target, raw: unknown) {
@@ -510,6 +595,7 @@ export function createMainJoinRegistry(options: {
               revision: 0,
               hostUserId: auth.userId,
               hostParticipantId: participantId.toHexString(),
+              hostReservation: afterRouter,
               uncertain: false,
               state: {
                 sessionId: sessionId.toHexString(),
@@ -646,10 +732,13 @@ export function createMainJoinRegistry(options: {
         joiningUsers.add(auth.userId);
         try {
           const room = intent.room;
-          const participantId =
-            room.hostUserId === auth.userId
-              ? room.hostParticipantId
-              : new Types.ObjectId().toHexString();
+          const reservedHost =
+            room.hostUserId === auth.userId && reservedHostCurrent(room, current, held);
+          if (room.hostUserId === auth.userId && room.hostReservation && !reservedHost)
+            clearHostReservation(room);
+          const participantId = reservedHost
+            ? room.hostParticipantId
+            : new Types.ObjectId().toHexString();
           let participant: PolicyParticipant = {
             participantId,
             displayName: current.displayName,
@@ -691,11 +780,17 @@ export function createMainJoinRegistry(options: {
           )
             fail('CONFLICT');
           participant.auth = confirmed.auth;
+          if (reservedHost && !reservedHostCurrent(room, confirmed, held)) {
+            clearHostReservation(room);
+            fail('CONFLICT');
+          }
           const participants = new Map(room.state.participants);
+          if (room.state.policyRevision >= Number.MAX_SAFE_INTEGER) fail('SERVER_BUSY');
           participants.set(participant.participantId, participant);
           const previous = room.state;
           room.state = { ...previous, participants, policyRevision: previous.policyRevision + 1 };
           ownerships.set(auth.userId, owner);
+          if (participant.participantId === room.hostParticipantId) room.hostReservation = null;
           // Snapshot/provider failures do not revoke the committed ownership. Retry the
           // same consumed intent revalidates all authority without writing DB again.
           return await delivery(owner, input.requestId, held);
@@ -703,6 +798,427 @@ export function createMainJoinRegistry(options: {
           joiningUsers.delete(auth.userId);
         }
       });
+    },
+
+    // Trusted M1 -> M4 port, never a socket event. M1 commits its own deny/version
+    // fence before calling; the local record also fences I/O already in flight.
+    async revoke(raw: unknown) {
+      assertRunning();
+      const parsed = liveAccessRevocationSchema.parse(raw);
+      const event = liveAccessRevocationSchema.parse(
+        Object.fromEntries(
+          Object.entries(parsed).map(([key, value]) => [
+            key,
+            typeof value === 'string' && key.endsWith('Id') ? value.toLowerCase() : value,
+          ]),
+        ),
+      );
+      const command = JSON.stringify(event);
+      sweep();
+      const previous = revocations.get(event.operationId);
+      if (previous) {
+        if (previous.command !== command) fail('CONFLICT');
+        return structuredClone(await previous.task!);
+      }
+      const adapters = options.revocationCleanup;
+      if (
+        !adapters ||
+        typeof adapters.messaging !== 'function' ||
+        typeof adapters.board !== 'function' ||
+        !(
+          typeof adapters.media === 'function' ||
+          (adapters.media && typeof adapters.media.revoke === 'function')
+        )
+      )
+        fail('DEPENDENCY_UNAVAILABLE');
+      if (revocations.size >= limits.maxRevocations) fail('SERVER_BUSY');
+      const authSessions = new Set<string>();
+      if (event.kind === 'USER_AUTH_SESSIONS') {
+        try {
+          const cohort = options.revokedAuthSessions?.(event);
+          if (!Array.isArray(cohort) || cohort.length > limits.maxIntents)
+            fail('DEPENDENCY_UNAVAILABLE');
+          for (const value of cohort)
+            authSessions.add(workspaceDocumentIdSchema.parse(value).toLowerCase());
+        } catch {
+          fail('DEPENDENCY_UNAVAILABLE');
+        }
+      }
+      const record: Revocation = {
+        event,
+        authSessions,
+        command,
+        expiresAt: Number.POSITIVE_INFINITY,
+      };
+      const outstanding = new Set(
+        [...inFlight]
+          .filter(([, binding]) => mayMatchMainRevocation(event, binding.auth, binding.target))
+          .map(([key]) => key),
+      );
+      const timing = createSessionTransitionTiming();
+      const token = randomUUID();
+      revocations.set(event.operationId, record);
+      const matches = (auth: AuthenticatedContext, access: ChannelAccessStamp) =>
+        matchesMainRevocation(event, auth, access, authSessions);
+      const execute = async (): Promise<AccessCleanupResult> => {
+        const captured: {
+          owner: Ownership;
+          generation: number;
+          participantId: string;
+          epoch: string;
+          handle: ReturnType<typeof beginSessionTransition>;
+        }[] = [];
+        const workspaces = [
+          ...new Set([
+            ...[...ownerships.values()]
+              .filter((owner) => matches(owner.participant.auth, owner.participant.access))
+              .map((owner) => owner.room.state.workspaceId),
+            ...[...intents.values()]
+              .filter((intent) => matches(intent.authority.auth, intent.authority.access))
+              .map((intent) => intent.room.state.workspaceId),
+            ...[...rooms.values()]
+              .filter(
+                (room) =>
+                  room.hostReservation &&
+                  matches(room.hostReservation.auth, room.hostReservation.access),
+              )
+              .map((room) => room.state.workspaceId),
+          ]),
+        ].sort();
+        const preparations = await Promise.allSettled(
+          workspaces.map((workspaceId) =>
+            options.coordinator.run(
+              { workspaceId },
+              async (held) => {
+                assertRunning();
+                for (const intent of [...intents.values()]) {
+                  if (
+                    intent.room.state.workspaceId !== workspaceId ||
+                    !matches(intent.authority.auth, intent.authority.access)
+                  )
+                    continue;
+                  forget(intent);
+                }
+                for (const room of rooms.values()) {
+                  if (
+                    room.state.workspaceId !== workspaceId ||
+                    !room.hostReservation ||
+                    !matches(room.hostReservation.auth, room.hostReservation.access)
+                  )
+                    continue;
+                  room.hostReservation = null;
+                  room.state.hostParticipantId = null;
+                  if (room.state.policyRevision < Number.MAX_SAFE_INTEGER)
+                    room.state.policyRevision++;
+                  else room.uncertain = true;
+                }
+                for (const owner of ownerships.values()) {
+                  const { participant, room } = owner;
+                  if (
+                    room.state.workspaceId !== workspaceId ||
+                    !matches(participant.auth, participant.access)
+                  )
+                    continue;
+                  participant.blocked = true;
+                  participant.currentAccess = {
+                    ...participant.currentAccess,
+                    canReadContent: false,
+                  };
+                  if (room.state.policyRevision < Number.MAX_SAFE_INTEGER)
+                    room.state.policyRevision++;
+                  else room.uncertain = true;
+                  if (room.state.hostParticipantId === participant.participantId)
+                    room.state.hostParticipantId = null;
+                  const request = {
+                    operationId: event.operationId,
+                    sessionId: room.state.sessionId,
+                    epoch: room.state.epoch,
+                    transitionToken: token,
+                    callGeneration: participant.callGeneration,
+                    target: {
+                      type: 'PARTICIPANT' as const,
+                      participantId: participant.participantId,
+                    },
+                    reason: 'ACCESS_REVOKED' as const,
+                  };
+                  const handle = beginSessionTransition(
+                    request,
+                    {
+                      assertHeld: () => held.assertHeld({ workspaceId }),
+                      isCurrent: () =>
+                        !closed &&
+                        ownerships.get(participant.auth.userId) === owner &&
+                        participant.callGeneration === request.callGeneration &&
+                        participant.participantId === request.target.participantId &&
+                        room.state.epoch === request.epoch &&
+                        participant.blocked,
+                    },
+                    adapters,
+                    { userId: participant.auth.userId, timing },
+                  );
+                  captured.push({
+                    owner,
+                    handle,
+                    generation: request.callGeneration,
+                    participantId: request.target.participantId,
+                    epoch: request.epoch,
+                  });
+                }
+              },
+              {
+                waitTimeoutMs: Math.max(
+                  1,
+                  Math.min(2000, Math.floor(timing.deadlineMs - performance.now())),
+                ),
+              },
+            ),
+          ),
+        );
+        const outcomes = await Promise.all(captured.map((value) => value.handle.runForeground()));
+        let permissionRevoked =
+          preparations.every((value) => value.status === 'fulfilled') &&
+          outcomes.every((value) => value.permissionRevoked && value.pendingInvalidated);
+        if (permissionRevoked && !closed && performance.now() < timing.deadlineMs) {
+          await Promise.all(
+            workspaces.map((workspaceId) =>
+              options.coordinator.run(
+                { workspaceId },
+                async () => {
+                  if (closed || performance.now() >= timing.deadlineMs)
+                    throw new MainJoinError('DEPENDENCY_UNAVAILABLE');
+                  for (const { owner, generation, participantId, epoch } of captured) {
+                    if (
+                      owner.room.state.workspaceId !== workspaceId ||
+                      ownerships.get(owner.participant.auth.userId) !== owner ||
+                      owner.participant.callGeneration !== generation ||
+                      owner.participant.participantId !== participantId ||
+                      owner.room.state.epoch !== epoch
+                    )
+                      continue;
+                    ownerships.delete(owner.participant.auth.userId);
+                    const participants = new Map(owner.room.state.participants);
+                    participants.delete(owner.participant.participantId);
+                    owner.room.state.participants = participants;
+                  }
+                },
+                {
+                  waitTimeoutMs: Math.max(
+                    1,
+                    Math.min(2000, Math.floor(timing.deadlineMs - performance.now())),
+                  ),
+                },
+              ),
+            ),
+          );
+        } else permissionRevoked = false;
+        if (closed) permissionRevoked = false;
+        return {
+          operationId: event.operationId,
+          permissionRevoked,
+          pendingInvalidated: permissionRevoked,
+          cleanupPending:
+            !permissionRevoked ||
+            outcomes.some((value) => value.cleanupPending) ||
+            [...outstanding].some((key) => inFlight.has(key)),
+        };
+      };
+      record.task = execute()
+        .catch(() => ({
+          operationId: event.operationId,
+          permissionRevoked: false,
+          pendingInvalidated: false,
+          cleanupPending: true,
+        }))
+        .then((value) => {
+          if (value.permissionRevoked && value.pendingInvalidated)
+            record.expiresAt = clock() + limits.revocationReplayTtlMs;
+          return accessCleanupResultSchema.parse(value);
+        });
+      return structuredClone(await record.task);
+    },
+
+    async end(rawBinding: Binding, raw: unknown) {
+      const timing = createSessionTransitionTiming();
+      const input = sessionEndInputSchema.parse(raw);
+      const auth = identity(rawBinding.auth);
+      if (!rawBinding.socketId || rawBinding.socketId.length > 256) fail('VALIDATION_ERROR');
+      const key = JSON.stringify([input.sessionId, input.epoch]);
+      const owned = ownerships.get(auth.userId);
+      const replay = endRecords.get(key);
+      const room = owned?.room;
+      // Replay after completion has no ownership; retain only bounded operation metadata.
+      const destination =
+        room?.state.sessionId === input.sessionId && room.state.epoch === input.epoch
+          ? { workspaceId: room.state.workspaceId, channelId: room.state.channelId }
+          : replay
+            ? replay.destination
+            : undefined;
+      if (!destination) fail('CONFLICT');
+      const record = await run(auth, destination, async (held) => {
+        sweep();
+        await authority(auth, destination, held);
+        if (!rawBinding.isConnected()) fail('CONFLICT');
+        const previous = endRecords.get(key);
+        if (previous) {
+          if (previous.expiresAt <= clock()) {
+            endRecords.delete(key);
+            fail('CONFLICT');
+          }
+          if (
+            previous.binding.auth.userId !== auth.userId ||
+            previous.binding.auth.authSessionId !== auth.authSessionId ||
+            previous.binding.socketId !== rawBinding.socketId ||
+            previous.command !== JSON.stringify(input)
+          )
+            fail('CONFLICT');
+          return previous;
+        }
+        const owner = ownerships.get(auth.userId);
+        if (
+          !owner ||
+          owner.binding.socketId !== rawBinding.socketId ||
+          owner.participant.auth.authSessionId !== auth.authSessionId ||
+          owner.room.state.sessionId !== input.sessionId ||
+          owner.room.state.epoch !== input.epoch ||
+          owner.participant.callGeneration !== input.callGeneration
+        )
+          fail('CONFLICT');
+        const currentRoom = owner.room;
+        usable(currentRoom);
+        await refreshPeers(currentRoom, held);
+        const current = await authority(auth, destination, held);
+        usable(currentRoom);
+        fencePeers(currentRoom, held);
+        const policy = resolveSessionPolicyContext(policyInput(owner, current));
+        if (!policy.ok) fail(policy.errorCode);
+        if (policy.context.role !== 'HOST') fail('FORBIDDEN');
+        if (currentRoom.state.policyRevision !== input.expectedPolicyRevision) fail('CONFLICT');
+        const adapters = options.endCleanup;
+        if (
+          !adapters ||
+          typeof adapters.messaging !== 'function' ||
+          typeof adapters.board !== 'function' ||
+          !(
+            typeof adapters.media === 'function' ||
+            (adapters.media && typeof adapters.media.revoke === 'function')
+          )
+        )
+          fail('DEPENDENCY_UNAVAILABLE');
+        if (
+          endRecords.size >= limits.maxEndRecords ||
+          currentRoom.state.policyRevision >= Number.MAX_SAFE_INTEGER
+        )
+          fail('SERVER_BUSY');
+        const owners = [...ownerships.values()].filter((value) => value.room === currentRoom);
+        const token = randomUUID();
+        const cleanupIdentity = {
+          operationId: input.requestId,
+          transitionToken: token,
+          sessionId: input.sessionId,
+          epoch: input.epoch,
+          reason: 'SESSION_ENDED' as const,
+        };
+        const targets: { userId: string; request: SessionCleanupRequest }[] = owners.map(
+          (value) => ({
+            userId: value.participant.auth.userId,
+            request: {
+              ...cleanupIdentity,
+              callGeneration: value.participant.callGeneration,
+              target: { type: 'PARTICIPANT', participantId: value.participant.participantId },
+            },
+          }),
+        );
+        targets.push({
+          userId: auth.userId,
+          request: { ...cleanupIdentity, target: { type: 'SCOPE', scope: { type: 'MAIN' } } },
+        });
+        for (const groupId of currentRoom.state.groups.keys())
+          targets.push({
+            userId: auth.userId,
+            request: {
+              ...cleanupIdentity,
+              target: { type: 'SCOPE', scope: { type: 'GROUP', groupId } },
+            },
+          });
+        // Last acceptance check under the gate, before any state/resource change.
+        if (performance.now() >= timing.deadlineMs) fail('DEPENDENCY_UNAVAILABLE');
+        currentRoom.endToken = token;
+        currentRoom.state.state = 'ENDING';
+        currentRoom.state.policyRevision++;
+        for (const value of owners) value.participant.blocked = true;
+        for (const intent of [...intents.values()]) if (intent.room === currentRoom) forget(intent);
+        currentRoom.router.close();
+        const isCurrent = () =>
+          !closed &&
+          rooms.get(destination.channelId) === currentRoom &&
+          currentRoom.state.state === 'ENDING' &&
+          currentRoom.endToken === token;
+        const metadata = { sessionId: new Types.ObjectId(input.sessionId), epoch: input.epoch };
+        const operation = createSessionEndOperation({
+          input,
+          timing,
+          context: {
+            assertHeld: () => held.assertHeld({ workspaceId: destination.workspaceId }),
+            isCurrent,
+          },
+          targets,
+          adapters,
+          beginEnding: async (guard) => {
+            try {
+              const result = await options.repository.beginEnding(
+                { ...metadata, expectedRevision: currentRoom.revision, at: new Date(clock()) },
+                guard,
+              );
+              guard();
+              currentRoom.revision = result.revision;
+            } catch (error) {
+              currentRoom.uncertain = true;
+              throw error;
+            }
+          },
+          completeEnding: async (guard) => {
+            try {
+              const result = await options.repository.completeEnding(
+                { ...metadata, expectedRevision: currentRoom.revision, at: new Date(clock()) },
+                guard,
+              );
+              guard();
+              currentRoom.revision = result.revision;
+            } catch (error) {
+              currentRoom.uncertain = true;
+              throw error;
+            }
+          },
+          finalize: (guard) =>
+            options.coordinator.run({ workspaceId: destination.workspaceId }, async () => {
+              guard();
+              currentRoom.state.state = 'ENDED';
+              currentRoom.state.hostParticipantId = null;
+              for (const value of owners)
+                if (ownerships.get(value.participant.auth.userId) === value)
+                  ownerships.delete(value.participant.auth.userId);
+              if (rooms.get(destination.channelId) === currentRoom)
+                rooms.delete(destination.channelId);
+            }),
+        });
+        const accepted = {
+          binding: { ...rawBinding, auth },
+          command: JSON.stringify(input),
+          operation,
+          expiresAt: Number.POSITIVE_INFINITY,
+          destination,
+        };
+        endRecords.set(key, accepted);
+        return accepted;
+      });
+      const result = await record.operation.run();
+      if (
+        'data' in result &&
+        result.data.status === 'completed' &&
+        record.expiresAt === Number.POSITIVE_INFINITY
+      )
+        record.expiresAt = clock() + limits.endReplayTtlMs;
+      return structuredClone(result);
     },
 
     async withContext<T>(
@@ -768,6 +1284,8 @@ export function createMainJoinRegistry(options: {
       for (const intent of intents.values()) intent.token = '';
       tickets.clear();
       intents.clear();
+      revocations.clear();
+      endRecords.clear();
       ownerships.clear();
       rooms.clear();
     },

@@ -1,12 +1,14 @@
 import { randomUUID } from 'node:crypto';
-import { mediaProducerCreateAckSchema } from '@colearnia/contracts';
+import { mediaProducerCreateAckSchema, mediaSourcesResyncAckSchema } from '@colearnia/contracts';
 import type { LiveContext, SessionCleanupRequest } from '@colearnia/contracts';
 import type { types as MediaTypes } from 'mediasoup';
 import { describe, expect, it, vi } from 'vitest';
 import type { PolicyParticipant, SessionPolicyInput } from '../policy/session-policy.js';
+import { resolveSessionPolicyContext } from '../policy/session-policy.js';
 import { CleanupAdmission } from '../session-manager/cleanup-admission.js';
 import { createPausedReadySignaling } from './paused-ready-signaling.js';
 import { createTransportSignaling } from './transport-signaling.js';
+import { createMediaSourceSync } from './media-source-sync.js';
 
 type SocketPort = Parameters<ReturnType<typeof createPausedReadySignaling>['attach']>[0];
 type Event = Parameters<SocketPort['on']>[0];
@@ -124,6 +126,27 @@ function fixture() {
       throw new Error('Fixture supplies its own media transport');
     },
   });
+  function policyFor(context: LiveContext): SessionPolicyInput {
+    return {
+      request: { auth: context.auth, sessionId, epoch, callGeneration: 1 },
+      access,
+      nowMs: Date.now(),
+      session: {
+        sessionId,
+        epoch,
+        workspaceId: access.workspaceId,
+        channelId: access.channelId,
+        state: 'ACTIVE',
+        phase: 'GUIDANCE',
+        policyRevision: context.policyRevision,
+        hostParticipantId: null,
+        helpingGroupId: null,
+        round: null,
+        groups: new Map(),
+        participants,
+      },
+    };
+  }
   let nextGate: Promise<void> | undefined;
   let afterSettle: (() => void) | undefined;
   const service = createPausedReadySignaling({
@@ -152,25 +175,7 @@ function fixture() {
       ) {
         return { errorCode: 'CONFLICT' };
       }
-      const policy: SessionPolicyInput = {
-        request: { auth: context.auth, sessionId, epoch, callGeneration: 1 },
-        access,
-        nowMs: Date.now(),
-        session: {
-          sessionId,
-          epoch,
-          workspaceId: access.workspaceId,
-          channelId: access.channelId,
-          state: 'ACTIVE',
-          phase: 'GUIDANCE',
-          policyRevision: 0,
-          hostParticipantId: null,
-          helpingGroupId: null,
-          round: null,
-          groups: new Map(),
-          participants,
-        },
-      };
+      const policy = policyFor(context);
       return use(context, { canConsume } as unknown as MediaTypes.Router, policy, {
         id: transport,
         produce: produce as unknown as MediaTypes.WebRtcTransport['produce'],
@@ -251,6 +256,58 @@ function fixture() {
       consumerId: native.id,
     };
   }
+  let afterNextSyncContext: (() => void) | undefined;
+  const sync = createMediaSourceSync({
+    transports: transportService,
+    media: service,
+    async withContext(socketId, request, use) {
+      const context = contexts.get(socketId);
+      if (
+        !context ||
+        context.sessionId !== request.sessionId ||
+        context.epoch !== request.epoch ||
+        context.callGeneration !== request.callGeneration
+      )
+        return use({ ok: false, errorCode: 'CONFLICT' });
+      const policy = policyFor(context);
+      const result = use(resolveSessionPolicyContext(policy), undefined, policy);
+      const after = afterNextSyncContext;
+      afterNextSyncContext = undefined;
+      after?.();
+      return result;
+    },
+  });
+  function attachSync(id: string) {
+    type Socket = Parameters<typeof sync.attach>[0];
+    let listener: Parameters<Socket['on']>[1] | undefined;
+    const emit = vi.fn<Socket['emit']>();
+    const bound = sync.attach({
+      id,
+      connected: true,
+      on: (_event, receive) => {
+        listener = receive;
+      },
+      once: vi.fn(),
+      emit,
+    });
+    const resync = async (generation = 1) => {
+      if (!listener) throw new Error('Missing resync handler');
+      const ack = await new Promise((resolve) => {
+        listener?.(
+          {
+            requestId: randomUUID(),
+            sessionId,
+            epoch,
+            callGeneration: generation,
+            payload: {},
+          },
+          resolve,
+        );
+      });
+      return mediaSourcesResyncAckSchema.parse(ack);
+    };
+    return { ...bound, resync, emit };
+  }
   return {
     createPaused,
     receive,
@@ -277,6 +334,14 @@ function fixture() {
     closeProducer: () => closeProducer?.(),
     consumerPayload,
     consume,
+    attachSync,
+    afterNextSyncContext: (run: () => void) => {
+      afterNextSyncContext = run;
+    },
+    blockRecipient: () => {
+      const recipient = participants.get('b'.repeat(24));
+      if (recipient) recipient.blocked = true;
+    },
     blockPublisher: () => {
       const publisher = participants.get('a'.repeat(24));
       if (publisher) publisher.blocked = true;
@@ -285,6 +350,106 @@ function fixture() {
 }
 
 describe('paused-ready media signaling', () => {
+  it.each(['before create', 'after create', 'after close'] as const)(
+    'publishes a Consumer close only to its owner after create ACK, resync %s',
+    async (resyncAt) => {
+      const f = fixture();
+      const owner = f.attachSync('b');
+      const peer = f.attachSync('a');
+      await peer.resync();
+      if (resyncAt !== 'after create') await owner.resync();
+      const { consumerId, sourceId, sourceGeneration } = await f.createPaused();
+      if (resyncAt === 'after create') await owner.resync();
+      f.cleanup('b');
+      if (resyncAt === 'after close') await owner.resync();
+
+      const closed = { consumerId, sourceId, sourceGeneration, reason: 'USER_STOP' } as const;
+      await expect(peer.publish('media.consumer.closed', closed)).resolves.toBe(false);
+      await expect(
+        owner.publish('media.consumer.closed', {
+          ...closed,
+          sourceGeneration: sourceGeneration + 1,
+        }),
+      ).resolves.toBe(false);
+      await expect(owner.publish('media.consumer.closed', closed)).resolves.toBe(true);
+      expect(owner.emit).toHaveBeenLastCalledWith(
+        'media.consumer.closed',
+        expect.objectContaining({ mediaSequence: 1, payload: closed }),
+      );
+      await expect(owner.publish('media.consumer.closed', closed)).resolves.toBe(false);
+    },
+  );
+
+  it('takes a filtered media snapshot with a distinct stream and watermark for each recipient', async () => {
+    const f = fixture();
+    const publisher = f.attachSync('a');
+    const recipient = f.attachSync('b');
+    const beforeA = await publisher.resync();
+    const beforeB = await recipient.resync();
+    if ('error' in beforeA || 'error' in beforeB) throw new Error('Resync failed');
+    expect(beforeA.data.result.mediaStreamId).not.toBe(beforeB.data.result.mediaStreamId);
+    expect(beforeB.data.result.mediaSequence).toBe(0);
+    const produced = mediaProducerCreateAckSchema.parse(await f.publish());
+    if ('error' in produced) throw new Error('Produce failed');
+    const { source } = produced.data.result;
+    expect(await recipient.publish('media.source.changed', { source })).toBe(true);
+    expect(recipient.emit).toHaveBeenLastCalledWith('media.source.changed', {
+      sessionId: expect.any(String),
+      epoch: expect.any(String),
+      callGeneration: 1,
+      audienceEpoch: 0,
+      policyRevision: 0,
+      mediaStreamId: beforeB.data.result.mediaStreamId,
+      mediaSequence: 1,
+      payload: { source },
+    });
+    await expect(publisher.resync()).resolves.toMatchObject({
+      data: { result: { mediaStreamId: beforeA.data.result.mediaStreamId, mediaSequence: 0 } },
+    });
+    expect(publisher.emit).toHaveBeenLastCalledWith(
+      'media.sources.snapshot',
+      expect.objectContaining({
+        payload: expect.objectContaining({ ownProducers: [{ source, replacement: null }] }),
+      }),
+    );
+    f.blockPublisher();
+    expect(await recipient.publish('media.source.changed', { source })).toBe(false);
+    await expect(recipient.resync()).resolves.toMatchObject({
+      data: { result: { mediaStreamId: beforeB.data.result.mediaStreamId, mediaSequence: 1 } },
+    });
+    expect(recipient.emit).toHaveBeenLastCalledWith(
+      'media.sources.snapshot',
+      expect.objectContaining({
+        payload: expect.objectContaining({ sources: [], ownProducers: [] }),
+      }),
+    );
+  });
+
+  it('rechecks recipient access immediately before sending snapshot parts', async () => {
+    const f = fixture();
+    const recipient = f.attachSync('b');
+    await f.publish();
+    f.afterNextSyncContext(f.blockRecipient);
+    await expect(recipient.resync()).resolves.toMatchObject({
+      error: { code: expect.any(String) },
+    });
+    expect(recipient.emit).not.toHaveBeenCalled();
+  });
+
+  it('discards a captured snapshot if the publisher loses access before send', async () => {
+    const f = fixture();
+    const recipient = f.attachSync('b');
+    await f.publish();
+    f.afterNextSyncContext(f.blockPublisher);
+    await expect(recipient.resync()).resolves.toMatchObject({ error: { code: 'SERVER_BUSY' } });
+    expect(recipient.emit).not.toHaveBeenCalled();
+    await expect(recipient.resync()).resolves.toMatchObject({ data: { status: 'completed' } });
+    expect(recipient.emit).toHaveBeenLastCalledWith(
+      'media.sources.snapshot',
+      expect.objectContaining({ payload: expect.objectContaining({ sources: [] }) }),
+    );
+  });
+
   it('rejects a Producer ACK if its owner loses access after native settlement', async () => {
     const f = fixture();
     const producer = f.makeProducer();
