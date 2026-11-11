@@ -6,8 +6,8 @@ Nền kiểm tra: `134d2cd` trên main. Windows, Node 26.12.1, pnpm 11.5.2; Mong
 
 | Kiểm tra                                    | Kết quả                                                                                                                                                                                         |
 | ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Registry, operation, socket và contract mới | 31 ca mới đạt: host end/rời, member/stale bị từ chối, đổi host trước acceptance, gate được nhả khi cleanup chờ, DB lỗi vẫn cleanup, scope MAIN chưa đóng, deadline, callback muộn và replay/cap |
-| Toàn bộ test thường                         | 585 test, 39 file đạt                                                                                                                                                                           |
+| Registry, operation, socket và contract mới | 33 ca mới đạt: host end/rời, member/stale bị từ chối, đổi host trước acceptance, gate được nhả khi cleanup chờ, DB lỗi vẫn cleanup, scope MAIN chưa đóng, deadline, callback muộn và replay/cap |
+| Toàn bộ test thường                         | 587 test, 39 file đạt                                                                                                                                                                           |
 | MongoDB integration                         | 129 test, 9 file đạt; hai ca mới dùng transaction và native Router thật                                                                                                                         |
 | Các bước tương đương `pnpm check`           | Harness, format, ESLint, typecheck contracts/server/web và build đạt; chạy trực tiếp bằng Node qua cùng entrypoint trong scripts. Harness 54 đạt, 1 ca symlink bỏ qua trên Windows              |
 | Native media smoke                          | Worker/Router khởi động với Opus/VP8                                                                                                                                                            |
@@ -20,6 +20,8 @@ Ca mất ACK thực hiện completeEnding/commit thật rồi ném `UnknownTrans
 Ca đổi host dùng commit state có kiểm soát dưới coordinator thật; implementation chuyển/kế vị host chưa thuộc task này. Test deadline tách completion đã gửi khỏi callback begin đến muộn; timeout không tự chứng minh rollback.
 
 Acceptance kiểm deadline monotonic ngay trước mutation dưới gate: kiểm quyền trả quá hạn giữ ACTIVE/Router mở và không tạo end record. Cleanup messaging/board vẫn được gọi khi beginEnding lỗi; chỉ khi DB đã xác nhận và cả participant/scope cleanup hoàn tất mới gọi completeEnding. Ca participant đã sạch nhưng MAIN scope từ chối đóng vẫn trả pending, không hoàn tất metadata.
+
+Hai ca replay còn 1 ms TTL trước lookup, authority chờ thêm 2 ms, đều trả CONFLICT và xóa record hết hạn. Không gọi lại begin/complete/cleanup, kể cả khi tài khoản đã vào phòng mới; Router/context của phòng mới giữ nguyên.
 
 ## Giới hạn
 

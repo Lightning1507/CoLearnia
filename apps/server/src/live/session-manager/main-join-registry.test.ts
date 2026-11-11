@@ -172,6 +172,39 @@ async function endFixture(
 }
 
 describe('SCRUM-86 session end', () => {
+  it.each([false, true])(
+    'rejects replay that expires during authority lookup with a newer room=%s',
+    async (newerRoom) => {
+      const f = await endFixture();
+      await f.registry.end(f.socket, f.command);
+      let proof: { sessionId: string; epoch: string; callGeneration: number } | undefined;
+      if (newerRoom) {
+        const ticket = await f.issue();
+        const joined = await f.registry.join(f.socket, {
+          ticket: ticket.ticket,
+          requestId: randomUUID(),
+        });
+        proof = { ...ticket, callGeneration: joined.ack.data.result.callGeneration };
+      }
+      f.advance(59_999);
+      const original = f.resolveAuthority.getMockImplementation()!;
+      f.resolveAuthority.mockImplementationOnce(async (auth, target) => {
+        f.advance(2);
+        return original(auth, target);
+      });
+      await expect(f.registry.end(f.socket, f.command)).rejects.toMatchObject({ code: 'CONFLICT' });
+      expect(f.registry.stats().endRecords).toBe(0);
+      expect(f.repository.beginEnding).toHaveBeenCalledTimes(1);
+      expect(f.repository.completeEnding).toHaveBeenCalledTimes(1);
+      expect(f.media).toHaveBeenCalledTimes(2);
+      if (proof) {
+        expect(f.routers[1]!.closed).toBe(false);
+        expect(await f.registry.withContext(f.socket.socketId, proof, (result) => result.ok)).toBe(
+          true,
+        );
+      }
+    },
+  );
   it('does not accept an end after authority checks exhaust the monotonic deadline', async () => {
     const f = await endFixture();
     let time = 0;

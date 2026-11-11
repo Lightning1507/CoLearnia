@@ -43,7 +43,7 @@ Cleanup adapter thiếu không được thay bằng success. Lỗi/timeout sau a
 
 Retry phải giữ nguyên toàn bộ command, authSession và socket. Các lần end đồng thời dùng chung một Promise, không ghi DB hoặc gọi cleanup lần hai. Guard quyền M1 được kiểm lại trước trả replay; replay không phục hồi quyền.
 
-Completed operation giữ replay 60 giây từ lần hoàn tất đầu tiên; retry không kéo dài TTL. Sau TTL, lệnh phiên cũ trả CONFLICT. Replay phiên cũ vẫn an toàn khi tài khoản đã vào một phiên mới. Registry giữ tối đa 128 end record; record pending chiếm slot tới khi được đối chiếu hoặc shutdown, không bị TTL xóa để mở lại quyền. Đây là giới hạn RAM của operation, không phải giới hạn số người họp. `close()` chỉ dành shutdown và vô hiệu callback cũ; không thay end nghiệp vụ.
+Completed operation giữ replay 60 giây từ lần hoàn tất đầu tiên; retry không kéo dài TTL. Ngoài sweep trước lookup, registry kiểm lại expiresAt sau await authority dưới gate; record vừa hết hạn bị xóa và trả CONFLICT, không replay ACK cũ. Replay phiên cũ vẫn an toàn khi tài khoản đã vào một phiên mới. Registry giữ tối đa 128 end record; record pending chiếm slot tới khi được đối chiếu hoặc shutdown, không bị TTL xóa để mở lại quyền. Đây là giới hạn RAM của operation, không phải giới hạn số người họp. `close()` chỉ dành shutdown và vô hiệu callback cũ; không thay end nghiệp vụ.
 
 ## Điểm ghép và kiểm chứng
 

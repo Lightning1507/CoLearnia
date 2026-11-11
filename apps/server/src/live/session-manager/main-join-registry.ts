@@ -749,6 +749,10 @@ export function createMainJoinRegistry(options: {
         if (!rawBinding.isConnected()) fail('CONFLICT');
         const previous = endRecords.get(key);
         if (previous) {
+          if (previous.expiresAt <= clock()) {
+            endRecords.delete(key);
+            fail('CONFLICT');
+          }
           if (
             previous.binding.auth.userId !== auth.userId ||
             previous.binding.auth.authSessionId !== auth.authSessionId ||
