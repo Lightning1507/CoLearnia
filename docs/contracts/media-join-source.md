@@ -4,6 +4,8 @@
 
 ## Join và chuyển context từ M4 sang M3
 
+Registry và adapter socket MAIN tối thiểu theo [SCRUM-82](main-join-registry.md). Implementation dùng snapshot descriptor và các part SCRUM-66; ví dụ inline bên dưới giữ làm fixture. Takeover đầy đủ và composition auth/socket tiếp tục theo task lifecycle/tích hợp.
+
 1. Client gửi `POST /api/v1/channels/:cid/live-session/join` với `cid` là ObjectId và body `{ requestId }`. M1 kiểm auth, CSRF/Origin, membership và quyền đọc kênh LIVE. M4 tìm hoặc tạo phiên theo vòng đời hiện hành. Response `200` có `data` gồm `sessionId`, `epoch`, `ticket`, `expiresAt`. `requestId` trong body nhận diện ý định xin ticket, còn `requestId` của response là ID trace do server sinh.
 2. Client dùng socket đã xác thực để gửi `session.join` với `{ requestId, ticket }`. Ticket dùng một lần, hạn 60 giây và gắn đúng user, auth session, kênh và đời phiên. Server kiểm lại quyền, ticket và ownership trước khi cấp participant. Ticket chưa cấp quyền tạo transport, nhận nguồn, đọc chat hoặc board. Join lần đầu chưa có `callGeneration` nên dùng input riêng.
 3. Sau join thành công, controller nhận `participantId`, `callGeneration` và snapshot phù hợp với ownership mới. M3 lấy `LiveContext` nội bộ qua `ResolveLiveContext` sau khi caller đã kiểm binding đúng kết nối. Dùng `sessionId`, `epoch`, `callGeneration`, scope, `audienceEpoch` và `policyRevision` để đối chiếu quyền và đời thao tác. Client nhận dữ liệu đã lọc theo audience, không nhận toàn bộ context auth/access nội bộ.

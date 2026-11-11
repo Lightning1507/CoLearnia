@@ -2,6 +2,7 @@ import { createServer } from 'node:http';
 import { createApp } from './app.js';
 import { createAuthRouter } from './auth/auth-routes.js';
 import { createHttpAuth } from './auth/http-auth.js';
+import { createLogin } from './auth/login.js';
 import { authIndexRequirements } from './auth/models.js';
 import { createSessionReader } from './auth/read-session.js';
 import { createRegistration } from './auth/registration.js';
@@ -55,6 +56,7 @@ const authRouter = config.SESSION_SECRET
         createSessionReader(database, canUseAuthIndexes),
       ),
       createRegistration(database, canUseAuthIndexes, config.AUTH_TTL_SECONDS),
+      createLogin(database, canUseAuthIndexes, config.AUTH_TTL_SECONDS, operationCoordinator),
     )
   : undefined;
 const httpServer = createServer(createApp(config, status, authRouter));

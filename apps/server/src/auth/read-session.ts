@@ -2,12 +2,11 @@ import type { AuthenticatedContext, OwnUser } from '@colearnia/contracts';
 import { isDatabaseUnavailableError } from '../lib/database.js';
 import type { Database } from '../lib/database.js';
 import { authModels } from './models.js';
-import { hashAuthToken } from './session-credentials.js';
+import { hashAuthToken, isSessionToken } from './session-credentials.js';
 
 export class SessionReadUnavailableError extends Error {}
 
 const queryMaxTimeMS = 5000;
-const sessionTokenPattern = /^[A-Za-z0-9_-]{43}$/;
 
 export type VerifiedSession = { context: AuthenticatedContext; user: OwnUser };
 
@@ -16,7 +15,7 @@ export function createSessionReader(database: Database, indexesReady: () => bool
   const { AuthSession, User } = authModels(database.connection);
 
   return async (token: string | undefined): Promise<VerifiedSession | null> => {
-    if (!token || !sessionTokenPattern.test(token)) return null;
+    if (!isSessionToken(token)) return null;
     if (!indexesReady() || !database.isConnected()) throw new SessionReadUnavailableError();
     try {
       const tokenHash = hashAuthToken(token);

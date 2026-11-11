@@ -6,6 +6,8 @@ Trước khi viết API/socket, đọc [quy ước API và backend](api-conventi
 
 Source schema ở `packages/contracts/src`, frontend và backend import qua `@colearnia/contracts`.
 
+**MAIN join registry (SCRUM-82):** [ticket, ownership và adapter socket](main-join-registry.md); schema `session-join.ts`, registry dùng repository/policy/projection hiện có. Composition auth/access và lifecycle đầy đủ tiếp tục theo task tích hợp.
+
 **Auth/profile (SCRUM-12):** [contract và ví dụ](auth-profile.md), schema input/output và identity nội bộ trong `auth.ts`; chờ M4 review trước khi consumer dùng. Upload avatar tiếp tục ở M1-T1.3 với M2; chưa có endpoint chỉ từ contract này.
 
 **Workspace/kênh (SCRUM-13):** [contract và điểm giao M2/M4](workspace-channels.md), schema trong `workspace.ts`, chữ ký hàm nội bộ tại `apps/server/src/workspaces/ports.ts`, type shell/sidebar tại `apps/web/src/features/workspaces/shell-contract.ts`. Cần M2/M4 review trước tích hợp; chưa có resolver, transaction Workspace/general hoặc cleanup nghiệp vụ. Nền connection/transaction dùng chung và kiểm DB riêng ở [runbook SCRUM-15](../runbooks/mongodb-transactions.md).

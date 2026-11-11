@@ -2,11 +2,16 @@ import { Router } from 'express';
 import {
   authenticatedResponseSchema,
   csrfResponseSchema,
+  loginInputSchema,
   registerInputSchema,
 } from '@colearnia/contracts';
-import { authCookieOptions, setCsrfCookie } from './csrf.js';
+import type { OwnUser } from '@colearnia/contracts';
+import { authCookieOptions, readCookie, setCsrfCookie } from './csrf.js';
 import { authFailure as fail, requireVerifiedSession } from './http-auth.js';
-import type { createHttpAuth } from './http-auth.js';
+import type { AuthResponse, createHttpAuth } from './http-auth.js';
+import { InvalidCredentialsError, LoginUnavailableError, LoginUnconfirmedError } from './login.js';
+import type { createLogin } from './login.js';
+import { createLoginAttemptLimit } from './login-attempts.js';
 import { isCommonPassword } from './password-hash.js';
 import {
   EmailExistsError,
@@ -19,10 +24,39 @@ import { authCookie } from './session-credentials.js';
 export function createAuthRouter(
   httpAuth: ReturnType<typeof createHttpAuth>,
   register: ReturnType<typeof createRegistration>,
+  login: ReturnType<typeof createLogin>,
 ) {
   const router = Router();
   const attempts = new Map<string, number>();
   let nextWindow = performance.now() + 60_000;
+  const loginByIp = createLoginAttemptLimit(10);
+  const loginByEmailAndIp = createLoginAttemptLimit(5);
+
+  function sendSession(
+    res: AuthResponse,
+    { user, expiresAt, token }: { user: OwnUser; expiresAt: Date; token: string },
+    status: 200 | 201,
+    expiredMessage: string,
+  ) {
+    // Set-Cookie Expires has second precision.
+    if (Math.floor(expiresAt.getTime() / 1000) <= Math.floor(Date.now() / 1000)) {
+      fail(res, 'DEPENDENCY_UNAVAILABLE', expiredMessage);
+      return;
+    }
+    const freshCsrf = httpAuth.issueCsrf(token);
+    const payload = authenticatedResponseSchema.parse({
+      data: { user, expiresAt: expiresAt.toISOString(), csrfToken: freshCsrf.token },
+      requestId: res.locals.requestId,
+    });
+    res.cookie(authCookie, token, { ...authCookieOptions, expires: expiresAt });
+    setCsrfCookie(res, freshCsrf.cookie);
+    res.status(status).json(payload);
+  }
+
+  function sendRateLimit(res: AuthResponse, retryAfter: number) {
+    res.setHeader('Retry-After', retryAfter);
+    fail(res, 'RATE_LIMITED', 'Bạn đã gửi quá nhiều yêu cầu. Vui lòng thử lại sau.');
+  }
 
   router.get('/csrf', (req, res) => {
     const csrf = httpAuth.csrfForRequest(req);
@@ -46,6 +80,48 @@ export function createAuthRouter(
     res.json(payload);
   });
 
+  router.post('/login', httpAuth.requireBootstrapCsrf, async (req, res, next) => {
+    const ip = req.ip ?? 'unknown';
+    const ipWait = loginByIp(ip);
+    if (ipWait !== undefined) {
+      sendRateLimit(res, ipWait);
+      return;
+    }
+    const parsed = loginInputSchema.safeParse(req.body);
+    if (!parsed.success || /[\uD800-\uDFFF]/u.test(parsed.data.password)) {
+      fail(res, 'VALIDATION_ERROR', 'Thông tin đăng nhập không hợp lệ.');
+      return;
+    }
+    const pairWait = loginByEmailAndIp(JSON.stringify([parsed.data.email, ip]));
+    if (pairWait !== undefined) {
+      sendRateLimit(res, pairWait);
+      return;
+    }
+
+    const disconnect = new AbortController();
+    const onClose = () => disconnect.abort();
+    res.once('close', onClose);
+    try {
+      const previousToken = readCookie(req.headers.cookie, authCookie);
+      const result = await login(parsed.data, previousToken, disconnect.signal);
+      if (disconnect.signal.aborted) return;
+      sendSession(res, result, 200, 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
+    } catch (error) {
+      if (disconnect.signal.aborted) return;
+      if (error instanceof InvalidCredentialsError) {
+        fail(res, 'INVALID_CREDENTIALS', 'Email hoặc mật khẩu không đúng.');
+      } else if (error instanceof LoginUnconfirmedError) {
+        fail(res, 'DEPENDENCY_UNAVAILABLE', 'Chưa xác nhận được kết quả đăng nhập.');
+      } else if (error instanceof LoginUnavailableError) {
+        fail(res, 'DEPENDENCY_UNAVAILABLE', 'Đăng nhập tạm thời không khả dụng.');
+      } else {
+        next(error);
+      }
+    } finally {
+      res.off('close', onClose);
+    }
+  });
+
   router.post('/register', httpAuth.requireBootstrapCsrf, async (req, res, next) => {
     const now = performance.now();
     if (now >= nextWindow) {
@@ -55,8 +131,7 @@ export function createAuthRouter(
     const ip = req.ip ?? 'unknown';
     const count = attempts.get(ip) ?? 0;
     if (count >= 10 || (count === 0 && attempts.size >= 4096)) {
-      res.setHeader('Retry-After', Math.ceil((nextWindow - now) / 1000));
-      fail(res, 'RATE_LIMITED', 'Bạn đã gửi quá nhiều yêu cầu. Vui lòng thử lại sau.');
+      sendRateLimit(res, Math.ceil((nextWindow - now) / 1000));
       return;
     }
     attempts.set(ip, count + 1);
@@ -86,25 +161,14 @@ export function createAuthRouter(
     const onClose = () => disconnect.abort();
     res.once('close', onClose);
     try {
-      const { user, expiresAt, token } = await register(parsed.data, disconnect.signal);
+      const result = await register(parsed.data, disconnect.signal);
       if (disconnect.signal.aborted) return;
-      // Set-Cookie Expires has second precision.
-      if (Math.floor(expiresAt.getTime() / 1000) <= Math.floor(Date.now() / 1000)) {
-        fail(
-          res,
-          'DEPENDENCY_UNAVAILABLE',
-          'Tài khoản đã được tạo nhưng phiên đăng nhập đã hết hạn. Vui lòng đăng nhập.',
-        );
-        return;
-      }
-      const freshCsrf = httpAuth.issueCsrf(token);
-      const payload = authenticatedResponseSchema.parse({
-        data: { user, expiresAt: expiresAt.toISOString(), csrfToken: freshCsrf.token },
-        requestId: res.locals.requestId,
-      });
-      res.cookie(authCookie, token, { ...authCookieOptions, expires: expiresAt });
-      setCsrfCookie(res, freshCsrf.cookie);
-      res.status(201).json(payload);
+      sendSession(
+        res,
+        result,
+        201,
+        'Tài khoản đã được tạo nhưng phiên đăng nhập đã hết hạn. Vui lòng đăng nhập.',
+      );
     } catch (error) {
       if (disconnect.signal.aborted) return;
       if (error instanceof EmailExistsError) {
