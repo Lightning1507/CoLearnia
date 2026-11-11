@@ -12,6 +12,7 @@ ENDED yêu cầu endedAt và hostUserId null. ACTIVE/ENDING có endedAt null. UU
 | --------------------- | ---------------------------------------------------------------------------------------------------- |
 | `liveSessions`        | Unique `uq_live_open_channel` trên channelId, partial filter `status: { $in: ['ACTIVE', 'ENDING'] }` |
 | `liveSessions`        | `ix_live_reconcile` trên status/_id                                                                  |
+| `liveSessions`        | `ix_live_channel_metadata` trên workspaceId/channelId/startedAt giảm dần/_id giảm dần, theo SCRUM-80 |
 | `sessionParticipants` | Unique `uq_participant_pair` trên sessionId/userId                                                   |
 | `sessionParticipants` | `ix_participant_user` trên userId/sessionId                                                          |
 
@@ -38,6 +39,8 @@ CAS stale, sai đời phiên hoặc trạng thái không phù hợp trả `Sessi
 
 `leave` chặn host hiện hành ngay trong filter CAS, kể cả khi phiên đang ENDING. Yêu cầu bị từ chối không đổi revision hay participation. Caller phải dùng luồng chuyển host hoặc end; `completeEnding` đóng metadata participation cùng lúc xóa hostUserId.
 
+`beginEnding(input, assertCurrent?)` và `completeEnding(input, assertCurrent?)` nhận guard nội bộ tùy chọn cho caller có deadline/deny context. Cả hai kiểm guard trước transaction, đầu mỗi callback kể cả retry, và sau CAS; `completeEnding` kiểm thêm sau ghi participant trước commit. Bootstrap SCRUM-80 truyền guard kiểm offline/abort/deadline. CAS trả lỗi transient sau deadline thì lượt retry bị chặn trước khi ghi lại; CAS trả thành công sau deadline thì guard ném lỗi trước commit và transaction rollback. Caller không có guard giữ hành vi repository trước đây; guard không thể rút lại commit đã gửi.
+
 ## Kết quả commit chưa rõ
 
 Nền transaction SCRUM-15 retry commit một lần khi có nhãn `UnknownTransactionCommitResult`. Nếu vẫn chưa rõ, repository truyền tiếp lỗi gốc, giữ nhãn để caller chuyển sang read-back/reconcile. Lỗi này không kích hoạt chạy lại callback tạo phiên hoặc phát side effect.
@@ -50,7 +53,7 @@ Ngay cả revision bằng đúng expectedRevision + 1 cũng chưa chứng minh i
 
 `sessionIndexRequirements` dùng với `preflightIndexes`; `sessionCollectionValidators` dùng cho migration/test được review. Factory đăng ký model, không tự provision hoặc sửa DB ứng dụng. Connection chung tắt autoCreate/autoIndex. Trước khi consumer dùng persistence trên DB có dữ liệu, cần kiểm dữ liệu/index/validator theo [kế hoạch integrity](integrity-and-migrations.md), áp manifest và đọc lại options.
 
-SCRUM-82 nối registry/join ticket với repository. SCRUM-80 xử lý bootstrap/query có ACL. SCRUM-86/87/91 phối hợp end/reconcile/worker lifecycle. Metadata lastScope/host/status không cấp lại grant runtime sau reconnect hoặc restart.
+SCRUM-82 nối registry/join ticket với repository. [SCRUM-80](../contracts/session-bootstrap-metadata.md) xử lý bootstrap/query có ACL và thêm index pagination theo Workspace/kênh. SCRUM-86/87/91 phối hợp end/reconcile/worker lifecycle. Metadata lastScope/host/status không cấp lại grant runtime sau reconnect hoặc restart.
 
 ## Kiểm chứng
 

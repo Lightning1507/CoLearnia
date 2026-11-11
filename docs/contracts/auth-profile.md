@@ -55,12 +55,20 @@ Register/login không accept lời mời Workspace. FE quay lại lời mời b�
 1. Trước register/login: GET `/auth/csrf`, trình duyệt nhận cookie CSRF có chữ ký và token trong JSON. Mutation gửi token qua header `X-CSRF-Token`; server kiểm cookie/chữ ký, token và Origin.
 2. Register/login thành công: cookie auth `HttpOnly; Secure; SameSite=Lax`, rotate CSRF và trả token mới. Không trả token phiên trong JSON hoặc lưu localStorage.
 3. Khi tải lại, GET `/auth/me` xác thực phiên và trả User, hạn phiên hiện tại và token CSRF. Nếu cookie CSRF thiếu, hết hạn hoặc không khớp phiên, response chỉ cấp lại cookie CSRF. GET `/auth/csrf` vẫn dùng được để bootstrap. GET giữ nguyên hạn phiên auth.
-4. Socket.IO: cookie trình duyệt và `handshake.auth.csrfToken`; M4 kiểm Origin/CSRF/phiên rồi dựng identity server. Header/socket field cần M4 review ở PR này.
+4. Socket.IO dùng cookie phiên của trình duyệt và `handshake.auth.csrfToken`. Server kiểm Origin, phiên và CSRF khi kết nối, kể cả lúc kết nối lại.
 5. Logout/đổi mật khẩu thành công clear cookie đúng tên/path/domain và vô hiệu context CSRF cũ; lần login sau bootstrap mới. JSON auth/profile/CSRF đặt `Cache-Control: no-store`.
 
 SCRUM-18 cấp token phiên ngẫu nhiên 32 byte qua cookie `__Host-colearnia-session` và lưu SHA-256 của token trong DB. Hạn tuyệt đối mặc định 7 ngày. Cookie `__Host-colearnia-csrf` dùng HMAC-SHA-256, hạn một giờ, gắn với token phiên hiện tại nếu có. Bootstrap trước xác thực dùng token ngẫu nhiên riêng. Cả hai cookie đều đặt `Path=/`, `HttpOnly`, `Secure` và `SameSite=Lax`. `GET /auth/me` trả `401 AUTH_REQUIRED` mà không ghi cookie xóa phiên, để phản hồi đến muộn không xóa phiên mới của trình duyệt. Xem [cấu hình local](../runbooks/local-development.md#đăng-ký-tài-khoản).
 
-Route HTTP đọc dữ liệu riêng dùng `requireAuth`. Mutation yêu cầu đăng nhập chạy `requireAuth` rồi `requireCsrf`. Handler lấy `AuthenticatedContext` từ `requireVerifiedSession(res).context` sau khi xác nhận hàm trả kết quả. M2 vẫn kiểm ACL của tài nguyên ở handler. SCRUM-24 có thể dùng lại `createSessionReader` để xác thực phiên khi nối socket. Các helper nằm trong [http-auth.ts](../../apps/server/src/auth/http-auth.ts) và [read-session.ts](../../apps/server/src/auth/read-session.ts).
+Route HTTP đọc dữ liệu riêng dùng `requireAuth`. Mutation yêu cầu đăng nhập chạy `requireAuth` rồi `requireCsrf`. Handler lấy `AuthenticatedContext` từ `requireVerifiedSession(res).context` sau khi xác nhận hàm trả kết quả. M2 vẫn kiểm ACL của tài nguyên ở handler. Các helper nằm trong [http-auth.ts](../../apps/server/src/auth/http-auth.ts) và [read-session.ts](../../apps/server/src/auth/read-session.ts).
+
+### Kết nối Socket.IO trong Sprint 1
+
+FE kết nối cùng origin qua `io({ transports: ['websocket'], auth: { csrfToken } })` với token từ register/login hoặc `GET /api/v1/auth/me`. Trình duyệt tự gửi cookie theo chính sách cookie hiện có. Môi trường triển khai dùng HTTPS/WSS và proxy chuyển tiếp WebSocket cho `/socket.io/`. Sprint 1 chỉ bật WebSocket, nên mạng chặn WebSocket sẽ không kết nối được.
+
+Origin thiếu hoặc khác `APP_ORIGIN` bị chặn ở transport. Các lỗi từ middleware đọc qua `connect_error.data.code`: `AUTH_REQUIRED` khi không có phiên hợp lệ, `CSRF_INVALID` khi proof sai hoặc hết hạn, `DEPENDENCY_UNAVAILABLE` khi không thể kiểm phiên. Với `CSRF_INVALID`, FE có thể gọi lại `/auth/me`, cập nhật `socket.auth` rồi gọi `socket.connect()` nếu HTTP vẫn xác nhận phiên.
+
+Handler lấy `AuthenticatedContext` từ `socket.data.auth` và kiểm quyền tài nguyên theo [contract M4](session-context.md#danh-tính-và-quyền-trong-phiên). SCRUM-24 xác thực ở lúc kết nối. Thu quyền và đóng các socket đang mở thuộc phần tích hợp vòng đời phiên.
 
 Đăng ký từ chối mật khẩu thuộc danh sách cục bộ gồm các giá trị dễ đoán đã biết và chuỗi Unicode lỗi mã hóa bằng `400 VALIDATION_ERROR` tại field `password`. Giới hạn thử là 10 yêu cầu đã qua kiểm CSRF/phút/IP trong mỗi tiến trình. Khi vượt giới hạn, API trả `429 RATE_LIMITED` cùng `Retry-After`. Hàng chờ băm dùng chung trong tiến trình có một slot chạy, hai chỗ chờ và hạn chờ 250 ms. Đầy hoặc hết hạn chờ trả `503 DEPENDENCY_UNAVAILABLE`. Đây là cấu hình thử, cần đo thêm cùng tải MongoDB và media trên staging.
 

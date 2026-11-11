@@ -45,27 +45,28 @@ Partial index chỉ gồm document khớp filter; query muốn dùng index phả
 
 ### 2.2. Index truy vấn và cleanup
 
-| Tên index               | Collection / key                                                                      | Query được hỗ trợ                                                      |
-| ----------------------- | ------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| ix_auth_user            | authSessions {userId:1,revokedAt:1}                                                   | Tra/thu phiên liên quan user                                           |
-| ix_membership_user      | memberships {userId:1,status:1,workspaceId:1}                                         | Workspace của tôi, kiểm membership hai bên DM                          |
-| ix_membership_workspace | memberships {workspaceId:1,status:1,_id:1}                                            | Danh sách thành viên, cursor theo _id                                  |
-| uq_invitation_workspace | invitations {workspaceId:1}, unique                                                   | Một cấu hình link hiện hành/Workspace; thay index danh sách lời mời cũ |
-| ix_channel_workspace    | channels {workspaceId:1,deletedAt:1,order:1,_id:1}                                    | Kênh sống, thứ tự ổn định                                              |
-| ix_grant_member         | channelAccessGrants {membershipId:1,membershipIncarnation:1,revokedAt:1,channelId:1}  | Kênh PRIVATE actor còn quyền; kiểm Workspace/channel sau               |
-| ix_conv_direct_user     | conversations {workspaceId:1,kind:1,"scope.participantUserIds":1,createdAt:-1,_id:-1} | List DIRECT chứa actor; cần kind DIRECT; không unique                  |
-| ix_conv_session_scope   | conversations {"scope.sessionId":1,kind:1,closedAt:1,_id:1}                           | Đóng/reconcile hội thoại phiên                                         |
-| ix_conv_purge           | conversations {purgeAt:1,_id:1}                                                       | Closed + purgeAt là Date ≤ now; non-TTL                                |
-| ix_conv_workspace       | conversations {workspaceId:1,_id:1}                                                   | Khóa/purge khi Workspace xóa, gồm DIRECT                               |
-| ix_message_scope_cursor | messages {conversationId:1,rootMessageId:1,createdAt:-1,_id:-1}                       | Root history hoặc replies của một root, cursor kép                     |
-| ix_file_cleanup         | files {cleanupAfter:1,_id:1}                                                          | File đủ hạn dọn, non-TTL                                               |
-| ix_file_staged_expiry   | files {state:1,expiresAt:1,_id:1}                                                     | STAGED hết hạn → DELETE_PENDING                                        |
-| ix_file_workspace       | files {workspaceId:1,_id:1}                                                           | Tính quota và reconcile/xóa Workspace                                  |
-| ix_file_conversation    | files {"scope.conversationId":1,_id:1}                                                | Attachment đang staged/ready/pending theo conversation                 |
-| ix_file_session         | files {"scope.sessionId":1,"scope.epoch":1,_id:1}                                     | Frame đời runtime cần reconcile                                        |
-| ix_live_reconcile       | liveSessions {status:1,_id:1}                                                         | Bootstrap tìm ACTIVE/ENDING đời cũ                                     |
-| ix_participant_user     | sessionParticipants {userId:1,sessionId:1}                                            | Tra metadata theo user, không thay ActiveCallRegistry                  |
-| ix_audit_workspace      | auditEvents {workspaceId:1,createdAt:-1,_id:-1}                                       | Đối chiếu vận hành theo scope, không tạo UC tra audit                  |
+| Tên index                | Collection / key                                                                      | Query được hỗ trợ                                                      |
+| ------------------------ | ------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| ix_auth_user             | authSessions {userId:1,revokedAt:1}                                                   | Tra/thu phiên liên quan user                                           |
+| ix_membership_user       | memberships {userId:1,status:1,workspaceId:1}                                         | Workspace của tôi, kiểm membership hai bên DM                          |
+| ix_membership_workspace  | memberships {workspaceId:1,status:1,_id:1}                                            | Danh sách thành viên, cursor theo _id                                  |
+| uq_invitation_workspace  | invitations {workspaceId:1}, unique                                                   | Một cấu hình link hiện hành/Workspace; thay index danh sách lời mời cũ |
+| ix_channel_workspace     | channels {workspaceId:1,deletedAt:1,order:1,_id:1}                                    | Kênh sống, thứ tự ổn định                                              |
+| ix_grant_member          | channelAccessGrants {membershipId:1,membershipIncarnation:1,revokedAt:1,channelId:1}  | Kênh PRIVATE actor còn quyền; kiểm Workspace/channel sau               |
+| ix_conv_direct_user      | conversations {workspaceId:1,kind:1,"scope.participantUserIds":1,createdAt:-1,_id:-1} | List DIRECT chứa actor; cần kind DIRECT; không unique                  |
+| ix_conv_session_scope    | conversations {"scope.sessionId":1,kind:1,closedAt:1,_id:1}                           | Đóng/reconcile hội thoại phiên                                         |
+| ix_conv_purge            | conversations {purgeAt:1,_id:1}                                                       | Closed + purgeAt là Date ≤ now; non-TTL                                |
+| ix_conv_workspace        | conversations {workspaceId:1,_id:1}                                                   | Khóa/purge khi Workspace xóa, gồm DIRECT                               |
+| ix_message_scope_cursor  | messages {conversationId:1,rootMessageId:1,createdAt:-1,_id:-1}                       | Root history hoặc replies của một root, cursor kép                     |
+| ix_file_cleanup          | files {cleanupAfter:1,_id:1}                                                          | File đủ hạn dọn, non-TTL                                               |
+| ix_file_staged_expiry    | files {state:1,expiresAt:1,_id:1}                                                     | STAGED hết hạn → DELETE_PENDING                                        |
+| ix_file_workspace        | files {workspaceId:1,_id:1}                                                           | Tính quota và reconcile/xóa Workspace                                  |
+| ix_file_conversation     | files {"scope.conversationId":1,_id:1}                                                | Attachment đang staged/ready/pending theo conversation                 |
+| ix_file_session          | files {"scope.sessionId":1,"scope.epoch":1,_id:1}                                     | Frame đời runtime cần reconcile                                        |
+| ix_live_reconcile        | liveSessions {status:1,_id:1}                                                         | Bootstrap tìm ACTIVE/ENDING đời cũ                                     |
+| ix_live_channel_metadata | liveSessions {workspaceId:1,channelId:1,startedAt:-1,_id:-1}                          | Pagination metadata có ACL theo SCRUM-80                               |
+| ix_participant_user      | sessionParticipants {userId:1,sessionId:1}                                            | Tra metadata theo user, không thay ActiveCallRegistry                  |
+| ix_audit_workspace       | auditEvents {workspaceId:1,createdAt:-1,_id:-1}                                       | Đối chiếu vận hành theo scope, không tạo UC tra audit                  |
 
 workspaces không cần secondary index ở bản đầu: danh sách đi từ memberships rồi tra _id. channels, audit metadata không tự có TTL. Không thêm index nội dung/text search hoặc field ngoài UC. Index trong bảng là bộ đích ban đầu; query plan có thể cho thấy cần giảm/thay index trùng prefix, phải ghi lý do và đo lại, không bỏ unique bảo vệ invariant.
 

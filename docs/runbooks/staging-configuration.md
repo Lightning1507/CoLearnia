@@ -76,6 +76,54 @@ Nginx dùng DNS nội bộ của Docker để tra lại IP của service `server
 
 Trên staging, sau khi các cuộc gọi đã kết thúc, ghi lại IP app trên mạng Compose rồi tạo lại riêng container `server`. Xác nhận app đã sẵn sàng và IP thực sự đổi. Giữ nguyên container Nginx, gọi lại API qua HTTPS và thử mở kết nối Socket.IO mới. Cả hai phải đến được app mới. Nếu địa chỉ được cấp lại trùng IP cũ, ca thử đó chưa kiểm được việc cập nhật DNS.
 
+#### Kết quả kiểm local ngày 10/11/2026
+
+Kiểm trên Windows, nhánh `scrum-55`, nền `50eec8f`.
+
+| Kiểm tra                                                                 | Kết quả                                                                                                                                                                        |
+| ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `pnpm infra:up`                                                          | Dừng với exit 1 vì không tìm thấy lệnh `docker`. Ubuntu WSL cũng không có Docker CLI hoặc socket Docker.                                                                       |
+| Chạy server từ bản build local                                           | `/health/live`, `/health/ready` và `/api/v1/system/status` trả HTTP 200 qua loopback. Readiness báo MongoDB local và media worker đã kết nối. MongoDB đang chạy là standalone. |
+| Kiểm transaction qua connector của app                                   | Trên MongoDB 8.3 replica set tạm chỉ bind loopback, bản ghi được lưu sau commit và không tồn tại sau rollback. Dừng tiến trình và dọn thư mục dữ liệu tạm sau kiểm.            |
+| `pnpm exec vitest run apps/server/src/app.test.ts` và `pnpm media:smoke` | 4 test HTTP đạt. Worker và Router khởi động với Opus/VP8.                                                                                                                      |
+
+#### Chạy lại bằng Docker Desktop
+
+Docker Engine Linux 29.9.3 và Compose v5.7.0 chạy trên Windows/WSL 2. Dữ liệu Docker nằm trên ổ D. Dùng project riêng `colearnia-scrum55-smoke` và file override tạm để ánh xạ MongoDB local thành `127.0.0.1:27018:27017`, tránh cổng 27017 đang dùng trên Windows.
+
+- `docker compose config --quiet` và `docker compose --profile app up --build -d --wait --wait-timeout 180` đạt với cấu hình local và override. Web, API và MongoDB healthy.
+- Web tại `http://127.0.0.1:8080/` và API `/api/v1/system/status` trả HTTP 200 qua Nginx. API báo MongoDB và media worker đã kết nối. `/health/ready` từ trong container server trả HTTP 200 với `ready: true`.
+- Chạy `infra/mongo/verify-transactions.js` qua `mongosh` trong container MongoDB. Replica set `rs0` có primary và kiểm commit/rollback đạt.
+
+Các kết quả trên xác nhận stack Compose local qua HTTP. Staging vẫn cần kiểm Web/API qua TLS, MongoDB có xác thực trên mạng riêng và cổng DB không truy cập được từ Internet.
+
+#### Kết quả kiểm trên EC2 ngày 10/11/2026
+
+- SSH vào EC2 Ubuntu 26.04.1, checkout `50eec8f`. Log cài đặt do người triển khai cung cấp ghi Compose v5.7.0 và container `hello-world` chạy thành công.
+- MongoDB ban đầu báo `NotYetInitialized`. `rs.initiate()` trả `ok: 1`, sau đó `db.hello().isWritablePrimary` xác nhận `rs0` có primary.
+- Tạo tài khoản quản trị và tài khoản app chỉ có quyền `readWrite` trên `colearnia_staging`. Mật khẩu được tạo và lưu trong thư mục riêng trên EC2.
+- Dùng tài khoản app chạy script `infra/mongo/verify-transactions.js` với DB đích `colearnia_staging`. Kiểm commit và rollback đạt. Truy vấn đọc thiếu xác thực bị từ chối với mã 13.
+- `docker network inspect` xác nhận mạng DB là internal. `docker inspect` xác nhận container MongoDB không publish cổng. Kết nối TCP tới cổng 27017 từ Windows hết thời gian chờ.
+- `docker compose config --quiet` đạt với biến giữ chỗ. Build trực tiếp trên EC2 đang biên dịch mediasoup từ mã nguồn tại thời điểm ghi kết quả.
+- Nạp image API Linux đã build từ cùng commit trên Docker Desktop vào EC2 bằng `docker image save` và `docker image load` qua SSH. Chạy một container thử trên mạng DB riêng với tài khoản app. Cả `/health/ready` và `/api/v1/system/status` trả HTTP 200 với `ready: true`, DB và media worker đều báo đã kết nối. Container thử đã dừng sau kiểm.
+- `Resolve-DnsName colearnia-staging.duckdns.org -Type A` trên Windows trả `13.236.165.187`, khớp IPv4 công khai của EC2 tại thời điểm kiểm.
+- Từ Windows, `curl.exe` gọi API trạng thái qua HTTPS hết thời gian chờ kết nối tới cổng 443 (exit 28, chưa nhận được phản hồi HTTP). Cần xác nhận inbound TCP 80/443 theo phương án Certbot standalone, cấp chứng chỉ TLS, chạy Compose staging và kiểm lại Web/API từ bên ngoài.
+- Khi tiếp tục triển khai, TCP 22 kết nối được nhưng SSH hết thời gian chờ trước khi nhận banner. TCP 80 và 443 cũng hết thời gian chờ từ Windows. Chưa xác định nguyên nhân từ phía EC2 và chưa chạy bước cấp chứng chỉ.
+
+#### Nghiệm thu HTTPS trên EC2 ngày 10/11/2026
+
+- SSH hoạt động trở lại sau khi người triển khai lưu các rule Security Group. HTTPS 443 cho phép IP máy Windows dùng để kiểm.
+- Certbot standalone dùng HTTP-01 để cấp chứng chỉ Let's Encrypt cho `colearnia-staging.duckdns.org`, hết hạn ngày 08/02/2027. Certbot đã tạo timer gia hạn. Sau khi gia hạn, tạo lại container Web để nạp các file chứng chỉ mới theo phần cấu hình TLS ở trên.
+- Chạy `docker compose --env-file .env.staging -f docker-compose.staging.yml up --no-build -d --wait --wait-timeout 90` trên EC2. Dùng image Web và API Linux đã build từ `50eec8f` trên Docker Desktop, nạp vào EC2 và gắn tag cho Compose staging. API báo healthy.
+- Từ Windows, Web và `/api/v1/system/status` trả HTTP 200 qua HTTPS với chứng chỉ hợp lệ. API báo `ready: true`, MongoDB và media worker đã kết nối. `/health/ready` trả 200 trong container API và 404 qua Nginx. Socket.IO polling mở được qua HTTPS với `Origin` staging.
+- Kiểm lại từ Windows, kết nối TCP đến cổng 27017 và 3001 hết thời gian chờ. Các kiểm tra MongoDB có xác thực và transaction ở mục trước dùng cùng replica set của stack này.
+
+### Bàn giao staging cho các task tiếp theo
+
+- **M4 review SCRUM-55.** URL kiểm là `https://colearnia-staging.duckdns.org`. Nhờ người quản trị Security Group thêm IP công khai của máy review vào TCP 443 trước khi thử từ máy khác. Đối chiếu Web, `/api/v1/system/status`, readiness nội bộ và bằng chứng transaction ở mục trên. Bản chạy dùng commit `50eec8f`. Khi deploy bản mới, ghi commit và image thực tế, rồi kiểm lại HTTPS và readiness. Nếu EC2 đổi IP công khai, cập nhật DuckDNS và `MEDIA_ANNOUNCED_ADDRESS` trước khi thử lại.
+- **[SCRUM-63](https://faker1652005.atlassian.net/browse/SCRUM-63).** Dùng staging để cấu hình TURN theo [runbook coturn](../../infra/coturn/README.md). Chốt hostname hoặc IP TURN, cổng lắng nghe và dải relay với người quản trị mạng. Kiểm credential ngắn hạn dùng được và credential hết hạn bị từ chối. Bàn giao candidate loại `relay`, cặp mạng đã thử và bằng chứng luồng media thật cho SCRUM-64 và SCRUM-81. Worker đã sẵn sàng mới xác nhận tiến trình khởi động.
+- **[SCRUM-81](https://faker1652005.atlassian.net/browse/SCRUM-81).** Sau khi các phụ thuộc trong Jira sẵn sàng, cấp quyền HTTPS cho cả hai mạng thử, kiểm kết nối trực tiếp và relay, rồi diễn tập quay về image app trước đã ghi nhận. Giữ volume và dữ liệu MongoDB xuyên suốt. Ghi commit/image trước và sau rollback cùng kết quả HTTPS, readiness và kết nối trên từng mạng. Bài kiểm media 5 người có tiêu chí riêng.
+
 ### SCRUM-63 kiểm khi có TURN
 
 1. Xác nhận DNS/IP, NAT, cổng lắng nghe và dải relay theo hạ tầng thật.
