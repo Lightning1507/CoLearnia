@@ -134,6 +134,32 @@ function setup(
 }
 
 describe('MAIN registry with real MongoDB and mediasoup Router', () => {
+  it('does not grant a reserved host identity to a new login before revocation delivery', async () => {
+    const f = setup();
+    const host = f.auth();
+    const peer = f.auth();
+    const reserved = await f.registry.issue(host, f.target, { requestId: randomUUID() });
+    const peerTicket = await f.registry.issue(peer, f.target, { requestId: randomUUID() });
+    await f.registry.join(f.binding(peer), { ticket: peerTicket.ticket, requestId: randomUUID() });
+    // M1 has rotated/revoked the previous authSession, while M4 notification is delayed.
+    const login = { ...host, authSessionId: id() };
+    const fresh = await f.registry.issue(login, f.target, { requestId: randomUUID() });
+    const joined = await f.registry.join(f.binding(login), {
+      ticket: fresh.ticket,
+      requestId: randomUUID(),
+    });
+    const snapshot = JSON.parse(joined.parts.map((part) => part.fragment).join(''));
+    expect(snapshot.viewer.role).toBe('MEMBER');
+    expect(snapshot.hostParticipantId).toBeNull();
+    expect(fresh.sessionId).toBe(reserved.sessionId);
+    expect(
+      await models.SessionParticipant.countDocuments({
+        sessionId: new Types.ObjectId(fresh.sessionId),
+        userId: new Types.ObjectId(host.userId),
+      }),
+    ).toBe(1);
+    expect(f.registry.stats().ownerships).toBe(2);
+  });
   it.each([false, true])(
     'revokes real M3 transport resources with native creation delayed=%s',
     async (delayed) => {

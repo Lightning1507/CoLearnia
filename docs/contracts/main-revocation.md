@@ -35,6 +35,8 @@ Port `revokedAuthSessions(event)` trả đồng bộ danh sách ID mà M1 đã c
 
 Reservation host chưa join giữ riêng authSession/access stamp lúc tạo phòng. Revocation đúng đời sẽ vô hiệu reservation và con trỏ host, kể cả ticket đã hết hạn; khi ownership host đã commit thì reservation được xóa. Hủy một ticket cũ không được block ownership có stamp mới hơn.
 
+Join chỉ được dùng reservation khi authSessionId và stamp khớp chính xác dữ liệu lúc tạo phòng, auth chưa hết hạn và fence M1 xác nhận quyền liên tục. Registry kiểm trước khi chọn participant host và kiểm lại sau DB await trước commit runtime. Phiên đăng nhập mới hoặc stamp khác sẽ làm mất reservation, vào như MEMBER dù thông báo revoke chưa đến. Nếu fence thay đổi trong lúc ghi DB thì không công bố host; giữ deny/lỗi CONFLICT để đối chiếu metadata đã ghi, không suy rollback.
+
 Lệnh thu quyền cũ không xóa membership incarnation mới hoặc quyền kênh có revision mới hơn. Khi kiểm tính liên tục của ownership, registry đối chiếu stamp đã commit: revoke rồi cấp lại không tự làm quyền cũ hợp lệ. Muốn vào lại phải tạo ticket và join mới sau khi cleanup được xác nhận.
 
 ## Thứ tự thực hiện

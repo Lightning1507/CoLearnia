@@ -300,6 +300,27 @@ export function createMainJoinRegistry(options: {
     if (room.uncertain || room.router.closed) fail('DEPENDENCY_UNAVAILABLE');
     if (room.state.state !== 'ACTIVE') fail('SESSION_ENDED');
   }
+  function reservedHostCurrent(room: Room, current: Authority, held: CoordinationContext) {
+    const reserved = room.hostReservation;
+    return (
+      !!reserved &&
+      room.state.hostParticipantId === room.hostParticipantId &&
+      reserved.auth.userId === current.auth.userId &&
+      reserved.auth.authSessionId === current.auth.authSessionId &&
+      Date.parse(reserved.auth.expiresAt) > clock() &&
+      sameStamp(reserved.access, current.access) &&
+      currentFence(reserved, held, reserved.access)
+    );
+  }
+  function clearHostReservation(room: Room) {
+    room.hostReservation = null;
+    room.state.hostParticipantId = null;
+    if (room.state.policyRevision >= Number.MAX_SAFE_INTEGER) {
+      room.uncertain = true;
+      fail('SERVER_BUSY');
+    }
+    room.state.policyRevision++;
+  }
   function forget(intent: Intent) {
     if (intents.get(intent.key) === intent) intents.delete(intent.key);
     if (tickets.get(intent.digest) === intent) tickets.delete(intent.digest);
@@ -688,11 +709,13 @@ export function createMainJoinRegistry(options: {
         joiningUsers.add(auth.userId);
         try {
           const room = intent.room;
-          const participantId =
-            room.hostUserId === auth.userId &&
-            room.state.hostParticipantId === room.hostParticipantId
-              ? room.hostParticipantId
-              : new Types.ObjectId().toHexString();
+          const reservedHost =
+            room.hostUserId === auth.userId && reservedHostCurrent(room, current, held);
+          if (room.hostUserId === auth.userId && room.hostReservation && !reservedHost)
+            clearHostReservation(room);
+          const participantId = reservedHost
+            ? room.hostParticipantId
+            : new Types.ObjectId().toHexString();
           let participant: PolicyParticipant = {
             participantId,
             displayName: current.displayName,
@@ -734,7 +757,12 @@ export function createMainJoinRegistry(options: {
           )
             fail('CONFLICT');
           participant.auth = confirmed.auth;
+          if (reservedHost && !reservedHostCurrent(room, confirmed, held)) {
+            clearHostReservation(room);
+            fail('CONFLICT');
+          }
           const participants = new Map(room.state.participants);
+          if (room.state.policyRevision >= Number.MAX_SAFE_INTEGER) fail('SERVER_BUSY');
           participants.set(participant.participantId, participant);
           const previous = room.state;
           room.state = { ...previous, participants, policyRevision: previous.policyRevision + 1 };

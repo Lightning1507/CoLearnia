@@ -169,6 +169,59 @@ async function revokeFixture(limits: Parameters<typeof setup>[0] = {}) {
 }
 
 describe('SCRUM-83 MAIN revocation', () => {
+  it.each(['new login', 'changed stamp', 'fence before write', 'fence after write'] as const)(
+    'does not grant a stale host reservation on delayed revoke: %s',
+    async (kind) => {
+      const cleanup = async (value: SessionCleanupRequest) => cleanupAck(value);
+      const f = setup({}, { media: cleanup, messaging: cleanup, board: cleanup });
+      const reserved = await f.issue();
+      const peer = f.principal();
+      const peerTicket = await f.issue(peer);
+      const peerSocket = f.binding(peer);
+      const peerCommand = { ticket: peerTicket.ticket, requestId: randomUUID() };
+      await f.registry.join(peerSocket, peerCommand);
+      const login = kind === 'new login' ? { ...f.auth, authSessionId: id() } : f.auth;
+      if (kind === 'changed stamp')
+        f.resolveAuthority.mockImplementation(async (auth, target) => ({
+          auth,
+          access: { ...f.access(auth, target), membershipRevision: 1 },
+          displayName: 'Sinh viên',
+        }));
+      let revoked = kind === 'fence before write';
+      f.isAuthorityCurrent.mockImplementation(
+        (authority, _held, committed) =>
+          !(revoked && authority.auth.userId === f.auth.userId && committed !== undefined),
+      );
+      const fresh = await f.issue(login);
+      const originalJoin = f.repository.join.getMockImplementation()!;
+      if (kind === 'fence after write')
+        f.repository.join.mockImplementationOnce(async (input) => {
+          const result = await originalJoin(input);
+          revoked = true;
+          return result;
+        });
+      const joining = f.registry.join(f.binding(login), {
+        ticket: fresh.ticket,
+        requestId: randomUUID(),
+      });
+      if (kind.startsWith('fence')) {
+        await expect(joining).rejects.toMatchObject({ code: 'CONFLICT' });
+        const peerSnapshot = await f.registry.join(peerSocket, peerCommand);
+        expect(projection(peerSnapshot).hostParticipantId).toBeNull();
+        return;
+      }
+      const joined = await joining;
+      expect(fresh.sessionId).toBe(reserved.sessionId);
+      expect(projection(joined).viewer.role).toBe('MEMBER');
+      expect(projection(joined).hostParticipantId).toBeNull();
+      await f.registry.revoke({
+        operationId: randomUUID(),
+        kind: 'AUTH_SESSION',
+        authSessionId: f.auth.authSessionId,
+        revision: 1,
+      });
+    },
+  );
   it('does not block a current ownership from the stale stamp of a consumed ticket', async () => {
     const f = await revokeFixture();
     const original = f.resolveAuthority.getMockImplementation()!;
