@@ -19,6 +19,11 @@ export const sessionIndexRequirements: readonly IndexRequirement[] = [
   },
   { collection: 'liveSessions', name: 'ix_live_reconcile', key: { status: 1, _id: 1 } },
   {
+    collection: 'liveSessions',
+    name: 'ix_live_channel_metadata',
+    key: { workspaceId: 1, channelId: 1, startedAt: -1, _id: -1 },
+  },
+  {
     collection: 'sessionParticipants',
     name: 'uq_participant_pair',
     key: { sessionId: 1, userId: 1 },
