@@ -20,16 +20,20 @@ Registry chưa được mount vào composition app. Logout/mutation ACL phát re
 
 ## Phạm vi thu quyền
 
-| Kind                   | Đích                                                                                                                                                  |
-| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| AUTH_SESSION           | Đúng authSessionId                                                                                                                                    |
-| USER_AUTH_SESSIONS     | Các authSession của user mà registry biết tại lúc nhận lệnh, gồm ownership, ticket và control operation đang chờ. Một login mới không thuộc cohort cũ |
-| WORKSPACE_MEMBERSHIP   | Đúng user/Workspace/membershipId/incarnation; committed membershipRevision không mới hơn revision thu quyền                                           |
-| PRIVATE_CHANNEL_ACCESS | Đúng user/Workspace/channel/membershipId/incarnation; committed channelRevision không mới hơn revision thu quyền                                      |
-| CHANNEL_DELETED        | Đúng Workspace/channel và revision không mới hơn lệnh                                                                                                 |
-| WORKSPACE_DELETED      | Các ownership/ticket thuộc Workspace đó                                                                                                               |
+| Kind                   | Đích                                                                                                                                               |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AUTH_SESSION           | Đúng authSessionId                                                                                                                                 |
+| USER_AUTH_SESSIONS     | Tập authSession đã bị M1 thu trong đúng operationId/userId/revision, lấy qua `revokedAuthSessions(event)`; không gom theo thời điểm nhận thông báo |
+| WORKSPACE_MEMBERSHIP   | Đúng user/Workspace/membershipId/incarnation; committed membershipRevision không mới hơn revision thu quyền                                        |
+| PRIVATE_CHANNEL_ACCESS | Đúng user/Workspace/channel/membershipId/incarnation; committed channelRevision không mới hơn revision thu quyền                                   |
+| CHANNEL_DELETED        | Đúng Workspace/channel và revision không mới hơn lệnh                                                                                              |
+| WORKSPACE_DELETED      | Các ownership/ticket thuộc Workspace đó                                                                                                            |
 
 M1 phải từ chối authSession đã revoke dù session đó chưa từng xuất hiện trong registry. Cohort USER_AUTH_SESSIONS không thay truy vấn và invalidation toàn bộ authSession của M1. ID được chuẩn hóa chữ thường sau validation. Không suy việc mất field nghĩa là thu tất cả.
+
+Port `revokedAuthSessions(event)` trả đồng bộ danh sách ID mà M1 đã commit cho đúng operation/revision, kể cả khi thông báo đến sau một login mới. Thiếu port, lookup lỗi, dữ liệu không hợp lệ hoặc vượt cap `maxIntents` thì trả DEPENDENCY_UNAVAILABLE trước khi đăng ký record/hủy ticket. Không fallback sang sessions hiện có trong registry. M1 giữ kết quả operation để lookup có tính ổn định; retry đã có record dùng lại cohort đã chụp.
+
+Reservation host chưa join giữ riêng authSession/access stamp lúc tạo phòng. Revocation đúng đời sẽ vô hiệu reservation và con trỏ host, kể cả ticket đã hết hạn; khi ownership host đã commit thì reservation được xóa. Hủy một ticket cũ không được block ownership có stamp mới hơn.
 
 Lệnh thu quyền cũ không xóa membership incarnation mới hoặc quyền kênh có revision mới hơn. Khi kiểm tính liên tục của ownership, registry đối chiếu stamp đã commit: revoke rồi cấp lại không tự làm quyền cũ hợp lệ. Muốn vào lại phải tạo ticket và join mới sau khi cleanup được xác nhận.
 

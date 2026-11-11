@@ -30,7 +30,7 @@ export function mayMatchMainRevocation(
 }
 
 // Match the committed generation, not merely the user's latest canReadContent value.
-// USER_AUTH_SESSIONS captures known authSession IDs at acceptance; a later login is a new session.
+// USER_AUTH_SESSIONS uses M1's committed cohort, including for delayed event delivery.
 export function matchesMainRevocation(
   event: LiveAccessRevocation,
   auth: AuthenticatedContext,

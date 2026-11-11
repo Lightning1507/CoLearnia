@@ -54,6 +54,7 @@ type Room = {
   revision: number;
   hostUserId: string;
   hostParticipantId: string;
+  hostReservation: Authority | null;
   uncertain: boolean;
 };
 type Ownership = {
@@ -124,6 +125,11 @@ export function createMainJoinRegistry(options: {
   ): boolean;
   createRouter(): Promise<MediaTypes.Router>;
   revocationCleanup?: Parameters<typeof beginSessionTransition>[2];
+  // Exact cohort committed by M1 for this user/operation/revision. Never infer
+  // logout-all targets from the sessions present when its notification arrives.
+  revokedAuthSessions?(
+    event: Extract<LiveAccessRevocation, { kind: 'USER_AUTH_SESSIONS' }>,
+  ): readonly string[];
   now?: () => number;
   limits?: Partial<typeof defaults>;
 }) {
@@ -545,6 +551,7 @@ export function createMainJoinRegistry(options: {
               revision: 0,
               hostUserId: auth.userId,
               hostParticipantId: participantId.toHexString(),
+              hostReservation: afterRouter,
               uncertain: false,
               state: {
                 sessionId: sessionId.toHexString(),
@@ -732,6 +739,7 @@ export function createMainJoinRegistry(options: {
           const previous = room.state;
           room.state = { ...previous, participants, policyRevision: previous.policyRevision + 1 };
           ownerships.set(auth.userId, owner);
+          if (participant.participantId === room.hostParticipantId) room.hostReservation = null;
           // Snapshot/provider failures do not revoke the committed ownership. Retry the
           // same consumed intent revalidates all authority without writing DB again.
           return await delivery(owner, input.requestId, held);
@@ -774,13 +782,17 @@ export function createMainJoinRegistry(options: {
         fail('DEPENDENCY_UNAVAILABLE');
       if (revocations.size >= limits.maxRevocations) fail('SERVER_BUSY');
       const authSessions = new Set<string>();
-      for (const auth of [
-        ...[...inFlight.values()].map((binding) => binding.auth),
-        ...[...ownerships.values()].map((owner) => owner.participant.auth),
-        ...[...intents.values()].map((intent) => intent.authority.auth),
-      ])
-        if (event.kind === 'USER_AUTH_SESSIONS' && auth.userId === event.userId)
-          authSessions.add(auth.authSessionId);
+      if (event.kind === 'USER_AUTH_SESSIONS') {
+        try {
+          const cohort = options.revokedAuthSessions?.(event);
+          if (!Array.isArray(cohort) || cohort.length > limits.maxIntents)
+            fail('DEPENDENCY_UNAVAILABLE');
+          for (const value of cohort)
+            authSessions.add(workspaceDocumentIdSchema.parse(value).toLowerCase());
+        } catch {
+          fail('DEPENDENCY_UNAVAILABLE');
+        }
+      }
       const record: Revocation = {
         event,
         authSessions,
@@ -813,6 +825,13 @@ export function createMainJoinRegistry(options: {
             ...[...intents.values()]
               .filter((intent) => matches(intent.authority.auth, intent.authority.access))
               .map((intent) => intent.room.state.workspaceId),
+            ...[...rooms.values()]
+              .filter(
+                (room) =>
+                  room.hostReservation &&
+                  matches(room.hostReservation.auth, room.hostReservation.access),
+              )
+              .map((room) => room.state.workspaceId),
           ]),
         ].sort();
         const preparations = await Promise.allSettled(
@@ -827,8 +846,20 @@ export function createMainJoinRegistry(options: {
                     !matches(intent.authority.auth, intent.authority.access)
                   )
                     continue;
-                  if (intent.consumed) intent.consumed.ownership.participant.blocked = true;
                   forget(intent);
+                }
+                for (const room of rooms.values()) {
+                  if (
+                    room.state.workspaceId !== workspaceId ||
+                    !room.hostReservation ||
+                    !matches(room.hostReservation.auth, room.hostReservation.access)
+                  )
+                    continue;
+                  room.hostReservation = null;
+                  room.state.hostParticipantId = null;
+                  if (room.state.policyRevision < Number.MAX_SAFE_INTEGER)
+                    room.state.policyRevision++;
+                  else room.uncertain = true;
                 }
                 for (const owner of ownerships.values()) {
                   const { participant, room } = owner;
