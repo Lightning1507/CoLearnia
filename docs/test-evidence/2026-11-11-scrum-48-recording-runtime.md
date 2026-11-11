@@ -11,14 +11,42 @@ docker run --rm --cpus 2 --memory 512m --mount "type=bind,source=$($PWD.Path)/sc
   apt-get update -qq
   apt-get install -y -qq --no-install-recommends python3-gi gir1.2-gstreamer-1.0 gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-ugly gstreamer1.0-libav >/tmp/apt.log || { tail -50 /tmp/apt.log; exit 1; }
   node --version
+  check_pipeline_error() {
+    python3 - "$1" <<\PY
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as output:
+    events = [json.loads(line) for line in output]
+
+if not any(
+    event.get("event") == "error"
+    and event.get("case") == "error"
+    and event.get("reason") == "pipeline"
+    for event in events
+):
+    sys.exit("FAIL: missing GStreamer bus ERROR event for the error scenario")
+PY
+  }
+
   for scenario in inventory eos error timeout; do
     status=0
-    timeout 10s python3 /spike.py "$scenario" || status=$?
+    output="/tmp/spike-$scenario.jsonl"
+    timeout 10s python3 /spike.py "$scenario" >"$output" || status=$?
+    cat "$output"
     echo "$scenario exit=$status"
-    case "$scenario:$status" in inventory:0|eos:0|error:1|timeout:2) ;; *) exit 1;; esac
+    case "$scenario:$status" in
+      inventory:0|eos:0|timeout:2) ;;
+      error:1) check_pipeline_error "$output" ;;
+      *) exit 1 ;;
+    esac
   done
 '
 ```
+
+Ca `error` đạt khi helper thoát mã 1 và stdout có bản ghi JSONL với `event=error`, `case=error` và `reason=pipeline`.
+
+Khi kiểm lại trên Docker Linux sau review, lỗi mở input trả mã 1 và có đủ ba trường JSONL nên được chấp nhận. Với pipeline thử chứa element không tồn tại, `Gst.parse_launch()` ném exception và Python cũng trả mã 1. Vì stdout thiếu sự kiện từ bus, bước xác minh báo `FAIL: missing GStreamer bus ERROR event for the error scenario`.
 
 ## Kết quả ngày 11/11/2026
 
