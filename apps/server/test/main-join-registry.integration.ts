@@ -2,8 +2,14 @@ import { randomUUID } from 'node:crypto';
 import { Types, mongo } from 'mongoose';
 import { createWorker } from 'mediasoup';
 import type { types as MediaTypes } from 'mediasoup';
-import type { AuthenticatedContext, ChannelAccessStamp } from '@colearnia/contracts';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import type {
+  AuthenticatedContext,
+  ChannelAccessStamp,
+  SessionCleanupRequest,
+  SessionCleanupResult,
+} from '@colearnia/contracts';
+import { mediaTransportCreateAckSchema } from '@colearnia/contracts';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createDatabase } from '../src/lib/database.js';
 import { createOperationCoordinator } from '../src/lib/operation-coordinator.js';
 import { mediaCodecs } from '../src/live/media/runtime.js';
@@ -15,6 +21,7 @@ import {
   sessionCollectionValidators,
 } from '../src/live/session-manager/session-models.js';
 import { testReplicaUri } from './replica-uri.js';
+import { createTransportSignaling } from '../src/live/media/transport-signaling.js';
 
 const databaseName = `colearnia_test_scrum82_${randomUUID().replaceAll('-', '')}`;
 const database = createDatabase(testReplicaUri(databaseName));
@@ -63,7 +70,10 @@ afterAll(async () => {
   }
 });
 
-function setup(customRepository = repository) {
+function setup(
+  customRepository = repository,
+  revocationCleanup?: Parameters<typeof createMainJoinRegistry>[0]['revocationCleanup'],
+) {
   let time = Date.now();
   const coordinator = createOperationCoordinator();
   const target = { workspaceId: id(), channelId: id() };
@@ -76,6 +86,7 @@ function setup(customRepository = repository) {
   const revoked = new Set<string>();
   const registry = createMainJoinRegistry({
     coordinator,
+    ...(revocationCleanup ? { revocationCleanup } : {}),
     repository: customRepository,
     now: () => time,
     // M1 authority is a fixture; DB session writes and native Routers are real.
@@ -123,6 +134,109 @@ function setup(customRepository = repository) {
 }
 
 describe('MAIN registry with real MongoDB and mediasoup Router', () => {
+  it.each([false, true])(
+    'revokes real M3 transport resources with native creation delayed=%s',
+    async (delayed) => {
+      const confirmed = async (value: SessionCleanupRequest): Promise<SessionCleanupResult> => {
+        const { reason, ...identity } = value;
+        void reason;
+        return {
+          ...identity,
+          outcome: { permissionRevoked: true, pendingInvalidated: true, cleanupPending: false },
+        };
+      };
+      const f = setup(repository, {
+        media: { revoke: (value) => transportService.cleanup(value) },
+        messaging: confirmed,
+        board: confirmed,
+      });
+      const host = f.auth();
+      const peer = f.auth();
+      const socket = f.binding(host);
+      const peerSocket = f.binding(peer);
+      const ticket = await f.registry.issue(host, f.target, { requestId: randomUUID() });
+      const joined = await f.registry.join(socket, {
+        ticket: ticket.ticket,
+        requestId: randomUUID(),
+      });
+      const peerTicket = await f.registry.issue(peer, f.target, { requestId: randomUUID() });
+      const peerJoin = await f.registry.join(peerSocket, {
+        ticket: peerTicket.ticket,
+        requestId: randomUUID(),
+      });
+      let release!: () => void;
+      let entered!: () => void;
+      const waiting = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const created = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+      const native: MediaTypes.WebRtcTransport[] = [];
+      const transportService = createTransportSignaling({
+        withContext: f.registry.withContext,
+        createTransport: async (router) => {
+          const transport = await router.createWebRtcTransport({
+            listenInfos: [{ protocol: 'udp', ip: '127.0.0.1' }],
+          });
+          native.push(transport);
+          entered();
+          if (delayed) await waiting;
+          return transport;
+        },
+      });
+      const handlers = new Map<string, (raw: unknown, ack?: (value: unknown) => void) => void>();
+      transportService.attach({
+        id: socket.socketId,
+        on: (name, listener) => handlers.set(name, listener),
+        once: () => {},
+      });
+      const response = new Promise<unknown>((resolve) =>
+        handlers.get('media.transport.create')!(
+          {
+            requestId: randomUUID(),
+            sessionId: ticket.sessionId,
+            epoch: ticket.epoch,
+            callGeneration: joined.ack.data.result.callGeneration,
+            expectedPolicyRevision: 2,
+            payload: { direction: 'SEND' },
+          },
+          resolve,
+        ),
+      );
+      try {
+        await created;
+        if (!delayed)
+          expect(mediaTransportCreateAckSchema.parse(await response)).toHaveProperty('data');
+        const result = await f.registry.revoke({
+          operationId: randomUUID(),
+          kind: 'AUTH_SESSION',
+          authSessionId: host.authSessionId,
+          revision: 1,
+        });
+        expect(result).toMatchObject({
+          permissionRevoked: true,
+          pendingInvalidated: true,
+          cleanupPending: delayed,
+        });
+        release();
+        if (delayed)
+          expect(mediaTransportCreateAckSchema.parse(await response)).toHaveProperty('error');
+        await vi.waitFor(() => expect(native[0]!.closed).toBe(true));
+        expect(f.routers[0]!.closed).toBe(false);
+        expect(
+          await f.registry.withContext(
+            peerSocket.socketId,
+            { ...peerTicket, callGeneration: peerJoin.ack.data.result.callGeneration },
+            (result) => result.ok,
+          ),
+        ).toBe(true);
+        expect(f.registry.stats().ownerships).toBe(1);
+      } finally {
+        release();
+      }
+    },
+  );
   it('replays each ticket/requestId pair without rewriting ownership or durable metadata', async () => {
     let joinWrites = 0;
     const f = setup({
