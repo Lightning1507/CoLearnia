@@ -1,16 +1,20 @@
 import { randomUUID } from 'node:crypto';
+import { performance } from 'node:perf_hooks';
 import { Types, mongo } from 'mongoose';
 import type { types as MediaTypes } from 'mediasoup';
 import type {
   AuthenticatedContext,
   ChannelAccessStamp,
   SessionProjection,
+  SessionCleanupRequest,
+  SessionCleanupResult,
 } from '@colearnia/contracts';
 import { sessionJoinAckSchema } from '@colearnia/contracts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createOperationCoordinator } from '../../lib/operation-coordinator.js';
 import { createMainJoinRegistry, MainJoinError } from './main-join-registry.js';
 import { canReceiveMedia } from '../policy/session-policy.js';
+import type { SessionPolicyState } from '../policy/session-policy.js';
 
 const registries: ReturnType<typeof createMainJoinRegistry>[] = [];
 afterEach(() => {
@@ -26,7 +30,10 @@ function deferred<T>() {
   });
   return { promise, resolve, reject };
 }
-function setup(limits: Parameters<typeof createMainJoinRegistry>[0]['limits'] = {}) {
+function setup(
+  limits: Parameters<typeof createMainJoinRegistry>[0]['limits'] = {},
+  endCleanup?: Parameters<typeof createMainJoinRegistry>[0]['endCleanup'],
+) {
   let time = Date.UTC(2026, 10, 10);
   const target = { workspaceId: id(), channelId: id() };
   const principal = (): AuthenticatedContext => ({
@@ -92,6 +99,7 @@ function setup(limits: Parameters<typeof createMainJoinRegistry>[0]['limits'] = 
     createRouter,
     now: () => time,
     limits,
+    ...(endCleanup ? { endCleanup } : {}),
   });
   registries.push(registry);
   const binding = (identity = auth) => ({
@@ -124,6 +132,321 @@ function projection(
 ) {
   return JSON.parse(result.parts.map((part) => part.fragment).join('')) as SessionProjection;
 }
+
+function cleanupAck(value: SessionCleanupRequest): SessionCleanupResult {
+  const base = {
+    operationId: value.operationId,
+    sessionId: value.sessionId,
+    epoch: value.epoch,
+    transitionToken: value.transitionToken,
+    outcome: {
+      permissionRevoked: true as const,
+      pendingInvalidated: true as const,
+      cleanupPending: false,
+    },
+  };
+  return 'callGeneration' in value
+    ? { ...base, callGeneration: value.callGeneration, target: value.target }
+    : { ...base, target: value.target };
+}
+async function endFixture(
+  action: 'END' | 'HOST_LEAVE' = 'END',
+  limits: Parameters<typeof setup>[0] = {},
+) {
+  const media = vi.fn((value: SessionCleanupRequest) => cleanupAck(value));
+  const messaging = vi.fn(async (value: SessionCleanupRequest) => cleanupAck(value));
+  const board = vi.fn(async (value: SessionCleanupRequest) => cleanupAck(value));
+  const f = setup(limits, { media: { revoke: media }, messaging, board });
+  const socket = f.binding();
+  const ticket = await f.issue();
+  const joined = await f.registry.join(socket, { ticket: ticket.ticket, requestId: randomUUID() });
+  const command = {
+    requestId: randomUUID(),
+    sessionId: ticket.sessionId,
+    epoch: ticket.epoch,
+    callGeneration: joined.ack.data.result.callGeneration,
+    expectedPolicyRevision: joined.parts[0]!.policyRevision,
+    action,
+  };
+  return { ...f, socket, command, media, messaging, board };
+}
+
+describe('SCRUM-86 session end', () => {
+  it.each([false, true])(
+    'rejects replay that expires during authority lookup with a newer room=%s',
+    async (newerRoom) => {
+      const f = await endFixture();
+      await f.registry.end(f.socket, f.command);
+      let proof: { sessionId: string; epoch: string; callGeneration: number } | undefined;
+      if (newerRoom) {
+        const ticket = await f.issue();
+        const joined = await f.registry.join(f.socket, {
+          ticket: ticket.ticket,
+          requestId: randomUUID(),
+        });
+        proof = { ...ticket, callGeneration: joined.ack.data.result.callGeneration };
+      }
+      f.advance(59_999);
+      const original = f.resolveAuthority.getMockImplementation()!;
+      f.resolveAuthority.mockImplementationOnce(async (auth, target) => {
+        f.advance(2);
+        return original(auth, target);
+      });
+      await expect(f.registry.end(f.socket, f.command)).rejects.toMatchObject({ code: 'CONFLICT' });
+      expect(f.registry.stats().endRecords).toBe(0);
+      expect(f.repository.beginEnding).toHaveBeenCalledTimes(1);
+      expect(f.repository.completeEnding).toHaveBeenCalledTimes(1);
+      expect(f.media).toHaveBeenCalledTimes(2);
+      if (proof) {
+        expect(f.routers[1]!.closed).toBe(false);
+        expect(await f.registry.withContext(f.socket.socketId, proof, (result) => result.ok)).toBe(
+          true,
+        );
+      }
+    },
+  );
+  it('does not accept an end after authority checks exhaust the monotonic deadline', async () => {
+    const f = await endFixture();
+    let time = 0;
+    const monotonic = vi.spyOn(performance, 'now').mockImplementation(() => time);
+    const original = f.resolveAuthority.getMockImplementation()!;
+    f.resolveAuthority.mockImplementation(async (auth, target) => {
+      const value = await original(auth, target);
+      time = 10_001;
+      return value;
+    });
+    try {
+      await expect(f.registry.end(f.socket, f.command)).rejects.toMatchObject({
+        code: 'DEPENDENCY_UNAVAILABLE',
+      });
+      expect(f.routers[0]!.closed).toBe(false);
+      expect(f.registry.stats().endRecords).toBe(0);
+      expect(f.repository.beginEnding).not.toHaveBeenCalled();
+      expect(f.media).not.toHaveBeenCalled();
+      expect(
+        await f.registry.withContext(f.socket.socketId, f.command, (result) => result.ok),
+      ).toBe(true);
+    } finally {
+      monotonic.mockRestore();
+    }
+  });
+  it('keeps pending when participants are clean but the shared MAIN scope is not confirmed', async () => {
+    const f = await endFixture();
+    f.board.mockImplementation(async (value) =>
+      value.target.type === 'SCOPE'
+        ? {
+            ...cleanupAck(value),
+            outcome: {
+              permissionRevoked: false,
+              pendingInvalidated: false,
+              cleanupPending: true,
+              errorCode: 'CONFLICT',
+              retryable: false,
+            },
+          }
+        : cleanupAck(value),
+    );
+    const result = await f.registry.end(f.socket, f.command);
+    expect(result).toMatchObject({ data: { status: 'pending', result: { state: 'ENDING' } } });
+    expect(f.board).toHaveBeenCalledWith(
+      expect.objectContaining({ target: { type: 'SCOPE', scope: { type: 'MAIN' } } }),
+    );
+    expect(f.repository.completeEnding).not.toHaveBeenCalled();
+    expect(f.routers[0]!.closed).toBe(true);
+  });
+  it('enforces bounded end retention before changing another active room', async () => {
+    const f = await endFixture('END', { maxEndRecords: 1 });
+    await f.registry.end(f.socket, f.command);
+    const ticket = await f.issue();
+    const joined = await f.registry.join(f.socket, {
+      ticket: ticket.ticket,
+      requestId: randomUUID(),
+    });
+    await expect(
+      f.registry.end(f.socket, {
+        ...f.command,
+        requestId: randomUUID(),
+        sessionId: ticket.sessionId,
+        epoch: ticket.epoch,
+        callGeneration: joined.ack.data.result.callGeneration,
+        expectedPolicyRevision: joined.parts[0]!.policyRevision,
+      }),
+    ).rejects.toMatchObject({ code: 'SERVER_BUSY' });
+    expect(f.routers[1]!.closed).toBe(false);
+    expect(f.registry.stats().endRecords).toBe(1);
+  });
+  it('rechecks access before returning a completed replay', async () => {
+    const f = await endFixture();
+    await f.registry.end(f.socket, f.command);
+    f.resolveAuthority.mockImplementation(async (auth, target) => ({
+      auth,
+      access: { ...f.access(auth, target), canReadContent: false },
+      displayName: 'Sinh viên',
+    }));
+    await expect(f.registry.end(f.socket, f.command)).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    expect(f.repository.completeEnding).toHaveBeenCalledTimes(1);
+  });
+  it('uses the host committed under the same gate when transfer precedes voluntary leave', async () => {
+    const f = await endFixture('HOST_LEAVE');
+    const member = f.principal();
+    const ticket = await f.issue(member);
+    const joined = await f.registry.join(f.binding(member), {
+      ticket: ticket.ticket,
+      requestId: randomUUID(),
+    });
+    // Simulate the synchronous host-transfer commit port under the real coordinator.
+    // The host-transfer feature itself is outside this task.
+    await f.registry.withContext(f.socket.socketId, f.command, (_resolved, _router, policy) => {
+      const state = policy!.session as SessionPolicyState;
+      state.hostParticipantId = joined.ack.data.result.participantId;
+      state.policyRevision++;
+    });
+    await expect(f.registry.end(f.socket, f.command)).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    expect(f.repository.beginEnding).not.toHaveBeenCalled();
+    expect(f.routers[0]!.closed).toBe(false);
+  });
+  it('does not enable end when a cleanup domain has not been configured', async () => {
+    const f = setup();
+    const socket = f.binding();
+    const ticket = await f.issue();
+    const joined = await f.registry.join(socket, {
+      ticket: ticket.ticket,
+      requestId: randomUUID(),
+    });
+    await expect(
+      f.registry.end(socket, {
+        requestId: randomUUID(),
+        sessionId: ticket.sessionId,
+        epoch: ticket.epoch,
+        callGeneration: joined.ack.data.result.callGeneration,
+        expectedPolicyRevision: joined.parts[0]!.policyRevision,
+        action: 'END',
+      }),
+    ).rejects.toMatchObject({ code: 'DEPENDENCY_UNAVAILABLE' });
+    expect(f.routers[0]!.closed).toBe(false);
+  });
+  it('expires completed replay records without touching the next room', async () => {
+    const f = await endFixture();
+    await f.registry.end(f.socket, f.command);
+    const next = await f.issue();
+    const nextJoin = await f.registry.join(f.socket, {
+      ticket: next.ticket,
+      requestId: randomUUID(),
+    });
+    expect(next.sessionId).not.toBe(f.command.sessionId);
+    await f.registry.end(f.socket, f.command);
+    expect(f.registry.stats().ownerships).toBe(1);
+    f.advance(60_000);
+    await f.registry.sweepExpired();
+    await expect(f.registry.end(f.socket, f.command)).rejects.toMatchObject({ code: 'CONFLICT' });
+    expect(nextJoin.ack.data.result.callGeneration).toBeGreaterThan(f.command.callGeneration);
+    expect(f.routers[1]!.closed).toBe(false);
+  });
+  it.each(['END', 'HOST_LEAVE'] as const)(
+    'ends the session for %s once and replays only the exact command',
+    async (action) => {
+      const f = await endFixture(action);
+      const [one, two] = await Promise.all([
+        f.registry.end(f.socket, f.command),
+        f.registry.end(f.socket, f.command),
+      ]);
+      expect(one).toEqual(two);
+      expect(one).toMatchObject({ data: { status: 'completed', result: { state: 'ENDED' } } });
+      expect(await f.registry.end(f.socket, f.command)).toEqual(one);
+      expect(f.registry.stats().ownerships).toBe(0);
+      expect(f.routers[0]!.close).toHaveBeenCalledTimes(1);
+      expect(f.repository.beginEnding).toHaveBeenCalledTimes(1);
+      expect(f.repository.completeEnding).toHaveBeenCalledTimes(1);
+      expect(f.media).toHaveBeenCalledTimes(2);
+      expect(f.messaging).toHaveBeenCalledTimes(2);
+      expect(f.board).toHaveBeenCalledTimes(2);
+      await expect(
+        f.registry.end(f.socket, { ...f.command, action: action === 'END' ? 'HOST_LEAVE' : 'END' }),
+      ).rejects.toMatchObject({ code: 'CONFLICT' });
+      await expect(f.registry.end(f.binding(), f.command)).rejects.toMatchObject({
+        code: 'CONFLICT',
+      });
+    },
+  );
+  it('denies members, stale revisions, wrong generations and forged identity before side effects', async () => {
+    const f = await endFixture();
+    for (const command of [
+      { ...f.command, expectedPolicyRevision: 0 },
+      { ...f.command, callGeneration: 999 },
+      { ...f.command, epoch: randomUUID() },
+    ])
+      await expect(f.registry.end(f.socket, command)).rejects.toMatchObject({ code: 'CONFLICT' });
+    const member = f.principal();
+    const socket = f.binding(member);
+    const ticket = await f.issue(member);
+    const joined = await f.registry.join(socket, {
+      ticket: ticket.ticket,
+      requestId: randomUUID(),
+    });
+    await expect(
+      f.registry.end(socket, {
+        ...f.command,
+        callGeneration: joined.ack.data.result.callGeneration,
+        expectedPolicyRevision: joined.parts[0]!.policyRevision,
+      }),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    await expect(
+      f.registry.end(f.socket, { ...f.command, userId: member.userId }),
+    ).rejects.toThrow();
+    expect(f.repository.beginEnding).not.toHaveBeenCalled();
+    expect(f.routers[0]!.closed).toBe(false);
+  });
+  it('releases the gate while cleanup waits, blocks joins and coalesces retries', async () => {
+    const f = await endFixture();
+    const pending = deferred<SessionCleanupResult>();
+    f.messaging.mockImplementation((value) => pending.promise.then(() => cleanupAck(value)));
+    const first = f.registry.end(f.socket, f.command);
+    await vi.waitFor(() => expect(f.messaging).toHaveBeenCalled());
+    expect(f.routers[0]!.closed).toBe(true);
+    await expect(f.issue(f.principal())).rejects.toMatchObject({ code: 'DEPENDENCY_UNAVAILABLE' });
+    await expect(
+      f.registry.withContext(f.socket.socketId, f.command, () => true),
+    ).rejects.toThrow();
+    const again = f.registry.end(f.socket, f.command);
+    pending.resolve(cleanupAck(f.messaging.mock.calls[0]![0]));
+    expect(await first).toEqual(await again);
+    expect(f.repository.beginEnding).toHaveBeenCalledTimes(1);
+    expect(f.repository.completeEnding).toHaveBeenCalledTimes(1);
+  });
+  it('keeps ENDING and deny after a permanent cleanup refusal, without blind retries', async () => {
+    const f = await endFixture();
+    f.board.mockImplementation(async (value) => ({
+      ...cleanupAck(value),
+      outcome: {
+        permissionRevoked: false,
+        pendingInvalidated: false,
+        cleanupPending: true,
+        errorCode: 'CONFLICT',
+        retryable: false,
+      },
+    }));
+    const result = await f.registry.end(f.socket, f.command);
+    expect(result).toMatchObject({ data: { status: 'pending', result: { state: 'ENDING' } } });
+    expect(await f.registry.end(f.socket, f.command)).toEqual(result);
+    expect(f.repository.completeEnding).not.toHaveBeenCalled();
+    expect(f.board).toHaveBeenCalledTimes(2);
+    expect(f.registry.stats().ownerships).toBe(1);
+    await expect(f.issue()).rejects.toThrow();
+  });
+  it.each(['beginEnding', 'completeEnding'] as const)(
+    'does not repeat an uncertain %s write or expose raw DB errors',
+    async (method) => {
+      const f = await endFixture();
+      f.repository[method].mockRejectedValueOnce(new Error('private-database-token'));
+      const result = await f.registry.end(f.socket, f.command);
+      expect(result).toMatchObject({ data: { status: 'pending' } });
+      expect(await f.registry.end(f.socket, f.command)).toEqual(result);
+      expect(f.repository[method]).toHaveBeenCalledTimes(1);
+      expect(JSON.stringify(result)).not.toContain('private');
+      await expect(f.issue()).rejects.toThrow();
+    },
+  );
+});
 
 describe('SCRUM-82 MAIN join registry', () => {
   it('keeps each consumed ticket bound to its own requestId during same-socket recovery', async () => {
