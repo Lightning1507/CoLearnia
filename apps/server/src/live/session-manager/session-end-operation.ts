@@ -52,11 +52,22 @@ export function createSessionEndOperation(options: {
   }
   async function execute() {
     assertCurrent();
-    await options.beginEnding(assertCurrent);
+    // Revocation is independent of whether the DB acknowledgement can be confirmed.
+    const cleanup = Promise.all(handles.map((handle) => handle.runForeground()));
+    let databaseConfirmed = false;
+    try {
+      await options.beginEnding(assertCurrent);
+      assertCurrent();
+      databaseConfirmed = true;
+    } catch {
+      // Keep cleaning within the same budget; a write failure does not restore access.
+    }
+    const outcomes = await cleanup;
     assertCurrent();
-    const outcomes = await Promise.all(handles.map((handle) => handle.runForeground()));
-    assertCurrent();
-    if (!outcomes.every((value) => value.permissionRevoked && value.pendingInvalidated))
+    if (
+      !databaseConfirmed ||
+      !outcomes.every((value) => value.permissionRevoked && value.pendingInvalidated)
+    )
       return reply(false);
     await options.completeEnding(assertCurrent);
     assertCurrent();

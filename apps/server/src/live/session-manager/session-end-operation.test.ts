@@ -86,6 +86,15 @@ afterEach(() => {
   vi.useRealTimers();
 });
 describe('session end deadline and late callbacks', () => {
+  it('still calls messaging and board cleanup if beginEnding cannot confirm the DB write', async () => {
+    const f = setup();
+    f.beginEnding.mockRejectedValueOnce(new Error('Injected database failure'));
+    const result = await f.operation.run();
+    expect(result).toMatchObject({ data: { status: 'pending' } });
+    expect(f.cleanup).toHaveBeenCalledTimes(2);
+    expect(f.completeEnding).not.toHaveBeenCalled();
+    expect(f.finalize).not.toHaveBeenCalled();
+  });
   it('does not start completion when beginEnding returns after the total deadline', async () => {
     const f = setup();
     const wait = deferred();

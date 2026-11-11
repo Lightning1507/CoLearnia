@@ -1,4 +1,5 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { performance } from 'node:perf_hooks';
 import {
   authenticatedContextSchema,
   channelAccessStampSchema,
@@ -15,6 +16,7 @@ import type {
   LiveContextRequest,
   LiveContextResult,
   SessionSnapshotPart,
+  SessionCleanupRequest,
 } from '@colearnia/contracts';
 import { Types } from 'mongoose';
 import type { types as MediaTypes } from 'mediasoup';
@@ -776,7 +778,17 @@ export function createMainJoinRegistry(options: {
         if (!policy.ok) fail(policy.errorCode);
         if (policy.context.role !== 'HOST') fail('FORBIDDEN');
         if (currentRoom.state.policyRevision !== input.expectedPolicyRevision) fail('CONFLICT');
-        if (!options.endCleanup) fail('DEPENDENCY_UNAVAILABLE');
+        const adapters = options.endCleanup;
+        if (
+          !adapters ||
+          typeof adapters.messaging !== 'function' ||
+          typeof adapters.board !== 'function' ||
+          !(
+            typeof adapters.media === 'function' ||
+            (adapters.media && typeof adapters.media.revoke === 'function')
+          )
+        )
+          fail('DEPENDENCY_UNAVAILABLE');
         if (
           endRecords.size >= limits.maxEndRecords ||
           currentRoom.state.policyRevision >= Number.MAX_SAFE_INTEGER
@@ -784,6 +796,37 @@ export function createMainJoinRegistry(options: {
           fail('SERVER_BUSY');
         const owners = [...ownerships.values()].filter((value) => value.room === currentRoom);
         const token = randomUUID();
+        const cleanupIdentity = {
+          operationId: input.requestId,
+          transitionToken: token,
+          sessionId: input.sessionId,
+          epoch: input.epoch,
+          reason: 'SESSION_ENDED' as const,
+        };
+        const targets: { userId: string; request: SessionCleanupRequest }[] = owners.map(
+          (value) => ({
+            userId: value.participant.auth.userId,
+            request: {
+              ...cleanupIdentity,
+              callGeneration: value.participant.callGeneration,
+              target: { type: 'PARTICIPANT', participantId: value.participant.participantId },
+            },
+          }),
+        );
+        targets.push({
+          userId: auth.userId,
+          request: { ...cleanupIdentity, target: { type: 'SCOPE', scope: { type: 'MAIN' } } },
+        });
+        for (const groupId of currentRoom.state.groups.keys())
+          targets.push({
+            userId: auth.userId,
+            request: {
+              ...cleanupIdentity,
+              target: { type: 'SCOPE', scope: { type: 'GROUP', groupId } },
+            },
+          });
+        // Last acceptance check under the gate, before any state/resource change.
+        if (performance.now() >= timing.deadlineMs) fail('DEPENDENCY_UNAVAILABLE');
         currentRoom.endToken = token;
         currentRoom.state.state = 'ENDING';
         currentRoom.state.policyRevision++;
@@ -803,19 +846,8 @@ export function createMainJoinRegistry(options: {
             assertHeld: () => held.assertHeld({ workspaceId: destination.workspaceId }),
             isCurrent,
           },
-          targets: owners.map((value) => ({
-            userId: value.participant.auth.userId,
-            request: {
-              operationId: input.requestId,
-              transitionToken: token,
-              sessionId: input.sessionId,
-              epoch: input.epoch,
-              callGeneration: value.participant.callGeneration,
-              target: { type: 'PARTICIPANT', participantId: value.participant.participantId },
-              reason: 'SESSION_ENDED',
-            },
-          })),
-          adapters: options.endCleanup,
+          targets,
+          adapters,
           beginEnding: async (guard) => {
             try {
               const result = await options.repository.beginEnding(

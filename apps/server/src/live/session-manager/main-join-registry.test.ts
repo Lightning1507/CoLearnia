@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { performance } from 'node:perf_hooks';
 import { Types, mongo } from 'mongoose';
 import type { types as MediaTypes } from 'mediasoup';
 import type {
@@ -171,6 +172,55 @@ async function endFixture(
 }
 
 describe('SCRUM-86 session end', () => {
+  it('does not accept an end after authority checks exhaust the monotonic deadline', async () => {
+    const f = await endFixture();
+    let time = 0;
+    const monotonic = vi.spyOn(performance, 'now').mockImplementation(() => time);
+    const original = f.resolveAuthority.getMockImplementation()!;
+    f.resolveAuthority.mockImplementation(async (auth, target) => {
+      const value = await original(auth, target);
+      time = 10_001;
+      return value;
+    });
+    try {
+      await expect(f.registry.end(f.socket, f.command)).rejects.toMatchObject({
+        code: 'DEPENDENCY_UNAVAILABLE',
+      });
+      expect(f.routers[0]!.closed).toBe(false);
+      expect(f.registry.stats().endRecords).toBe(0);
+      expect(f.repository.beginEnding).not.toHaveBeenCalled();
+      expect(f.media).not.toHaveBeenCalled();
+      expect(
+        await f.registry.withContext(f.socket.socketId, f.command, (result) => result.ok),
+      ).toBe(true);
+    } finally {
+      monotonic.mockRestore();
+    }
+  });
+  it('keeps pending when participants are clean but the shared MAIN scope is not confirmed', async () => {
+    const f = await endFixture();
+    f.board.mockImplementation(async (value) =>
+      value.target.type === 'SCOPE'
+        ? {
+            ...cleanupAck(value),
+            outcome: {
+              permissionRevoked: false,
+              pendingInvalidated: false,
+              cleanupPending: true,
+              errorCode: 'CONFLICT',
+              retryable: false,
+            },
+          }
+        : cleanupAck(value),
+    );
+    const result = await f.registry.end(f.socket, f.command);
+    expect(result).toMatchObject({ data: { status: 'pending', result: { state: 'ENDING' } } });
+    expect(f.board).toHaveBeenCalledWith(
+      expect.objectContaining({ target: { type: 'SCOPE', scope: { type: 'MAIN' } } }),
+    );
+    expect(f.repository.completeEnding).not.toHaveBeenCalled();
+    expect(f.routers[0]!.closed).toBe(true);
+  });
   it('enforces bounded end retention before changing another active room', async () => {
     const f = await endFixture('END', { maxEndRecords: 1 });
     await f.registry.end(f.socket, f.command);
@@ -274,9 +324,9 @@ describe('SCRUM-86 session end', () => {
       expect(f.routers[0]!.close).toHaveBeenCalledTimes(1);
       expect(f.repository.beginEnding).toHaveBeenCalledTimes(1);
       expect(f.repository.completeEnding).toHaveBeenCalledTimes(1);
-      expect(f.media).toHaveBeenCalledTimes(1);
-      expect(f.messaging).toHaveBeenCalledTimes(1);
-      expect(f.board).toHaveBeenCalledTimes(1);
+      expect(f.media).toHaveBeenCalledTimes(2);
+      expect(f.messaging).toHaveBeenCalledTimes(2);
+      expect(f.board).toHaveBeenCalledTimes(2);
       await expect(
         f.registry.end(f.socket, { ...f.command, action: action === 'END' ? 'HOST_LEAVE' : 'END' }),
       ).rejects.toMatchObject({ code: 'CONFLICT' });
@@ -318,7 +368,7 @@ describe('SCRUM-86 session end', () => {
     const pending = deferred<SessionCleanupResult>();
     f.messaging.mockImplementation((value) => pending.promise.then(() => cleanupAck(value)));
     const first = f.registry.end(f.socket, f.command);
-    await vi.waitFor(() => expect(f.messaging).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(f.messaging).toHaveBeenCalled());
     expect(f.routers[0]!.closed).toBe(true);
     await expect(f.issue(f.principal())).rejects.toMatchObject({ code: 'DEPENDENCY_UNAVAILABLE' });
     await expect(
@@ -346,7 +396,7 @@ describe('SCRUM-86 session end', () => {
     expect(result).toMatchObject({ data: { status: 'pending', result: { state: 'ENDING' } } });
     expect(await f.registry.end(f.socket, f.command)).toEqual(result);
     expect(f.repository.completeEnding).not.toHaveBeenCalled();
-    expect(f.board).toHaveBeenCalledTimes(1);
+    expect(f.board).toHaveBeenCalledTimes(2);
     expect(f.registry.stats().ownerships).toBe(1);
     await expect(f.issue()).rejects.toThrow();
   });
