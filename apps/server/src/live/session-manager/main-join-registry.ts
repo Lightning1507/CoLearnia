@@ -324,8 +324,13 @@ export function createMainJoinRegistry(options: {
       reserved.auth.userId === current.auth.userId &&
       reserved.auth.authSessionId === current.auth.authSessionId &&
       Date.parse(reserved.auth.expiresAt) > clock() &&
-      sameStamp(reserved.access, current.access) &&
-      currentFence(reserved, held, reserved.access)
+      reserved.access.workspaceId === current.access.workspaceId &&
+      reserved.access.channelId === current.access.channelId &&
+      reserved.access.membershipId === current.access.membershipId &&
+      reserved.access.membershipIncarnation === current.access.membershipIncarnation &&
+      current.access.membershipRevision >= reserved.access.membershipRevision &&
+      current.access.channelRevision >= reserved.access.channelRevision &&
+      currentFence(current, held, reserved.access)
     );
   }
   function clearHostReservation(room: Room) {

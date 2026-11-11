@@ -502,7 +502,7 @@ describe('SCRUM-86 session end', () => {
 });
 
 describe('SCRUM-83 MAIN revocation', () => {
-  it.each(['new login', 'changed stamp', 'fence before write', 'fence after write'] as const)(
+  it.each(['new login', 'fence before write', 'fence after write'] as const)(
     'does not grant a stale host reservation on delayed revoke: %s',
     async (kind) => {
       const cleanup = async (value: SessionCleanupRequest) => cleanupAck(value);
@@ -514,12 +514,6 @@ describe('SCRUM-83 MAIN revocation', () => {
       const peerCommand = { ticket: peerTicket.ticket, requestId: randomUUID() };
       await f.registry.join(peerSocket, peerCommand);
       const login = kind === 'new login' ? { ...f.auth, authSessionId: id() } : f.auth;
-      if (kind === 'changed stamp')
-        f.resolveAuthority.mockImplementation(async (auth, target) => ({
-          auth,
-          access: { ...f.access(auth, target), membershipRevision: 1 },
-          displayName: 'Sinh viên',
-        }));
       let revoked = kind === 'fence before write';
       f.isAuthorityCurrent.mockImplementation(
         (authority, _held, committed) =>
@@ -553,6 +547,38 @@ describe('SCRUM-83 MAIN revocation', () => {
         authSessionId: f.auth.authSessionId,
         revision: 1,
       });
+    },
+  );
+  it.each(['membershipRevision', 'channelRevision'] as const)(
+    'keeps host reservation across a continuous %s increase, but not a revoke/regrant gap',
+    async (field) => {
+      for (const continuous of [true, false]) {
+        const cleanup = async (value: SessionCleanupRequest) => cleanupAck(value);
+        const f = setup({}, { media: cleanup, messaging: cleanup, board: cleanup });
+        const reserved = await f.issue();
+        f.resolveAuthority.mockImplementation(async (auth, target) => ({
+          auth,
+          access: { ...f.access(auth, target), [field]: 1 },
+          displayName: 'Sinh viên',
+        }));
+        f.isAuthorityCurrent.mockImplementation(
+          (_authority, _held, committed) =>
+            committed === undefined || continuous || committed[field] === 1,
+        );
+        const ticket = await f.issue();
+        const socket = f.binding();
+        const command = { ticket: ticket.ticket, requestId: randomUUID() };
+        const joined = await f.registry.join(socket, command);
+        expect(projection(joined).viewer.role).toBe(continuous ? 'HOST' : 'MEMBER');
+        expect(projection(joined).hostParticipantId).toBe(
+          continuous ? joined.ack.data.result.participantId : null,
+        );
+        expect(ticket.sessionId).toBe(reserved.sessionId);
+        expect(projection(await f.registry.join(socket, command)).viewer.role).toBe(
+          continuous ? 'HOST' : 'MEMBER',
+        );
+        expect(f.repository.join).toHaveBeenCalledTimes(1);
+      }
     },
   );
   it('does not block a current ownership from the stale stamp of a consumed ticket', async () => {
