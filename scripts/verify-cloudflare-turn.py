@@ -135,6 +135,10 @@ def verify(args):
         emit("baseline", ttl=args.ttl, valid=valid, wrongPassword=wrong)
         if not valid["accepted"] or wrong["accepted"]:
             return 1
+        if args.auth_only:
+            emit("result", scope="authentication", credentialTtlSeconds=args.ttl,
+                 expiryVerified=False)
+            return 0
         for age in [args.ttl + 20, args.ttl + args.delay]:
             time.sleep(max(0, age - (time.monotonic() - started)))
             used_result, unused_result = allocate(used), allocate(unused)
@@ -158,7 +162,10 @@ def verify(args):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--allocate-stdin", action="store_true", help="Read temporary credentials from stdin; do not call the API")
-    parser.add_argument("--ttl", type=int, default=60)
+    parser.add_argument("--ttl", type=int, default=14400,
+                        help="Credential lifetime in seconds (default: 4 hours)")
+    parser.add_argument("--auth-only", action="store_true",
+                        help="Check authentication only; does not verify expiry")
     parser.add_argument("--delay", type=int, default=840, help="Seconds after TTL for the final probe")
     args = parser.parse_args()
     if not 1 <= args.ttl <= 172800 or not 21 <= args.delay <= 3600:

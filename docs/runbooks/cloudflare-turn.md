@@ -14,28 +14,48 @@ Cloudflare cấp credential qua [API chính thức](https://developers.cloudflar
 
 ## Kiểm xác thực và hết hạn
 
+### Thời hạn dùng cho buổi học
+
+TTL đề xuất cho credential buổi học là **14.400 giây (4 giờ)**. SCRUM-64 cần cấp mới khi credential còn tối đa 1 giờ và cập nhật ICE servers theo đời kết nối hiện hành. Đây là thời hạn của credential, không phải giới hạn thời lượng cuộc họp. Cấp mới credential không tự thực hiện ICE restart, không tự cấp lại quyền đã bị thu và không bảo đảm allocation cũ được gia hạn; adapter tích hợp phải kiểm lại đường truyền và xử lý phục hồi theo contract.
+
+Mốc **60 giây chỉ dành cho phép thử hết hạn nhanh**, không phải cấu hình người học. TTL 4 giờ hiện áp dụng cho công cụ kiểm và đề xuất bàn giao; endpoint cấp ICE của ứng dụng chưa được triển khai trong SCRUM-63. Không ghi cấu hình này là đã áp dụng cho cuộc gọi thực.
+
+### Kiểm credential 4 giờ
+
 Công cụ [verify-cloudflare-turn.py](../../scripts/verify-cloudflare-turn.py) dùng Python 3 với thư viện chuẩn. Công cụ tạo hai credential có cùng TTL: một credential dùng ngay, một credential chưa dùng trước mốc hết hạn. Mỗi phép Allocate mở kết nối TLS mới; sau khi cấp relay, công cụ gửi Refresh với lifetime bằng 0 để giải phóng allocation.
 
 Nạp hai biến từ nơi giữ secret của môi trường. Trên máy local có Node 26 và file `.env.turn.local` đã được Git bỏ qua, có thể truyền chúng cho tiến trình con mà không in ra màn hình:
 
 ```powershell
-node --env-file=.env.turn.local -e "const p=require('node:child_process').spawnSync('python',['-u','scripts/verify-cloudflare-turn.py'],{stdio:'inherit',env:process.env});process.exit(p.status??1)"
+node --env-file=.env.turn.local -e "const p=require('node:child_process').spawnSync('python',['-u','scripts/verify-cloudflare-turn.py','--auth-only'],{stdio:'inherit',env:process.env});process.exit(p.status??1)"
 ```
 
 Trên Linux, sau khi môi trường đã có hai biến, chạy:
 
 ```bash
+python3 -u scripts/verify-cloudflare-turn.py --auth-only
+```
+
+`--auth-only` kiểm credential 4 giờ dùng được và mật khẩu sai bị từ chối, rồi thu hồi credential thử. Kết quả ghi rõ `scope=authentication`, `expiryVerified=false`. Exit 0 của chế độ này chỉ xác nhận xác thực đạt, không phải SCRUM-63 hoặc kiểm hết hạn đạt.
+
+### Kiểm hết hạn riêng
+
+Không truyền `--auth-only` khi kiểm hết hạn. Chạy với TTL 4 giờ cần khoảng 4 giờ 14 phút. Để kiểm nhanh hành vi hết hạn với TTL 60 giây, chạy:
+
+```bash
 python3 -u scripts/verify-cloudflare-turn.py --ttl 60 --delay 840
 ```
 
-Phép kiểm mặc định mất khoảng 15 phút. Công cụ chỉ xuất JSON với trạng thái, tuổi credential, giao thức và mã lỗi; không xuất username, password, API token hoặc địa chỉ relay. Đầu ra gồm:
+Trên Windows dùng lệnh Node phía trên, thay `'--auth-only'` bằng `'--ttl','60','--delay','840'`. Phép kiểm ngắn mất khoảng 15 phút. Tăng TTL không sửa việc TURN còn chấp nhận credential đã quá hạn; kết quả thử 60 giây vẫn được giữ nguyên trong báo cáo.
+
+Công cụ chỉ xuất JSON với trạng thái, tuổi credential, giao thức và mã lỗi; không xuất username, password, API token hoặc địa chỉ relay. Đầu ra gồm:
 
 1. `baseline`: credential hợp lệ được cấp relay; cùng username nhưng mật khẩu ngẫu nhiên bị từ chối.
 2. `expiry`: kiểm ở TTL + 20 giây và TTL + `delay` giây, trên cả credential đã dùng và chưa dùng.
 3. `fresh-control`: credential vừa cấp vẫn dùng được, phân biệt lỗi hết hạn với sự cố mạng/dịch vụ.
 4. `revoke`: cố gắng thu hồi credential đã tạo khi kết thúc, kể cả khi phép kiểm thất bại.
 
-Exit 0 chỉ có khi baseline đúng, hai credential cũ đều bị TURN từ chối ở mốc cuối và credential mới vẫn được chấp nhận. Timeout, lỗi API hoặc TLS không được tính là bằng chứng credential hết hạn. Exit 0 cũng không chứng minh từ chối đúng ngay giây TTL; cần đọc các mốc đo trước khi nghiệm thu. Nếu tiến trình bị buộc dừng, credential còn lại phụ thuộc thời hạn do nhà cung cấp thực thi; không dùng công cụ với TTL dài chỉ để kiểm nhanh.
+Ở chế độ kiểm hết hạn, exit 0 chỉ có khi baseline đúng, hai credential cũ đều bị TURN từ chối ở mốc cuối và credential mới vẫn được chấp nhận. Timeout, lỗi API hoặc TLS không được tính là bằng chứng credential hết hạn. Exit 0 cũng không chứng minh từ chối đúng ngay giây TTL; cần đọc các mốc đo trước khi nghiệm thu. Nếu tiến trình bị buộc dừng, credential còn lại phụ thuộc thời hạn do nhà cung cấp thực thi; dùng `--auth-only` khi chỉ cần kiểm nhanh credential cho buổi học.
 
 `--allocate-stdin` chỉ kiểm một credential tạm từ JSON qua stdin, không gọi API và không cần khóa dài hạn. Chế độ này dùng để kiểm từ EC2 qua SSH hoặc từ một máy khác; không truyền credential trong tham số dòng lệnh. Trường `accepted` trong JSON là kết quả xác thực; exit 0 của chế độ này chỉ xác nhận phép đo thực hiện được. Không đưa `.env.turn.local` hoặc khóa dài hạn lên máy khác để chạy phép kiểm đơn lẻ.
 
