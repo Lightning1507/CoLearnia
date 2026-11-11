@@ -1,5 +1,4 @@
 import { randomUUID } from 'node:crypto';
-import { performance } from 'node:perf_hooks';
 import { Types, mongo } from 'mongoose';
 import type { types as MediaTypes } from 'mediasoup';
 import type {
@@ -14,7 +13,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createOperationCoordinator } from '../../lib/operation-coordinator.js';
 import { createMainJoinRegistry, MainJoinError } from './main-join-registry.js';
 import { canReceiveMedia } from '../policy/session-policy.js';
-import type { SessionPolicyState } from '../policy/session-policy.js';
+import type { PolicyParticipant, SessionPolicyState } from '../policy/session-policy.js';
 
 const registries: ReturnType<typeof createMainJoinRegistry>[] = [];
 afterEach(() => {
@@ -32,6 +31,8 @@ function deferred<T>() {
 }
 function setup(
   limits: Parameters<typeof createMainJoinRegistry>[0]['limits'] = {},
+  revocationCleanup?: Parameters<typeof createMainJoinRegistry>[0]['revocationCleanup'],
+  revokedAuthSessions?: Parameters<typeof createMainJoinRegistry>[0]['revokedAuthSessions'],
   endCleanup?: Parameters<typeof createMainJoinRegistry>[0]['endCleanup'],
 ) {
   let time = Date.UTC(2026, 10, 10);
@@ -99,7 +100,10 @@ function setup(
     createRouter,
     now: () => time,
     limits,
+    ...(revocationCleanup ? { revocationCleanup } : {}),
     ...(endCleanup ? { endCleanup } : {}),
+    // Fixture M1 records the cohort when committing logout-all, not on delivery.
+    revokedAuthSessions: revokedAuthSessions ?? (() => [auth.authSessionId]),
   });
   registries.push(registry);
   const binding = (identity = auth) => ({
@@ -149,6 +153,24 @@ function cleanupAck(value: SessionCleanupRequest): SessionCleanupResult {
     ? { ...base, callGeneration: value.callGeneration, target: value.target }
     : { ...base, target: value.target };
 }
+async function revokeFixture(limits: Parameters<typeof setup>[0] = {}) {
+  const media = vi.fn((value: SessionCleanupRequest) => cleanupAck(value));
+  const messaging = vi.fn(async (value: SessionCleanupRequest) => cleanupAck(value));
+  const board = vi.fn(async (value: SessionCleanupRequest) => cleanupAck(value));
+  const adapters = { media: { revoke: media }, messaging, board };
+  const f = setup(limits, adapters, undefined, adapters);
+  const socket = f.binding();
+  const ticket = await f.issue();
+  const joined = await f.registry.join(socket, { ticket: ticket.ticket, requestId: randomUUID() });
+  const event = {
+    operationId: randomUUID(),
+    revision: 1,
+    kind: 'AUTH_SESSION' as const,
+    authSessionId: f.auth.authSessionId,
+  };
+  return { ...f, socket, ticket, joined, event, media, messaging, board };
+}
+
 async function endFixture(
   action: 'END' | 'HOST_LEAVE' = 'END',
   limits: Parameters<typeof setup>[0] = {},
@@ -156,7 +178,7 @@ async function endFixture(
   const media = vi.fn((value: SessionCleanupRequest) => cleanupAck(value));
   const messaging = vi.fn(async (value: SessionCleanupRequest) => cleanupAck(value));
   const board = vi.fn(async (value: SessionCleanupRequest) => cleanupAck(value));
-  const f = setup(limits, { media: { revoke: media }, messaging, board });
+  const f = setup(limits, undefined, undefined, { media: { revoke: media }, messaging, board });
   const socket = f.binding();
   const ticket = await f.issue();
   const joined = await f.registry.join(socket, { ticket: ticket.ticket, requestId: randomUUID() });
@@ -172,6 +194,37 @@ async function endFixture(
 }
 
 describe('SCRUM-86 session end', () => {
+  it('keeps end idempotent when host revocation arrives while shared cleanup is pending', async () => {
+    const f = await revokeFixture();
+    const waiting = deferred<void>();
+    f.messaging.mockImplementation(async (request) => {
+      await waiting.promise;
+      return cleanupAck(request);
+    });
+    const command = {
+      requestId: randomUUID(),
+      sessionId: f.ticket.sessionId,
+      epoch: f.ticket.epoch,
+      callGeneration: f.joined.ack.data.result.callGeneration,
+      expectedPolicyRevision: f.joined.parts[0]!.policyRevision,
+      action: 'END',
+    };
+    const ending = f.registry.end(f.socket, command);
+    await vi.waitFor(() => expect(f.messaging).toHaveBeenCalled());
+    const revoke = f.registry.revoke(f.event);
+    await vi.waitFor(() =>
+      expect(f.media.mock.calls.some(([request]) => request.reason === 'ACCESS_REVOKED')).toBe(
+        true,
+      ),
+    );
+    waiting.resolve();
+    expect(await ending).toMatchObject({ data: { status: 'completed' } });
+    expect((await revoke).permissionRevoked).toBe(true);
+    expect(f.repository.beginEnding).toHaveBeenCalledTimes(1);
+    expect(f.repository.completeEnding).toHaveBeenCalledTimes(1);
+    expect(f.registry.stats().ownerships).toBe(0);
+    await expect(f.registry.end(f.socket, command)).rejects.toMatchObject({ code: 'FORBIDDEN' });
+  });
   it.each([false, true])(
     'rejects replay that expires during authority lookup with a newer room=%s',
     async (newerRoom) => {
@@ -446,6 +499,485 @@ describe('SCRUM-86 session end', () => {
       await expect(f.issue()).rejects.toThrow();
     },
   );
+});
+
+describe('SCRUM-83 MAIN revocation', () => {
+  it.each(['new login', 'fence before write', 'fence after write'] as const)(
+    'does not grant a stale host reservation on delayed revoke: %s',
+    async (kind) => {
+      const cleanup = async (value: SessionCleanupRequest) => cleanupAck(value);
+      const f = setup({}, { media: cleanup, messaging: cleanup, board: cleanup });
+      const reserved = await f.issue();
+      const peer = f.principal();
+      const peerTicket = await f.issue(peer);
+      const peerSocket = f.binding(peer);
+      const peerCommand = { ticket: peerTicket.ticket, requestId: randomUUID() };
+      await f.registry.join(peerSocket, peerCommand);
+      const login = kind === 'new login' ? { ...f.auth, authSessionId: id() } : f.auth;
+      let revoked = kind === 'fence before write';
+      f.isAuthorityCurrent.mockImplementation(
+        (authority, _held, committed) =>
+          !(revoked && authority.auth.userId === f.auth.userId && committed !== undefined),
+      );
+      const fresh = await f.issue(login);
+      const originalJoin = f.repository.join.getMockImplementation()!;
+      if (kind === 'fence after write')
+        f.repository.join.mockImplementationOnce(async (input) => {
+          const result = await originalJoin(input);
+          revoked = true;
+          return result;
+        });
+      const joining = f.registry.join(f.binding(login), {
+        ticket: fresh.ticket,
+        requestId: randomUUID(),
+      });
+      if (kind.startsWith('fence')) {
+        await expect(joining).rejects.toMatchObject({ code: 'CONFLICT' });
+        const peerSnapshot = await f.registry.join(peerSocket, peerCommand);
+        expect(projection(peerSnapshot).hostParticipantId).toBeNull();
+        return;
+      }
+      const joined = await joining;
+      expect(fresh.sessionId).toBe(reserved.sessionId);
+      expect(projection(joined).viewer.role).toBe('MEMBER');
+      expect(projection(joined).hostParticipantId).toBeNull();
+      await f.registry.revoke({
+        operationId: randomUUID(),
+        kind: 'AUTH_SESSION',
+        authSessionId: f.auth.authSessionId,
+        revision: 1,
+      });
+    },
+  );
+  it.each(['membershipRevision', 'channelRevision'] as const)(
+    'keeps host reservation across a continuous %s increase, but not a revoke/regrant gap',
+    async (field) => {
+      for (const continuous of [true, false]) {
+        const cleanup = async (value: SessionCleanupRequest) => cleanupAck(value);
+        const f = setup({}, { media: cleanup, messaging: cleanup, board: cleanup });
+        const reserved = await f.issue();
+        f.resolveAuthority.mockImplementation(async (auth, target) => ({
+          auth,
+          access: { ...f.access(auth, target), [field]: 1 },
+          displayName: 'Sinh viên',
+        }));
+        f.isAuthorityCurrent.mockImplementation(
+          (_authority, _held, committed) =>
+            committed === undefined || continuous || committed[field] === 1,
+        );
+        const ticket = await f.issue();
+        const socket = f.binding();
+        const command = { ticket: ticket.ticket, requestId: randomUUID() };
+        const joined = await f.registry.join(socket, command);
+        expect(projection(joined).viewer.role).toBe(continuous ? 'HOST' : 'MEMBER');
+        expect(projection(joined).hostParticipantId).toBe(
+          continuous ? joined.ack.data.result.participantId : null,
+        );
+        expect(ticket.sessionId).toBe(reserved.sessionId);
+        expect(projection(await f.registry.join(socket, command)).viewer.role).toBe(
+          continuous ? 'HOST' : 'MEMBER',
+        );
+        expect(f.repository.join).toHaveBeenCalledTimes(1);
+      }
+    },
+  );
+  it('does not block a current ownership from the stale stamp of a consumed ticket', async () => {
+    const f = await revokeFixture();
+    const original = f.resolveAuthority.getMockImplementation()!;
+    f.resolveAuthority.mockImplementation(async (auth, target) => ({
+      ...(await original(auth, target)),
+      access: { ...f.access(auth, target), channelRevision: 2 },
+    }));
+    const proof = { ...f.ticket, callGeneration: f.joined.ack.data.result.callGeneration };
+    expect(await f.registry.withContext(f.socket.socketId, proof, (result) => result.ok)).toBe(
+      true,
+    );
+    await f.registry.revoke({
+      operationId: randomUUID(),
+      revision: 1,
+      kind: 'PRIVATE_CHANNEL_ACCESS',
+      workspaceId: f.target.workspaceId,
+      channelId: f.target.channelId,
+      userId: f.auth.userId,
+      membershipId: f.auth.userId,
+      membershipIncarnation: 1,
+    });
+    expect(await f.registry.withContext(f.socket.socketId, proof, (result) => result.ok)).toBe(
+      true,
+    );
+    expect(f.media).not.toHaveBeenCalled();
+    expect(f.registry.stats().ownerships).toBe(1);
+  });
+  it.each([false, true])(
+    'revokes an unconsumed host reservation with ticket expired=%s without promoting a later login',
+    async (expired) => {
+      const cleanup = async (value: SessionCleanupRequest) => cleanupAck(value);
+      const f = setup({}, { media: cleanup, messaging: cleanup, board: cleanup });
+      const reserved = await f.issue();
+      const peer = f.principal();
+      const peerTicket = await f.issue(peer);
+      await f.registry.join(f.binding(peer), {
+        ticket: peerTicket.ticket,
+        requestId: randomUUID(),
+      });
+      if (expired) {
+        f.advance(60_000);
+        await f.registry.sweepExpired();
+      }
+      await f.registry.revoke({
+        operationId: randomUUID(),
+        revision: 1,
+        kind: 'AUTH_SESSION',
+        authSessionId: f.auth.authSessionId,
+      });
+      const login = { ...f.auth, authSessionId: id() };
+      const fresh = await f.issue(login);
+      expect(fresh.sessionId).toBe(reserved.sessionId);
+      const joined = await f.registry.join(f.binding(login), {
+        ticket: fresh.ticket,
+        requestId: randomUUID(),
+      });
+      expect(projection(joined).viewer.role).toBe('MEMBER');
+    },
+  );
+  it('uses the M1 committed logout-all cohort when a newer login predates event delivery', async () => {
+    const cleanup = async (value: SessionCleanupRequest) => cleanupAck(value);
+    const cohort = vi.fn<NonNullable<Parameters<typeof setup>[2]>>();
+    const f = setup({}, { media: cleanup, messaging: cleanup, board: cleanup }, cohort);
+    const old = await f.issue();
+    const login = { ...f.auth, authSessionId: id() };
+    const fresh = await f.issue(login);
+    cohort.mockReturnValue([f.auth.authSessionId]);
+    const event = {
+      operationId: randomUUID(),
+      revision: 7,
+      kind: 'USER_AUTH_SESSIONS',
+      userId: f.auth.userId,
+    };
+    await f.registry.revoke(event);
+    expect(cohort).toHaveBeenCalledWith(event);
+    await expect(
+      f.registry.join(f.binding(), { ticket: old.ticket, requestId: randomUUID() }),
+    ).rejects.toThrow();
+    await expect(
+      f.registry.join(f.binding(login), { ticket: fresh.ticket, requestId: randomUUID() }),
+    ).resolves.toHaveProperty('ack.data');
+  });
+  it('does not fall back to current sessions when the committed M1 cohort is unavailable', async () => {
+    const cleanup = async (value: SessionCleanupRequest) => cleanupAck(value);
+    const f = setup({}, { media: cleanup, messaging: cleanup, board: cleanup }, () => {
+      throw new Error('M1 cohort unavailable');
+    });
+    await f.issue();
+    await expect(
+      f.registry.revoke({
+        operationId: randomUUID(),
+        revision: 1,
+        kind: 'USER_AUTH_SESSIONS',
+        userId: f.auth.userId,
+      }),
+    ).rejects.toMatchObject({ code: 'DEPENDENCY_UNAVAILABLE' });
+    expect(f.registry.stats().intents).toBe(1);
+    expect(f.registry.stats().revocations).toBe(0);
+  });
+  it('does not wait on an unrelated Workspace gate', async () => {
+    const f = await revokeFixture();
+    const peer = f.principal();
+    const target = { workspaceId: id(), channelId: id() };
+    const ticket = await f.issue(peer, target);
+    const socket = f.binding(peer);
+    const joined = await f.registry.join(socket, {
+      ticket: ticket.ticket,
+      requestId: randomUUID(),
+    });
+    const waiting = deferred<void>();
+    const entered = deferred<void>();
+    const original = f.resolveAuthority.getMockImplementation()!;
+    f.resolveAuthority.mockImplementation(async (auth, destination) => {
+      if (auth.userId === peer.userId) {
+        entered.resolve();
+        await waiting.promise;
+      }
+      return original(auth, destination);
+    });
+    const context = f.registry.withContext(
+      socket.socketId,
+      { ...ticket, callGeneration: joined.ack.data.result.callGeneration },
+      (result) => result.ok,
+    );
+    try {
+      await entered.promise;
+      expect((await f.registry.revoke(f.event)).permissionRevoked).toBe(true);
+    } finally {
+      waiting.resolve();
+    }
+    expect(await context).toBe(true);
+  });
+  it('rejects incomplete runtime wiring before invalidating a ticket', async () => {
+    const f = setup({}, {} as NonNullable<Parameters<typeof setup>[1]>);
+    await f.issue();
+    await expect(
+      f.registry.revoke({
+        operationId: randomUUID(),
+        kind: 'AUTH_SESSION',
+        authSessionId: f.auth.authSessionId,
+        revision: 1,
+      }),
+    ).rejects.toMatchObject({ code: 'DEPENDENCY_UNAVAILABLE' });
+    expect(f.registry.stats().intents).toBe(1);
+    expect(f.registry.stats().revocations).toBe(0);
+  });
+  it('invalidates an outstanding Router allocation before any ticket or ownership is exposed', async () => {
+    const cleanup = async (value: SessionCleanupRequest) => cleanupAck(value);
+    const f = setup({}, { media: cleanup, messaging: cleanup, board: cleanup });
+    const pending = deferred<void>();
+    const original = f.createRouter.getMockImplementation()!;
+    f.createRouter.mockImplementationOnce(async () => {
+      const router = await original();
+      await pending.promise;
+      return router;
+    });
+    const ticket = f.issue();
+    const rejected = expect(ticket).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    await vi.waitFor(() => expect(f.routers).toHaveLength(1));
+    const result = await f.registry.revoke({
+      operationId: randomUUID(),
+      kind: 'AUTH_SESSION',
+      authSessionId: f.auth.authSessionId,
+      revision: 1,
+    });
+    expect(result).toMatchObject({
+      permissionRevoked: true,
+      pendingInvalidated: true,
+      cleanupPending: true,
+    });
+    pending.resolve();
+    await rejected;
+    expect(f.routers[0]!.closed).toBe(true);
+    expect(f.registry.stats().ownerships).toBe(0);
+    expect(f.repository.create).not.toHaveBeenCalled();
+  });
+  it('bounds replay records and keeps the M1 fence authoritative after local replay expiry', async () => {
+    const f = await revokeFixture({ maxRevocations: 1, revocationReplayTtlMs: 1000 });
+    await f.registry.revoke(f.event);
+    await expect(
+      f.registry.revoke({ ...f.event, operationId: randomUUID() }),
+    ).rejects.toMatchObject({ code: 'SERVER_BUSY' });
+    f.isAuthorityCurrent.mockImplementation(
+      (current) => current.auth.authSessionId !== f.auth.authSessionId,
+    );
+    f.advance(1000);
+    await f.registry.sweepExpired();
+    expect(f.registry.stats().revocations).toBe(0);
+    await expect(f.issue()).rejects.toMatchObject({ code: 'FORBIDDEN' });
+  });
+  it('does not release a newer generation if a lifecycle commit replaced the captured generation', async () => {
+    const f = await revokeFixture();
+    const peer = f.principal();
+    const peerSocket = f.binding(peer);
+    const ticket = await f.issue(peer);
+    const joined = await f.registry.join(peerSocket, {
+      ticket: ticket.ticket,
+      requestId: randomUUID(),
+    });
+    const waiting = deferred<void>();
+    f.messaging.mockImplementation(async (value) => {
+      await waiting.promise;
+      return cleanupAck(value);
+    });
+    const revoke = f.registry.revoke(f.event);
+    await vi.waitFor(() => expect(f.media).toHaveBeenCalledTimes(1));
+    // Exercise an ABA guard using a future lifecycle commit under the actual gate.
+    // This does not implement reconnect or claim a restored grant.
+    await f.registry.withContext(
+      peerSocket.socketId,
+      { ...ticket, callGeneration: joined.ack.data.result.callGeneration },
+      (_resolved, _router, policy) => {
+        const participant = policy!.session.participants.get(
+          f.joined.ack.data.result.participantId,
+        ) as PolicyParticipant;
+        participant.callGeneration++;
+      },
+    );
+    waiting.resolve();
+    await revoke;
+    expect(f.registry.stats().ownerships).toBe(2);
+    expect(f.media.mock.calls[0]![0]).toHaveProperty(
+      'callGeneration',
+      f.joined.ack.data.result.callGeneration,
+    );
+  });
+  it('allows a new membership incarnation only through a fresh join and generation', async () => {
+    const f = await revokeFixture();
+    const peer = f.principal();
+    const ticket = await f.issue(peer);
+    await f.registry.join(f.binding(peer), { ticket: ticket.ticket, requestId: randomUUID() });
+    await f.registry.revoke({
+      operationId: randomUUID(),
+      revision: 1,
+      kind: 'WORKSPACE_MEMBERSHIP',
+      workspaceId: f.target.workspaceId,
+      userId: f.auth.userId,
+      membershipId: f.auth.userId,
+      membershipIncarnation: 1,
+    });
+    f.resolveAuthority.mockImplementation(async (auth, target) => ({
+      auth,
+      access: {
+        ...f.access(auth, target),
+        membershipIncarnation: auth.userId === f.auth.userId ? 2 : 1,
+      },
+      displayName: 'Sinh viên',
+    }));
+    const fresh = await f.issue();
+    const joined = await f.registry.join(f.socket, {
+      ticket: fresh.ticket,
+      requestId: randomUUID(),
+    });
+    expect(joined.ack.data.result.callGeneration).toBeGreaterThan(
+      f.joined.ack.data.result.callGeneration,
+    );
+    expect(projection(joined).viewer.role).toBe('MEMBER');
+  });
+  it('rejects revocation when required cleanup adapters are missing', async () => {
+    const f = setup();
+    const ticket = await f.issue();
+    await expect(
+      f.registry.revoke({
+        operationId: randomUUID(),
+        kind: 'AUTH_SESSION',
+        authSessionId: f.auth.authSessionId,
+        revision: 1,
+      }),
+    ).rejects.toMatchObject({ code: 'DEPENDENCY_UNAVAILABLE' });
+    expect(f.registry.stats().intents).toBe(1);
+    expect(ticket.ticket).not.toBe('');
+  });
+  it('invalidates tickets, cleans the exact generation once and replays the same operation', async () => {
+    const f = await revokeFixture();
+    const extraTicket = await f.issue();
+    const [one, two] = await Promise.all([f.registry.revoke(f.event), f.registry.revoke(f.event)]);
+    expect(one).toEqual(two);
+    expect(one).toMatchObject({ permissionRevoked: true, pendingInvalidated: true });
+    expect(f.registry.stats().ownerships).toBe(0);
+    expect(f.media).toHaveBeenCalledTimes(1);
+    expect(f.media.mock.calls[0]![0]).toMatchObject({
+      callGeneration: f.joined.ack.data.result.callGeneration,
+      target: { type: 'PARTICIPANT', participantId: f.joined.ack.data.result.participantId },
+    });
+    await expect(
+      f.registry.join(f.socket, { ticket: extraTicket.ticket, requestId: randomUUID() }),
+    ).rejects.toThrow();
+    await expect(f.issue()).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    await expect(f.registry.revoke({ ...f.event, revision: 2 })).rejects.toMatchObject({
+      code: 'CONFLICT',
+    });
+    expect(f.repository.join).toHaveBeenCalledTimes(1);
+  });
+  it('denies immediately while cleanup waits, without revoking unrelated peers', async () => {
+    const f = await revokeFixture();
+    const other = f.principal();
+    const otherSocket = f.binding(other);
+    const otherTicket = await f.issue(other);
+    const joined = await f.registry.join(otherSocket, {
+      ticket: otherTicket.ticket,
+      requestId: randomUUID(),
+    });
+    const pending = deferred<SessionCleanupResult>();
+    f.messaging.mockImplementation((value) => pending.promise.then(() => cleanupAck(value)));
+    const task = f.registry.revoke(f.event);
+    await vi.waitFor(() => expect(f.media).toHaveBeenCalledTimes(1));
+    await expect(
+      f.registry.withContext(
+        f.socket.socketId,
+        { ...f.ticket, callGeneration: f.joined.ack.data.result.callGeneration },
+        (result) => result.ok,
+      ),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    expect(
+      await f.registry.withContext(
+        otherSocket.socketId,
+        { ...otherTicket, callGeneration: joined.ack.data.result.callGeneration },
+        (result) => result.ok,
+      ),
+    ).toBe(true);
+    pending.resolve(cleanupAck(f.messaging.mock.calls[0]![0]));
+    await task;
+    expect(f.registry.stats().ownerships).toBe(1);
+  });
+  it('keeps deny and ownership on permanent cleanup failure instead of restoring a grant', async () => {
+    const f = await revokeFixture();
+    f.board.mockImplementation(async (value) => ({
+      ...cleanupAck(value),
+      outcome: {
+        permissionRevoked: false,
+        pendingInvalidated: false,
+        cleanupPending: true,
+        errorCode: 'CONFLICT',
+        retryable: false,
+      },
+    }));
+    const result = await f.registry.revoke(f.event);
+    expect(result).toMatchObject({ permissionRevoked: false, cleanupPending: true });
+    expect(await f.registry.revoke(f.event)).toEqual(result);
+    expect(f.registry.stats().ownerships).toBe(1);
+    expect(f.board).toHaveBeenCalledTimes(1);
+    await expect(f.issue()).rejects.toThrow();
+  });
+  it('does not grant a join whose metadata acknowledgement arrives after auth revocation', async () => {
+    const f = await revokeFixture();
+    const user = f.principal();
+    const ticket = await f.issue(user);
+    const waiting = deferred<{ participantId: Types.ObjectId; expectedRevision: number }>();
+    f.repository.join.mockImplementationOnce(async (input) => {
+      await waiting.promise;
+      return { participantId: input.participantId, revision: input.expectedRevision + 1 };
+    });
+    const join = f.registry.join(f.binding(user), {
+      ticket: ticket.ticket,
+      requestId: randomUUID(),
+    });
+    const rejected = expect(join).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    await vi.waitFor(() => expect(f.repository.join).toHaveBeenCalledTimes(2));
+    const revoke = f.registry.revoke({
+      ...f.event,
+      operationId: randomUUID(),
+      authSessionId: user.authSessionId,
+    });
+    waiting.resolve(f.repository.join.mock.calls[1]![0]);
+    await rejected;
+    expect((await revoke).permissionRevoked).toBe(true);
+    expect(f.registry.stats().ownerships).toBe(1);
+  });
+  it('does not restore old host control when a new login joins the continuing room', async () => {
+    const f = await revokeFixture();
+    const peer = f.principal();
+    const peerTicket = await f.issue(peer);
+    await f.registry.join(f.binding(peer), { ticket: peerTicket.ticket, requestId: randomUUID() });
+    await f.registry.revoke(f.event);
+    const login = { ...f.auth, authSessionId: id() };
+    const ticket = await f.issue(login);
+    const joined = await f.registry.join(f.binding(login), {
+      ticket: ticket.ticket,
+      requestId: randomUUID(),
+    });
+    expect(projection(joined).viewer.role).toBe('MEMBER');
+    expect(joined.ack.data.result.callGeneration).toBeGreaterThan(
+      f.joined.ack.data.result.callGeneration,
+    );
+    expect(f.registry.stats().ownerships).toBe(2);
+  });
+  it('captures USER_AUTH_SESSIONS without denying a later authSession', async () => {
+    const f = await revokeFixture();
+    await f.registry.revoke({
+      operationId: randomUUID(),
+      kind: 'USER_AUTH_SESSIONS',
+      userId: f.auth.userId,
+      revision: 1,
+    });
+    await expect(f.issue()).rejects.toThrow();
+    await expect(f.issue({ ...f.auth, authSessionId: id() })).resolves.toHaveProperty('ticket');
+  });
 });
 
 describe('SCRUM-82 MAIN join registry', () => {
