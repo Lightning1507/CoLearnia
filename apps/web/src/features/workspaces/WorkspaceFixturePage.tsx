@@ -22,12 +22,11 @@ function ChatPanel({
   access: ChannelAccessSnapshot;
 }) {
   return (
-    <article className="workspace-fixture-panel" aria-label={`Chat ${channel.name}`}>
-      <header>
-        <h2>#{channel.name}</h2>
-        <p>Panel fixture M2 · {identity.displayName}</p>
-      </header>
-      <section>
+    <article className="flex min-w-0 flex-1 flex-col" aria-label={`Chat ${channel.name}`}>
+      <section className="grid content-start gap-3 px-5 py-6">
+        <p className="text-sm text-[color:var(--workspace-muted)]">
+          Panel fixture M2 · {identity.displayName}
+        </p>
         <strong>Chào mừng đến kênh học tập chung.</strong>
         <p>
           Slot này chỉ nhận projection có quyền đọc ở revision {access.channelRevision}. Timeline,
@@ -41,7 +40,10 @@ function ChatPanel({
 function PersistentCallStatus() {
   const call = useCallSnapshot();
   return (
-    <output className="workspace-call-badge" aria-label="Trạng thái cuộc gọi">
+    <output
+      className="inline-flex max-w-full items-center gap-2 rounded-full border border-[color:var(--workspace-border)] px-3 py-1.5 text-xs text-[color:var(--workspace-muted)]"
+      aria-label="Trạng thái cuộc gọi"
+    >
       <span aria-hidden="true">●</span>
       {call.status === 'idle' ? 'Chưa tham gia cuộc gọi' : 'Cuộc gọi đang hoạt động'}
     </output>

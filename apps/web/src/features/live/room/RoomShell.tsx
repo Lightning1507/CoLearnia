@@ -85,9 +85,13 @@ export function RoomShell({
       className={useWorkspaceWidth ? 'w-full min-w-0' : '@container/room-layout w-full min-w-0'}
       aria-labelledby={titleId}
     >
-      <div className="grid min-w-0 gap-4 rounded-2xl border border-stone-200 bg-white p-[clamp(1rem,3vw,1.5rem)] [overflow-wrap:anywhere]">
+      <div
+        className={`grid min-w-0 gap-4 bg-[var(--workspace-content-bg)] [overflow-wrap:anywhere] ${useWorkspaceWidth ? 'p-5' : 'rounded-2xl border border-[color:var(--workspace-border)] p-5'}`}
+      >
         <header>
-          <h2 id={titleId}>{channelName}</h2>
+          <h2 className={useWorkspaceWidth ? 'sr-only' : undefined} id={titleId}>
+            {channelName}
+          </h2>
           <p className="mt-2 text-stone-600" role="status">
             {statusLabels[roomCall?.status ?? 'idle']}
           </p>

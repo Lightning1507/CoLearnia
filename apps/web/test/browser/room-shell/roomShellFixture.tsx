@@ -18,6 +18,7 @@ import '../../../src/styles/global.css';
 
 const roomName = 'Phòng học cuối tuần';
 const otherRoomName = 'Phòng ôn tập';
+const privateChannelName = 'Chuẩn bị thuyết trình';
 const chatName = 'thảo-luận-chung';
 const otherSessionId = '100000000000000000000012';
 const otherRoom = channelSummarySchema.parse({
@@ -31,6 +32,17 @@ const otherRoom = channelSummarySchema.parse({
 const channels = [
   ...sidebarFixture,
   { channel: otherRoom, canReadContent: true, canManageChannel: false },
+  {
+    channel: channelSummarySchema.parse({
+      ...otherRoom,
+      id: '100000000000000000000013',
+      name: privateChannelName,
+      type: 'TEXT',
+      accessMode: 'PRIVATE',
+    }),
+    canReadContent: true,
+    canManageChannel: false,
+  },
 ];
 type StageMedia = { call: CallHandle; stream: MediaStream };
 
@@ -217,6 +229,21 @@ async function verifyLifecycle(container: HTMLElement) {
   try {
     await render();
     verifyListeners(1);
+    for (const [name, icon] of [
+      [privateChannelName, 'lock'],
+      [chatName, 'hash'],
+      [roomName, 'phone'],
+    ] as const) {
+      await click(name);
+      const rowIcon = container.querySelector('.workspace-channel[aria-current="page"] svg');
+      const headerIcon = container.querySelector('.workspace-topbar svg');
+      check(
+        rowIcon?.getAttribute('data-channel-icon') === icon &&
+          headerIcon?.getAttribute('data-channel-icon') === icon,
+        'Sidebar và header phải dùng cùng icon cho kênh đang chọn',
+      );
+    }
+    await click(chatName);
     const subscriptionsBeforeRoom = subscriptions;
     await click(roomName);
     check(status() === 'Chưa tham gia cuộc gọi', 'RoomShell phải hiển thị idle');
@@ -224,9 +251,9 @@ async function verifyLifecycle(container: HTMLElement) {
       room()?.querySelectorAll('section, footer').length === 3,
       'Thiếu vùng stage/panel/controls',
     );
-    const workspaceCard = room()?.firstElementChild;
-    check(workspaceCard, 'Thiếu bố cục phòng trong Workspace');
-    const borderColor = getComputedStyle(workspaceCard).borderTopColor;
+    const sidebar = container.querySelector('.workspace-sidebar');
+    check(sidebar, 'Thiếu sidebar Workspace');
+    const borderColor = getComputedStyle(sidebar).borderBottomColor;
     verifyListeners(2);
     check(
       subscriptions - subscriptionsBeforeRoom === 2,
@@ -552,27 +579,72 @@ async function verifyWorkspaceRoute() {
         panelRect.top === stageRect.top,
       'Panel phải rộng 320px và nằm cạnh sân khấu',
     );
+    const header = page.querySelector('.workspace-topbar');
+    const liveHost = page.querySelector('.workspace-panel-host');
+    const sidebar = page.querySelector('.workspace-sidebar');
+    check(header && liveHost && sidebar, 'Thiếu khung nội dung chung');
+    const headerRect = header.getBoundingClientRect();
+    const hostRect = liveHost.getBoundingClientRect();
+    const sidebarRect = sidebar.getBoundingClientRect();
+    check(headerRect.height === 64, 'Header Workspace phải cao 64px theo Figma');
+    check(
+      headerRect.left === sidebarRect.right &&
+        hostRect.left === headerRect.left &&
+        hostRect.right === headerRect.right &&
+        roomWidth === hostRect.width,
+      'LIVE phải lấp đầy cột nội dung chung cạnh sidebar',
+    );
 
     const textChannel = channels.find((button) => button.textContent?.includes(chatName));
     check(textChannel, 'Không tìm thấy kênh TEXT trên /workspace');
     textChannel.click();
-    const chatCard = await waitForElement(page, '.workspace-fixture-panel');
+    const chatCard = await waitForElement(page, 'article[aria-label^="Chat "]');
     const host = chatCard.closest('.workspace-panel-host');
     const main = host?.closest('.workspace-main');
-    const sidebar = page.querySelector('.workspace-sidebar');
     check(host && main && sidebar, 'Thiếu sidebar hoặc vùng nền quanh Chat');
     const background = (element: Element) => view.getComputedStyle(element).backgroundColor;
     check(background(sidebar) === 'rgb(241, 243, 242)', 'Sidebar phải có nền #F1F3F2');
     check(
       textChannel.getAttribute('aria-current') === 'page' &&
-        background(textChannel) === 'rgb(224, 239, 232)',
-      'Kênh TEXT đang chọn phải có nền #E0EFE8',
+        background(textChannel) === 'rgb(220, 239, 232)',
+      'Kênh TEXT đang chọn phải có nền #DCEFE8',
     );
     check(
-      host.getBoundingClientRect().width > chatCard.getBoundingClientRect().width &&
+      host.getBoundingClientRect().width === chatCard.getBoundingClientRect().width &&
         background(host) === 'rgba(0, 0, 0, 0)' &&
         background(main) === 'rgb(255, 255, 255)',
-      'Vùng bao quanh card Chat phải có nền #FFFFFF',
+      'TEXT phải lấp đầy cột nội dung có nền #FFFFFF',
+    );
+    const textHeaderRect = header.getBoundingClientRect();
+    const textRect = chatCard.getBoundingClientRect();
+    const timeline = chatCard.querySelector('section');
+    check(timeline, 'Thiếu timeline TEXT');
+    check(
+      textHeaderRect.left === headerRect.left &&
+        textHeaderRect.top === headerRect.top &&
+        textHeaderRect.height === headerRect.height &&
+        textRect.left === hostRect.left &&
+        textRect.right === hostRect.right,
+      'Chuyển LIVE sang TEXT phải giữ nguyên header và mép cột nội dung',
+    );
+    check(
+      view.getComputedStyle(header).paddingLeft === '20px' &&
+        view.getComputedStyle(timeline).paddingLeft === '20px',
+      'Header và timeline TEXT phải dùng khoảng đệm 20px',
+    );
+    const brand = sidebar.querySelector('span[aria-hidden="true"]');
+    check(
+      brand &&
+        background(brand) === 'rgb(13, 124, 98)' &&
+        view.getComputedStyle(brand).color === 'rgb(255, 255, 255)',
+      'Ô biểu tượng Workspace phải có nền #0D7C62 và chữ trắng',
+    );
+    channel.click();
+    await waitForElement(page, 'section[aria-label="Sân khấu cuộc gọi"]');
+    check(
+      header.getBoundingClientRect().left === textHeaderRect.left &&
+        header.getBoundingClientRect().height === textHeaderRect.height,
+      'Chuyển TEXT trở lại LIVE phải giữ khung header',
     );
     return `workspace=${workspaceWidth}×${view.innerHeight}, room=${roomWidth}`;
   } finally {

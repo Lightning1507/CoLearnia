@@ -35,7 +35,11 @@ function CallControls() {
   const call = useCallSnapshot();
   const [muted, setMuted] = useState(false);
   return (
-    <button className="workspace-call-badge" type="button" onClick={() => setMuted(!muted)}>
+    <button
+      className="rounded-full border border-[color:var(--workspace-border)] px-3 py-1.5 text-xs"
+      type="button"
+      onClick={() => setMuted(!muted)}
+    >
       {call.status === 'active' && (muted ? 'Bật mic cuộc gọi' : 'Tắt mic cuộc gọi')}
     </button>
   );

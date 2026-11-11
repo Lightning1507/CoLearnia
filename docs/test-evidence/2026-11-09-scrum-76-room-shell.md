@@ -53,7 +53,7 @@ PASS · subscriptions=20, remaining=0, video attach/detach=16/16, peak=1, call A
 
 ## Đối chiếu màu với bản xuất Figma
 
-Mở `/workspace` trong Chromium, chọn kênh TEXT rồi chọn kênh LIVE và đọc `backgroundColor` từng vùng. Đối chiếu với [CSS bản xuất Figma](../figma-ui/src/index.css) và [CSS WorkspaceShell](../../apps/web/src/features/workspaces/workspace-shell.css).
+Mở `/workspace` trong Chromium, chọn kênh TEXT rồi chọn kênh LIVE và đọc `backgroundColor` từng vùng. Đối chiếu với [CSS bản xuất Figma](../figma-ui/src/index.css) và [WorkspaceShell hiện hành](../../apps/web/src/features/workspaces/WorkspaceShell.tsx).
 
 | Vùng                        | Workspace hiện tại   | Figma                              | Phần xử lý                                                                                           |
 | --------------------------- | -------------------- | ---------------------------------- | ---------------------------------------------------------------------------------------------------- |
@@ -79,4 +79,15 @@ PASS · subscriptions=20, remaining=0, video attach/detach=16/16, peak=1, call A
 
 ```text
 PASS · subscriptions=22, remaining=0, video attach/detach=16/16, peak=1, call A init/dispose=1/1 · workspace=1440×900, room=1056
+```
+
+## Kiểm khung Workspace dùng chung và icon sau review ngày 11/11
+
+- Đối chiếu `workspace-mark`, `conversation-shell`, `conversation-header` và quy tắc icon trong [bản xuất Figma](../figma-ui/src/App.tsx). WorkspaceShell dùng Tailwind trong component, tham chiếu token từ `global.css`. Token nền kênh chọn là `#DCEFE8`, ô biểu tượng dùng `#0D7C62` với chữ trắng. File CSS riêng của Workspace đã được chuyển sang utility trong component.
+- `/workspace` ở 1440 × 900 có sidebar 256 px, header và vùng nội dung cùng bắt đầu tại x=256 và rộng 1184 px. Chuyển LIVE → TEXT → LIVE giữ mép cột và header cao 64 px. Header và timeline TEXT dùng padding ngang 20 px. Lượt kiểm ở 1280 px và 390 px cũng giữ header và mép cột khi đổi kênh, không tràn ngang.
+- Hàng kênh và tiêu đề chung sử dụng cùng `ChannelIcon` với SVG 18 px. Fixture kiểm TEXT công khai dùng hash, TEXT PRIVATE hợp lệ dùng khóa và LIVE dùng điện thoại. Ca PRIVATE dùng projection test có quyền đọc riêng.
+- RoomShell giữ bố cục sân khấu/panel trong vùng LIVE. Kiểm StrictMode, hai chiều resize qua 1280 px, focus, hai kênh LIVE và route `/workspace` đều đạt với track tổng hợp.
+
+```text
+PASS · subscriptions=24, remaining=0, video attach/detach=16/16, peak=1, call A init/dispose=1/1 · workspace=1440×900, room=1184
 ```
