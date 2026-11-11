@@ -8,6 +8,8 @@ Source schema ở `packages/contracts/src`, frontend và backend import qua `@co
 
 **MAIN join registry (SCRUM-82):** [ticket, ownership và adapter socket](main-join-registry.md); schema `session-join.ts`, registry dùng repository/policy/projection hiện có. Composition auth/access và lifecycle đầy đủ tiếp tục theo task tích hợp.
 
+**MAIN reconnect/resync (SCRUM-84):** [resume ticket, grace và socket generation](main-reconnect.md); thu tài nguyên đời cũ trước khi nối lại, snapshot dựng từ quyền hiện hành. M3 review schema ack join/resume và M4–FE ghép adapter theo contract này.
+
 **Kết thúc phiên (SCRUM-86):** [host end/rời, idempotency và cleanup](session-end.md); schema `session-end.ts`, adapter `session.end` dùng cùng registry MAIN. Chưa mount vào app production; xem giới hạn tích hợp trong contract.
 
 **Thu quyền MAIN (SCRUM-83):** [cổng M1, hủy ticket và cleanup theo generation](main-revocation.md). Registry dùng schema revocation M1 và cleanup coordinator hiện có; chưa nối publisher ACL/logout production.
