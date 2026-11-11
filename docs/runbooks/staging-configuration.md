@@ -126,6 +126,8 @@ Các kết quả trên xác nhận stack Compose local qua HTTP. Staging vẫn c
 
 ### SCRUM-63 kiểm khi có TURN
 
+Với TURN app Cloudflare `colearnia-staging`, xem [cấu hình và cách kiểm Cloudflare TURN](cloudflare-turn.md). Không áp cổng/secret coturn cho dịch vụ Cloudflare; kết quả thực tế nằm trong [báo cáo SCRUM-63](../test-evidence/2026-11-11-scrum-63-turn.md).
+
 1. Xác nhận DNS/IP, NAT, cổng lắng nghe và dải relay theo hạ tầng thật.
 2. Kiểm thông tin truy cập ngắn hạn, từ chối khi hết hạn, thu bằng chứng kết nối relay và lượng dữ liệu đi qua relay. Ghi kết quả đúng phạm vi TURN để SCRUM-81 tiếp tục thử hai mạng và rollback.
 

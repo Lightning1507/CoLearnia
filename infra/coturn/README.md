@@ -11,3 +11,5 @@ TURN được cấu hình trên staging sau khi có public IP, hostname và secr
 - Chỉ đánh dấu PoC TURN thành công khi selected ICE candidate là `relay` và audio/screen truyền thật giữa hai mạng.
 
 Thư mục này là nơi thêm cấu hình đã kiểm chứng và hướng dẫn vận hành khi thực hiện ADR-001.
+
+Staging đang kiểm phương án managed TURN qua Cloudflare. Xem [runbook Cloudflare TURN](../../docs/runbooks/cloudflare-turn.md) và bằng chứng đi kèm; chưa cài coturn trên EC2. Giữ riêng HMAC secret của coturn với API token Cloudflare.

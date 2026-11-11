@@ -43,6 +43,7 @@
 | REST/socket schema và quy ước                       | [Contracts](contracts/README.md), plan mục 10                                                                                                                        |
 | Capacity 25/50, workload / giới hạn vận hành        | [Capacity hiện hành](capacity.md) — mục tiêu thử, chưa phải mức đã đạt                                                                                               |
 | Local / runtime / Mongo / media smoke               | [Local development](runbooks/local-development.md)                                                                                                                   |
+| Staging / TURN có xác thực                          | [Cấu hình staging](runbooks/staging-configuration.md), [Cloudflare TURN và cách kiểm](runbooks/cloudflare-turn.md)                                                   |
 | Checks / hooks / review / giới hạn CI               | [Code quality](code-quality.md), [CONTRIBUTING](../CONTRIBUTING.md)                                                                                                  |
 | Giao việc / Codex onboarding / bàn giao             | [AI workflow](ai/workflow.md), [task template](ai/task-template.md)                                                                                                  |
 | PoC mediasoup và điều kiện Accepted                 | [ADR-001](adr/001-media-foundation.md)                                                                                                                               |
