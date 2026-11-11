@@ -16,7 +16,12 @@ Ví dụ, A nhận ID nhỏ trước, B nhận ID lớn sau. B lưu xong trướ
 4. Trong khi tải, giữ sự kiện mới đúng phạm vi trong bộ đệm có giới hạn. Sự kiện có thể đến trước ACK. Gộp theo message ID vì cùng một tin có thể xuất hiện ở cả lịch sử, ACK gửi và sự kiện. Chỉ ghi nhận mốc `H` sau khi tải đủ trang và gộp xong. Việc nhận tin mới có số lớn hơn `H` không tự đẩy mốc tải bù lên số đó.
 5. Khi mất quyền, đổi phạm vi, ngắt kết nối giữa chừng hoặc vượt giới hạn bộ đệm, hủy lượt. Không lưu cursor dở dang làm checkpoint. Khi reconnect, bắt đầu lượt mới theo quyền hiện tại từ mốc đã hoàn tất trước đó. Server kiểm quyền lại ở từng trang và trước khi phát tin. Token/cursor không cấp quyền. Việc xóa nội dung hoặc đóng phạm vi trong khi tải cần hủy lượt nếu ảnh hưởng khả năng trả dữ liệu đến `H`.
 
-Giới hạn cần chốt theo Q7 cho số tin, byte, trang và thời gian chờ. Khi đầy hoặc hết hạn, trả tín hiệu cần tải lại và dừng giữ dữ liệu. Không suy từ khoảng trống của một số thứ tự rằng đã mất tin, vì một lượt chỉ lọc một phạm vi. Tin live bị mất ngoài lượt tải bù vẫn cần một lượt đồng bộ lại từ mốc hoàn tất. Không cam kết Socket.IO tự phát lại mọi sự kiện.
+Giới hạn cần chốt theo Q7 cho số tin, byte, trang và thời gian chờ. Khi đầy hoặc hết hạn, trả tín hiệu cần tải lại và dừng giữ dữ liệu. Timeline và thread dùng chung bộ đếm, nên một khoảng trống trong phạm vi đang xem có thể chỉ là tin thuộc phạm vi khác.
+
+**Khi socket vẫn kết nối**, đề xuất SCRUM-43 dùng hai cách kích hoạt cùng một lượt tải bù từ checkpoint đã hoàn tất:
+
+- Khi server phát hiện fanout lỗi sau commit hoặc kết quả commit vẫn chưa rõ sau khi đối soát bằng khóa gửi lại, gửi tín hiệu yêu cầu đồng bộ lại theo phạm vi tới các subscription còn quyền. Nếu tín hiệu không gửi được, lượt định kỳ bên dưới vẫn hoạt động. Khi kết quả commit chưa rõ, client gửi chỉ thử lại với cùng khóa và payload.
+- Client định kỳ mở lượt đối soát cho phạm vi đang subscribe, kể cả khi socket vẫn kết nối và vẫn nhận tin mới. Chỉ giữ một lượt đang chạy cho mỗi phạm vi, gộp tín hiệu đến trong lúc chạy và lùi lần thử khi lỗi. Đọc mốc `H` mới sau khi đăng ký listener, tải các trang theo `L < commitSeq <= H` và gộp theo ID. Nếu `H = L`, hoàn tất mà không đọc trang. Giữ checkpoint cũ nếu lượt bị hủy. Chu kỳ, giới hạn và encoding của tín hiệu cần M1/M2 chốt trước khi triển khai.
 
 ## Delta dữ liệu và việc cần review
 
@@ -53,6 +58,15 @@ Kết quả xác nhận cơ chế trên fixture có giới hạn. Cần M1 chấ
 `pnpm check` đạt với 339 test ứng dụng, lint, typecheck và build. Harness có 54 ca đạt và 1 ca symlink bỏ qua trên Windows. Lượt cài với lockfile giữ nguyên dùng worker mediasoup 3.31.0 đã có trong workspace qua `MEDIASOUP_WORKER_BIN`. Phép thử MongoDB độc lập với media.
 
 ## Đối chiếu Sprint 1
+
+### Phản hồi review ngày 11/11/2026
+
+Chạy lại spike trên nền PR `22be46b`, với MongoDB 8.0.16 replica set thử riêng. `pnpm exec vitest run --config vitest.database.config.ts --disableConsoleIntercept` đạt 103 ca tích hợp, gồm 9 ca SCRUM-38. Trên Windows, đặt `MEDIASOUP_WORKER_BIN` tới worker 3.31.0 để chạy suite main join đi kèm.
+
+- **P2.** Listener mô phỏng bỏ event của tin 10, vẫn nhận tin 11 và giữ kết nối. Lượt đầu hoàn tất đến `H = 9` và giữ checkpoint 9. Lượt đối soát kế tiếp lấy đủ 10 và 11, gộp tin 11 theo ID rồi mới tiến mốc đến 11. Bài thử gọi lượt đối soát trực tiếp. Timer, tín hiệu qua Socket.IO và kiểm ACL thật thuộc SCRUM-43.
+- **P3.** Hai user gửi vào cùng hội thoại qua cùng Workspace gate. Giữ transaction A sau lần tăng counter, cho B vào hàng chờ rồi mô phỏng DB chậm thêm 100 ms trước khi thả A. Trong hai lượt đo, A chờ khoảng 1–2 ms và giữ gate 119–130 ms. B chờ khoảng 116–127 ms và giữ gate 13–14 ms. Mỗi lần gửi chạy callback transaction một lần, tương ứng 0 retry callback. Gate tuần tự hóa hai lượt gửi và chuyển độ trễ DB thành thời gian chờ của B. Phép thử có độ trễ chèn và hai lượt gửi, nên cần đo thêm ở tải sprint và các đường ghi ngoài gate.
+
+### Các task nhận kết quả
 
 Sprint 1 cần nhóm năm người đăng nhập, vào cùng Workspace, nhắn tin và gọi trên staging. Q9 phục vụ đoạn nhắn tin TEXT và nối lại để tải phần lịch sử bị lỡ. SCRUM-14 cung cấp quy tắc kiểm và thu quyền. SCRUM-15 cung cấp MongoDB transaction. Cả hai đã có trên nền nhánh. Hai ticket bị chặn trực tiếp khớp danh sách trong ảnh. [Sprint Goal](../planning/sprint-1.md) · [Liên kết Jira](../planning/jira/sprint-1-jira-links.csv)
 

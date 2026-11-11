@@ -1,7 +1,9 @@
 import { randomUUID } from 'node:crypto';
+import { setTimeout as delay } from 'node:timers/promises';
 import { Types } from 'mongoose';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createDatabase } from '../src/lib/database.js';
+import { createOperationCoordinator } from '../src/lib/operation-coordinator.js';
 import { testReplicaUri } from './replica-uri.js';
 
 // Q9 spike only. No application collection or schema is changed.
@@ -56,9 +58,16 @@ async function fixture() {
     highWater,
     async commit(
       id = new Types.ObjectId(),
-      options: { beforeWrite?: Promise<void>; fail?: boolean; rootMessageId?: Types.ObjectId } = {},
+      options: {
+        beforeWrite?: Promise<void>;
+        afterCounterWrite?: () => Promise<void>;
+        onAttempt?: () => void;
+        fail?: boolean;
+        rootMessageId?: Types.ObjectId;
+      } = {},
     ) {
       const message = await database.transaction(async (session) => {
+        options.onAttempt?.();
         await options.beforeWrite;
         const counter = await counters().findOneAndUpdate(
           { _id: conversationId },
@@ -66,6 +75,7 @@ async function fixture() {
           { session, returnDocument: 'after' },
         );
         if (!counter) throw new Error('Missing fixture counter');
+        await options.afterCounterWrite?.();
         const message: Message = {
           _id: id,
           conversationId,
@@ -234,6 +244,101 @@ describe('SCRUM-38 Q9 spike on MongoDB replica set', () => {
     expect((await f.page(0, through, root._id)).items.map(({ commitSeq }) => commitSeq)).toEqual([
       2,
     ]);
+  });
+
+  it('recovers a silently dropped event on the next reconciliation while the socket stays open', async () => {
+    const f = await fixture();
+    for (let i = 0; i < 9; i += 1) await f.commit();
+    const initial = buffer(8);
+    const subscription = await f.subscribe((message) => {
+      if (message.commitSeq !== 10) initial.push(message);
+    });
+    try {
+      await f.commit();
+      await f.commit();
+      const first = initial.finish([], subscription.through);
+      expect(first.status).toBe('complete');
+      if (first.status !== 'complete') throw new Error('Expected a complete sync');
+      expect(first.checkpoint).toBe(9);
+      expect(first.messages.map(({ commitSeq }) => commitSeq)).toEqual([11]);
+
+      // Simulate the scheduled reconciliation tick with the original socket still connected.
+      const reconcile = buffer(8);
+      const next = await f.subscribe(reconcile.push);
+      try {
+        const page = await f.page(first.checkpoint, next.through);
+        expect(page.next).toBeNull();
+        expect(page.items.map(({ commitSeq }) => commitSeq)).toEqual([10, 11]);
+        const repaired = reconcile.finish([...first.messages, ...page.items], next.through);
+        expect(repaired).toMatchObject({ status: 'complete', checkpoint: 11 });
+        if (repaired.status !== 'complete') throw new Error('Expected a complete reconciliation');
+        expect(repaired.messages.map(({ commitSeq }) => commitSeq)).toEqual([10, 11]);
+      } finally {
+        next.close();
+      }
+    } finally {
+      subscription.close();
+    }
+  });
+
+  it('measures concurrent sends serialized by the Workspace gate during a slow transaction', async () => {
+    const f = await fixture();
+    const gate = createOperationCoordinator();
+    const workspaceId = new Types.ObjectId().toHexString();
+    let markCounterWritten!: () => void;
+    const counterWritten = new Promise<void>((resolve) => {
+      markCounterWritten = resolve;
+    });
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const delayMs = 100;
+
+    function send(afterCounterWrite?: () => Promise<void>) {
+      const queuedAt = performance.now();
+      return gate.run({ workspaceId, userId: new Types.ObjectId().toHexString() }, async () => {
+        const enteredAt = performance.now();
+        let attempts = 0;
+        const message = await f.commit(undefined, {
+          ...(afterCounterWrite && { afterCounterWrite }),
+          onAttempt: () => {
+            attempts += 1;
+          },
+        });
+        return {
+          seq: message.commitSeq,
+          waitMs: enteredAt - queuedAt,
+          holdMs: performance.now() - enteredAt,
+          retries: attempts - 1,
+        };
+      });
+    }
+
+    const first = send(() => {
+      markCounterWritten();
+      return held;
+    });
+    try {
+      await Promise.race([counterWritten, first]);
+      const second = send();
+      try {
+        await expect.poll(() => gate.stats().pending).toBe(1);
+        expect(await f.highWater()).toBe(0);
+        await delay(delayMs);
+      } finally {
+        release();
+        await Promise.allSettled([first, second]);
+      }
+      const [a, b] = await Promise.all([first, second]);
+      expect(a).toMatchObject({ seq: 1, retries: 0 });
+      expect(b).toMatchObject({ seq: 2, retries: 0 });
+      expect(gate.stats()).toMatchObject({ completed: 2, pending: 0, rejected: 0 });
+      console.info('SCRUM-38 Workspace gate (ms)', { delayMs, first: a, second: b });
+    } finally {
+      release();
+      await Promise.allSettled([first]);
+    }
   });
 
   it.each(['count', 'bytes', 'scope changed'])(
