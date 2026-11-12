@@ -8,7 +8,7 @@ Có registry một process, cấp/consume ticket, adapter socket `session.join`,
 
 Chưa mount REST hoặc socket vào app hiện hành: M1 cung cấp adapter auth/access thực tế trước composition. Factory không có chế độ bỏ qua auth. Test M1 dùng fixture kiểm context khóa; MongoDB/Router trong integration test là thật. Đây chưa là luồng đăng nhập–gọi trên trình duyệt hoặc kiểm TURN.
 
-Revoke theo SCRUM-83, end phiên theo SCRUM-86 và [reconnect/resync MAIN](main-reconnect.md) theo SCRUM-84 đã có implementation trong registry. Kế vị host đầy đủ, đối soát phiên rỗng và worker failure tiếp tục theo các task tương ứng. Schema nhận cấu trúc xác nhận takeover của ví dụ M3 nhưng registry chưa chuyển ownership của call còn kết nối: vẫn trả CALL_ALREADY_ACTIVE, giữ call cũ và ticket mới chưa consume. Không tự tăng generation/chiếm call khi chưa cleanup đúng đời.
+Revoke theo SCRUM-83, end phiên theo SCRUM-86, [reconnect/resync MAIN](main-reconnect.md) theo SCRUM-84, [đối chiếu/phiên rỗng](session-reconciliation.md) theo SCRUM-87 và [worker failure](worker-failure.md) theo SCRUM-91 đã có implementation trong registry. Kế vị host đầy đủ tiếp tục theo task riêng. Schema nhận cấu trúc xác nhận takeover của ví dụ M3 nhưng registry chưa chuyển ownership của call còn kết nối: vẫn trả CALL_ALREADY_ACTIVE, giữ call cũ và ticket mới chưa consume. Không tự tăng generation/chiếm call khi chưa cleanup đúng đời.
 
 ## API và socket
 
@@ -53,11 +53,11 @@ Lỗi provider tạm thời trong lúc dựng snapshot làm lần join/replay tr
 
 ## Lỗi và cleanup
 
-Create/join metadata thất bại làm phiên ở trạng thái chưa rõ, chặn ticket/grant mới. Create lỗi đóng Router vừa tạo. Không suy từ revision rằng intent đã commit; E11000 cũng không cho phép adopt phiên có trong DB. SCRUM-87 đối chiếu kết quả, SCRUM-80 bootstrap; không retry insert hoặc phục hồi runtime từ metadata mù.
+Create/join metadata thất bại được read-back theo SCRUM-87; khi chưa đủ bằng chứng thì chặn ticket/grant mới. Create vẫn chưa rõ thì đóng Router vừa tạo. Không suy từ revision rằng intent đã commit; E11000 cũng không cho phép adopt phiên khác có trong DB. SCRUM-80 giữ bootstrap riêng; không retry insert hoặc phục hồi runtime từ metadata mù.
 
 Auth hết hiệu lực/socket rớt sau commit DB thì không công bố ownership. Intent đã qua bước ghi được đánh dấu đã xử lý để retry không ghi lại. Metadata không chứng minh participant đang có quyền. Khi không có participant runtime/ticket hợp lệ, orphan cleanup kết thúc metadata reservation.
 
-Composition gọi `sweepExpired()` định kỳ, đề xuất cùng nhịp 60 giây của lifecycle, bắt lỗi qua logger an toàn. Dưới Workspace gate, phiên chưa có ownership và hết mọi ticket chuyển ENDING→ENDED, đóng Router và reservation participant. Issue mới cũng dọn orphan hết hạn của chính kênh. Không áp dụng cho phiên đã có người; ticket đã consume hết hạn không khiến người đang học bị rời. Đây là dọn reservation, không thêm empty grace cho phiên hoạt động.
+Composition gọi `sweepExpired()` tại lifecycle/deadline grace và dùng maintenance định kỳ để bù lỗi, bắt lỗi qua logger an toàn. Reservation ban đầu chưa có lần join chờ ticket hết hạn; sau lần join, không còn ownership hợp lệ thì chuyển ENDING, ticket chưa dùng không kéo dài phiên. Quyết định nằm dưới Workspace gate, end/cleanup chạy bên ngoài gate rồi xác nhận ENDED theo SCRUM-87. Issue mới cũng dọn orphan của chính kênh trước khi tạo phiên mới. Ticket đã consume hết hạn không khiến người còn ownership hợp lệ bị rời; không có empty grace.
 
 Router create timeout sau 2 giây nhưng slot pending giữ tới khi native I/O thật kết thúc; Router đến muộn bị close. Shutdown `registry.close()` đóng Router, xóa token/ownership RAM, close cả Router đang tạo đến muộn. Close không thay end/revoke và không tự sửa metadata đã commit. Restart phải bootstrap metadata cũ trước readiness; không adopt phiên ACTIVE trên DB.
 
