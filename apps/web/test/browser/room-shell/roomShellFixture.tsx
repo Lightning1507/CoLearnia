@@ -697,10 +697,28 @@ async function verifyWorkspaceRoute() {
       listAction?.textContent === 'Danh sách Workspace',
       'Menu phải có mục Danh sách Workspace',
     );
-    listAction.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await afterLayout();
+    check(page.activeElement === listAction, 'Mở menu phải focus mục danh sách');
+    textChannel.focus();
     await afterLayout();
     check(
-      !workspaceMenu.isConnected && page.activeElement === menuTrigger,
+      !workspaceMenu.isConnected &&
+        menuTrigger.getAttribute('aria-expanded') === 'false' &&
+        page.activeElement === textChannel,
+      'Focus rời menu phải đóng menu và giữ đích Tab ở kênh',
+    );
+    textChannel.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await afterLayout();
+    check(page.activeElement === textChannel, 'Escape ngoài menu không được kéo focus về trigger');
+    menuTrigger.click();
+    const escapeMenu = await waitForElement(page, 'nav[aria-label="Menu Workspace"]');
+    await afterLayout();
+    escapeMenu
+      .querySelector('button')
+      ?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await afterLayout();
+    check(
+      !escapeMenu.isConnected && page.activeElement === menuTrigger,
       'Escape phải đóng menu và trả focus về nút mở',
     );
     menuTrigger.click();
@@ -710,6 +728,10 @@ async function verifyWorkspaceRoute() {
     check(
       listScreen.querySelector('h1')?.textContent === 'Danh sách Workspace',
       'Mục menu phải gọi callback điều hướng của bên nhúng',
+    );
+    check(
+      page.activeElement === listScreen.querySelector('h1'),
+      'Màn danh sách mới phải nhận focus tại heading thay vì body',
     );
     return `workspace=${workspaceWidth}×${view.innerHeight}, room=${roomWidth}`;
   } finally {

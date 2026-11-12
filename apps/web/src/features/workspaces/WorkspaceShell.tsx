@@ -56,23 +56,28 @@ function WorkspaceMenu({
     const onPointerDown = (event: PointerEvent) => {
       if (!container.current?.contains(event.target as Node)) setOpen(false);
     };
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setOpen(false);
-        trigger.current?.focus();
-      }
-    };
     listButton.current?.focus();
     document.addEventListener('pointerdown', onPointerDown);
-    document.addEventListener('keydown', onKeyDown);
     return () => {
       document.removeEventListener('pointerdown', onPointerDown);
-      document.removeEventListener('keydown', onKeyDown);
     };
   }, [open]);
 
   return (
-    <div className="relative" ref={container}>
+    <div
+      className="relative"
+      ref={container}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
+      }}
+      onKeyDown={(event) => {
+        if (open && event.key === 'Escape') {
+          event.stopPropagation();
+          setOpen(false);
+          trigger.current?.focus();
+        }
+      }}
+    >
       <button
         type="button"
         className="flex h-16 w-full min-w-0 items-center gap-2.5 border-b border-[color:var(--workspace-border)] px-3.5 text-left hover:bg-[var(--workspace-channel-hover-bg)]"

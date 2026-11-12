@@ -1,7 +1,6 @@
-import { useRef, useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import type { ChannelAccessSnapshot, ChannelSummary, OwnUser } from '@colearnia/contracts';
-import { RoomShell } from '../live/room/RoomShell';
-import { useCallSnapshot } from '../live/runtime/callControllerContext';
+import { RoomShell, useCallSnapshot } from '../live';
 import { WorkspaceShell } from './WorkspaceShell';
 import type { WorkspacePanel } from './shell-contract';
 import {
@@ -93,6 +92,10 @@ function FixtureRoom({ channel }: { channel: ChannelSummary }) {
 export function WorkspaceFixturePage() {
   const [panel, setPanel] = useState<WorkspacePanel>({ kind: 'empty' });
   const [showWorkspaceList, setShowWorkspaceList] = useState(false);
+  const workspaceListHeading = useRef<HTMLHeadingElement>(null);
+  useLayoutEffect(() => {
+    if (showWorkspaceList) workspaceListHeading.current?.focus({ preventScroll: true });
+  }, [showWorkspaceList]);
   const selected =
     panel.kind === 'empty'
       ? undefined
@@ -104,7 +107,13 @@ export function WorkspaceFixturePage() {
   if (showWorkspaceList) {
     return (
       <main className="grid content-start gap-4 p-5" aria-label="Danh sách Workspace fixture">
-        <h1 className="m-0 text-xl font-semibold tracking-normal">Danh sách Workspace</h1>
+        <h1
+          className="m-0 text-xl font-semibold tracking-normal"
+          ref={workspaceListHeading}
+          tabIndex={-1}
+        >
+          Danh sách Workspace
+        </h1>
         <p className="text-sm text-[color:var(--workspace-muted)]">
           Dữ liệu minh họa · Chọn Workspace để tiếp tục.
         </p>

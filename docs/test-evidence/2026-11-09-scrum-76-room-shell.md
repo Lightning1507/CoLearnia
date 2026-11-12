@@ -105,3 +105,18 @@ PASS · subscriptions=24, remaining=0, video attach/detach=16/16, peak=1, call A
 PASS · subscriptions=24, remaining=0, video attach/detach=16/16, peak=1, call A init/dispose=1/1, observers=0, resizeFocus=true/true · workspace=1440×900, room=1184
 PASS · subscriptions=24, remaining=0, video attach/detach=16/16, peak=1, call A init/dispose=1/1, observers=0, resizeFocus=false/false · workspace=1440×900, room=1184
 ```
+
+## Kiểm public API và bàn phím menu sau review tiếp ngày 12/11/2026
+
+- `features/live/index.ts` công bố đúng hai named export `RoomShell` và `useCallSnapshot`; `WorkspaceFixturePage` dùng entry này thay cho đường dẫn nội bộ `live/room` và `live/runtime`. Đối chiếu [ranh giới public API](../design-system/frontend/code-architecture.md#public-api-không-chỉ-là-một-file-index); không thay đổi ownership của runtime cuộc gọi.
+- WorkspaceMenu đóng khi focus rời cả trigger và menu, không chủ động đổi focus trong nhánh này. Escape được xử lý tại vùng menu thay cho listener trên document: chỉ đóng/trả focus về trigger khi focus còn bên trong. `WorkspaceFixturePage` đưa focus tới heading có `tabIndex={-1}` khi mở màn danh sách mẫu. Styling vẫn dùng Tailwind và token chung, không thêm CSS riêng.
+- Fixture RoomShell bổ sung ca chuyển focus từ mục danh sách ra kênh TEXT: menu đóng, focus còn ở kênh kể cả sau Escape. Ca chọn mục danh sách xác nhận heading màn mới nhận focus; vẫn giữ ca Escape trong menu trả focus về trigger.
+- Kiểm thêm trên **Chrome 157.0.8103.39 headless / Windows**, qua `Input.dispatchKeyEvent` của CDP với phím thật (không dùng `dispatchEvent` để giả lập Tab). Trên `/workspace` ở **1440 × 900** và **390 × 844**, cả hai lượt đều đạt: Enter mở menu và focus mục danh sách; Shift+Tab tới trigger vẫn giữ menu mở; Tab trở lại mục danh sách rồi Tab ra **thảo-luận-chung** đóng menu và giữ đích focus; Escape tại kênh không đổi focus; Escape trong menu trả về trigger; Enter chọn danh sách đưa focus tới heading **Danh sách Workspace**.
+- Fixture đầy đủ tiếp tục đạt: StrictMode, hai kênh LIVE, stale stream, breakpoint 1279/1280 px và route `/workspace` 1440 × 900. Track/call handle được giữ qua resize, attach/detach 16/16, 0 subscription và 0 observer sau unmount. Màn danh sách vẫn là fixture; bản production thuộc M1-T7.1. Chưa kiểm screen reader hoặc media end-to-end trong lượt này.
+- `pnpm check` đạt **666/666 test**, format, lint, typecheck và build. Harness đạt 54 ca, skip một ca symlink trên Windows; `pnpm media:smoke` đạt native worker và Router Opus/VP8.
+
+```text
+PASS native keyboard 1440x900: Shift+Tab, Tab out, Escape outside/inside, Enter navigation and heading focus
+PASS native keyboard 390x844: Shift+Tab, Tab out, Escape outside/inside, Enter navigation and heading focus
+PASS · subscriptions=24, remaining=0, video attach/detach=16/16, peak=1, call A init/dispose=1/1, observers=0, resizeFocus=true/true · workspace=1440×900, room=1184
+```
