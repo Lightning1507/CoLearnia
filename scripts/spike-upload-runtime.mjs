@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import { setImmediate } from 'node:timers/promises';
+import { aborted } from 'node:util';
+import { setImmediate, setTimeout } from 'node:timers/promises';
 import Busboy from 'busboy';
 import { fileTypeFromBuffer } from 'file-type';
 import sharp from 'sharp';
@@ -11,6 +12,7 @@ const maxInputBytes = 10 * 1024 * 1024;
 const maxOutputBytes = 2 * 1024 * 1024;
 const maxInputPixels = 16_000_000;
 const chunkSize = 64 * 1024;
+const nativeTimeoutSeconds = 1;
 const boundary = 'colearnia-spike';
 const header = Buffer.from(
   `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="fixture.jpg"\r\nContent-Type: image/jpeg\r\n\r\n`,
@@ -90,6 +92,7 @@ async function processImage(input, options) {
   }
   const image = sharp(bytes, { limitInputPixels: maxInputPixels, failOn: 'warning' });
   const { data, info } = await image
+    .timeout({ seconds: nativeTimeoutSeconds })
     .rotate()
     .resize({ width: 1920, height: 1080, fit: 'inside', withoutEnlargement: true })
     .jpeg({ quality: 80 })
@@ -139,7 +142,7 @@ const largeImage = await sharp({
 })
   .png()
   .toBuffer();
-const tooManyBytes = Buffer.alloc(maxInputBytes + 2, 0x61);
+const tooManyBytes = Buffer.alloc(maxInputBytes + 1, 0x61);
 const boundaryBytes = tooManyBytes.subarray(0, maxInputBytes);
 const fake = Buffer.from('This is text presented as a JPEG in the multipart header.');
 const truncated = jpeg.subarray(0, Math.floor(jpeg.length / 2));
@@ -177,12 +180,57 @@ await measure('exact-byte-limit', async () => {
 for (const [name, bytes, expected, options] of [
   ['fake-jpeg', fake, /Image signature rejected/],
   ['truncated-jpeg', truncated, /premature end|truncat|corrupt/i],
-  ['over-byte-limit', tooManyBytes, /Multipart limit/],
+  ['over-byte-limit-by-one', tooManyBytes, /Multipart limit/],
   ['over-pixel-limit', largeImage, /pixel limit/i],
   ['abort-mid-stream', jpeg, { name: 'AbortError' }, { abortAfterFirstChunk: true }],
 ]) {
   await measure(name, async () => {
     await assert.rejects(processImage(bytes, options), expected);
-    return 'rejected';
+    return { outcome: 'rejected', inputBytes: bytes.length };
   });
 }
+
+await measure('native-timeout-after-request-abort', async () => {
+  const started = performance.now();
+  const elapsedMs = () => +(performance.now() - started).toFixed(2);
+  const controller = new AbortController();
+  // A deliberately costly filter makes the native timeout observable on this fixture.
+  const image = sharp(jpeg, { limitInputPixels: maxInputPixels })
+    .median(51)
+    .timeout({ seconds: nativeTimeoutSeconds })
+    .jpeg();
+  const native = image.toBuffer();
+  const request = Promise.race([
+    native,
+    aborted(controller.signal, image).then(() => controller.signal.throwIfAborted()),
+  ]);
+  const requestRejected = assert.rejects(request, { name: 'AbortError' }).then(elapsedMs);
+  let nativeFinished = false;
+  const nativeRejected = assert.rejects(native, /timeout/i).then(() => {
+    nativeFinished = true;
+    return elapsedMs();
+  });
+  // Handle either unexpected outcome while waiting to observe native processing.
+  const outcomes = Promise.allSettled([requestRejected, nativeRejected]);
+  const observationDeadline = started + 5000;
+  while (sharp.counters().process === 0 && performance.now() < observationDeadline) {
+    await setTimeout(1);
+  }
+  assert.equal(sharp.counters().process, 1, 'expected the isolated sharp job to be processing');
+  const abortAtMs = elapsedMs();
+  controller.abort();
+  const requestResult = await requestRejected;
+  assert.equal(nativeFinished, false, 'native work settled before request rejection');
+  assert.equal(sharp.counters().process, 1, 'native work stopped when the request was aborted');
+  const nativeResult = await nativeRejected;
+  await outcomes;
+  assert.ok(nativeResult > requestResult);
+  assert.equal(sharp.counters().process, 0);
+  return {
+    timeoutSeconds: nativeTimeoutSeconds,
+    abortAtMs,
+    requestRejectedAtMs: requestResult,
+    nativeRejectedAtMs: nativeResult,
+    nativeProcessingAfterRequestAbort: true,
+  };
+});
