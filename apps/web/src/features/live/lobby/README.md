@@ -58,3 +58,7 @@ PR title đề xuất: `feat(media): add lobby device selection and preview [SCR
 - Layout/spacing/responsive chuyển sang Tailwind; hook đổi tên `useLobbyPreview.ts` và cập nhật import.
 - Focus dùng outline `#173f35` dày 3px, offset 3px và halo trắng. Kiểm Tab qua dropdown/nút mic, dropdown/nút camera, làm mới trên browser thật: focus-visible hiện rõ. Tương phản với nền lobby `#f7f8f2` lớn hơn 10:1, vượt yêu cầu 3:1. Mobile 390×844 và desktop 1440×900 không tràn ngang; console không warn/error tại thời điểm kiểm. Ca rút thiết bị giữa request được kiểm bằng mock, chưa rút hai camera vật lý.
 - `pnpm check` sau review: đạt toàn cổng, 121/121 tests (26 ca lobby); build còn cảnh báo chunk lớn hơn 500 kB. `pnpm media:smoke`: đạt native worker/Router; không chứng minh cuộc gọi/TURN.
+
+## Bàn giao preferences khi tiếp tục
+
+Nút Tiếp tục bị khóa khi camera hoặc microphone đang requesting (mở lần đầu hoặc đổi thiết bị); UI hướng dẫn chờ hoàn tất hoặc tắt thiết bị để tiếp tục. Handler kiểm snapshot runtime mới nhất để chặn cả click trước khi React kịp render lại. Payload lấy selectedId của từng thiết bị (chuỗi rỗng giữ lựa chọn mặc định), còn enabled lấy isActive sau khi request hoàn tất. Có thể tiếp tục khi cả hai thiết bị tắt. Test lobbyContinue.test.ts kiểm nút, callback và payload cho cả mic/camera, gồm pending A→B, thành công B, hủy mở, lựa chọn mặc định và handler cũ.

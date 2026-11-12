@@ -147,15 +147,25 @@ export function LobbyDeviceCheck({
   const videoRef = useRef<HTMLVideoElement>(null);
   const id = useId();
   const deviceControlsDisabled = !!state.environmentError || continuePending;
+  const deviceRequestPending =
+    state.camera.status === 'requesting' || state.microphone.status === 'requesting';
   const continueToSession = () => {
+    // Read the runtime too: a request may start before React renders the disabled button.
+    const current = preview.getSnapshot();
+    if (
+      continuePending ||
+      current.camera.status === 'requesting' ||
+      current.microphone.status === 'requesting'
+    )
+      return;
     const preferences: LobbyDevicePreferences = {
       camera: {
-        enabled: state.camera.isActive,
-        deviceId: state.camera.openedId ?? state.camera.selectedId,
+        enabled: current.camera.isActive,
+        deviceId: current.camera.selectedId,
       },
       microphone: {
-        enabled: state.microphone.isActive,
-        deviceId: state.microphone.openedId ?? state.microphone.selectedId,
+        enabled: current.microphone.isActive,
+        deviceId: current.microphone.selectedId,
       },
     };
     // No transfer of tracks: the join/controller owner must acquire its own resources.
@@ -368,11 +378,21 @@ export function LobbyDeviceCheck({
                   <p className="text-sm text-text-secondary">
                     Bạn vẫn có thể tiếp tục để xem nội dung mà không bật camera hoặc microphone.
                   </p>
+                  <p
+                    id={`${id}-continue-status`}
+                    className="text-sm text-text-secondary"
+                    role="status"
+                  >
+                    {deviceRequestPending
+                      ? 'Đang mở hoặc đổi thiết bị. Hãy chờ hoàn tất hoặc tắt thiết bị để tiếp tục.'
+                      : ''}
+                  </p>
                   <button
                     className={`${primaryButtonClass} w-full`}
                     type="button"
                     onClick={continueToSession}
-                    disabled={continuePending}
+                    disabled={continuePending || deviceRequestPending}
+                    aria-describedby={`${id}-continue-status`}
                   >
                     {continuePending ? 'Đang tiếp tục…' : 'Tiếp tục vào phiên'}
                   </button>
