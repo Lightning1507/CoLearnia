@@ -1914,6 +1914,69 @@ describe('MAIN reconnect and resync', () => {
     await f.registry.sweepExpired();
     expect(f.registry.stats().ownerships).toBe(0);
   });
+  it('sweep recovers exhausted gate retries after one disconnect without client recovery', async () => {
+    const f = await reconnectFixture();
+    const run = vi.spyOn(f.coordinator, 'run');
+    for (let attempt = 0; attempt < 3; attempt++)
+      run.mockRejectedValueOnce(new CoordinationError('BUSY'));
+    await expect(f.registry.disconnect(f.socket.socketId)).rejects.toMatchObject({ code: 'BUSY' });
+    expect(run).toHaveBeenCalledTimes(3);
+    expect(f.messaging).not.toHaveBeenCalled();
+    expect(f.board).not.toHaveBeenCalled();
+    f.advance(30_000);
+    await f.registry.sweepExpired();
+    expect(f.media).toHaveBeenCalledOnce();
+    expect(f.messaging).toHaveBeenCalledOnce();
+    expect(f.board).toHaveBeenCalledOnce();
+    expect(f.board.mock.calls[0]![0]).toEqual(f.media.mock.calls[0]![0]);
+    expect(f.registry.stats().ownerships).toBe(0);
+    const ticket = await f.issue();
+    const joined = await f.registry.join(f.next, {
+      ticket: ticket.ticket,
+      requestId: randomUUID(),
+    });
+    expect(joined.ack.data.result.participantId).not.toBe(f.joined.ack.data.result.participantId);
+  });
+  it('concurrent sweeps keep the gate available and do not duplicate pending cleanup', async () => {
+    const f = await reconnectFixture();
+    const run = vi.spyOn(f.coordinator, 'run');
+    for (let attempt = 0; attempt < 3; attempt++)
+      run.mockRejectedValueOnce(new CoordinationError('BUSY'));
+    await expect(f.registry.disconnect(f.socket.socketId)).rejects.toMatchObject({ code: 'BUSY' });
+    f.advance(30_000);
+    const pending = deferred<SessionCleanupResult>();
+    f.board.mockImplementationOnce(() => pending.promise);
+    const first = f.registry.sweepExpired();
+    await vi.waitFor(() => expect(f.board).toHaveBeenCalledOnce());
+    await f.registry.sweepExpired();
+    expect(f.registry.stats().ownerships).toBe(1);
+    expect(await f.registry.withContext(f.socket.socketId, f.context, (value) => value.ok)).toBe(
+      false,
+    );
+    expect(f.media).toHaveBeenCalledOnce();
+    expect(f.messaging).toHaveBeenCalledOnce();
+    pending.resolve(cleanupAck(f.board.mock.calls[0]![0]));
+    await first;
+    expect(f.registry.stats().ownerships).toBe(0);
+    expect(f.board).toHaveBeenCalledOnce();
+  });
+  it('keeps cleanup bounded per sweep and retries on a later sweep when admission recovers', async () => {
+    const f = await reconnectFixture();
+    const run = vi.spyOn(f.coordinator, 'run');
+    for (let attempt = 0; attempt < 6; attempt++)
+      run.mockRejectedValueOnce(new CoordinationError('BUSY'));
+    await expect(f.registry.disconnect(f.socket.socketId)).rejects.toMatchObject({ code: 'BUSY' });
+    f.advance(30_000);
+    await f.registry.sweepExpired();
+    expect(run).toHaveBeenCalledTimes(7);
+    expect(f.registry.stats().ownerships).toBe(1);
+    expect(f.messaging).not.toHaveBeenCalled();
+    await f.registry.sweepExpired();
+    expect(f.registry.stats().ownerships).toBe(0);
+    expect(f.media).toHaveBeenCalledOnce();
+    expect(f.messaging).toHaveBeenCalledOnce();
+    expect(f.board).toHaveBeenCalledOnce();
+  });
   it('fences the old socket immediately and cleans every domain before resume', async () => {
     const f = await reconnectFixture();
     const disconnected = f.registry.disconnect(f.socket.socketId);

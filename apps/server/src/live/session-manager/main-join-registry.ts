@@ -1706,6 +1706,38 @@ export function createMainJoinRegistry(options: {
     async sweepExpired() {
       sweep();
       for (const room of [...rooms.values()]) {
+        // A socket may emit disconnect only once. Recover preparation failures
+        // through the periodic sweep, including after grace, without awaiting
+        // cleanup I/O under a Workspace gate or renewing the resume deadline.
+        for (const owner of [...ownerships.values()]) {
+          const record = owner.reconnect;
+          if (
+            closed ||
+            owner.room !== room ||
+            room.state.state !== 'ACTIVE' ||
+            !record ||
+            record.handle ||
+            record.task ||
+            !record.retryCleanup
+          )
+            continue;
+          try {
+            await record.retryCleanup();
+          } catch (error) {
+            if (error instanceof CoordinationError && ['BUSY', 'TIMEOUT'].includes(error.code))
+              continue;
+            if (
+              error instanceof MainJoinError &&
+              error.code === 'CONFLICT' &&
+              (ownerships.get(owner.participant.auth.userId) !== owner ||
+                owner.reconnect !== record ||
+                owner.participant.callGeneration !== record.generation ||
+                room.state.state !== 'ACTIVE')
+            )
+              continue;
+            throw error;
+          }
+        }
         await options.coordinator.run({ workspaceId: room.state.workspaceId }, async (held) => {
           held.assertHeld({ workspaceId: room.state.workspaceId });
           expireConnections(room);
