@@ -28,6 +28,7 @@ import type {
 import { Types } from 'mongoose';
 import type { types as MediaTypes } from 'mediasoup';
 import type { OperationCoordinator, CoordinationContext } from '../../lib/operation-coordinator.js';
+import { CoordinationError } from '../../lib/operation-coordinator.js';
 import {
   createSessionProjectionCursor,
   prepareSessionSnapshot,
@@ -82,6 +83,7 @@ type Ownership = {
     generation: number;
     handle?: ReturnType<typeof beginSessionTransition>;
     task?: Promise<unknown>;
+    retryCleanup?: () => Promise<unknown>;
   };
   resumeReplay?: { digest: string; requestId: string; socketId: string; generation: number };
 };
@@ -578,7 +580,7 @@ export function createMainJoinRegistry(options: {
       assertRunning();
       const owner = [...ownerships.values()].find((value) => value.binding.socketId === socketId);
       if (!owner) return;
-      if (owner.reconnect) return owner.reconnect.task;
+      if (owner.reconnect) return owner.reconnect.task ?? owner.reconnect.retryCleanup?.();
       const { participant, room } = owner;
       const record: NonNullable<Ownership['reconnect']> = {
         deadline: clock() + limits.reconnectGraceMs,
@@ -615,41 +617,63 @@ export function createMainJoinRegistry(options: {
         fail('DEPENDENCY_UNAVAILABLE');
       }
       const timing = createSessionTransitionTiming();
-      record.task = (async () => {
-        await options.coordinator.run(
-          { workspaceId: room.state.workspaceId },
-          async (held) => {
-            if (
-              closed ||
-              ownerships.get(participant.auth.userId) !== owner ||
-              owner.reconnect !== record ||
-              participant.callGeneration !== record.generation ||
-              room.state.state !== 'ACTIVE'
-            )
-              fail('CONFLICT');
-            record.handle = beginSessionTransition(
-              request,
-              {
-                assertHeld: () => held.assertHeld({ workspaceId: room.state.workspaceId }),
-                isCurrent: () =>
-                  !closed &&
-                  ownerships.get(participant.auth.userId) === owner &&
-                  owner.reconnect === record &&
-                  participant.callGeneration === record.generation,
-              },
-              { ...adapters, media: { revoke: () => mediaResult } },
-              {
-                userId: participant.auth.userId,
-                timing,
-              },
-            );
-          },
-          { waitTimeoutMs: 2000 },
-        );
-        await record.handle!.runForeground();
-        return record.handle!.reconcile();
-      })();
-      return record.task;
+      record.retryCleanup = () => {
+        const task = (async () => {
+          // Retry only acquisition failures, before a cleanup handle exists. A
+          // callback retry reuses this record, request and synchronous media result.
+          for (let attempt = 0; ; attempt++) {
+            try {
+              await options.coordinator.run(
+                { workspaceId: room.state.workspaceId },
+                async (held) => {
+                  if (
+                    closed ||
+                    ownerships.get(participant.auth.userId) !== owner ||
+                    owner.reconnect !== record ||
+                    participant.callGeneration !== record.generation ||
+                    room.state.state !== 'ACTIVE'
+                  )
+                    fail('CONFLICT');
+                  record.handle = beginSessionTransition(
+                    request,
+                    {
+                      assertHeld: () => held.assertHeld({ workspaceId: room.state.workspaceId }),
+                      isCurrent: () =>
+                        !closed &&
+                        ownerships.get(participant.auth.userId) === owner &&
+                        owner.reconnect === record &&
+                        participant.callGeneration === record.generation,
+                    },
+                    { ...adapters, media: { revoke: () => mediaResult } },
+                    {
+                      userId: participant.auth.userId,
+                      timing,
+                    },
+                  );
+                },
+                { waitTimeoutMs: 2000 },
+              );
+              break;
+            } catch (error) {
+              if (
+                record.handle ||
+                !(error instanceof CoordinationError) ||
+                !['TIMEOUT', 'BUSY'].includes(error.code) ||
+                attempt >= 2
+              )
+                throw error;
+            }
+          }
+          await record.handle!.runForeground();
+          return record.handle!.reconcile();
+        })().catch((error: unknown) => {
+          if (!record.handle) delete record.task;
+          throw error;
+        });
+        record.task = task;
+        return task;
+      };
+      return record.retryCleanup();
     },
 
     async resume(rawBinding: Binding, raw: unknown) {
@@ -683,7 +707,7 @@ export function createMainJoinRegistry(options: {
           record.generation === owner.participant.callGeneration);
       if (!isReplay && (!record || !hasResumeGrant() || clock() >= record.deadline))
         fail('CONFLICT');
-      if (record?.task) await record.task;
+      if (record) await (record.task ?? record.retryCleanup?.());
       const destination = {
         workspaceId: owner.room.state.workspaceId,
         channelId: owner.room.state.channelId,

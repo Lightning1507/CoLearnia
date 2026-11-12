@@ -10,7 +10,7 @@ import type {
 } from '@colearnia/contracts';
 import { sessionJoinAckSchema } from '@colearnia/contracts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createOperationCoordinator } from '../../lib/operation-coordinator.js';
+import { CoordinationError, createOperationCoordinator } from '../../lib/operation-coordinator.js';
 import { createMainJoinRegistry, MainJoinError } from './main-join-registry.js';
 import { canReceiveMedia } from '../policy/session-policy.js';
 import type { PolicyParticipant, SessionPolicyState } from '../policy/session-policy.js';
@@ -93,8 +93,9 @@ function setup(
       revision: input.expectedRevision + 1,
     })),
   };
+  const coordinator = createOperationCoordinator();
   const registry = createMainJoinRegistry({
-    coordinator: createOperationCoordinator(),
+    coordinator,
     repository,
     resolveAuthority,
     isAuthorityCurrent,
@@ -117,6 +118,7 @@ function setup(
     registry.issue(identity, destination, { requestId });
   return {
     registry,
+    coordinator,
     auth,
     target,
     principal,
@@ -1721,6 +1723,62 @@ async function reconnectFixture() {
 }
 
 describe('MAIN reconnect and resync', () => {
+  it('retries a timed out Workspace gate and releases the expired ownership after cleanup', async () => {
+    const f = await reconnectFixture();
+    const entered = deferred<void>();
+    const release = deferred<void>();
+    const busy = f.coordinator.run({ workspaceId: f.target.workspaceId }, async () => {
+      entered.resolve();
+      await release.promise;
+    });
+    await entered.promise;
+    const disconnected = f.registry.disconnect(f.socket.socketId);
+    const duplicate = f.registry.disconnect(f.socket.socketId);
+    expect(f.media).toHaveBeenCalledOnce();
+    try {
+      await vi.waitFor(() => expect(f.coordinator.stats().rejected).toBe(1), { timeout: 3000 });
+      expect(f.messaging).not.toHaveBeenCalled();
+      expect(f.board).not.toHaveBeenCalled();
+      f.advance(30_000);
+    } finally {
+      release.resolve();
+      await busy;
+    }
+    await Promise.all([disconnected, duplicate]);
+    expect(f.media).toHaveBeenCalledOnce();
+    expect(f.messaging).toHaveBeenCalledOnce();
+    expect(f.board).toHaveBeenCalledOnce();
+    expect(f.board.mock.calls[0]![0]).toEqual(f.media.mock.calls[0]![0]);
+    await expect(f.registry.resume(f.next, f.command)).rejects.toMatchObject({ code: 'CONFLICT' });
+    await f.registry.sweepExpired();
+    expect(f.registry.stats().ownerships).toBe(0);
+    const ticket = await f.issue();
+    const joined = await f.registry.join(f.next, {
+      ticket: ticket.ticket,
+      requestId: randomUUID(),
+    });
+    expect(joined.ack.data.result.participantId).not.toBe(f.joined.ack.data.result.participantId);
+  });
+  it('bounds gate retries and allows another lifecycle callback without extending grace', async () => {
+    const f = await reconnectFixture();
+    const run = vi.spyOn(f.coordinator, 'run');
+    for (let attempt = 0; attempt < 3; attempt++)
+      run.mockRejectedValueOnce(new CoordinationError('BUSY'));
+    await expect(f.registry.disconnect(f.socket.socketId)).rejects.toMatchObject({ code: 'BUSY' });
+    expect(run).toHaveBeenCalledTimes(3);
+    expect(f.messaging).not.toHaveBeenCalled();
+    f.advance(29_000);
+    await f.registry.disconnect(f.socket.socketId);
+    expect(f.media).toHaveBeenCalledOnce();
+    expect(f.board).toHaveBeenCalledOnce();
+    expect(await f.registry.withContext(f.socket.socketId, f.context, (value) => value.ok)).toBe(
+      false,
+    );
+    f.advance(1000);
+    await expect(f.registry.resume(f.next, f.command)).rejects.toMatchObject({ code: 'CONFLICT' });
+    await f.registry.sweepExpired();
+    expect(f.registry.stats().ownerships).toBe(0);
+  });
   it('fences the old socket immediately and cleans every domain before resume', async () => {
     const f = await reconnectFixture();
     const disconnected = f.registry.disconnect(f.socket.socketId);

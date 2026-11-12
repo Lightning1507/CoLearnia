@@ -34,7 +34,13 @@ pnpm exec vitest run --config vitest.database.config.ts apps/server/test/main-jo
 pnpm media:smoke
 ```
 
-## Giới hạn
+## Bổ sung sau review ngày 12/11/2026
+
+- Regression gate thật: giữ Workspace gate quá timeout 2 giây, disconnect lặp dùng chung cleanup; khi gate rảnh, messaging/board được gọi đúng request/generation và media chỉ revoke một lần. Hết grace gốc, sweep bỏ ownership và join bằng ticket mới thành công.
+- Regression giới hạn retry: ba lần gate trả `BUSY` thì dừng; callback sau thử lại được trên cùng record, vẫn deny socket cũ và không kéo dài 30 giây grace.
+- Kiểm lại: 656 unit test đạt trong 41 file; riêng registry 96 test đạt. Integration registry với MongoDB replica set riêng và mediasoup native đạt 13 test. Format, lint, typecheck, build và harness đạt. Vite vẫn cảnh báo bundle trên 500 kB.
+
+## Giới hạn kiểm chứng
 
 Auth/access provider và messaging/board trong integration vẫn là fixture; MongoDB, Router và WebRtcTransport là thật. Chưa kiểm cuộc gọi trình duyệt, RTP/audio thực, TURN, heartbeat/control-lease detection hoặc mount registry vào production. Các kết quả này không thay gate SCRUM-88/89.
 
