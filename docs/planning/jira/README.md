@@ -4,6 +4,8 @@ Dữ liệu lấy từ baseline `a5fce0a1dbf1db577f373047910fbb615c0fb731`, ngà
 
 ## Hiện trạng và việc tiếp theo
 
+**SCRUM-63 — bổ sung 12/11/2026:** [xác nhận phạm vi từ chủ repo](https://github.com/Lightning1507/CoLearnia/pull/88#issuecomment-6813775252) chốt phần cấu hình/credential/relay, TTL bàn giao 14.400 giây; tiêu chí hết hạn chuyển sang [SCRUM-92](https://faker1652005.atlassian.net/browse/SCRUM-92), chưa đạt. [Issue #91](https://github.com/Lightning1507/CoLearnia/issues/91) chỉ liên kết bằng chứng, Jira quản lý công việc. Các CSV bên dưới là dữ liệu import lịch sử giữ tiêu chí ban đầu để truy vết, không nhập lại để ghi đè quyết định mới. PR #88 vẫn cần M3 review; xác nhận phạm vi của chủ repo không thay approval reviewer.
+
 **Theo xác nhận của PM ngày 05/11/2026:** đã nhập đủ 5 Epic và 80 task chính, cập nhật tên/description, gán assignee, khôi phục Parent sau import, gán Priority và hiển thị estimate giờ. PM đã chạy API và xác nhận kiểm đủ **171 liên kết phụ thuộc đúng chiều**. Sáu task tùy sức chưa nhập. Đây là kết quả do PM cung cấp, không phải một lượt kiểm trực tiếp mới của agent.
 
 | Miền | Epic    |
