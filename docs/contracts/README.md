@@ -8,6 +8,8 @@ Trước khi viết API/socket, đọc [quy ước API và backend](api-conventi
 
 Source schema ở `packages/contracts/src`, frontend và backend import qua `@colearnia/contracts`.
 
+**Fixture kế vị host/recording (SCRUM-90):** [kết quả Q1/Q7 và điểm cần bổ sung](../test-evidence/2026-11-11-scrum-90-host-recording.md). Dùng policy/cleanup hiện có để kiểm mô hình; chưa là logic kế vị host, recorder hoặc storage trong ứng dụng.
+
 **MAIN join registry (SCRUM-82):** [ticket, ownership và adapter socket](main-join-registry.md); schema `session-join.ts`, registry dùng repository/policy/projection hiện có. Composition auth/access và lifecycle đầy đủ tiếp tục theo task tích hợp.
 
 **MAIN reconnect/resync (SCRUM-84):** [resume ticket, grace và socket generation](main-reconnect.md); thu tài nguyên đời cũ trước khi nối lại, snapshot dựng từ quyền hiện hành. M3 review schema ack join/resume và M4–FE ghép adapter theo contract này.
@@ -35,6 +37,8 @@ Khi thêm command:
 REST error: `{ error: { code, message }, requestId }`. Không gửi raw database error/stack/credentials tới client.
 
 ## Contracts messaging cần bổ sung theo feature
+
+[Gửi tin, lịch sử và subscribe kênh TEXT (SCRUM-40)](text-messaging.md) cung cấp schema và fixture cho tin văn bản, trang lịch sử và tải bù, cùng payload socket.
 
 [Bàn giao bản ghi MAIN giữa M3 và M2 (SCRUM-37)](recording-sink.md) mô tả reserve, writer, finalize và xử lý lỗi/hủy để review trước PoC tích hợp.
 
@@ -118,7 +122,7 @@ Theo [board](../product/board-collaboration.md), MAIN chỉ overlay LIVE do host
 
 RECORD-01 theo [nguồn nghiệp vụ](../product/recording.md): host điều khiển ghi màn hình/camera/âm thanh MAIN; lưu theo phiên để thành viên còn quyền kênh xem. Không ghi nhóm riêng hoặc chuyển recorder theo host hỗ trợ. Chưa có implementation hoặc benchmark. Proposal M3 chủ trì, M4 cung cấp host/scope/lifecycle, M2 lưu/phục vụ byte/ACL, M1 quyền kênh.
 
-Cần chọn capture/composition/encode, bố cục/số camera/codec và cách phát, trạng thái xử lý, idempotency, cleanup khi stop/end/error/restart, quota/retention/quyền xóa. Chưa chốt thư viện, topology recorder, collection hoặc schema executable. Không coi recorder là participant được nghe mọi scope. Không giữ queue/mutex phiên khi chờ encode/lưu file; task phải thiết kế gate tài nguyên và giao diện cleanup. Đo CPU/RAM/disk/network cùng media/chat/board/TURN trước khi chốt capacity; PoC clip vài phút không là giới hạn thời lượng sản phẩm. REC-01 vẫn là reconnect, không dùng mã đó cho recording.
+Hướng mediasoup PlainTransport → GStreamer, H.264/AAC MP4, tối đa 3 tiếng/đoạn và READY giữ vô thời hạn đã chốt tại [nguồn recording](../product/recording.md). Còn cần kiểm plugin/profile, nguồn động/sync/playback, contract/schema executable, adapter lưu trữ, quota, quyền xóa và xử lý byte khi xóa kênh/Workspace. Không coi recorder là participant được nghe mọi scope hoặc giữ queue/mutex phiên khi chờ encode/lưu file. Đo CPU/RAM/disk/network cùng media/chat/board/TURN trước khi chốt capacity; PoC clip vài phút không là giới hạn thời lượng sản phẩm. REC-01 vẫn là reconnect, không dùng mã đó cho recording.
 
 ## Quyết định phiên/nhóm ngày 04/11/2026
 

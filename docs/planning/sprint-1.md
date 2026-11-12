@@ -1,5 +1,7 @@
 # Sprint 1 — nền tảng và luồng đầu tiên
 
+**Điều chỉnh phạm vi SCRUM-63 — 12/11/2026:** [xác nhận của chủ repo](https://github.com/Lightning1507/CoLearnia/pull/88#issuecomment-6813775252) giữ phần cấu hình/credential/relay và TTL 14.400 giây trong SCRUM-63; việc hết hạn chưa đạt chuyển sang [SCRUM-92](https://faker1652005.atlassian.net/browse/SCRUM-92). PR #88 vẫn cần M3 review; CSV import giữ tiêu chí cũ để truy vết, không là phạm vi hiện hành sau điều chỉnh này.
+
 **Sprint Goal**
 
 > Đưa CoLearnia từ bản mẫu giao diện thành phiên bản đầu tiên dùng được, để một nhóm 5 người có thể đăng nhập, vào cùng Workspace, nhắn tin và gọi trực tuyến có mic, camera, chia sẻ màn hình.
