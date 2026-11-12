@@ -9,6 +9,7 @@ import {
   createSessionTransitionTiming,
 } from '../session-manager/session-transition.js';
 import { createTransportSignaling } from './transport-signaling.js';
+import { createMediaSourceSync } from './media-source-sync.js';
 
 type Ports = Parameters<typeof createTransportSignaling>[0];
 type Native = Awaited<ReturnType<Ports['createTransport']>>;
@@ -121,6 +122,7 @@ function fixture(contextForSocket?: (socketId: string, context: LiveContext) => 
     target: { type: 'PARTICIPANT', participantId: context.participantId },
   };
   return {
+    context,
     createInput,
     envelope,
     dtlsParameters,
@@ -139,6 +141,77 @@ function fixture(contextForSocket?: (socketId: string, context: LiveContext) => 
 afterEach(() => vi.useRealTimers());
 
 describe('SCRUM-60 transport signaling', () => {
+  it('publishes close for a Transport acknowledged after snapshot on the same socket only', async () => {
+    const f = fixture();
+    const sync = createMediaSourceSync({
+      transports: f.service,
+      media: {
+        visibleSources: () => [],
+        readOwnSources: () => ({ ownConsumers: [], ownProducers: [] }),
+      },
+      async withContext(_socketId, input, use) {
+        const { context } = f;
+        return use({ ok: true, context }, undefined, {
+          request: { ...input, auth: context.auth },
+          access: context.access,
+          nowMs: Date.now(),
+          session: {
+            sessionId: context.sessionId,
+            epoch: context.epoch,
+            workspaceId: context.access.workspaceId,
+            channelId: context.access.channelId,
+            policyRevision: context.policyRevision,
+            state: 'ACTIVE',
+            phase: 'GUIDANCE',
+            hostParticipantId: null,
+            helpingGroupId: null,
+            round: null,
+            participants: new Map(),
+            groups: new Map(),
+          },
+        });
+      },
+    });
+    async function attachSync(id: string) {
+      type SyncSocket = Parameters<typeof sync.attach>[0];
+      let resync: Parameters<SyncSocket['on']>[1] | undefined;
+      const emit = vi.fn<SyncSocket['emit']>();
+      const recipient = sync.attach({
+        id,
+        connected: true,
+        on: (_event, listener) => {
+          resync = listener;
+        },
+        once: vi.fn(),
+        emit,
+      });
+      expect(resync).toBeDefined();
+      const { sessionId, epoch, callGeneration } = f.context;
+      const result = await new Promise((ack) =>
+        resync?.({ requestId: randomUUID(), sessionId, epoch, callGeneration, payload: {} }, ack),
+      );
+      expect(result).toMatchObject({ data: { status: 'completed' } });
+      return { ...recipient, emit };
+    }
+
+    const owner = await attachSync('owner');
+    const otherTab = await attachSync('other-tab');
+    await expect(
+      f.socket('owner').emit('media.transport.create', f.createInput),
+    ).resolves.toMatchObject({
+      data: { result: { transportId: f.native.id } },
+    });
+    f.service.cleanup(f.cleanup);
+    const closed = { transportId: f.native.id, reason: 'TRANSPORT_FAILED' } as const;
+    await expect(otherTab.publish('media.transport.closed', closed)).resolves.toBe(false);
+    await expect(owner.publish('media.transport.closed', closed)).resolves.toBe(true);
+    expect(owner.emit).toHaveBeenLastCalledWith(
+      'media.transport.closed',
+      expect.objectContaining({ mediaSequence: 1, payload: closed }),
+    );
+    await expect(owner.publish('media.transport.closed', closed)).resolves.toBe(false);
+  });
+
   it('deduplicates create and rejects stale and foreign transport commands', async () => {
     const f = fixture();
     const owner = f.socket('owner');
