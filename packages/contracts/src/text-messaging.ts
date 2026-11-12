@@ -154,6 +154,37 @@ export const textMessageCreatedEventSchema = z.strictObject({
   subscriptionId: z.uuid(),
   message: committedTextMessageSchema,
 });
+const replyCountFields = {
+  rootMessageId: workspaceDocumentIdSchema,
+  replyCount: z.number().int().nonnegative(),
+  revision: z.number().int().nonnegative(),
+};
+export const textThreadReplyCountUpdatedEventSchema = z.strictObject({
+  subscriptionId: z.uuid(),
+  channelId: workspaceDocumentIdSchema,
+  conversationId: workspaceDocumentIdSchema,
+  ...replyCountFields,
+  revision: committedSequenceSchema,
+});
+export const textThreadReplyCountsQuerySchema = z.strictObject({
+  rootMessageIds: z
+    .array(workspaceDocumentIdSchema)
+    .min(1)
+    .max(textHistoryMaxLimit)
+    .refine((ids) => new Set(ids).size === ids.length),
+});
+export const textThreadReplyCountsResponseSchema = apiResponseSchema(
+  z.strictObject({
+    channelId: workspaceDocumentIdSchema,
+    conversationId: workspaceDocumentIdSchema,
+    counts: z
+      .array(z.strictObject(replyCountFields))
+      .max(textHistoryMaxLimit)
+      .refine(
+        (counts) => new Set(counts.map((count) => count.rootMessageId)).size === counts.length,
+      ),
+  }),
+);
 export const textConversationInvalidatedEventSchema = z.strictObject({
   subscriptionId: z.uuid(),
   reason: z.enum(['ACCESS_REVOKED', 'RESYNC_REQUIRED']),
@@ -173,6 +204,9 @@ export type TextConversationUnsubscribeInput = z.infer<
   typeof textConversationUnsubscribeInputSchema
 >;
 export type TextMessageCreatedEvent = z.infer<typeof textMessageCreatedEventSchema>;
+export type TextThreadReplyCountUpdatedEvent = z.infer<
+  typeof textThreadReplyCountUpdatedEventSchema
+>;
 export type TextConversationInvalidatedEvent = z.infer<
   typeof textConversationInvalidatedEventSchema
 >;

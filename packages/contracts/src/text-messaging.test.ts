@@ -14,6 +14,9 @@ import {
   textMessageSendInputSchema,
   textMessageSendResponseSchema,
   textThreadParamsSchema,
+  textThreadReplyCountsQuerySchema,
+  textThreadReplyCountsResponseSchema,
+  textThreadReplyCountUpdatedEventSchema,
 } from './index.js';
 
 const requestId = '10000000-0000-4000-8000-000000000001';
@@ -216,5 +219,106 @@ describe('TEXT messaging contract', () => {
       expect(textConversationSubscribeAckSchema.safeParse(error).success).toBe(true);
       expect(textMessageSendAckSchema.safeParse(error).success).toBe(true);
     }
+  });
+});
+
+describe('timeline reply count consumer fixture', () => {
+  const root = { channelId, conversationId, rootMessageId: id };
+
+  function timeline() {
+    const ack = textConversationSubscribeAckSchema.parse({ requestId, data: subscription });
+    let count = { replyCount: legacyMessage.replyCount, revision: -1 };
+    function apply(update: typeof count) {
+      if (update.revision > count.revision) count = update;
+    }
+    return {
+      get replyCount() {
+        return count.replyCount;
+      },
+      receive(payload: unknown) {
+        const event = textThreadReplyCountUpdatedEventSchema.parse(payload);
+        if (
+          ack.data?.subscriptionId === event.subscriptionId &&
+          event.channelId === channelId &&
+          event.conversationId === conversationId &&
+          event.rootMessageId === id
+        ) {
+          apply(event);
+        }
+      },
+      reconcile(payload: unknown) {
+        const response = textThreadReplyCountsResponseSchema.parse(payload);
+        if (
+          response.data?.channelId !== channelId ||
+          response.data.conversationId !== conversationId
+        ) {
+          return;
+        }
+        for (const update of response.data.counts) {
+          if (update.rootMessageId === id) apply(update);
+        }
+      },
+    };
+  }
+
+  const first = { ...root, subscriptionId, replyCount: 1, revision: 11 };
+  const second = { ...first, replyCount: 2, revision: 14 };
+
+  it('updates a timeline-only subscriber without a thread message event', () => {
+    const consumer = timeline();
+    expect(consumer.replyCount).toBe(0);
+    consumer.receive({ ...first, subscriptionId: requestId });
+    expect(consumer.replyCount).toBe(0);
+    consumer.receive(first);
+    expect(consumer.replyCount).toBe(1);
+  });
+
+  it('keeps the absolute count for a retried reply and a duplicate event', () => {
+    const consumer = timeline();
+    const reply = {
+      ...messageFields,
+      id: '507f1f77bcf86cd799439015',
+      rootMessageId: id,
+      commitSeq: first.revision,
+    };
+    consumer.receive(first);
+    const retry = textMessageSendAckSchema.parse({
+      requestId,
+      data: { outcome: 'existing', message: reply },
+    });
+    expect(retry.data?.message.clientMessageId).toBe(clientMessageId);
+    expect(retry.data?.outcome).toBe('existing');
+    consumer.receive(first);
+    expect(consumer.replyCount).toBe(1);
+  });
+
+  it('recovers a missed update for an old root and ignores delayed events and reads', () => {
+    const consumer = timeline();
+    consumer.receive(first);
+    const emptyCatchUp = textMessageHistoryResponseSchema.parse({
+      requestId,
+      data: {
+        mode: 'catch-up',
+        scope,
+        throughCheckpoint: 'checkpoint.H',
+        items: [],
+        nextCursor: null,
+      },
+    });
+    expect(emptyCatchUp.data?.items).toEqual([]);
+    expect(textThreadReplyCountsQuerySchema.parse({ rootMessageIds: [id] }).rootMessageIds).toEqual(
+      [id],
+    );
+    expect(textThreadReplyCountsQuerySchema.safeParse({ rootMessageIds: [id, id] }).success).toBe(
+      false,
+    );
+    const result = (replyCount: number, revision: number) => ({
+      requestId,
+      data: { channelId, conversationId, counts: [{ rootMessageId: id, replyCount, revision }] },
+    });
+    consumer.reconcile(result(second.replyCount, second.revision));
+    consumer.receive(first);
+    consumer.reconcile(result(first.replyCount, first.revision));
+    expect(consumer.replyCount).toBe(2);
   });
 });
