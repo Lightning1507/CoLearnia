@@ -15,7 +15,7 @@ Có thể giữ một đích hoàn host gốc, kiểm role/scope bằng policy c
 | Ca kiểm                     | Kết quả fixture                                                                                                                                                                                       |
 | --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | A → B tạm → C tạm           | Đích hoàn quyền vẫn A; B quay lại không giành host từ C. A join lại hợp lệ sau grace nhận lại host trong mô hình.                                                                                     |
-| B bàn giao chính thức cho C | Xóa đích A; A quay lại là member.                                                                                                                                                                     |
+| B bàn giao chính thức cho C | Chỉ xóa đích A sau cleanup và commit thành công; A quay lại là member.                                                                                                                                |
 | Revoke/regrant              | Revoke A xóa đích A; cấp lại rồi join không phục hồi host. Revoke B tạm không xóa đích A còn hợp lệ.                                                                                                  |
 | Không còn ứng viên          | Không cấp role cho socket rớt; giữ phiên theo grace hiện có; đúng biên 30.000 ms chuyển ENDING, không empty grace.                                                                                    |
 | Chọn host                   | Picker inject kiểm hai đầu danh sách; policy loại auth hết hạn/blocked. Chưa đo phân bố ngẫu nhiên production.                                                                                        |
@@ -28,6 +28,12 @@ Có thể giữ một đích hoàn host gốc, kiểm role/scope bằng policy c
 | Finalize/storage            | Cần input dừng, đúng attempt, stored receipt và không storage deny trước READY. PROCESSING/terminal chưa release vẫn giữ slot. Chưa kiểm byte/R2/transaction READY thật.                              |
 | Callback cũ/lỗi recorder    | Stop/deadline/input-stopped của attempt cũ không đổi attempt mới. Recorder lỗi không end call hoặc tự mở recorder thay thế.                                                                           |
 | Nguồn ghi                   | Policy chỉ chọn nguồn MAIN còn quyền/active, loại host hỗ trợ và ACTIVITY. Thiết bị tắt không tự bật; localGain không quyết định eligibility. Chưa có mixer/Consumer/pipeline thật.                   |
+
+## Bổ sung sau review ngày 12/11/2026
+
+- Giữ đích hoàn quyền A trong lúc B bàn giao cho C; chỉ xóa khi plan hiện hành commit thành công. Cleanup chưa xác nhận hoặc plan bị thay thế không xóa đích A. Test kiểm cả retry commit thành công và A quay lại trước khi bàn giao hoàn tất.
+- Recorder lỗi ở PROCESSING chuyển ngay sang FAILED và tăng revision một lần. Callback finalize muộn không đưa về READY; cuộc gọi vẫn ACTIVE, không tự mở attempt mới. STARTING/RECORDING vẫn cần xác nhận input-stopped trước khi giải phóng tài nguyên.
+- Ba regression test mới đều tái hiện lỗi trước bản sửa và đạt sau bản sửa; tổng fixture 26 ca đạt. Toàn bộ unit đạt 676 ca trong 41 file; harness, format, lint, typecheck và build đạt. Vite giữ cảnh báo bundle trên 500 kB.
 
 ## Phần cần bổ sung khi triển khai
 

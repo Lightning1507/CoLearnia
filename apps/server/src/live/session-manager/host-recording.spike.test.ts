@@ -47,6 +47,37 @@ describe('SCRUM-90: host succession executable model with the real session polic
     expect(host(f, f.c.participantId)).toBe(true);
     expect(host(f, f.a.participantId)).toBe(false);
   });
+  it('keeps the return target until official transfer cleanup and commit succeed', () => {
+    const f = createHostRecordingFixture();
+    apply(f, { kind: 'DISCONNECT', participantId: f.a.participantId });
+    const plan = f.prepare({
+      kind: 'TRANSFER',
+      actorId: f.b.participantId,
+      targetId: f.c.participantId,
+    });
+    expect(f.returnHost()).toBe(f.a.auth.userId);
+    expect(f.commit(plan, false)).toBe(false);
+    expect(f.returnHost()).toBe(f.a.auth.userId);
+    expect(f.session.hostParticipantId).toBeNull();
+    expect(f.commit(plan, true)).toBe(true);
+    expect(f.returnHost()).toBeNull();
+    expect(host(f, f.c.participantId)).toBe(true);
+  });
+  it('restores the original host when an uncommitted transfer is superseded by arrival', () => {
+    const f = createHostRecordingFixture();
+    apply(f, { kind: 'DISCONNECT', participantId: f.a.participantId });
+    const plan = f.prepare({
+      kind: 'TRANSFER',
+      actorId: f.b.participantId,
+      targetId: f.c.participantId,
+    });
+    expect(f.commit(plan, false)).toBe(false);
+    apply(f, { kind: 'ARRIVE', participant: f.makeParticipant(1, 2) });
+    expect(f.commit(plan, true)).toBe(false);
+    expect(f.returnHost()).toBe(f.a.auth.userId);
+    expect(host(f, f.a.participantId)).toBe(true);
+    expect(host(f, f.c.participantId)).toBe(false);
+  });
   it('a revoked original host returns as member after a fresh authorized join', () => {
     const f = createHostRecordingFixture();
     apply(f, { kind: 'DISCONNECT', participantId: f.a.participantId });
@@ -412,6 +443,29 @@ describe('SCRUM-90: recording protocol test double, not a capture/storage pipeli
     f.recorder.inputStopped(attempt);
     expect(f.recorder.inspect()!.state).toBe('FAILED');
     expect(f.recorder.trace.filter((value) => value === 'start-requested')).toHaveLength(1);
+  });
+  it('fails PROCESSING without allowing a late finalization to restore READY', () => {
+    const f = createHostRecordingFixture();
+    const attempt = f.recorder.start(f.a, randomUUID());
+    f.recorder.captureReady(attempt, 0);
+    f.recorder.stop(f.a, attempt);
+    f.recorder.inputStopped(attempt);
+    expect(f.recorder.inspect()!.state).toBe('PROCESSING');
+    const revision = f.recorder.inspect()!.revision;
+    f.recorder.fail();
+    expect(f.recorder.inspect()).toMatchObject({
+      state: 'FAILED',
+      revision: revision + 1,
+      inputStopped: true,
+    });
+    f.recorder.fail();
+    expect(f.recorder.inspect()!.revision).toBe(revision + 1);
+    expect(f.recorder.finalized(attempt, true)).toBe(false);
+    expect(f.recorder.inspect()!.state).toBe('FAILED');
+    expect(f.session.state).toBe('ACTIVE');
+    expect(f.recorder.canFinishCall()).toBe(true);
+    expect(f.recorder.trace.filter((value) => value === 'start-requested')).toHaveLength(1);
+    expect(f.recorder.release(attempt)).toBe(true);
   });
   it('selects MAIN sources by the real policy and never follows the host into ACTIVITY', () => {
     const f = createHostRecordingFixture();

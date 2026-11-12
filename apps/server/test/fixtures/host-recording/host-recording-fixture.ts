@@ -18,6 +18,7 @@ export type HostPlan = Readonly<{
   oldHostId: string | null;
   nextHostId: string | null;
   shouldEnd: boolean;
+  officialTransfer: boolean;
 }>;
 type HostEvent =
   | { kind: 'DISCONNECT'; participantId: string }
@@ -114,7 +115,6 @@ export function createHostRecordingFixture(pickIndex: (count: number) => number 
       if (!actor || oldHostId !== actor.participantId || !available(actor))
         throw new Error('Host authority required');
       if (!target || !available(target)) throw new Error('Target unavailable');
-      returnHostUserId = null;
     } else if (event.kind === 'ARRIVE') {
       const incoming = structuredClone(event.participant);
       for (const [id, previous] of participants) {
@@ -169,6 +169,7 @@ export function createHostRecordingFixture(pickIndex: (count: number) => number 
       oldHostId,
       nextHostId,
       shouldEnd: ![...participants.values()].some(holdsOwnership),
+      officialTransfer: event.kind === 'TRANSFER',
     });
   }
 
@@ -197,6 +198,7 @@ export function createHostRecordingFixture(pickIndex: (count: number) => number 
     }
     session.helpingGroupId = null;
     session.hostParticipantId = plan.nextHostId;
+    if (plan.officialTransfer) returnHostUserId = null;
     if (plan.shouldEnd) session.state = 'ENDING';
     session.policyRevision++;
     return true;
@@ -350,7 +352,10 @@ export function createHostRecordingFixture(pickIndex: (count: number) => number 
     fail() {
       if (attempt && !['READY', 'FAILED'].includes(attempt.state)) {
         attempt.failed = true;
-        stopInput();
+        if (attempt.state === 'PROCESSING') {
+          attempt.state = 'FAILED';
+          attempt.revision++;
+        } else stopInput();
       }
     },
     endCall() {
