@@ -10,7 +10,7 @@ import type {
 } from '@colearnia/contracts';
 import { sessionJoinAckSchema } from '@colearnia/contracts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createOperationCoordinator } from '../../lib/operation-coordinator.js';
+import { CoordinationError, createOperationCoordinator } from '../../lib/operation-coordinator.js';
 import { createMainJoinRegistry, MainJoinError } from './main-join-registry.js';
 import { canReceiveMedia } from '../policy/session-policy.js';
 import type { PolicyParticipant, SessionPolicyState } from '../policy/session-policy.js';
@@ -34,6 +34,7 @@ function setup(
   revocationCleanup?: Parameters<typeof createMainJoinRegistry>[0]['revocationCleanup'],
   revokedAuthSessions?: Parameters<typeof createMainJoinRegistry>[0]['revokedAuthSessions'],
   endCleanup?: Parameters<typeof createMainJoinRegistry>[0]['endCleanup'],
+  reconnectCleanup?: Parameters<typeof createMainJoinRegistry>[0]['reconnectCleanup'],
 ) {
   let time = Date.UTC(2026, 10, 10);
   const target = { workspaceId: id(), channelId: id() };
@@ -92,8 +93,9 @@ function setup(
       revision: input.expectedRevision + 1,
     })),
   };
+  const coordinator = createOperationCoordinator();
   const registry = createMainJoinRegistry({
-    coordinator: createOperationCoordinator(),
+    coordinator,
     repository,
     resolveAuthority,
     isAuthorityCurrent,
@@ -102,6 +104,7 @@ function setup(
     limits,
     ...(revocationCleanup ? { revocationCleanup } : {}),
     ...(endCleanup ? { endCleanup } : {}),
+    ...(reconnectCleanup ? { reconnectCleanup } : {}),
     // Fixture M1 records the cohort when committing logout-all, not on delivery.
     revokedAuthSessions: revokedAuthSessions ?? (() => [auth.authSessionId]),
   });
@@ -115,6 +118,7 @@ function setup(
     registry.issue(identity, destination, { requestId });
   return {
     registry,
+    coordinator,
     auth,
     target,
     principal,
@@ -1822,5 +1826,319 @@ describe('SCRUM-82 MAIN join registry', () => {
       f.registry.join(f.binding(other), { ticket: otherTicket.ticket, requestId: randomUUID() }),
     ).rejects.toMatchObject({ code: 'SERVER_BUSY' });
     expect(f.repository.join).toHaveBeenCalledOnce();
+  });
+});
+
+async function reconnectFixture() {
+  const media = vi.fn((request: SessionCleanupRequest) => cleanupAck(request));
+  const messaging = vi.fn(async (request: SessionCleanupRequest) => cleanupAck(request));
+  const board = vi.fn(async (request: SessionCleanupRequest) => cleanupAck(request));
+  const f = setup({}, undefined, undefined, undefined, {
+    media: { revoke: media },
+    messaging,
+    board,
+  });
+  const socket = f.binding();
+  const ticket = await f.issue();
+  const joined = await f.registry.join(socket, { requestId: randomUUID(), ticket: ticket.ticket });
+  const next = f.binding();
+  const command = {
+    requestId: randomUUID(),
+    sessionId: ticket.sessionId,
+    epoch: ticket.epoch,
+    callGeneration: joined.ack.data.result.callGeneration,
+    resumeTicket: joined.ack.data.result.resumeTicket,
+  };
+  const context = {
+    sessionId: ticket.sessionId,
+    epoch: ticket.epoch,
+    callGeneration: command.callGeneration,
+  };
+  return { ...f, socket, next, command, joined, context, media, messaging, board };
+}
+
+describe('MAIN reconnect and resync', () => {
+  it('retries a timed out Workspace gate and releases the expired ownership after cleanup', async () => {
+    const f = await reconnectFixture();
+    const entered = deferred<void>();
+    const release = deferred<void>();
+    const busy = f.coordinator.run({ workspaceId: f.target.workspaceId }, async () => {
+      entered.resolve();
+      await release.promise;
+    });
+    await entered.promise;
+    const disconnected = f.registry.disconnect(f.socket.socketId);
+    const duplicate = f.registry.disconnect(f.socket.socketId);
+    expect(f.media).toHaveBeenCalledOnce();
+    try {
+      await vi.waitFor(() => expect(f.coordinator.stats().rejected).toBe(1), { timeout: 3000 });
+      expect(f.messaging).not.toHaveBeenCalled();
+      expect(f.board).not.toHaveBeenCalled();
+      f.advance(30_000);
+    } finally {
+      release.resolve();
+      await busy;
+    }
+    await Promise.all([disconnected, duplicate]);
+    expect(f.media).toHaveBeenCalledOnce();
+    expect(f.messaging).toHaveBeenCalledOnce();
+    expect(f.board).toHaveBeenCalledOnce();
+    expect(f.board.mock.calls[0]![0]).toEqual(f.media.mock.calls[0]![0]);
+    await expect(f.registry.resume(f.next, f.command)).rejects.toMatchObject({ code: 'CONFLICT' });
+    await f.registry.sweepExpired();
+    expect(f.registry.stats().ownerships).toBe(0);
+    const ticket = await f.issue();
+    const joined = await f.registry.join(f.next, {
+      ticket: ticket.ticket,
+      requestId: randomUUID(),
+    });
+    expect(joined.ack.data.result.participantId).not.toBe(f.joined.ack.data.result.participantId);
+  });
+  it('bounds gate retries and allows another lifecycle callback without extending grace', async () => {
+    const f = await reconnectFixture();
+    const run = vi.spyOn(f.coordinator, 'run');
+    for (let attempt = 0; attempt < 3; attempt++)
+      run.mockRejectedValueOnce(new CoordinationError('BUSY'));
+    await expect(f.registry.disconnect(f.socket.socketId)).rejects.toMatchObject({ code: 'BUSY' });
+    expect(run).toHaveBeenCalledTimes(3);
+    expect(f.messaging).not.toHaveBeenCalled();
+    f.advance(29_000);
+    await f.registry.disconnect(f.socket.socketId);
+    expect(f.media).toHaveBeenCalledOnce();
+    expect(f.board).toHaveBeenCalledOnce();
+    expect(await f.registry.withContext(f.socket.socketId, f.context, (value) => value.ok)).toBe(
+      false,
+    );
+    f.advance(1000);
+    await expect(f.registry.resume(f.next, f.command)).rejects.toMatchObject({ code: 'CONFLICT' });
+    await f.registry.sweepExpired();
+    expect(f.registry.stats().ownerships).toBe(0);
+  });
+  it('sweep recovers exhausted gate retries after one disconnect without client recovery', async () => {
+    const f = await reconnectFixture();
+    const run = vi.spyOn(f.coordinator, 'run');
+    for (let attempt = 0; attempt < 3; attempt++)
+      run.mockRejectedValueOnce(new CoordinationError('BUSY'));
+    await expect(f.registry.disconnect(f.socket.socketId)).rejects.toMatchObject({ code: 'BUSY' });
+    expect(run).toHaveBeenCalledTimes(3);
+    expect(f.messaging).not.toHaveBeenCalled();
+    expect(f.board).not.toHaveBeenCalled();
+    f.advance(30_000);
+    await f.registry.sweepExpired();
+    expect(f.media).toHaveBeenCalledOnce();
+    expect(f.messaging).toHaveBeenCalledOnce();
+    expect(f.board).toHaveBeenCalledOnce();
+    expect(f.board.mock.calls[0]![0]).toEqual(f.media.mock.calls[0]![0]);
+    expect(f.registry.stats().ownerships).toBe(0);
+    const ticket = await f.issue();
+    const joined = await f.registry.join(f.next, {
+      ticket: ticket.ticket,
+      requestId: randomUUID(),
+    });
+    expect(joined.ack.data.result.participantId).not.toBe(f.joined.ack.data.result.participantId);
+  });
+  it('concurrent sweeps keep the gate available and do not duplicate pending cleanup', async () => {
+    const f = await reconnectFixture();
+    const run = vi.spyOn(f.coordinator, 'run');
+    for (let attempt = 0; attempt < 3; attempt++)
+      run.mockRejectedValueOnce(new CoordinationError('BUSY'));
+    await expect(f.registry.disconnect(f.socket.socketId)).rejects.toMatchObject({ code: 'BUSY' });
+    f.advance(30_000);
+    const pending = deferred<SessionCleanupResult>();
+    f.board.mockImplementationOnce(() => pending.promise);
+    const first = f.registry.sweepExpired();
+    await vi.waitFor(() => expect(f.board).toHaveBeenCalledOnce());
+    await f.registry.sweepExpired();
+    expect(f.registry.stats().ownerships).toBe(1);
+    expect(await f.registry.withContext(f.socket.socketId, f.context, (value) => value.ok)).toBe(
+      false,
+    );
+    expect(f.media).toHaveBeenCalledOnce();
+    expect(f.messaging).toHaveBeenCalledOnce();
+    pending.resolve(cleanupAck(f.board.mock.calls[0]![0]));
+    await first;
+    expect(f.registry.stats().ownerships).toBe(0);
+    expect(f.board).toHaveBeenCalledOnce();
+  });
+  it('keeps cleanup bounded per sweep and retries on a later sweep when admission recovers', async () => {
+    const f = await reconnectFixture();
+    const run = vi.spyOn(f.coordinator, 'run');
+    for (let attempt = 0; attempt < 6; attempt++)
+      run.mockRejectedValueOnce(new CoordinationError('BUSY'));
+    await expect(f.registry.disconnect(f.socket.socketId)).rejects.toMatchObject({ code: 'BUSY' });
+    f.advance(30_000);
+    await f.registry.sweepExpired();
+    expect(run).toHaveBeenCalledTimes(7);
+    expect(f.registry.stats().ownerships).toBe(1);
+    expect(f.messaging).not.toHaveBeenCalled();
+    await f.registry.sweepExpired();
+    expect(f.registry.stats().ownerships).toBe(0);
+    expect(f.media).toHaveBeenCalledOnce();
+    expect(f.messaging).toHaveBeenCalledOnce();
+    expect(f.board).toHaveBeenCalledOnce();
+  });
+  it('fences the old socket immediately and cleans every domain before resume', async () => {
+    const f = await reconnectFixture();
+    const disconnected = f.registry.disconnect(f.socket.socketId);
+    expect(f.media).toHaveBeenCalledOnce();
+    expect(f.media.mock.calls[0]![0].reason).toBe('DISCONNECTED');
+    expect(await f.registry.withContext(f.socket.socketId, f.context, (value) => value.ok)).toBe(
+      false,
+    );
+    await disconnected;
+    const resumed = await f.registry.resume(f.next, f.command);
+    expect(resumed.ack.data.result.participantId).toBe(f.joined.ack.data.result.participantId);
+    expect(resumed.ack.data.result.callGeneration).toBeGreaterThan(f.command.callGeneration);
+    expect(resumed.ack.data.result.resumeTicket).not.toBe(f.command.resumeTicket);
+    expect(f.messaging).toHaveBeenCalledOnce();
+    expect(f.board).toHaveBeenCalledOnce();
+    expect(f.repository.join).toHaveBeenCalledOnce();
+    expect(await f.registry.withContext(f.socket.socketId, f.context, (value) => value.ok)).toBe(
+      false,
+    );
+    expect(await f.registry.withContext(f.next.socketId, f.context, (value) => value.ok)).toBe(
+      false,
+    );
+    expect(
+      await f.registry.withContext(
+        f.next.socketId,
+        { ...f.context, callGeneration: resumed.ack.data.result.callGeneration },
+        (value) => value.ok,
+      ),
+    ).toBe(true);
+  });
+  it('replays a lost resume ack only for the same intent and new socket', async () => {
+    const f = await reconnectFixture();
+    await f.registry.disconnect(f.socket.socketId);
+    const first = await f.registry.resume(f.next, f.command);
+    const second = await f.registry.resume(f.next, f.command);
+    expect(second.ack.data.result.callGeneration).toBe(first.ack.data.result.callGeneration);
+    expect(second.ack.data.result.resumeTicket).toBe(first.ack.data.result.resumeTicket);
+    expect(second.parts[0]!.snapshotId).not.toBe(first.parts[0]!.snapshotId);
+    await expect(f.registry.resume(f.binding(), f.command)).rejects.toMatchObject({
+      code: 'CONFLICT',
+    });
+    await expect(
+      f.registry.resume(f.next, { ...f.command, requestId: randomUUID() }),
+    ).rejects.toMatchObject({ code: 'CONFLICT' });
+    expect(f.repository.join).toHaveBeenCalledOnce();
+  });
+  it('does not allow a different tab to take an ownership which is still connected', async () => {
+    const f = await reconnectFixture();
+    await expect(f.registry.resume(f.next, f.command)).rejects.toMatchObject({ code: 'CONFLICT' });
+  });
+  it('concurrent retries converge on a single replacement generation', async () => {
+    const f = await reconnectFixture();
+    await f.registry.disconnect(f.socket.socketId);
+    const [first, second] = await Promise.all([
+      f.registry.resume(f.next, f.command),
+      f.registry.resume(f.next, f.command),
+    ]);
+    expect(second.ack.data.result.callGeneration).toBe(first.ack.data.result.callGeneration);
+    expect(f.repository.join).toHaveBeenCalledOnce();
+  });
+  it('recovers a lost resume ack after its replacement socket also disconnects', async () => {
+    const f = await reconnectFixture();
+    await f.registry.disconnect(f.socket.socketId);
+    const first = await f.registry.resume(f.next, f.command);
+    await f.registry.disconnect(f.next.socketId);
+    const third = f.binding();
+    await expect(
+      f.registry.resume(third, { ...f.command, requestId: randomUUID() }),
+    ).rejects.toMatchObject({ code: 'CONFLICT' });
+    const recovered = await f.registry.resume(third, f.command);
+    expect(recovered.ack.data.result.callGeneration).toBeGreaterThan(
+      first.ack.data.result.callGeneration,
+    );
+    expect(recovered.ack.data.result.participantId).toBe(first.ack.data.result.participantId);
+    expect(f.repository.join).toHaveBeenCalledOnce();
+    await expect(f.registry.resume(f.next, f.command)).rejects.toMatchObject({ code: 'CONFLICT' });
+  });
+  it('waits for private cleanup without keeping the mutation gate held', async () => {
+    const f = await reconnectFixture();
+    const pending = deferred<SessionCleanupResult>();
+    f.board.mockImplementationOnce(() => pending.promise);
+    const disconnected = f.registry.disconnect(f.socket.socketId);
+    await vi.waitFor(() => expect(f.board).toHaveBeenCalledOnce());
+    let resumed = false;
+    const result = f.registry.resume(f.next, f.command).then((value) => {
+      resumed = true;
+      return value;
+    });
+    expect(await f.registry.withContext(f.socket.socketId, f.context, (value) => value.ok)).toBe(
+      false,
+    );
+    expect(resumed).toBe(false);
+    pending.resolve(cleanupAck(f.board.mock.calls[0]![0]));
+    await disconnected;
+    expect((await result).ack.data.result.callGeneration).toBeGreaterThan(f.command.callGeneration);
+  });
+  it('duplicate disconnect never extends the original 30 second grace', async () => {
+    const f = await reconnectFixture();
+    await f.registry.disconnect(f.socket.socketId);
+    f.advance(20000);
+    await f.registry.disconnect(f.socket.socketId);
+    f.advance(10000);
+    await expect(f.registry.resume(f.next, f.command)).rejects.toMatchObject({ code: 'CONFLICT' });
+    expect(f.media).toHaveBeenCalledOnce();
+    await f.registry.sweepExpired();
+    expect(f.registry.stats().ownerships).toBe(0);
+  });
+  it('ignores an old disconnect callback after the replacement connection is committed', async () => {
+    const f = await reconnectFixture();
+    await f.registry.disconnect(f.socket.socketId);
+    const resumed = await f.registry.resume(f.next, f.command);
+    await f.registry.disconnect(f.socket.socketId);
+    expect(
+      await f.registry.withContext(
+        f.next.socketId,
+        { ...f.context, callGeneration: resumed.ack.data.result.callGeneration },
+        (value) => value.ok,
+      ),
+    ).toBe(true);
+  });
+  it('rejects a resume from a different authenticated session', async () => {
+    const f = await reconnectFixture();
+    await f.registry.disconnect(f.socket.socketId);
+    await expect(
+      f.registry.resume({ ...f.next, auth: { ...f.auth, authSessionId: id() } }, f.command),
+    ).rejects.toMatchObject({ code: 'CONFLICT' });
+  });
+  it('a revoke/regrant continuity gap cannot restore the old resume grant', async () => {
+    const f = await reconnectFixture();
+    await f.registry.disconnect(f.socket.socketId);
+    f.isAuthorityCurrent.mockImplementation((_current, _held, previous) => !previous);
+    await expect(f.registry.resume(f.next, f.command)).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    f.isAuthorityCurrent.mockReturnValue(true);
+    await expect(f.registry.resume(f.next, f.command)).rejects.toMatchObject({ code: 'CONFLICT' });
+  });
+  it('allows a transient authority read to recover without extending the deadline', async () => {
+    const f = await reconnectFixture();
+    await f.registry.disconnect(f.socket.socketId);
+    f.resolveAuthority.mockRejectedValueOnce(new Error('temporary read failure'));
+    await expect(f.registry.resume(f.next, f.command)).rejects.toBeInstanceOf(Error);
+    const resumed = await f.registry.resume(f.next, f.command);
+    expect(resumed.ack.data.result.callGeneration).toBeGreaterThan(f.command.callGeneration);
+  });
+  it('rejects a resume when authority I/O crosses the grace deadline', async () => {
+    const f = await reconnectFixture();
+    await f.registry.disconnect(f.socket.socketId);
+    f.advance(29000);
+    f.resolveAuthority.mockImplementationOnce(async (auth, destination) => {
+      f.advance(1000);
+      return { auth, access: f.access(auth, destination), displayName: 'Sinh viên' };
+    });
+    await expect(f.registry.resume(f.next, f.command)).rejects.toMatchObject({ code: 'CONFLICT' });
+  });
+  it('resync revalidates current rights and never replays a saved snapshot body', async () => {
+    const f = await reconnectFixture();
+    const command = { ...f.context, requestId: randomUUID(), payload: { lastPolicyRevision: 0 } };
+    const first = await f.registry.resync(f.socket, command);
+    const second = await f.registry.resync(f.socket, command);
+    expect(second.parts[0]!.snapshotId).not.toBe(first.parts[0]!.snapshotId);
+    expect(f.repository.join).toHaveBeenCalledOnce();
+    await expect(f.registry.resync(f.next, command)).rejects.toMatchObject({ code: 'CONFLICT' });
+    f.isAuthorityCurrent.mockReturnValue(false);
+    await expect(f.registry.resync(f.socket, command)).rejects.toMatchObject({ code: 'FORBIDDEN' });
   });
 });

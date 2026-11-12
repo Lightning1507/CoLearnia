@@ -28,6 +28,7 @@ export const sessionJoinAckSchema = commandAckSchema(
     result: z.strictObject({
       participantId: sessionParticipantIdSchema,
       callGeneration: z.number().int().positive(),
+      resumeTicket: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
       snapshot: sessionSnapshotDescriptorSchema,
     }),
   }),
@@ -35,3 +36,12 @@ export const sessionJoinAckSchema = commandAckSchema(
 export type SessionJoinInput = z.infer<typeof sessionJoinInputSchema>;
 export type SessionJoinTicketInput = z.infer<typeof sessionJoinTicketInputSchema>;
 export type SessionJoinAck = z.infer<typeof sessionJoinAckSchema>;
+
+export const sessionResumeInputSchema = z.strictObject({
+  requestId: requestIdSchema,
+  sessionId: sessionIdSchema,
+  epoch: sessionEpochSchema,
+  callGeneration: z.number().int().positive(),
+  resumeTicket: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
+});
+export type SessionResumeInput = z.infer<typeof sessionResumeInputSchema>;
