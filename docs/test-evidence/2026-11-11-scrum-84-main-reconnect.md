@@ -39,6 +39,7 @@ pnpm media:smoke
 - Regression gate thật: giữ Workspace gate quá timeout 2 giây, disconnect lặp dùng chung cleanup; khi gate rảnh, messaging/board được gọi đúng request/generation và media chỉ revoke một lần. Hết grace gốc, sweep bỏ ownership và join bằng ticket mới thành công.
 - Regression giới hạn retry: ba lần gate trả `BUSY` thì dừng; callback sau thử lại được trên cùng record, vẫn deny socket cũ và không kéo dài 30 giây grace.
 - Kiểm lại: 656 unit test đạt trong 41 file; riêng registry 96 test đạt. Integration registry với MongoDB replica set riêng và mediasoup native đạt 13 test. Format, lint, typecheck, build và harness đạt. Vite vẫn cảnh báo bundle trên 500 kB.
+- Sau khi ghép main `938ed51` có xử lý worker failure: giữ cả hai cổng cấu hình reconnect cleanup và router factory trong helper integration; unit đạt 695 ca trong 43 file, integration registry đạt 14 ca. Không bỏ test reconnect hoặc worker lifecycle để giải quyết conflict.
 
 ## Giới hạn kiểm chứng
 
