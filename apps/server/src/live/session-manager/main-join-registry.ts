@@ -18,6 +18,7 @@ import type {
   LiveContextRequest,
   LiveContextResult,
   SessionSnapshotPart,
+  SessionEndInput,
   SessionCleanupRequest,
   LiveAccessRevocation,
   AccessCleanupResult,
@@ -38,7 +39,7 @@ import type {
 import type { createSessionRepository } from './session-repository.js';
 import { beginSessionTransition, createSessionTransitionTiming } from './session-transition.js';
 import { createSessionEndOperation } from './session-end-operation.js';
-import type { SessionTransitionAdapters } from './session-transition.js';
+import type { SessionTransitionAdapters, SessionTransitionTiming } from './session-transition.js';
 import { matchesMainRevocation, mayMatchMainRevocation } from './main-revocation.js';
 
 type Target = { workspaceId: string; channelId: string };
@@ -61,10 +62,12 @@ type Room = {
   hostReservation: Authority | null;
   uncertain: boolean;
   endToken?: string;
+  mediaFailed?: boolean;
+  failureTask?: Promise<'ENDED' | 'PENDING'>;
 };
 type EndRecord = {
   destination: Target;
-  binding: Binding;
+  binding: Binding | null;
   command: string;
   operation: ReturnType<typeof createSessionEndOperation>;
   expiresAt: number;
@@ -160,6 +163,7 @@ export function createMainJoinRegistry(options: {
   const intents = new Map<string, Intent>();
   const tickets = new Map<string, Intent>();
   const endRecords = new Map<string, EndRecord>();
+  const failedRouters = new Set<string>();
   const revocations = new Map<string, Revocation>();
   const inFlight = new Map<symbol, { auth: AuthenticatedContext; target: Target }>();
   const pendingRouters = new Set<string>();
@@ -221,6 +225,11 @@ export function createMainJoinRegistry(options: {
       );
     } finally {
       inFlight.delete(operation);
+      const missed = [...rooms.values()].filter(
+        (room) => failedRouters.has(room.router.id) && !room.failureTask,
+      );
+      if (!closed && missed.length)
+        void registryFailure(missed.map((room) => room.router.id)).catch(() => {});
       queued--;
       for (const [map, key] of [
         [queuedUsers, auth.userId],
@@ -313,7 +322,7 @@ export function createMainJoinRegistry(options: {
     }
   }
   function usable(room: Room) {
-    if (room.uncertain || room.router.closed) fail('DEPENDENCY_UNAVAILABLE');
+    if (room.mediaFailed || room.uncertain || room.router.closed) fail('DEPENDENCY_UNAVAILABLE');
     if (room.state.state !== 'ACTIVE') fail('SESSION_ENDED');
   }
   function reservedHostCurrent(room: Room, current: Authority, held: CoordinationContext) {
@@ -525,6 +534,208 @@ export function createMainJoinRegistry(options: {
     return { ack, parts: snapshot.parts as readonly SessionSnapshotPart[] };
   }
 
+  function acceptRoomEnd(
+    currentRoom: Room,
+    binding: Binding | null,
+    input: SessionEndInput,
+    timing: SessionTransitionTiming,
+    held: CoordinationContext,
+    adapters: SessionTransitionAdapters,
+  ): EndRecord {
+    const cleanupActor = binding?.auth.userId ?? currentRoom.hostUserId;
+    const destination = {
+      workspaceId: currentRoom.state.workspaceId,
+      channelId: currentRoom.state.channelId,
+    };
+    const key = JSON.stringify([input.sessionId, input.epoch]);
+    const owners = [...ownerships.values()].filter((value) => value.room === currentRoom);
+    const token = randomUUID();
+    const cleanupIdentity = {
+      operationId: input.requestId,
+      transitionToken: token,
+      sessionId: input.sessionId,
+      epoch: input.epoch,
+      reason: 'SESSION_ENDED' as const,
+    };
+    const targets: { userId: string; request: SessionCleanupRequest }[] = owners.map((value) => ({
+      userId: value.participant.auth.userId,
+      request: {
+        ...cleanupIdentity,
+        callGeneration: value.participant.callGeneration,
+        target: { type: 'PARTICIPANT', participantId: value.participant.participantId },
+      },
+    }));
+    targets.push({
+      userId: cleanupActor,
+      request: { ...cleanupIdentity, target: { type: 'SCOPE', scope: { type: 'MAIN' } } },
+    });
+    for (const groupId of currentRoom.state.groups.keys())
+      targets.push({
+        userId: cleanupActor,
+        request: {
+          ...cleanupIdentity,
+          target: { type: 'SCOPE', scope: { type: 'GROUP', groupId } },
+        },
+      });
+    // Last acceptance check under the gate, before any state/resource change.
+    if (performance.now() >= timing.deadlineMs) fail('DEPENDENCY_UNAVAILABLE');
+    currentRoom.endToken = token;
+    currentRoom.state.state = 'ENDING';
+    currentRoom.state.policyRevision++;
+    for (const value of owners) value.participant.blocked = true;
+    for (const intent of [...intents.values()]) if (intent.room === currentRoom) forget(intent);
+    currentRoom.router.close();
+    const isCurrent = () =>
+      !closed &&
+      rooms.get(destination.channelId) === currentRoom &&
+      currentRoom.state.state === 'ENDING' &&
+      currentRoom.endToken === token;
+    const metadata = { sessionId: new Types.ObjectId(input.sessionId), epoch: input.epoch };
+    const operation = createSessionEndOperation({
+      input,
+      timing,
+      context: {
+        assertHeld: () => held.assertHeld({ workspaceId: destination.workspaceId }),
+        isCurrent,
+      },
+      targets,
+      adapters,
+      beginEnding: async (guard) => {
+        try {
+          if (currentRoom.uncertain) throw new Error('Session metadata requires reconciliation');
+          const result = await options.repository.beginEnding(
+            { ...metadata, expectedRevision: currentRoom.revision, at: new Date(clock()) },
+            guard,
+          );
+          guard();
+          currentRoom.revision = result.revision;
+        } catch (error) {
+          currentRoom.uncertain = true;
+          throw error;
+        }
+      },
+      completeEnding: async (guard) => {
+        try {
+          const result = await options.repository.completeEnding(
+            { ...metadata, expectedRevision: currentRoom.revision, at: new Date(clock()) },
+            guard,
+          );
+          guard();
+          currentRoom.revision = result.revision;
+        } catch (error) {
+          currentRoom.uncertain = true;
+          throw error;
+        }
+      },
+      finalize: (guard) =>
+        options.coordinator.run({ workspaceId: destination.workspaceId }, async () => {
+          guard();
+          currentRoom.state.state = 'ENDED';
+          currentRoom.state.hostParticipantId = null;
+          for (const value of owners)
+            if (ownerships.get(value.participant.auth.userId) === value)
+              ownerships.delete(value.participant.auth.userId);
+          if (rooms.get(destination.channelId) === currentRoom) rooms.delete(destination.channelId);
+        }),
+    });
+    const accepted = {
+      binding,
+      command: JSON.stringify(input),
+      operation,
+      expiresAt: Number.POSITIVE_INFINITY,
+      destination,
+    };
+    endRecords.set(key, accepted);
+    return accepted;
+  }
+
+  function registryFailure(routerIds: readonly string[]) {
+    assertRunning();
+    if (
+      !Array.isArray(routerIds) ||
+      routerIds.length > limits.maxRooms + 32 ||
+      routerIds.some((value) => typeof value !== 'string' || !value || value.length > 256)
+    )
+      fail('VALIDATION_ERROR');
+    if (new Set([...failedRouters, ...routerIds]).size > limits.maxRooms + 32) fail('SERVER_BUSY');
+    for (const id of routerIds) failedRouters.add(id);
+    const failed = new Set(routerIds);
+    const affected = [...rooms.values()].filter((room) => failed.has(room.router.id));
+    for (const room of affected) {
+      room.mediaFailed = true;
+      for (const intent of [...intents.values()]) if (intent.room === room) forget(intent);
+    }
+    const jobs = affected.map((room) => {
+      if (!room.failureTask) {
+        const timing = createSessionTransitionTiming();
+        room.failureTask = options.coordinator
+          .run(
+            { workspaceId: room.state.workspaceId },
+            async (held) => {
+              assertRunning();
+              if (rooms.get(room.state.channelId) !== room) return undefined;
+              // A completed replay no longer occupies admission after its TTL.
+              // Sweep inside the gate too: waiting for it may cross that TTL.
+              sweep();
+              const key = JSON.stringify([room.state.sessionId, room.state.epoch]);
+              const existing = endRecords.get(key);
+              if (existing) return existing;
+              const adapters = options.endCleanup;
+              if (
+                !adapters ||
+                typeof adapters.messaging !== 'function' ||
+                typeof adapters.board !== 'function' ||
+                !(
+                  typeof adapters.media === 'function' ||
+                  (adapters.media && typeof adapters.media.revoke === 'function')
+                ) ||
+                room.state.state !== 'ACTIVE' ||
+                endRecords.size >= limits.maxEndRecords ||
+                room.state.policyRevision >= Number.MAX_SAFE_INTEGER
+              )
+                return undefined;
+              const owner = [...ownerships.values()].find((value) => value.room === room);
+              // Reservation-only rooms still need scope cleanup and durable end. No auth
+              // authority is invented: this is a server lifecycle action, not a host command.
+              return acceptRoomEnd(
+                room,
+                null,
+                {
+                  requestId: randomUUID(),
+                  sessionId: room.state.sessionId,
+                  epoch: room.state.epoch,
+                  callGeneration: owner?.participant.callGeneration ?? 1,
+                  expectedPolicyRevision: room.state.policyRevision,
+                  action: 'END',
+                },
+                timing,
+                held,
+                adapters,
+              );
+            },
+            { waitTimeoutMs: 2000 },
+          )
+          .then(async (record) => {
+            if (!record) return 'PENDING' as const;
+            const result = await record.operation.run();
+            if ('data' in result && result.data.status === 'completed') {
+              if (record.expiresAt === Number.POSITIVE_INFINITY)
+                record.expiresAt = clock() + limits.endReplayTtlMs;
+              return 'ENDED' as const;
+            }
+            return 'PENDING' as const;
+          })
+          .catch(() => 'PENDING' as const);
+      }
+      return room.failureTask.then((state) => ({
+        sessionId: room.state.sessionId,
+        epoch: room.state.epoch,
+        state,
+      }));
+    });
+    return Promise.all(jobs);
+  }
+
   return {
     stats: () => ({
       rooms: rooms.size,
@@ -631,6 +842,10 @@ export function createMainJoinRegistry(options: {
             }
             assertRunning();
             rooms.set(destination.channelId, room);
+            if (failedRouters.has(room.router.id)) {
+              room.mediaFailed = true;
+              fail('DEPENDENCY_UNAVAILABLE');
+            }
           } catch (error) {
             router.close();
             throw error;
@@ -1065,6 +1280,7 @@ export function createMainJoinRegistry(options: {
             fail('CONFLICT');
           }
           if (
+            !previous.binding ||
             previous.binding.auth.userId !== auth.userId ||
             previous.binding.auth.authSessionId !== auth.authSessionId ||
             previous.binding.socketId !== rawBinding.socketId ||
@@ -1109,107 +1325,7 @@ export function createMainJoinRegistry(options: {
           currentRoom.state.policyRevision >= Number.MAX_SAFE_INTEGER
         )
           fail('SERVER_BUSY');
-        const owners = [...ownerships.values()].filter((value) => value.room === currentRoom);
-        const token = randomUUID();
-        const cleanupIdentity = {
-          operationId: input.requestId,
-          transitionToken: token,
-          sessionId: input.sessionId,
-          epoch: input.epoch,
-          reason: 'SESSION_ENDED' as const,
-        };
-        const targets: { userId: string; request: SessionCleanupRequest }[] = owners.map(
-          (value) => ({
-            userId: value.participant.auth.userId,
-            request: {
-              ...cleanupIdentity,
-              callGeneration: value.participant.callGeneration,
-              target: { type: 'PARTICIPANT', participantId: value.participant.participantId },
-            },
-          }),
-        );
-        targets.push({
-          userId: auth.userId,
-          request: { ...cleanupIdentity, target: { type: 'SCOPE', scope: { type: 'MAIN' } } },
-        });
-        for (const groupId of currentRoom.state.groups.keys())
-          targets.push({
-            userId: auth.userId,
-            request: {
-              ...cleanupIdentity,
-              target: { type: 'SCOPE', scope: { type: 'GROUP', groupId } },
-            },
-          });
-        // Last acceptance check under the gate, before any state/resource change.
-        if (performance.now() >= timing.deadlineMs) fail('DEPENDENCY_UNAVAILABLE');
-        currentRoom.endToken = token;
-        currentRoom.state.state = 'ENDING';
-        currentRoom.state.policyRevision++;
-        for (const value of owners) value.participant.blocked = true;
-        for (const intent of [...intents.values()]) if (intent.room === currentRoom) forget(intent);
-        currentRoom.router.close();
-        const isCurrent = () =>
-          !closed &&
-          rooms.get(destination.channelId) === currentRoom &&
-          currentRoom.state.state === 'ENDING' &&
-          currentRoom.endToken === token;
-        const metadata = { sessionId: new Types.ObjectId(input.sessionId), epoch: input.epoch };
-        const operation = createSessionEndOperation({
-          input,
-          timing,
-          context: {
-            assertHeld: () => held.assertHeld({ workspaceId: destination.workspaceId }),
-            isCurrent,
-          },
-          targets,
-          adapters,
-          beginEnding: async (guard) => {
-            try {
-              const result = await options.repository.beginEnding(
-                { ...metadata, expectedRevision: currentRoom.revision, at: new Date(clock()) },
-                guard,
-              );
-              guard();
-              currentRoom.revision = result.revision;
-            } catch (error) {
-              currentRoom.uncertain = true;
-              throw error;
-            }
-          },
-          completeEnding: async (guard) => {
-            try {
-              const result = await options.repository.completeEnding(
-                { ...metadata, expectedRevision: currentRoom.revision, at: new Date(clock()) },
-                guard,
-              );
-              guard();
-              currentRoom.revision = result.revision;
-            } catch (error) {
-              currentRoom.uncertain = true;
-              throw error;
-            }
-          },
-          finalize: (guard) =>
-            options.coordinator.run({ workspaceId: destination.workspaceId }, async () => {
-              guard();
-              currentRoom.state.state = 'ENDED';
-              currentRoom.state.hostParticipantId = null;
-              for (const value of owners)
-                if (ownerships.get(value.participant.auth.userId) === value)
-                  ownerships.delete(value.participant.auth.userId);
-              if (rooms.get(destination.channelId) === currentRoom)
-                rooms.delete(destination.channelId);
-            }),
-        });
-        const accepted = {
-          binding: { ...rawBinding, auth },
-          command: JSON.stringify(input),
-          operation,
-          expiresAt: Number.POSITIVE_INFINITY,
-          destination,
-        };
-        endRecords.set(key, accepted);
-        return accepted;
+        return acceptRoomEnd(currentRoom, { ...rawBinding, auth }, input, timing, held, adapters);
       });
       const result = await record.operation.run();
       if (
@@ -1220,6 +1336,10 @@ export function createMainJoinRegistry(options: {
         record.expiresAt = clock() + limits.endReplayTtlMs;
       return structuredClone(result);
     },
+
+    // Trusted worker lifecycle port. Install deny synchronously, before any gate await.
+    // The caller supplies IDs from the failed runtime, never from a client payload.
+    handleRouterFailure: registryFailure,
 
     async withContext<T>(
       socketId: string,
@@ -1288,6 +1408,7 @@ export function createMainJoinRegistry(options: {
       endRecords.clear();
       ownerships.clear();
       rooms.clear();
+      failedRouters.clear();
     },
   };
 }

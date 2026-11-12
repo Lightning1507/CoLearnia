@@ -8,12 +8,15 @@ import {
 import type {
   MediaSourcesResyncInput,
   MediaSourcesSnapshot,
+  MediaSourceEventName,
   SessionProjectionCursor,
 } from '@colearnia/contracts';
 import type { CallIdentity } from './callController';
 import { joinMediaSnapshot, sameSourceBinding } from './mediaSnapshot';
 import type { ConsumerBinding, MediaSnapshot, MediaSnapshotPayload } from './mediaSnapshot';
 import { OwnMediaResources } from './ownMediaResources';
+import { applyMediaDelta, parseMediaDelta } from './mediaDelta';
+import type { MediaDelta } from './mediaDelta';
 
 type Descriptor = Pick<
   MediaSourcesSnapshot,
@@ -58,6 +61,13 @@ function sameDescriptor(left: Descriptor, right: Descriptor) {
 
 const encoder = new TextEncoder();
 const terminalErrors = new Set(['AUTH_REQUIRED', 'FORBIDDEN', 'NOT_FOUND', 'SESSION_ENDED']);
+const retryDelays = [500, 1000, 2000] as const;
+type BufferedDelta = { delta: MediaDelta; fingerprint: string; bytes: number };
+type PlannedDelta = { snapshot: MediaSnapshot; entry: BufferedDelta; recvClosed: boolean };
+type ResyncPort = (
+  input: MediaSourcesResyncInput,
+  receive: { acceptAck: (packet: unknown) => void; acceptPart: (packet: unknown) => void },
+) => void | Promise<void>;
 
 // One instance per CallController. The session flow supplies accepted M4 cursors and
 // routes the socket ack/parts to the matching resync. This runtime never grants access.
@@ -69,6 +79,18 @@ export class MediaSnapshotRuntime {
   #cancel: (() => void) | undefined;
   #consumers = new Map<string, LocalConsumer>();
   #own = new OwnMediaResources();
+  #buffer = new Map<number, BufferedDelta>();
+  #bufferBytes = 0;
+  #history = new Map<number, BufferedDelta>();
+  #historyBytes = 0;
+  #resyncPort: ResyncPort | undefined;
+  #retry: ReturnType<typeof setTimeout> | undefined;
+  #retryCount = 0;
+  #resyncExhausted = false;
+  #needsResync = false;
+  #closedSources = new Map<string, number>();
+  #consumerCallbackFloor = 0;
+  #recvClosedAt = 0;
 
   constructor(
     private readonly identity: CallIdentity,
@@ -78,6 +100,77 @@ export class MediaSnapshotRuntime {
   }
 
   getSnapshot = () => this.#snapshot;
+
+  // The socket adapter routes only responses for this request to receive.
+  // Incoming media events go through acceptEvent for this same call.
+  bindResync(port: ResyncPort) {
+    this.#cancel?.();
+    this.#resyncPort = port;
+    this.resync();
+    return () => {
+      if (this.#resyncPort !== port) return;
+      this.#resyncPort = undefined;
+      this.#resetRetry();
+      this.#cancel?.();
+    };
+  }
+
+  resync() {
+    this.#resetRetry();
+    this.#needsResync = true;
+    this.#startResync();
+  }
+
+  acceptEvent(name: MediaSourceEventName, packet: unknown) {
+    const context = this.#context;
+    if (!context) return;
+    let bytes: number;
+    try {
+      bytes = encoder.encode(JSON.stringify([name, packet])).byteLength;
+    } catch {
+      return this.#requestResync();
+    }
+    if (bytes > sessionControlBudget.maxControlBytes) return this.#requestResync();
+    const delta = parseMediaDelta(name, packet);
+    if (!delta) return this.#requestResync();
+    const event = delta.packet;
+    if (!matchesCall(event, this.identity) || event.audienceEpoch !== context.audienceEpoch) return;
+    const snapshot = this.#snapshot;
+    if (snapshot && event.mediaStreamId !== snapshot.mediaStreamId) return this.#requestResync();
+
+    const fingerprint = JSON.stringify([name, event]);
+    const entry = { delta, fingerprint, bytes };
+    const sequence = event.mediaSequence;
+    if (snapshot && sequence <= snapshot.mediaSequence) {
+      const previous = this.#history.get(sequence);
+      if (previous && previous.fingerprint !== fingerprint) this.#requestResync();
+      return;
+    }
+    if (
+      snapshot &&
+      delta.name === 'media.transport.closed' &&
+      !snapshot.payload.ownTransports.some(
+        ({ transportId }) => transportId === delta.packet.payload.transportId,
+      )
+    ) {
+      // Fence in-flight Consumer completions while resync determines what survived.
+      this.#consumerCallbackFloor = Math.max(this.#consumerCallbackFloor, sequence);
+    }
+    if (this.#cancel) {
+      const previous = this.#buffer.get(sequence);
+      if (previous?.fingerprint === fingerprint) return;
+      if (
+        previous ||
+        this.#buffer.size >= sessionControlBudget.maxBufferedEvents ||
+        this.#bufferBytes + bytes > sessionControlBudget.maxBufferedEventBytes
+      )
+        return this.#requestResync();
+      this.#buffer.set(sequence, entry);
+      this.#bufferBytes += bytes;
+      return;
+    }
+    if (!snapshot || this.#needsResync || !this.#applyDelta(entry)) this.#requestResync();
+  }
 
   updateContext(next: SessionProjectionCursor | null) {
     const previous = this.#context;
@@ -94,17 +187,28 @@ export class MediaSnapshotRuntime {
       return false;
 
     const scopeChanged = !next || previous?.audienceEpoch !== next.audienceEpoch;
-    if (scopeChanged || previous?.policyRevision !== next?.policyRevision) this.#cancel?.();
+    const contextChanged = scopeChanged || previous?.policyRevision !== next?.policyRevision;
+    if (contextChanged) {
+      this.#resetRetry();
+      this.#cancel?.();
+      this.#needsResync = true;
+    }
     this.#context = next ? { ...next, scope: { ...next.scope } } : null;
     if (this.#context) this.#latestContext = this.#context;
     if (scopeChanged) {
       this.#snapshot = undefined;
+      this.#history.clear();
+      this.#historyBytes = 0;
+      this.#closedSources.clear();
+      this.#consumerCallbackFloor = 0;
+      this.#recvClosedAt = 0;
       this.#reconcileConsumers([]);
     }
     if (!next) this.#own.reconcile();
     else if (scopeChanged || previous?.policyRevision !== next.policyRevision) {
       this.#own.cancelReplacements();
     }
+    if (next && contextChanged) this.#startResync();
     return true;
   }
 
@@ -140,11 +244,13 @@ export class MediaSnapshotRuntime {
     this.#cancel = cancel;
 
     const finish = (outcome: SnapshotResult) => {
+      if (this.#cancel !== cancel) return;
       this.#cancel = undefined;
       clearTimeout(timer);
       parts.clear();
       first = undefined;
       descriptor = undefined;
+      this.#clearBuffer();
       settle(outcome);
     };
     const invalid = () => finish({ status: 'invalid' });
@@ -166,17 +272,45 @@ export class MediaSnapshotRuntime {
         .map(({ part }) => part)
         .sort((a, b) => a.partIndex - b.partIndex);
       const snapshot = joinMediaSnapshot(ordered, context.participantId);
-      if (!snapshot) return invalid();
-      this.#snapshot = snapshot;
+      if (!snapshot || snapshot.mediaSequence < this.#consumerCallbackFloor) return invalid();
+      const buffered = [...this.#buffer.values()]
+        .filter(({ delta }) => delta.packet.mediaSequence > snapshot.mediaSequence)
+        .sort((left, right) => left.delta.packet.mediaSequence - right.delta.packet.mediaSequence);
+      if (
+        buffered.some(
+          ({ delta }, index) =>
+            delta.packet.mediaStreamId !== snapshot.mediaStreamId ||
+            delta.packet.mediaSequence !== snapshot.mediaSequence + index + 1,
+        )
+      )
+        return invalid();
+      const closedSources = new Map(this.#closedSources);
+      const planned: PlannedDelta[] = [];
+      let final = snapshot;
+      for (const entry of buffered) {
+        const next = this.#planDelta(final, entry, closedSources);
+        if (!next) {
+          this.#needsResync = true;
+          return invalid();
+        }
+        final = next.snapshot;
+        planned.push(next);
+      }
+      this.#closedSources = closedSources;
+      this.#snapshot = final;
       this.#appliedSnapshots.add(snapshot);
-      finish({ status: 'applied', snapshot });
+      this.#appliedSnapshots.add(final);
+      this.#needsResync = false;
       this.#reconcileConsumers(snapshot.payload.ownConsumers);
       this.#own.reconcile(snapshot.payload);
+      for (const next of planned) this.#reconcileDelta(next);
+      finish({ status: 'applied', snapshot: final });
     };
 
     return {
       input,
       result,
+      cancel,
       acceptAck: (packet: unknown) => {
         if (!current()) return;
         const ack = mediaSourcesResyncAckSchema.safeParse(packet);
@@ -244,6 +378,17 @@ export class MediaSnapshotRuntime {
       ({ sourceId }) => sourceId === binding.sourceId,
     );
     const own = current?.payload.ownConsumers.find(({ sourceId }) => sourceId === binding.sourceId);
+    const originalRecv = snapshot.payload.ownTransports.find(
+      ({ direction }) => direction === 'RECV',
+    );
+    const closedSinceSnapshot = [...this.#history.values()].some(
+      ({ delta }) =>
+        delta.name === 'media.consumer.closed' &&
+        delta.packet.mediaSequence > snapshot.mediaSequence &&
+        delta.packet.payload.consumerId === binding.consumerId &&
+        delta.packet.payload.sourceId === binding.sourceId &&
+        delta.packet.payload.sourceGeneration === binding.sourceGeneration,
+    );
     // A new binding comes from the authorized create/ready flow. A snapshot can
     // fence that completion or confirm an existing binding, but cannot create it.
     const confirmed =
@@ -253,6 +398,13 @@ export class MediaSnapshotRuntime {
       source &&
       sameSourceBinding(source, binding) &&
       source.sourceRevision === binding.sourceRevision &&
+      snapshot.mediaSequence >= this.#consumerCallbackFloor &&
+      snapshot.mediaSequence >= this.#recvClosedAt &&
+      (!originalRecv ||
+        current?.payload.ownTransports.some(
+          ({ transportId }) => transportId === originalRecv.transportId,
+        )) &&
+      !closedSinceSnapshot &&
       (!originalOwn || own?.consumerId === originalOwn.consumerId) &&
       (!own || own.consumerId === binding.consumerId);
     if (existing?.handle === handle) return Boolean(confirmed);
@@ -310,6 +462,7 @@ export class MediaSnapshotRuntime {
     const current = this.#snapshot;
     if (
       current &&
+      !this.#needsResync &&
       this.#appliedSnapshots.has(snapshot) &&
       current.audienceEpoch === snapshot.audienceEpoch &&
       current.mediaStreamId === snapshot.mediaStreamId &&
@@ -317,6 +470,159 @@ export class MediaSnapshotRuntime {
       this.#context?.policyRevision === current.policyRevision
     )
       return current;
+  }
+
+  #clearBuffer() {
+    this.#buffer.clear();
+    this.#bufferBytes = 0;
+  }
+
+  #resetRetry() {
+    clearTimeout(this.#retry);
+    this.#retry = undefined;
+    this.#retryCount = 0;
+    this.#resyncExhausted = false;
+  }
+
+  #requestResync() {
+    this.#needsResync = true;
+    const active = Boolean(this.#cancel);
+    this.#cancel?.();
+    if (!active) this.#startResync();
+  }
+
+  #startResync() {
+    const port = this.#resyncPort;
+    const context = this.#context;
+    if (!port || !context || this.#retry || this.#cancel || this.#resyncExhausted) return;
+    const request = this.begin(crypto.randomUUID());
+    if (!request) return;
+    void request.result.then((outcome) => {
+      if (
+        this.#context?.audienceEpoch !== context.audienceEpoch ||
+        this.#context.policyRevision !== context.policyRevision ||
+        this.#resyncPort !== port
+      )
+        return;
+      if (outcome.status === 'applied') {
+        this.#resetRetry();
+        return;
+      }
+      if (outcome.status === 'cancelled' && !this.#needsResync) return;
+      const delay = retryDelays[this.#retryCount];
+      if (delay === undefined) {
+        this.#resyncExhausted = true;
+        return;
+      }
+      this.#retryCount++;
+      this.#retry = setTimeout(
+        () => {
+          this.#retry = undefined;
+          this.#startResync();
+        },
+        delay * (0.9 + Math.random() * 0.2),
+      );
+    });
+    void Promise.resolve()
+      .then(() => {
+        if (this.#cancel === request.cancel && this.#resyncPort === port)
+          return port(request.input, request);
+      })
+      .catch(() => request.cancel());
+  }
+
+  #applyDelta(entry: BufferedDelta) {
+    const current = this.#snapshot;
+    if (!current || entry.delta.packet.mediaSequence !== current.mediaSequence + 1) return false;
+    const next = this.#planDelta(current, entry, this.#closedSources);
+    if (!next) return false;
+    this.#snapshot = next.snapshot;
+    this.#appliedSnapshots.add(next.snapshot);
+    this.#reconcileDelta(next);
+    return true;
+  }
+
+  #planDelta(current: MediaSnapshot, entry: BufferedDelta, closedSources: Map<string, number>) {
+    const { delta } = entry;
+    let payload = current.payload;
+    if (
+      delta.name !== 'media.source.changed' ||
+      (closedSources.get(delta.packet.payload.source.sourceId) ?? 0) <
+        delta.packet.payload.source.sourceGeneration
+    ) {
+      const next = applyMediaDelta(payload, delta, this.identity.participantId);
+      if (!next) {
+        if (delta.name === 'media.transport.closed')
+          this.#consumerCallbackFloor = Math.max(
+            this.#consumerCallbackFloor,
+            delta.packet.mediaSequence,
+          );
+        return;
+      }
+      payload = next;
+    }
+    if (delta.name === 'media.source.ended') {
+      const { sourceId, sourceGeneration, sourceRevision } = delta.packet.payload;
+      const retained = payload.sources.find((source) => source.sourceId === sourceId);
+      const previous = closedSources.get(sourceId) ?? 0;
+      if (
+        retained?.sourceGeneration !== sourceGeneration ||
+        retained.sourceRevision <= sourceRevision
+      ) {
+        if (!previous && closedSources.size >= sessionControlBudget.maxBufferedEvents) {
+          const oldest = closedSources.keys().next();
+          if (!oldest.done) closedSources.delete(oldest.value);
+        }
+        closedSources.set(sourceId, Math.max(previous, sourceGeneration));
+      }
+    }
+    const snapshot = { ...current, mediaSequence: delta.packet.mediaSequence, payload };
+    const recvClosed =
+      delta.name === 'media.transport.closed' &&
+      current.payload.ownTransports.some(
+        (value) =>
+          value.direction === 'RECV' && value.transportId === delta.packet.payload.transportId,
+      );
+    return { snapshot, entry, recvClosed };
+  }
+
+  #reconcileDelta({ snapshot, entry, recvClosed }: PlannedDelta) {
+    const { payload } = snapshot;
+    const { delta, bytes } = entry;
+    if (recvClosed) this.#recvClosedAt = snapshot.mediaSequence;
+    for (const [sourceId, local] of this.#consumers) {
+      const source = payload.sources.find((value) => value.sourceId === sourceId);
+      const closed =
+        delta.name === 'media.consumer.closed' &&
+        delta.packet.payload.consumerId === local.binding.consumerId &&
+        delta.packet.payload.sourceId === sourceId &&
+        delta.packet.payload.sourceGeneration === local.binding.sourceGeneration;
+      if (
+        recvClosed ||
+        closed ||
+        !source ||
+        !sameSourceBinding(source, local.binding) ||
+        (!local.binding.ready && source.sourceRevision !== local.binding.sourceRevision)
+      ) {
+        this.#consumers.delete(sourceId);
+        local.handle.close();
+      } else {
+        local.binding = { ...local.binding, sourceRevision: source.sourceRevision };
+      }
+    }
+    this.#own.reconcile(payload);
+    this.#history.set(snapshot.mediaSequence, entry);
+    this.#historyBytes += bytes;
+    for (const [sequence, oldest] of this.#history) {
+      if (
+        this.#history.size <= sessionControlBudget.maxBufferedEvents &&
+        this.#historyBytes <= sessionControlBudget.maxBufferedEventBytes
+      )
+        break;
+      this.#history.delete(sequence);
+      this.#historyBytes -= oldest.bytes;
+      if (oldest.delta.name === 'media.consumer.closed') this.#consumerCallbackFloor = sequence;
+    }
   }
 
   #reconcileConsumers(bindings: readonly ConsumerBinding[]) {
