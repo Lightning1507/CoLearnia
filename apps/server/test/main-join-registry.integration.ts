@@ -21,7 +21,11 @@ import {
   sessionCollectionValidators,
 } from '../src/live/session-manager/session-models.js';
 import { testReplicaUri } from './replica-uri.js';
+import request from 'supertest';
+import { createApp } from '../src/app.js';
 import { createTransportSignaling } from '../src/live/media/transport-signaling.js';
+import { startLiveRuntime } from '../src/live/media/live-runtime.js';
+import { loadConfig } from '../src/config/env.js';
 
 const databaseName = `colearnia_test_scrum82_${randomUUID().replaceAll('-', '')}`;
 const database = createDatabase(testReplicaUri(databaseName));
@@ -32,7 +36,7 @@ let worker: MediaTypes.Worker;
 let ownsDatabase = false;
 const id = () => new Types.ObjectId().toHexString();
 
-async function endCleanup(value: SessionCleanupRequest): Promise<SessionCleanupResult> {
+function cleanupResult(value: SessionCleanupRequest): SessionCleanupResult {
   const base = {
     operationId: value.operationId,
     sessionId: value.sessionId,
@@ -47,6 +51,10 @@ async function endCleanup(value: SessionCleanupRequest): Promise<SessionCleanupR
   return 'callGeneration' in value
     ? { ...base, callGeneration: value.callGeneration, target: value.target }
     : { ...base, target: value.target };
+}
+
+async function endCleanup(value: SessionCleanupRequest): Promise<SessionCleanupResult> {
+  return cleanupResult(value);
 }
 
 beforeAll(async () => {
@@ -91,6 +99,8 @@ function setup(
   customRepository = repository,
   revocationCleanup?: Parameters<typeof createMainJoinRegistry>[0]['revocationCleanup'],
   endCleanup?: Parameters<typeof createMainJoinRegistry>[0]['endCleanup'],
+  reconnectCleanup?: Parameters<typeof createMainJoinRegistry>[0]['reconnectCleanup'],
+  routerFactory?: () => Promise<MediaTypes.Router>,
 ) {
   let time = Date.now();
   const coordinator = createOperationCoordinator();
@@ -106,6 +116,7 @@ function setup(
     coordinator,
     ...(revocationCleanup ? { revocationCleanup } : {}),
     ...(endCleanup ? { endCleanup } : {}),
+    ...(reconnectCleanup ? { reconnectCleanup } : {}),
     repository: customRepository,
     now: () => time,
     // M1 authority is a fixture; DB session writes and native Routers are real.
@@ -128,7 +139,7 @@ function setup(
       return !revoked.has(current.auth.userId);
     },
     createRouter: async () => {
-      const router = await worker.createRouter({ mediaCodecs });
+      const router = await (routerFactory?.() ?? worker.createRouter({ mediaCodecs }));
       routers.push(router);
       return router;
     },
@@ -153,6 +164,158 @@ function setup(
 }
 
 describe('MAIN registry with real MongoDB and mediasoup Router', () => {
+  it('closes a native transport before resuming without rewriting participant metadata', async () => {
+    const media = vi.fn((request: SessionCleanupRequest) => {
+      transport.close();
+      return cleanupResult(request);
+    });
+    const f = setup(repository, undefined, undefined, {
+      media: { revoke: media },
+      messaging: endCleanup,
+      board: endCleanup,
+    });
+    const user = f.auth();
+    const old = f.binding(user);
+    const ticket = await f.registry.issue(user, f.target, { requestId: randomUUID() });
+    const joined = await f.registry.join(old, { ticket: ticket.ticket, requestId: randomUUID() });
+    const transport = await f.routers[0]!.createWebRtcTransport({
+      listenInfos: [{ protocol: 'udp', ip: '127.0.0.1' }],
+    });
+    const before = await models.LiveSession.findById(ticket.sessionId).lean().orFail();
+    const next = f.binding(user);
+    const input = {
+      requestId: randomUUID(),
+      sessionId: ticket.sessionId,
+      epoch: ticket.epoch,
+      callGeneration: joined.ack.data.result.callGeneration,
+      resumeTicket: joined.ack.data.result.resumeTicket,
+    };
+    await f.registry.disconnect(old.socketId);
+    expect(transport.closed).toBe(true);
+    const resumed = await f.registry.resume(next, input);
+    const replay = await f.registry.resume(next, input);
+    expect(resumed.ack.data.result.participantId).toBe(joined.ack.data.result.participantId);
+    expect(replay.ack.data.result.callGeneration).toBe(resumed.ack.data.result.callGeneration);
+    expect((await models.LiveSession.findById(ticket.sessionId).lean().orFail()).revision).toBe(
+      before.revision,
+    );
+    expect(await models.SessionParticipant.countDocuments({ sessionId: ticket.sessionId })).toBe(1);
+    expect(await f.registry.withContext(old.socketId, input, (result) => result.ok)).toBe(false);
+    const resync = await f.registry.resync(next, {
+      requestId: randomUUID(),
+      sessionId: ticket.sessionId,
+      epoch: ticket.epoch,
+      callGeneration: resumed.ack.data.result.callGeneration,
+      payload: {},
+    });
+    expect(resync.parts[0]!.callGeneration).toBe(resumed.ack.data.result.callGeneration);
+  });
+
+  it('keeps a revoked user denied during reconnect with real metadata', async () => {
+    const f = setup(repository, undefined, undefined, {
+      media: { revoke: cleanupResult },
+      messaging: endCleanup,
+      board: endCleanup,
+    });
+    const user = f.auth();
+    const socket = f.binding(user);
+    const ticket = await f.registry.issue(user, f.target, { requestId: randomUUID() });
+    const joined = await f.registry.join(socket, {
+      ticket: ticket.ticket,
+      requestId: randomUUID(),
+    });
+    await f.registry.disconnect(socket.socketId);
+    f.revoked.add(user.userId);
+    const command = {
+      requestId: randomUUID(),
+      sessionId: ticket.sessionId,
+      epoch: ticket.epoch,
+      callGeneration: joined.ack.data.result.callGeneration,
+      resumeTicket: joined.ack.data.result.resumeTicket,
+    };
+    await expect(f.registry.resume(f.binding(user), command)).rejects.toMatchObject({
+      code: 'FORBIDDEN',
+    });
+    f.revoked.delete(user.userId);
+    await expect(f.registry.resume(f.binding(user), command)).rejects.toMatchObject({
+      code: 'CONFLICT',
+    });
+  });
+
+  it('ends affected durable sessions after a real mediasoup worker process dies', async () => {
+    const ownedWorker = await createWorker({ logLevel: 'error' });
+    const report = vi.fn();
+    let accepting = true;
+    let fixture: ReturnType<typeof setup> | undefined;
+    const runtime = await startLiveRuntime(
+      loadConfig({
+        NODE_ENV: 'test',
+        MEDIA_PORT: String(45000 + Math.floor(Math.random() * 15000)),
+        MEDIA_LISTEN_IP: '127.0.0.1',
+        MEDIA_ANNOUNCED_ADDRESS: '127.0.0.1',
+      }),
+      {
+        createWorker: async () => ownedWorker,
+        closeAdmission: () => {
+          accepting = false;
+        },
+        report,
+        mountRegistry(media) {
+          fixture = setup(
+            repository,
+            undefined,
+            { media: endCleanup, messaging: endCleanup, board: endCleanup },
+            undefined,
+            media.createSessionRouter,
+          );
+          return fixture.registry;
+        },
+      },
+    );
+    const f = fixture!;
+    const app = createApp(loadConfig({ NODE_ENV: 'test' }), () => ({
+      name: 'CoLearnia',
+      database: 'connected',
+      media: runtime.isReady() ? 'connected' : 'disconnected',
+      ready: accepting && runtime.isReady(),
+    }));
+    const user = f.auth();
+    const ticket = await f.registry.issue(user, f.target, { requestId: randomUUID() });
+    await f.registry.join(f.binding(user), { ticket: ticket.ticket, requestId: randomUUID() });
+    try {
+      expect(runtime.isReady()).toBe(true);
+      expect((await request(app).get('/health/ready')).status).toBe(200);
+      // This PID belongs only to the worker created in this test.
+      process.kill(ownedWorker.pid, 'SIGKILL');
+      await vi.waitFor(() => expect(report).toHaveBeenCalledWith('SETTLED'), { timeout: 15000 });
+      expect(runtime.isReady()).toBe(false);
+      expect(accepting).toBe(false);
+      expect((await request(app).get('/health/ready')).status).toBe(503);
+      expect((await request(app).get('/health/live')).status).toBe(200);
+      expect(f.routers[0]!.closed).toBe(true);
+      expect(await models.LiveSession.findById(ticket.sessionId).lean()).toMatchObject({
+        status: 'ENDED',
+        hostUserId: null,
+        revision: 3,
+      });
+      expect(
+        (
+          await models.SessionParticipant.findOne({
+            sessionId: new Types.ObjectId(ticket.sessionId),
+          }).lean()
+        )?.leftAt,
+      ).toBeInstanceOf(Date);
+      expect(f.registry.stats().ownerships).toBe(0);
+      await expect(runtime.createSessionRouter()).rejects.toThrow();
+      const lateListener = vi.fn();
+      runtime.onFailure(lateListener);
+      expect(lateListener).toHaveBeenCalledWith(
+        expect.objectContaining({ routerIds: [f.routers[0]!.id] }),
+      );
+    } finally {
+      runtime.close();
+    }
+  });
   it('keeps a committed end with a lost acknowledgement pending without repeating writes', async () => {
     let completes = 0;
     const f = setup(

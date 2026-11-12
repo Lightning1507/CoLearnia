@@ -8,15 +8,15 @@ Có registry một process, cấp/consume ticket, adapter socket `session.join`,
 
 Chưa mount REST hoặc socket vào app hiện hành: M1 cung cấp adapter auth/access thực tế trước composition. Factory không có chế độ bỏ qua auth. Test M1 dùng fixture kiểm context khóa; MongoDB/Router trong integration test là thật. Đây chưa là luồng đăng nhập–gọi trên trình duyệt hoặc kiểm TURN.
 
-Takeover, revoke, reconnect/grace, host succession và end phiên đang có người thuộc SCRUM-83/84/86/87/90/91. Schema nhận cấu trúc xác nhận takeover của ví dụ M3 nhưng registry chưa chuyển ownership: khi user có call vẫn trả CALL_ALREADY_ACTIVE, giữ call cũ và ticket mới chưa consume. Không tự tăng generation/chiếm call khi chưa cleanup đúng đời.
+Revoke theo SCRUM-83, end phiên theo SCRUM-86 và [reconnect/resync MAIN](main-reconnect.md) theo SCRUM-84 đã có implementation trong registry. Kế vị host đầy đủ, đối soát phiên rỗng và worker failure tiếp tục theo các task tương ứng. Schema nhận cấu trúc xác nhận takeover của ví dụ M3 nhưng registry chưa chuyển ownership của call còn kết nối: vẫn trả CALL_ALREADY_ACTIVE, giữ call cũ và ticket mới chưa consume. Không tự tăng generation/chiếm call khi chưa cleanup đúng đời.
 
 ## API và socket
 
-| Thao tác                                       | Input                                                                                     | Kết quả                                                                                  |
-| ---------------------------------------------- | ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| POST `/api/v1/channels/:cid/live-session/join` | Body `{requestId}`; auth/CSRF/Origin do M1 kiểm; Workspace của channel do server xác định | HTTP 200, `{data:{sessionId,epoch,ticket,expiresAt},requestId:traceId}`                  |
-| Socket `session.join`                          | `{requestId,ticket,takeover?}` trên socket đã xác thực                                    | Ack `completed`, result `{participantId,callGeneration,snapshot:{snapshotId,partCount}}` |
-| Event riêng `session.snapshot`                 | Server phát sau ack                                                                       | Các part SCRUM-66 cùng requestId/snapshotId/đời quyền                                    |
+| Thao tác                                       | Input                                                                                     | Kết quả                                                                                               |
+| ---------------------------------------------- | ----------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| POST `/api/v1/channels/:cid/live-session/join` | Body `{requestId}`; auth/CSRF/Origin do M1 kiểm; Workspace của channel do server xác định | HTTP 200, `{data:{sessionId,epoch,ticket,expiresAt},requestId:traceId}`                               |
+| Socket `session.join`                          | `{requestId,ticket,takeover?}` trên socket đã xác thực                                    | Ack `completed`, result `{participantId,callGeneration,resumeTicket,snapshot:{snapshotId,partCount}}` |
+| Event riêng `session.snapshot`                 | Server phát sau ack                                                                       | Các part SCRUM-66 cùng requestId/snapshotId/đời quyền                                                 |
 
 REST handler khi được mount gọi `registry.issue(auth,{workspaceId,channelId},body)` rồi bọc response bằng trace ID của HTTP; requestId trong body là intent, không thay trace ID. Dùng `Cache-Control: no-store`. HTTP không trả native Router hoặc transport. Socket dùng `attachMainJoinSocket(registry,socket,readAuth)`; readAuth lấy context M1 từ server, không lấy identity trong payload.
 
