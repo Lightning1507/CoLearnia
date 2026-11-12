@@ -62,6 +62,14 @@ SCRUM-18 cấp token phiên ngẫu nhiên 32 byte qua cookie `__Host-colearnia-s
 
 Route HTTP đọc dữ liệu riêng dùng `requireAuth`. Mutation yêu cầu đăng nhập chạy `requireAuth` rồi `requireCsrf`. Handler lấy `AuthenticatedContext` từ `requireVerifiedSession(res).context` sau khi xác nhận hàm trả kết quả. M2 vẫn kiểm ACL của tài nguyên ở handler. Các helper nằm trong [http-auth.ts](../../apps/server/src/auth/http-auth.ts) và [read-session.ts](../../apps/server/src/auth/read-session.ts).
 
+### Frontend auth (SCRUM-25)
+
+Form đăng ký dùng nhãn **Họ và tên**; giá trị này được lưu vào `displayName` và dùng làm tên hiển thị trong CoLearnia. Giữ giới hạn 1–80 Unicode code point sau trim, không tách họ/tên thành field riêng.
+
+`apps/web/src/features/auth` triển khai form `/login`, `/register` và khôi phục phiên ở `/`. Query phiên trong bộ nhớ được điều phối tại `AuthBoundary`; consumer ghép tại app lấy danh tính từ kết quả đã kiểm phiên, không dùng fixture hoặc persist cookie/token. API adapter dùng schema auth và xử lý CSRF/retry/read-back theo các quy tắc dưới đây. Form chỉ nhận success sau response hợp lệ hoặc read-back cùng email; lỗi đọc phiên không được diễn giải thành đăng xuất.
+
+Điểm vào sau xác thực hiện hiển thị tài khoản thật, chờ ghép danh sách Workspace ở SCRUM-34; `/workspace` vẫn là fixture. Luồng lời mời và logout/thu tài nguyên tiếp tục ở task tương ứng. [Bằng chứng và giới hạn kiểm SCRUM-25](../test-evidence/2026-11-12-scrum-25-auth-ui.md).
+
 ### Kết nối Socket.IO trong Sprint 1
 
 FE kết nối cùng origin qua `io({ transports: ['websocket'], auth: { csrfToken } })` với token từ register/login hoặc `GET /api/v1/auth/me`. Trình duyệt tự gửi cookie theo chính sách cookie hiện có. Môi trường triển khai dùng HTTPS/WSS và proxy chuyển tiếp WebSocket cho `/socket.io/`. Sprint 1 chỉ bật WebSocket, nên mạng chặn WebSocket sẽ không kết nối được.

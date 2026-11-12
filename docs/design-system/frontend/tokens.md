@@ -1,6 +1,6 @@
 # 3. Design Tokens
 
-**Thiết kế đề xuất · 07/11/2026.** Chưa tạo file CSS runtime. Palette/scale ở [foundations](foundations.md) còn cần visual review và contrast check.
+**Thiết kế đề xuất · 07/11/2026.** SCRUM-25 triển khai tập token tối thiểu cho auth ở `apps/web/src/styles/tokens.css`; chưa triển khai toàn bộ catalog hoặc media theme. Palette/scale ở [foundations](foundations.md) vẫn cần review theo từng consumer. Xem [bằng chứng auth](../../test-evidence/2026-11-12-scrum-25-auth-ui.md).
 
 ## Ba tầng, một hướng tham chiếu
 
@@ -53,7 +53,7 @@ Media surface phải khai báo đủ text-secondary/border/feedback/focus trư�
 
 ## Tích hợp Tailwind và CSS
 
-Đề xuất đặt nguồn ở `apps/web/src/styles/tokens.css`, import một lần từ global CSS. Tailwind mapping, nếu cần, tham chiếu cùng custom properties; không giữ bảng HEX thứ hai trong TS hoặc từng feature. Cú pháp mapping phải kiểm với Tailwind đang pin khi triển khai, không đổi package của repo theo export.
+Nguồn token auth hiện ở `apps/web/src/styles/tokens.css`, import một lần từ global CSS; các nhóm chưa được consumer dùng vẫn là đề xuất. Tailwind mapping, nếu cần, tham chiếu cùng custom properties; không giữ bảng HEX thứ hai trong TS hoặc từng feature. Cú pháp mapping phải kiểm với Tailwind đang pin khi triển khai, không đổi package của repo theo export.
 
 Feature dùng semantic token qua class/CSS variable. CSS của canvas có thể nhận màu bút từ lựa chọn hợp lệ của domain; palette vẽ không tự đồng nhất với palette brand. Hình học nguồn video/DPR nằm trong renderer.
 
