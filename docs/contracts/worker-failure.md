@@ -6,23 +6,32 @@
 
 `isReady()` trả false khi worker chết; createSessionRouter mới bị từ chối. Main đóng cờ nhận LIVE runtime và readiness vốn phụ thuộc media chuyển 503; liveness vẫn trả 200. Không tự tạo worker hoặc phục hồi Router/grant cũ.
 
-Khi composition đã có registry, gọi một lần:
+`main.ts` dùng `startLiveRuntime` làm entrypoint khởi động media chung. Entry này gắn callback đóng admission trước, rồi gọi `mountRegistry(runtime)` khi composition cung cấp provider MAIN. Sau khi registry được tạo, entrypoint tự gắn binder một lần:
 
 ```ts
-const detach = bindWorkerFailure(mediaRuntime, registry, (result) => {
-  // SETTLED: đã nhận kết quả lifecycle, có thể còn phiên PENDING.
-  // FAILED: không nhận được kết quả; giữ readiness/deny và kiểm vận hành.
+const media = await startLiveRuntime(config, {
+  closeAdmission() {
+    /* đóng admission LIVE */
+  },
+  mountRegistry(runtime) {
+    /* tạo registry với auth/access/cleanup thật */ return registry;
+  },
+  report(result) {
+    // SETTLED có thể còn phiên PENDING; FAILED cần kiểm vận hành.
+  },
 });
 ```
 
 `registry.handleRouterFailure(routerIds)` là cổng nội bộ server, không nhận trực tiếp payload từ browser. Trả danh sách `{sessionId, epoch, state: 'ENDED' | 'PENDING'}` cho những room khớp Router hiện tại. Không suy SETTLED nghĩa là mọi phiên đã ENDED. Binder bắt lỗi callback để tránh unhandled rejection; lỗi phải được đầu mối vận hành ghi nhận.
 
-App hiện chưa mount registry MAIN và các provider cleanup đầy đủ. Main đã nối việc mất readiness; binder registry được kiểm qua integration thật và phải nối vào composition khi MAIN được mount. Không gọi cold bootstrap ngay trong runtime đang phục vụ call để thay cleanup liên miền.
+**Đầu mối tích hợp: SCRUM-88, M4 thực hiện, M3 review, phối hợp provider M1/M2/M5.** Task này ghép registry MAIN, auth/access thật, cleanup và socket/routes vào composition, cung cấp `mountRegistry` cho entrypoint trên, kiểm worker chết qua app đã mount đầy đủ. Không tạo registry thứ hai hoặc adapter luôn trả success chỉ để bật binder. M1/M3 cấp provider theo các phụ thuộc của SCRUM-88.
+
+App hiện chưa mount registry MAIN/provider đầy đủ; ở trạng thái này entrypoint vẫn đóng admission/readiness khi worker chết, không giả đã cleanup phiên qua registry chưa tồn tại. Integration hiện chạy đúng `startLiveRuntime` mà `main.ts` dùng, inject registry thật với MongoDB/native Router và kiểm health qua `createApp`; chưa phải chạy subprocess `main.ts` với auth/cleanup production. Không gọi cold bootstrap trong runtime đang phục vụ call để thay cleanup liên miền.
 
 ## Chặn ngay, kết thúc đúng phiên
 
 1. Khi nhận danh sách Router lỗi, đặt cờ mediaFailed và hủy ticket của các room liên quan ngay trước mọi await. Context/join mới bị từ chối, kể cả DB/native callback đang chờ. Room thuộc Router khác không bị chặn.
-2. Lấy Workspace gate chung và đăng ký operation end theo session/epoch. Nếu host end đã có operation thì dùng lại; không ghi DB hoặc cleanup lần hai. Mỗi room giữ một failure task, thông báo lặp hội tụ cùng kết quả.
+2. Lấy Workspace gate chung, dọn replay end đã hết hạn rồi mới kiểm lookup/cap và đăng ký operation end theo session/epoch. Record PENDING vẫn giữ slot, không bị TTL xóa. Nếu host end đã có operation thì dùng lại; không ghi DB hoặc cleanup lần hai. Mỗi room giữ một failure task, thông báo lặp hội tụ cùng kết quả.
 3. Dùng pipeline SCRUM-86: ENDING, block ownership, đóng Router; cleanup PARTICIPANT và SCOPE MAIN/nhóm; transaction beginEnding/completeEnding có guard và deadline. Đây là hành động lifecycle của server, không giả mạo authSession hay yêu cầu quyền host đang online.
 4. Cleanup vẫn chạy khi DB lỗi. Room có metadata chưa rõ không được begin/complete lại mù; trả PENDING và giữ deny để SCRUM-87/cold startup đối chiếu. Thiếu adapter/cap/timeout gate cũng giữ room lỗi bị chặn, không báo thành công.
 5. Room đang tạo chưa xuất hiện lúc notification đến vẫn được nhận diện bằng Router ID đã lỗi. Nếu create ACK trả muộn, không cấp ticket; sau khi nhả gate, registry đưa room vào cùng pipeline end. Không lấy gate lồng từ trong operation M1. Allocation thất bại trước khi có metadata chỉ đóng tài nguyên và không tạo quyền.

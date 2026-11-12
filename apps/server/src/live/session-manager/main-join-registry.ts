@@ -674,6 +674,9 @@ export function createMainJoinRegistry(options: {
             async (held) => {
               assertRunning();
               if (rooms.get(room.state.channelId) !== room) return undefined;
+              // A completed replay no longer occupies admission after its TTL.
+              // Sweep inside the gate too: waiting for it may cross that TTL.
+              sweep();
               const key = JSON.stringify([room.state.sessionId, room.state.epoch]);
               const existing = endRecords.get(key);
               if (existing) return existing;

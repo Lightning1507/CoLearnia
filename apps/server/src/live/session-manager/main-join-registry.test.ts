@@ -194,6 +194,23 @@ async function endFixture(
 }
 
 describe('SCRUM-86 session end', () => {
+  it('reclaims expired end replay records before admitting worker-failure cleanup', async () => {
+    const f = await endFixture('END', { maxEndRecords: 1, endReplayTtlMs: 100 });
+    await f.registry.end(f.socket, f.command);
+    const ticket = await f.issue();
+    const socket = f.binding();
+    await f.registry.join(socket, { ticket: ticket.ticket, requestId: randomUUID() });
+    f.advance(101);
+    const failed = await f.registry.handleRouterFailure([f.routers[1]!.id]);
+    expect(failed).toEqual([{ sessionId: ticket.sessionId, epoch: ticket.epoch, state: 'ENDED' }]);
+    expect(f.repository.beginEnding).toHaveBeenCalledTimes(2);
+    expect(f.repository.completeEnding).toHaveBeenCalledTimes(2);
+    expect(f.media).toHaveBeenCalledTimes(4);
+    expect(f.messaging).toHaveBeenCalledTimes(4);
+    expect(f.board).toHaveBeenCalledTimes(4);
+    expect(f.registry.stats().ownerships).toBe(0);
+    expect(await f.registry.handleRouterFailure([f.routers[1]!.id])).toEqual([]);
+  });
   it('ends a reservation whose create acknowledgement arrives after its worker fails', async () => {
     const f = await endFixture();
     const waiting = deferred<void>();
