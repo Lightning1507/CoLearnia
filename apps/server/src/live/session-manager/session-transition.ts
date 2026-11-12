@@ -16,7 +16,10 @@ import { CleanupAdmission, sessionCleanupAdmission } from './cleanup-admission.j
 const domains = ['media', 'messaging', 'board'] as const;
 type Domain = (typeof domains)[number];
 type Outcome = SessionCleanupResult['outcome'];
-type CleanupAdapters = Record<Exclude<Domain, 'media'>, CleanupSessionResources> & {
+export type SessionTransitionAdapters = Record<
+  Exclude<Domain, 'media'>,
+  CleanupSessionResources
+> & {
   media: CleanupSessionResources | { revoke(request: SessionCleanupRequest): SessionCleanupResult };
 };
 const admissionPollMs = 100;
@@ -118,7 +121,7 @@ function pause(timeoutMs: number, signal?: AbortSignal): Promise<void> {
 export function beginSessionTransition(
   rawRequest: SessionCleanupRequest,
   context: HeldTransitionContext,
-  adapters: CleanupAdapters,
+  adapters: SessionTransitionAdapters,
   options: {
     userId: string;
     timing: SessionTransitionTiming;

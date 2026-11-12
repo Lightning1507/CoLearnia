@@ -1,5 +1,7 @@
 # Contracts
 
+**Worker failure (SCRUM-91):** [đích Router, end lifecycle và restart](worker-failure.md); thông báo runtime nội bộ, readiness và binder registry.
+
 ## Quy ước áp dụng chung
 
 Trước khi viết API/socket, đọc [quy ước API và backend](api-conventions.md) và [bảng mã lỗi chung](error-codes.md). Đây là đầu ra S01 ngày 05/11/2026: cách đặt route/field, response, validation, requestId/retry, phân trang, ack/event và cách chia trách nhiệm backend. Hằng status cùng schema envelope nằm trong packages/contracts; endpoint/payload theo miền và middleware nghiệp vụ vẫn cần triển khai theo task. Quy ước mới là nguồn chung cho các proposal; tên/mã dự kiến khác trong proposal cần đối chiếu trước code phụ thuộc.
@@ -7,6 +9,10 @@ Trước khi viết API/socket, đọc [quy ước API và backend](api-conventi
 Source schema ở `packages/contracts/src`, frontend và backend import qua `@colearnia/contracts`.
 
 **MAIN join registry (SCRUM-82):** [ticket, ownership và adapter socket](main-join-registry.md); schema `session-join.ts`, registry dùng repository/policy/projection hiện có. Composition auth/access và lifecycle đầy đủ tiếp tục theo task tích hợp.
+
+**Kết thúc phiên (SCRUM-86):** [host end/rời, idempotency và cleanup](session-end.md); schema `session-end.ts`, adapter `session.end` dùng cùng registry MAIN. Chưa mount vào app production; xem giới hạn tích hợp trong contract.
+
+**Thu quyền MAIN (SCRUM-83):** [cổng M1, hủy ticket và cleanup theo generation](main-revocation.md). Registry dùng schema revocation M1 và cleanup coordinator hiện có; chưa nối publisher ACL/logout production.
 
 **Auth/profile (SCRUM-12):** [contract và ví dụ](auth-profile.md), schema input/output và identity nội bộ trong `auth.ts`; chờ M4 review trước khi consumer dùng. Upload avatar tiếp tục ở M1-T1.3 với M2; chưa có endpoint chỉ từ contract này.
 
@@ -29,6 +35,8 @@ REST error: `{ error: { code, message }, requestId }`. Không gửi raw database
 ## Contracts messaging cần bổ sung theo feature
 
 [Gửi tin, lịch sử và subscribe kênh TEXT (SCRUM-40)](text-messaging.md) cung cấp schema và fixture cho tin văn bản, trang lịch sử và tải bù, cùng payload socket.
+
+[Bàn giao bản ghi MAIN giữa M3 và M2 (SCRUM-37)](recording-sink.md) mô tả reserve, writer, finalize và xử lý lỗi/hủy để review trước PoC tích hợp.
 
 Nguồn nghiệp vụ: [messaging](../product/messaging.md); nguồn scope: CHAT-01/02/03, FILE-01 và HELP-01 trong [scope](../product/scope.md). Đây là danh mục thiết kế, không khẳng định schemas/handlers đã tồn tại.
 

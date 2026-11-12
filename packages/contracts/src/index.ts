@@ -5,6 +5,7 @@ export * from './workspace.js';
 export * from './text-messaging.js';
 export * from './session.js';
 export * from './session-join.js';
+export * from './session-end.js';
 export * from './session-context.js';
 export * from './session-projection.js';
 export * from './session-snapshot.js';

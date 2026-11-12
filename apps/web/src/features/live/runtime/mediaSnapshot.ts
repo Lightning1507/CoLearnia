@@ -16,7 +16,7 @@ export function sameSourceBinding(
   );
 }
 
-function sameDescriptor(left: MediaSourceDescriptor, right: MediaSourceDescriptor) {
+export function sameSourceDescriptor(left: MediaSourceDescriptor, right: MediaSourceDescriptor) {
   return (
     sameSourceBinding(left, right) &&
     left.sourceRevision === right.sourceRevision &&
@@ -69,7 +69,7 @@ export function joinMediaSnapshot(
         source.ownerParticipantId !== participantId ||
         ownSourceIds.has(source.sourceId) ||
         (producerSource !== undefined && (!visible || producerSource !== source.sourceId)) ||
-        (visible && !sameDescriptor(visible, source))
+        (visible && !sameSourceDescriptor(visible, source))
       )
         return;
       ownSourceIds.add(source.sourceId);
