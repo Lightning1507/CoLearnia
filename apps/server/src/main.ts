@@ -95,8 +95,20 @@ async function start() {
   if (!stopping && config.MEDIA_ENABLED && sessionBootstrap.isReady()) {
     acceptingLiveRuntime = true;
     try {
-      const { createMediaRuntime: startMedia } = await import('./live/media/runtime.js');
-      media = await startMedia(config);
+      const { startLiveRuntime } = await import('./live/media/live-runtime.js');
+      media = await startLiveRuntime(config, {
+        // SCRUM-88 supplies mountRegistry with real M1/M2/M3/M5 ports when
+        // composing MAIN. Never substitute a fake authority/cleanup here.
+        closeAdmission() {
+          acceptingLiveRuntime = false;
+          logger.error(
+            'LIVE runtime admission closed after media worker failure; restart requires cold session reconciliation.',
+          );
+        },
+        report(result) {
+          if (result === 'FAILED') logger.error('Worker failure lifecycle could not settle');
+        },
+      });
       if (stopping) media.close();
     } catch {
       acceptingLiveRuntime = false;

@@ -1,5 +1,7 @@
 # Contracts
 
+**Worker failure (SCRUM-91):** [đích Router, end lifecycle và restart](worker-failure.md); thông báo runtime nội bộ, readiness và binder registry.
+
 ## Quy ước áp dụng chung
 
 Trước khi viết API/socket, đọc [quy ước API và backend](api-conventions.md) và [bảng mã lỗi chung](error-codes.md). Đây là đầu ra S01 ngày 05/11/2026: cách đặt route/field, response, validation, requestId/retry, phân trang, ack/event và cách chia trách nhiệm backend. Hằng status cùng schema envelope nằm trong packages/contracts; endpoint/payload theo miền và middleware nghiệp vụ vẫn cần triển khai theo task. Quy ước mới là nguồn chung cho các proposal; tên/mã dự kiến khác trong proposal cần đối chiếu trước code phụ thuộc.

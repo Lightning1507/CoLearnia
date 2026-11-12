@@ -194,6 +194,141 @@ async function endFixture(
 }
 
 describe('SCRUM-86 session end', () => {
+  it('reclaims expired end replay records before admitting worker-failure cleanup', async () => {
+    const f = await endFixture('END', { maxEndRecords: 1, endReplayTtlMs: 100 });
+    await f.registry.end(f.socket, f.command);
+    const ticket = await f.issue();
+    const socket = f.binding();
+    await f.registry.join(socket, { ticket: ticket.ticket, requestId: randomUUID() });
+    f.advance(101);
+    const failed = await f.registry.handleRouterFailure([f.routers[1]!.id]);
+    expect(failed).toEqual([{ sessionId: ticket.sessionId, epoch: ticket.epoch, state: 'ENDED' }]);
+    expect(f.repository.beginEnding).toHaveBeenCalledTimes(2);
+    expect(f.repository.completeEnding).toHaveBeenCalledTimes(2);
+    expect(f.media).toHaveBeenCalledTimes(4);
+    expect(f.messaging).toHaveBeenCalledTimes(4);
+    expect(f.board).toHaveBeenCalledTimes(4);
+    expect(f.registry.stats().ownerships).toBe(0);
+    expect(await f.registry.handleRouterFailure([f.routers[1]!.id])).toEqual([]);
+  });
+  it('ends a reservation whose create acknowledgement arrives after its worker fails', async () => {
+    const f = await endFixture();
+    const waiting = deferred<void>();
+    const original = f.repository.create.getMockImplementation()!;
+    f.repository.create.mockImplementationOnce(async (input) => {
+      await waiting.promise;
+      return original(input);
+    });
+    const creating = f.issue(f.principal(), { workspaceId: id(), channelId: id() });
+    const rejected = expect(creating).rejects.toMatchObject({ code: 'DEPENDENCY_UNAVAILABLE' });
+    await vi.waitFor(() => expect(f.repository.create).toHaveBeenCalledTimes(2));
+    await f.registry.handleRouterFailure([f.routers[1]!.id]);
+    waiting.resolve();
+    await rejected;
+    await vi.waitFor(() => expect(f.repository.completeEnding).toHaveBeenCalledTimes(1));
+    expect(f.routers[1]!.closed).toBe(true);
+    expect(f.registry.stats().ownerships).toBe(1);
+  });
+  it('keeps unknown metadata denied without blindly retrying a failed create on worker death', async () => {
+    const f = await endFixture();
+    f.repository.create.mockRejectedValueOnce(new Error('Unknown commit result'));
+    await expect(f.issue(f.principal(), { workspaceId: id(), channelId: id() })).rejects.toThrow();
+    const failed = await f.registry.handleRouterFailure([f.routers[1]!.id]);
+    expect(failed[0]!.state).toBe('PENDING');
+    expect(f.messaging).toHaveBeenCalled();
+    expect(f.repository.beginEnding).not.toHaveBeenCalled();
+    expect(f.repository.completeEnding).not.toHaveBeenCalled();
+  });
+  it('ends only rooms bound to the failed Router and coalesces repeated worker notices', async () => {
+    const f = await endFixture();
+    const peer = f.principal();
+    const target = { workspaceId: id(), channelId: id() };
+    const ticket = await f.issue(peer, target);
+    const socket = f.binding(peer);
+    const joined = await f.registry.join(socket, {
+      ticket: ticket.ticket,
+      requestId: randomUUID(),
+    });
+    const routerId = f.routers[0]!.id;
+    const [one, two] = await Promise.all([
+      f.registry.handleRouterFailure([routerId]),
+      f.registry.handleRouterFailure([routerId]),
+    ]);
+    expect(one[0]).toMatchObject({ sessionId: f.command.sessionId, state: 'ENDED' });
+    expect(two).toEqual(one);
+    expect(f.repository.beginEnding).toHaveBeenCalledTimes(1);
+    expect(f.repository.completeEnding).toHaveBeenCalledTimes(1);
+    expect(f.routers[1]!.closed).toBe(false);
+    expect(
+      await f.registry.withContext(
+        socket.socketId,
+        { ...ticket, callGeneration: joined.ack.data.result.callGeneration },
+        (result) => result.ok,
+      ),
+    ).toBe(true);
+    expect(await f.registry.handleRouterFailure([routerId])).toEqual([]);
+  });
+  it('uses the existing end operation if worker failure races host end', async () => {
+    const f = await endFixture();
+    const waiting = deferred<void>();
+    f.messaging.mockImplementation(async (value) => {
+      await waiting.promise;
+      return cleanupAck(value);
+    });
+    const end = f.registry.end(f.socket, f.command);
+    await vi.waitFor(() => expect(f.messaging).toHaveBeenCalled());
+    const failure = f.registry.handleRouterFailure([f.routers[0]!.id]);
+    waiting.resolve();
+    expect(await end).toMatchObject({ data: { status: 'completed' } });
+    expect((await failure)[0]!.state).toBe('ENDED');
+    expect(f.repository.completeEnding).toHaveBeenCalledTimes(1);
+  });
+  it('keeps failed rooms denied if cleanup or a DB outcome is unresolved', async () => {
+    const f = await endFixture();
+    f.repository.beginEnding.mockRejectedValueOnce(new Error('Injected unknown outcome'));
+    const result = await f.registry.handleRouterFailure([f.routers[0]!.id]);
+    expect(result[0]!.state).toBe('PENDING');
+    expect(await f.registry.handleRouterFailure([f.routers[0]!.id])).toEqual(result);
+    expect(f.messaging).toHaveBeenCalled();
+    expect(f.repository.beginEnding).toHaveBeenCalledTimes(1);
+    expect(f.repository.completeEnding).not.toHaveBeenCalled();
+    await expect(f.issue()).rejects.toThrow();
+  });
+  it('invalidates a pending join before a queued worker-failure handler gets its gate', async () => {
+    const f = await endFixture();
+    const user = f.principal();
+    const ticket = await f.issue(user);
+    const pending = deferred<void>();
+    const original = f.repository.join.getMockImplementation()!;
+    f.repository.join.mockImplementationOnce(async (input) => {
+      await pending.promise;
+      return original(input);
+    });
+    const joining = f.registry.join(f.binding(user), {
+      ticket: ticket.ticket,
+      requestId: randomUUID(),
+    });
+    const rejected = expect(joining).rejects.toMatchObject({ code: 'DEPENDENCY_UNAVAILABLE' });
+    await vi.waitFor(() => expect(f.repository.join).toHaveBeenCalledTimes(2));
+    const failure = f.registry.handleRouterFailure([f.routers[0]!.id]);
+    pending.resolve();
+    await rejected;
+    expect((await failure)[0]!.state).toBe('ENDED');
+    expect(f.registry.stats().ownerships).toBe(0);
+  });
+  it('ends reservation-only rooms after worker failure without inventing a logged-in actor', async () => {
+    const f = await endFixture();
+    const target = { workspaceId: id(), channelId: id() };
+    const reserved = await f.issue(f.principal(), target);
+    expect((await f.registry.handleRouterFailure([f.routers[1]!.id]))[0]).toMatchObject({
+      sessionId: reserved.sessionId,
+      state: 'ENDED',
+    });
+    expect(f.registry.stats().ownerships).toBe(1);
+    expect(f.board).toHaveBeenCalledWith(
+      expect.objectContaining({ target: { type: 'SCOPE', scope: { type: 'MAIN' } } }),
+    );
+  });
   it('keeps end idempotent when host revocation arrives while shared cleanup is pending', async () => {
     const f = await revokeFixture();
     const waiting = deferred<void>();
