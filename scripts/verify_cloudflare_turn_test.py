@@ -39,7 +39,9 @@ class VerificationTest(unittest.TestCase):
             "TURN_KEY_ID": "fixture-key", "TURN_KEY_API_TOKEN": "fixture-token"
         }), patch.object(probe.urllib.request, "urlopen", return_value=ApiResponse()), \
                 patch.object(probe, "allocate", side_effect=[
-                    {"accepted": value} for value in accepted
+                    value if isinstance(value, dict) else
+                    {"accepted": value, **({} if value else {"turnCode": 401})}
+                    for value in accepted
                 ]), patch.object(probe.time, "sleep") as sleep, \
                 patch.object(probe.time, "monotonic", return_value=0), \
                 contextlib.redirect_stdout(output):
@@ -65,7 +67,7 @@ class VerificationTest(unittest.TestCase):
 
     def test_expiry_gate_requires_fresh_control(self):
         result, _, _ = self.run_probe([True, False, False, False, False, False, False])
-        self.assertEqual(result, 1)
+        self.assertEqual(result, 2)
 
     def test_expiry_gate_accepts_rejection_with_working_fresh_control(self):
         result, _, _ = self.run_probe([True, False, False, False, False, False, True])
@@ -78,6 +80,42 @@ class VerificationTest(unittest.TestCase):
         args = verify.call_args.args[0]
         self.assertEqual(args.ttl, 14400)
         self.assertFalse(args.auth_only)
+
+    def test_quota_rejection_is_not_expiry_even_when_fresh_control_works(self):
+        quota = {"accepted": False, "turnCode": 486}
+        result, events, _ = self.run_probe([True, False, quota, quota, quota, quota, True])
+        self.assertNotEqual(result, 0)
+        summary = next(event for event in events if event["event"] == "result")
+        self.assertEqual(summary["status"], "inconclusive")
+        self.assertFalse(summary["expiryVerified"])
+
+    def test_unknown_and_non_authentication_errors_are_inconclusive(self):
+        for code in [None, 400, 403, 437, 438, 441, 442, 486, 500, 508]:
+            with self.subTest(code=code):
+                rejection = {"accepted": False, "turnCode": code}
+                result, events, _ = self.run_probe([
+                    True, False, False, False, rejection, rejection, True])
+                self.assertNotEqual(result, 0)
+                self.assertEqual(
+                    next(event["status"] for event in events if event["event"] == "result"),
+                    "inconclusive")
+
+    def test_only_one_auth_rejection_is_not_enough_when_other_result_is_quota(self):
+        result, events, _ = self.run_probe([
+            True, False, False, False, False, {"accepted": False, "turnCode": 486}, True])
+        self.assertEqual(result, 2)
+        summary = next(event for event in events if event["event"] == "result")
+        self.assertFalse(summary["expiryVerified"])
+
+    def test_wrong_password_quota_or_bad_request_is_not_authentication_proof(self):
+        for code in [400, 486, 508, None]:
+            with self.subTest(code=code):
+                result, events, sleep = self.run_probe([
+                    True, {"accepted": False, "turnCode": code}], auth_only=True)
+                self.assertEqual(result, 2)
+                summary = next(event for event in events if event["event"] == "result")
+                self.assertEqual(summary["status"], "inconclusive")
+                sleep.assert_not_called()
 
 
 if __name__ == "__main__":

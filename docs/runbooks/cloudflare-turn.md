@@ -2,7 +2,7 @@
 
 SCRUM-63 kiểm relay có xác thực và thời hạn credential. Cloudflare phục vụ TURN; EC2 vẫn chạy ứng dụng, MongoDB và media worker. TURN không thay thế SFU hoặc đưa RTP qua Nginx. Kết quả theo từng môi trường nằm trong [báo cáo kiểm tra](../test-evidence/2026-11-11-scrum-63-turn.md).
 
-SCRUM-63 hoàn tất theo phạm vi nghiệm thu chốt ngày 11/11/2026: cấu hình Cloudflare TURN, kiểm xác thực và đường relay, ghi bằng chứng và bàn giao cấu hình credential. Hành vi từ chối credential sau TTL được ghi nhận là giới hạn còn tồn tại, không chặn hoàn tất phần cấu hình này; chưa coi kiểm hết hạn hoặc gate media tích hợp đã đạt.
+Theo [xác nhận phạm vi của chủ repo](https://github.com/Lightning1507/CoLearnia/pull/88#issuecomment-6813775252), SCRUM-63 hoàn tất phần cấu hình Cloudflare TURN, kiểm credential/relay, ghi bằng chứng và bàn giao. Phần từ chối sau TTL chuyển sang [SCRUM-92](https://faker1652005.atlassian.net/browse/SCRUM-92), chưa đạt. Xác nhận của chủ repo không thay approval M3; PR vẫn cần reviewer kiểm. Mật khẩu sai trả 400 chỉ xác nhận Allocate bị từ chối, chưa xác định nguyên nhân.
 
 ## Địa chỉ và quyền truy cập
 
@@ -38,7 +38,7 @@ Trên Linux, sau khi môi trường đã có hai biến, chạy:
 python3 -u scripts/verify-cloudflare-turn.py --auth-only
 ```
 
-`--auth-only` kiểm credential 14.400 giây dùng được và mật khẩu sai bị từ chối, rồi thu hồi credential thử. Kết quả ghi rõ `scope=authentication`, `expiryVerified=false`. Exit 0 của chế độ này chỉ xác nhận xác thực đạt, không xác nhận kiểm hết hạn đạt.
+`--auth-only` kiểm credential 14.400 giây dùng được và cùng username với mật khẩu sai bị từ chối do xác thực, rồi thu hồi credential thử. Chỉ mã 401 ở phản hồi Allocate đã kèm credentials (sau challenge ban đầu) được phân loại là từ chối xác thực. Mã 400/403/441/486/508 hoặc mã chưa biết không được suy thành lỗi password/expiry. Kết quả ghi `scope=authentication`, `expiryVerified=false`; khi chưa xác định nguyên nhân thì `status=inconclusive`, exit 2. Exit 0 chỉ xác nhận baseline xác thực đạt, không xác nhận hết hạn.
 
 ### Kiểm hết hạn riêng
 
@@ -57,7 +57,9 @@ Công cụ chỉ xuất JSON với trạng thái, tuổi credential, giao thức
 3. `fresh-control`: credential vừa cấp vẫn dùng được, phân biệt lỗi hết hạn với sự cố mạng/dịch vụ.
 4. `revoke`: cố gắng thu hồi credential đã tạo khi kết thúc, kể cả khi phép kiểm thất bại.
 
-Ở chế độ kiểm hết hạn, exit 0 chỉ có khi baseline đúng, hai credential cũ đều bị TURN từ chối ở mốc cuối và credential mới vẫn được chấp nhận. Timeout, lỗi API hoặc TLS không được tính là bằng chứng credential hết hạn. Exit 0 cũng không chứng minh từ chối đúng ngay giây TTL; cần đọc các mốc đo trước khi nghiệm thu. Nếu tiến trình bị buộc dừng, credential còn lại phụ thuộc thời hạn do nhà cung cấp thực thi; dùng `--auth-only` khi chỉ cần kiểm nhanh credential cho buổi học.
+Ở chế độ kiểm hết hạn, exit 0 yêu cầu baseline đúng, cả hai credential cũ nhận mã 401 sau authenticated Allocate ở mốc cuối và credential mới vẫn Allocate thành công. Exit 1 khi credential cũ còn dùng được hoặc baseline thất bại; exit 2 khi bị từ chối bởi quota/capacity/nonce/protocol/mã chưa xác định hoặc credential mới đối chứng không dùng được. Output `scope=expiry`, `status`, `reason` và `expiryVerified` phân biệt các kết quả. HTTP API/TLS/timeout là lỗi phép đo (exit 1), không phải expiry pass. Quy tắc dựa trên [RFC 8656](https://www.rfc-editor.org/rfc/rfc8656.html#section-19); 441 dành cho non-Allocate, 486 là quota.
+
+Mã 401 sau TTL là bằng chứng từ chối xác thực tại mốc đo, không xác định độc lập nguyên nhân là TTL hay thu hồi khác, cũng không chứng minh từ chối đúng ngay giây hết hạn. Không thu hồi credential trước phép đo; ghi nhận thay đổi key/provider. Nếu tiến trình bị buộc dừng, credential còn lại phụ thuộc thời hạn nhà cung cấp thực thi; dùng `--auth-only` để kiểm nhanh.
 
 `--allocate-stdin` chỉ kiểm một credential tạm từ JSON qua stdin, không gọi API và không cần khóa dài hạn. Chế độ này dùng để kiểm từ EC2 qua SSH hoặc từ một máy khác; không truyền credential trong tham số dòng lệnh. Trường `accepted` trong JSON là kết quả xác thực; exit 0 của chế độ này chỉ xác nhận phép đo thực hiện được. Không đưa `.env.turn.local` hoặc khóa dài hạn lên máy khác để chạy phép kiểm đơn lẻ.
 

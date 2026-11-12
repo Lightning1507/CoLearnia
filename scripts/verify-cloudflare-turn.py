@@ -135,6 +135,11 @@ def verify(args):
         emit("baseline", ttl=args.ttl, valid=valid, wrongPassword=wrong)
         if not valid["accepted"] or wrong["accepted"]:
             return 1
+        if wrong.get("turnCode") != 401:
+            emit("result", scope="authentication", status="inconclusive",
+                 reason="wrong-password-rejection-not-confirmed-as-authentication",
+                 credentialTtlSeconds=args.ttl, expiryVerified=False)
+            return 2
         if args.auth_only:
             emit("result", scope="authentication", credentialTtlSeconds=args.ttl,
                  expiryVerified=False)
@@ -146,8 +151,23 @@ def verify(args):
                  previouslyUsed=used_result, previouslyUnused=unused_result)
         fresh = allocate(generate())
         emit("fresh-control", result=fresh)
-        # A transport failure must not be counted as an expired credential rejection.
-        return int(used_result["accepted"] or unused_result["accepted"] or not fresh["accepted"])
+        # This is the response to the authenticated Allocate, AFTER its initial
+        # 401 challenge. Quota/capacity/protocol errors are not auth evidence.
+        old_results = (used_result, unused_result)
+        still_accepted = any(result["accepted"] for result in old_results)
+        authentication_rejected = all(
+            result.get("accepted") is False and result.get("turnCode") == 401
+            for result in old_results
+        )
+        verified = authentication_rejected and fresh["accepted"]
+        status = "passed" if verified else "failed" if still_accepted else "inconclusive"
+        reason = ("authentication-rejected-after-ttl" if verified else
+                  "credential-still-accepted" if still_accepted else
+                  "fresh-control-failed" if not fresh["accepted"] else
+                  "rejection-not-confirmed-as-authentication")
+        emit("result", scope="expiry", status=status, reason=reason,
+             expiryVerified=bool(verified))
+        return 0 if verified else 1 if still_accepted else 2
     finally:
         for credentials in issued:
             try:
