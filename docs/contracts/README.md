@@ -34,6 +34,8 @@ REST error: `{ error: { code, message }, requestId }`. Không gửi raw database
 
 ## Contracts messaging cần bổ sung theo feature
 
+[Gửi tin, lịch sử và subscribe kênh TEXT (SCRUM-40)](text-messaging.md) cung cấp schema và fixture cho tin văn bản, trang lịch sử và tải bù, cùng payload socket.
+
 [Bàn giao bản ghi MAIN giữa M3 và M2 (SCRUM-37)](recording-sink.md) mô tả reserve, writer, finalize và xử lý lỗi/hủy để review trước PoC tích hợp.
 
 Nguồn nghiệp vụ: [messaging](../product/messaging.md); nguồn scope: CHAT-01/02/03, FILE-01 và HELP-01 trong [scope](../product/scope.md). Đây là danh mục thiết kế, không khẳng định schemas/handlers đã tồn tại.
