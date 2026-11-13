@@ -133,3 +133,5 @@ Không triển khai `participant.move`. `group.join` kiểm DISCUSSION roster/GU
 context khóa, giới hạn hàng chờ và điểm nối M2/M4.
 
 **Session bootstrap/query (SCRUM-80):** [cold startup và metadata theo kênh](session-bootstrap-metadata.md), schema `session-metadata.ts`. Main giữ readiness tới khi phiên cũ được đối soát; query nội bộ có pagination và kiểm quyền trước/sau await.
+
+Policy Workspace/kênh dùng chung và resolver MongoDB: [SCRUM-27](../runbooks/workspace-access.md).
