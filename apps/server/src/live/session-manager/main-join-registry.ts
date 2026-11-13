@@ -1107,6 +1107,7 @@ export function createMainJoinRegistry(options: {
           const current = await authority(auth, destination, held);
           const pendingRoom = rooms.get(destination.channelId);
           if (pendingRoom?.metadata) await settleMetadata(pendingRoom);
+          if (clock() >= deadline) fail('DEPENDENCY_UNAVAILABLE');
           const key = JSON.stringify([auth.userId, auth.authSessionId, input.requestId]);
           const existing = intents.get(key);
           if (existing) {
@@ -1816,16 +1817,24 @@ export function createMainJoinRegistry(options: {
             throw error;
           }
         }
-        const ending = await options.coordinator.run(
-          { workspaceId: room.state.workspaceId },
-          async (held) => {
-            held.assertHeld({ workspaceId: room.state.workspaceId });
-            expireConnections(room);
-            if (!closed && rooms.get(room.state.channelId) === room)
-              return retireOrphan(room, held);
-            return undefined;
-          },
-        );
+        let ending: EndRecord | undefined;
+        try {
+          ending = await options.coordinator.run(
+            { workspaceId: room.state.workspaceId },
+            async (held) => {
+              held.assertHeld({ workspaceId: room.state.workspaceId });
+              expireConnections(room);
+              if (!closed && rooms.get(room.state.channelId) === room)
+                return retireOrphan(room, held);
+              return undefined;
+            },
+          );
+        } catch (error) {
+          // Admission for this orphan must not starve already accepted end
+          // records later in the sweep. Their replay slots keep the same TTL.
+          if (error instanceof MainJoinError && error.code === 'SERVER_BUSY') continue;
+          throw error;
+        }
         const record =
           ending ?? endRecords.get(JSON.stringify([room.state.sessionId, room.state.epoch]));
         if (record) {

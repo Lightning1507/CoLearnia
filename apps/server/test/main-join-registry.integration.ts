@@ -101,6 +101,7 @@ function setup(
   endCleanup?: Parameters<typeof createMainJoinRegistry>[0]['endCleanup'],
   reconnectCleanup?: Parameters<typeof createMainJoinRegistry>[0]['reconnectCleanup'],
   routerFactory?: () => Promise<MediaTypes.Router>,
+  limits?: Parameters<typeof createMainJoinRegistry>[0]['limits'],
 ) {
   let time = Date.now();
   const coordinator = createOperationCoordinator();
@@ -123,6 +124,7 @@ function setup(
     ...(reconnectCleanup ? { reconnectCleanup } : {}),
     repository: customRepository,
     now: () => time,
+    ...(limits ? { limits } : {}),
     // M1 authority is a fixture; DB session writes and native Routers are real.
     resolveAuthority: async (identity, destination, held) => {
       held.assertHeld({ workspaceId: destination.workspaceId });
@@ -168,6 +170,126 @@ function setup(
 }
 
 describe('MAIN registry with real MongoDB and mediasoup Router', () => {
+  it('reconciles an accepted end even when an earlier orphan cannot obtain the only end slot', async () => {
+    let readable = false;
+    const begin = vi.fn(repository.beginEnding);
+    const complete = vi.fn(repository.completeEnding);
+    const f = setup(
+      {
+        ...repository,
+        beginEnding: begin,
+        completeEnding: complete,
+        readMutation: async (input) => {
+          if (!readable) throw new Error('Injected read outage');
+          return repository.readMutation(input);
+        },
+      },
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      { maxEndRecords: 1 },
+    );
+    const a = f.auth();
+    const aTicket = await f.registry.issue(a, f.target, { requestId: randomUUID() });
+    const b = f.auth(),
+      bSocket = f.binding(b);
+    const bTarget = { workspaceId: f.target.workspaceId, channelId: id() };
+    const bTicket = await f.registry.issue(b, bTarget, { requestId: randomUUID() });
+    const joined = await f.registry.join(bSocket, {
+      ticket: bTicket.ticket,
+      requestId: randomUUID(),
+    });
+    begin.mockImplementationOnce(async (input, guard) => {
+      await repository.beginEnding(input, guard);
+      throw new Error('Injected acknowledgement loss');
+    });
+    const command = {
+      requestId: randomUUID(),
+      sessionId: bTicket.sessionId,
+      epoch: bTicket.epoch,
+      callGeneration: joined.ack.data.result.callGeneration,
+      expectedPolicyRevision: 1,
+      action: 'END',
+    };
+    expect(await f.registry.end(bSocket, command)).toMatchObject({ data: { status: 'pending' } });
+    f.advance(60_000);
+    readable = true;
+    await f.registry.sweepExpired();
+    expect(await f.registry.end(bSocket, command)).toMatchObject({ data: { status: 'completed' } });
+    expect(await models.LiveSession.findById(bTicket.sessionId).lean()).toMatchObject({
+      status: 'ENDED',
+      revision: 3,
+    });
+    expect(await models.LiveSession.findById(aTicket.sessionId).lean()).toMatchObject({
+      status: 'ACTIVE',
+      revision: 0,
+    });
+    expect(f.registry.stats().endRecords).toBe(1);
+    expect(begin).toHaveBeenCalledTimes(1);
+    expect(complete).toHaveBeenCalledTimes(1);
+    f.advance(59_999);
+    await f.registry.sweepExpired();
+    expect(begin).toHaveBeenCalledTimes(1);
+    f.advance(1);
+    await f.registry.sweepExpired();
+    expect(await models.LiveSession.findById(aTicket.sessionId).lean()).toMatchObject({
+      status: 'ENDED',
+      revision: 2,
+    });
+    expect(begin).toHaveBeenCalledTimes(2);
+    expect(complete).toHaveBeenCalledTimes(2);
+    expect(f.registry.stats().rooms).toBe(0);
+    expect(f.registry.stats().endRecords).toBe(1);
+  });
+  it.each([10_000, 10_001])(
+    'rejects issue replay after %s ms of read-back without repeating the join write',
+    async (delay) => {
+      let readable = false;
+      const join = vi.fn(repository.join);
+      const read = vi.fn(async (input: Parameters<typeof repository.readMutation>[0]) => {
+        if (!readable) throw new Error('Injected read outage');
+        const result = await repository.readMutation(input);
+        f.advance(delay);
+        return result;
+      });
+      const f = setup({ ...repository, join, readMutation: read });
+      const host = f.auth(),
+        socket = f.binding(host);
+      const first = await f.registry.issue(host, f.target, { requestId: randomUUID() });
+      await f.registry.join(socket, { ticket: first.ticket, requestId: randomUUID() });
+      const replayId = randomUUID();
+      const replay = await f.registry.issue(host, f.target, { requestId: replayId });
+      const other = f.auth();
+      const ticket = await f.registry.issue(other, f.target, { requestId: randomUUID() });
+      join.mockImplementationOnce(async (input) => {
+        await repository.join(input);
+        throw new Error('Injected lost join ack');
+      });
+      await expect(
+        f.registry.join(f.binding(other), { ticket: ticket.ticket, requestId: randomUUID() }),
+      ).rejects.toMatchObject({ code: 'DEPENDENCY_UNAVAILABLE' });
+      readable = true;
+      await expect(f.registry.issue(host, f.target, { requestId: replayId })).rejects.toMatchObject(
+        {
+          code: 'DEPENDENCY_UNAVAILABLE',
+        },
+      );
+      expect(join).toHaveBeenCalledTimes(2);
+      expect(read).toHaveBeenCalledTimes(2);
+      expect(f.registry.stats().ownerships).toBe(1);
+      expect(await models.LiveSession.findById(first.sessionId).lean()).toMatchObject({
+        status: 'ACTIVE',
+        revision: 2,
+      });
+      // A new request budget can replay the still-valid ticket after reconciliation.
+      const retried = await f.registry.issue(host, f.target, { requestId: replayId });
+      expect(retried.ticket).toBe(replay.ticket);
+      expect(retried.expiresAt).toBe(replay.expiresAt);
+      expect(join).toHaveBeenCalledTimes(2);
+      expect(read).toHaveBeenCalledTimes(2);
+    },
+  );
   it('ends durable metadata at the last grace boundary and invalidates unused tickets', async () => {
     const f = setup(repository, undefined, undefined, {
       media: { revoke: cleanupResult },

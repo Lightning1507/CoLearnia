@@ -25,7 +25,9 @@ Giữ input gốc, session/epoch, revision dự kiến và timestamp của mutat
 
 Create được xác nhận ngay trong cùng yêu cầu có thể tiếp tục cấp ticket sau kiểm quyền hiện hành. Nếu Router đã bị đóng khi create chưa rõ, sweep chỉ kết thúc reservation đã được xác nhận; không dựng lại Router/quyền từ DB. Join thất bại chưa được xác nhận đánh dấu intent cũ không còn dùng được. Sau read-back, không tự công bố candidate ownership cũ; người dùng cần ý định join mới và kiểm quyền mới.
 
-Mỗi room giữ tối đa một metadata write chưa rõ; số room/ownership/end record vẫn chịu các cap hiện hành. Mỗi lượt sweep chỉ đối chiếu handle hiện hành, các lời gọi cùng handle dùng chung I/O. Trường hợp null/revision vượt dự kiến không được tự ghi lại hoặc xóa room để giải phóng unique index; giữ deny, theo dõi uncertainRooms và điều tra DB/lifecycle. Shutdown/bootstrap giữ luồng riêng, không phục hồi runtime từ dữ liệu cũ.
+Mỗi room giữ tối đa một metadata write chưa rõ; số room/ownership/end record vẫn chịu các cap hiện hành. Mỗi lượt sweep chỉ đối chiếu handle hiện hành, các lời gọi cùng handle dùng chung I/O. Room cần end mới nhưng hết slot được hoãn riêng, không làm dừng đối chiếu các end record đã nhận của room khác; không xóa sớm slot replay hoặc gia hạn TTL để nhường chỗ. Lượt sweep sau xử lý room đã hoãn khi có slot. Trường hợp null/revision vượt dự kiến không được tự ghi lại hoặc xóa room để giải phóng unique index; giữ deny, theo dõi uncertainRooms và điều tra DB/lifecycle. Shutdown/bootstrap giữ luồng riêng, không phục hồi runtime từ dữ liệu cũ.
+
+Issue kiểm lại deadline 10 giây ngay sau await đối chiếu metadata, trước cả nhánh replay ticket. Read-back xác nhận được DB không cho phép trả ticket bằng request đã quá hạn; ticket còn TTL có thể được replay ở request sau với budget mới, không đổi expiresAt và không ghi lại mutation cũ.
 
 ## Ownership và quyết định end
 

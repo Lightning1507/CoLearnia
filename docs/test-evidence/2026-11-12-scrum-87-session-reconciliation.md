@@ -24,7 +24,14 @@ Toàn bộ unit: **749 test đạt trong 46 file**. Toàn bộ DB integration: *
 
 Ca cuối kiểm dọn orphan rồi tạo phiên mới dùng chung budget issue ban đầu; hết budget không tạo replacement trong cùng yêu cầu. Sau thay đổi guard, format/lint/typecheck, toàn bộ unit và build được chạy lại; DB integration đã kiểm lifecycle/read-back ở lượt trước.
 
-## Giới hạn
+## Bổ sung sau review ngày 13/11/2026
+
+- Với maxEndRecords=1, tạo reservation A trước, B giữ slot end duy nhất do mất ACK beginEnding và lỗi đọc. Khi A hết ticket, sweep hoãn A riêng và vẫn read-back/hoàn tất B. Slot replay của B giữ đủ 60 giây; A chỉ được end sau khi slot hết TTL, không xóa sớm record hoặc ghi lại begin/complete của B.
+- Replay issue có read-back hợp lệ tại đúng 10.000 ms và sau 10.001 ms đều trả DEPENDENCY_UNAVAILABLE. Request mới vẫn replay cùng ticket/expiresAt khi còn TTL, số write join và số lần đọc không tăng. Không biến ticket còn hạn thành lý do bỏ qua deadline request.
+- Hai lỗi đã tái hiện trước sửa bằng integration MongoDB/mediasoup. Sau sửa, registry đạt 24 ca, toàn bộ DB integration đạt 154 ca trong 10 file, dùng replica set riêng.
+- Kiểm lại toàn repo: 749 unit test trong 46 file; harness, format, lint, typecheck, build, media smoke và `git diff --check` đạt. Vite giữ cảnh báo bundle trên 500 kB.
+
+## Giới hạn kiểm chứng
 
 M1 auth/access và M2/M5 cleanup là fixture; MongoDB transaction/CAS/read-back, Router và worker trong integration là thật. Chưa mount registry/scheduler vào production, chưa kiểm gọi trình duyệt, RTP, TURN hoặc capacity. Composition cần gọi sweep tại deadline/lifecycle theo contract; kiểm fake clock không chứng minh timer production.
 
