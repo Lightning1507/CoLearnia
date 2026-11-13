@@ -1,6 +1,22 @@
 @import 'tailwindcss';
 
 :root {
+  --cl-color-focus-ring: #159777;
+  --cl-color-live-control-bg: #2d3533;
+  --cl-color-live-control-text: #e4e9e7;
+  --cl-color-live-control-hover-bg: #3b4542;
+  --cl-color-live-control-disabled-bg: #242a28;
+  --cl-color-live-control-disabled-text: #717c78;
+  --cl-color-dialog-border: #d6dcda;
+  --cl-color-dialog-divider: #e7ebe9;
+  --cl-color-dialog-footer-bg: #fafbfb;
+  --cl-color-dialog-muted: #76827e;
+  --cl-color-dialog-backdrop: rgb(20 28 26 / 0.4);
+  --cl-color-dialog-shadow: rgb(25 36 33 / 0.18);
+  --cl-color-action-primary-bg: #0d7c62;
+  --cl-color-share-choice-border: #58a990;
+  --cl-color-share-choice-bg: #f1faf7;
+  --cl-color-share-choice-icon: #147158;
   font-family: 'Segoe UI', system-ui, sans-serif;
   color: #193e35;
   background: #f7f8f2;
@@ -31,6 +47,34 @@ a:focus-visible,
 button:focus-visible {
   outline: 3px solid #a2b949;
   outline-offset: 5px;
+}
+.live-toolbar-control {
+  background: var(--cl-color-live-control-bg);
+  color: var(--cl-color-live-control-text);
+}
+.live-toolbar-control:hover {
+  background: var(--cl-color-live-control-hover-bg);
+}
+.live-toolbar-control[aria-disabled='true'] {
+  background: var(--cl-color-live-control-disabled-bg);
+  color: var(--cl-color-live-control-disabled-text);
+}
+.live-toolbar-control:focus-visible {
+  outline: 2px solid var(--cl-color-focus-ring);
+  outline-offset: 2px;
+}
+.live-dialog {
+  background: white;
+  border-color: var(--cl-color-dialog-border);
+  color: var(--cl-color-dialog-text, #17201e);
+  box-shadow: 0 18px 50px var(--cl-color-dialog-shadow);
+}
+.live-dialog::backdrop {
+  background: var(--cl-color-dialog-backdrop);
+}
+.live-dialog button:focus-visible {
+  outline: 2px solid var(--cl-color-focus-ring);
+  outline-offset: 2px;
 }
 .shell {
   min-height: 100dvh;
