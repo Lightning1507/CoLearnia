@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ChannelAccessSnapshot, ChannelSummary, OwnUser } from '@colearnia/contracts';
 import { RoomShell, useCallSnapshot } from '../live';
 import { WorkspaceShell } from './WorkspaceShell';
@@ -93,8 +93,21 @@ export function WorkspaceFixturePage() {
   const [panel, setPanel] = useState<WorkspacePanel>({ kind: 'empty' });
   const [showWorkspaceList, setShowWorkspaceList] = useState(false);
   const workspaceListHeading = useRef<HTMLHeadingElement>(null);
+  const workspaceMenuTrigger = useRef<HTMLButtonElement>(null);
+  const restoreWorkspaceFocus = useRef(false);
   useLayoutEffect(() => {
-    if (showWorkspaceList) workspaceListHeading.current?.focus({ preventScroll: true });
+    if (showWorkspaceList) {
+      workspaceListHeading.current?.focus({ preventScroll: true });
+    }
+  }, [showWorkspaceList]);
+  useEffect(() => {
+    if (showWorkspaceList || !restoreWorkspaceFocus.current) return;
+    // Restore navigation focus after the remounted LIVE panel's StrictMode effects.
+    const frame = requestAnimationFrame(() => {
+      restoreWorkspaceFocus.current = false;
+      workspaceMenuTrigger.current?.focus({ preventScroll: true });
+    });
+    return () => cancelAnimationFrame(frame);
   }, [showWorkspaceList]);
   const selected =
     panel.kind === 'empty'
@@ -120,7 +133,10 @@ export function WorkspaceFixturePage() {
         <button
           type="button"
           className="justify-self-start rounded-lg border border-[color:var(--workspace-border)] px-4 py-3 text-sm"
-          onClick={() => setShowWorkspaceList(false)}
+          onClick={() => {
+            restoreWorkspaceFocus.current = true;
+            setShowWorkspaceList(false);
+          }}
         >
           {workspaceFixture.name}
         </button>
@@ -134,6 +150,7 @@ export function WorkspaceFixturePage() {
       channels={sidebarFixture}
       panel={panel}
       onOpenWorkspaceList={() => setShowWorkspaceList(true)}
+      workspaceMenuTriggerRef={workspaceMenuTrigger}
       onSelectChannel={(channel) =>
         setPanel({ kind: channel.type === 'TEXT' ? 'text' : 'live', channelId: channel.id })
       }

@@ -4,6 +4,8 @@
 - Windows, Chrome `156.0.8078.80`, Node `26.12.1`, pnpm `11.5.2`, React `19.3.1`, Vite `8.3.5` ở development. Fixture tự chạy assertion bằng `React.act` và root `<StrictMode>`.
 - Dùng `CallControllerOwner` và provider thật từ SCRUM-59. Adapter fixture dùng một video track từ canvas và một audio track từ Web Audio. `RoomShell` mượn stream của call và chỉ gắn vào video muted. Fixture không lấy camera/mic hoặc mở kết nối WebRTC.
 
+**Phạm vi nghiệm thu cập nhật 13/11/2026:** các lượt kiểm mobile bên dưới xác nhận lifecycle, panel và bàn phím trên bố cục hiện có. Workspace hiện dùng hàng kênh cuộn ngang dưới 721 px và sidebar cố định từ 721 px theo viewport; **chưa triển khai hoặc nghiệm thu navigation drawer** theo [layouts.md](../design-system/frontend/layouts.md#responsive-và-kiểm-bố-cục). Drawer là phần việc bàn giao tiếp cho **SCRUM-45 / M1-T7.2**, không thuộc đầu ra RoomShell của PR #70.
+
 ## Chạy lại
 
 ```sh
@@ -120,3 +122,17 @@ PASS native keyboard 1440x900: Shift+Tab, Tab out, Escape outside/inside, Enter 
 PASS native keyboard 390x844: Shift+Tab, Tab out, Escape outside/inside, Enter navigation and heading focus
 PASS · subscriptions=24, remaining=0, video attach/detach=16/16, peak=1, call A init/dispose=1/1, observers=0, resizeFocus=true/true · workspace=1440×900, room=1184
 ```
+
+## Kiểm vòng chọn Workspace và bàn giao navigation ngày 13/11/2026
+
+- Khi chọn Workspace từ màn danh sách mẫu, focus trở về nút mở menu Workspace vừa remount. Bên nhúng giữ ref qua prop tùy chọn `workspaceMenuTriggerRef`; lịch trả focus chạy sau effect StrictMode của panel LIVE và được hủy khi chuyển màn/unmount. Lần mở Workspace đầu không tự lấy focus. Kênh TEXT/LIVE đã chọn được giữ qua vòng danh sách.
+- Fixture thêm ca focus nút chọn Workspace → chọn → quay lại: xác nhận focus nằm trên trigger mới, menu đóng và kênh LIVE vẫn được chọn. Ca này chờ layout để bắt cả trường hợp effect Người tham gia lấy lại focus sau remount.
+- **Chrome 157.0.8103.51 headless / Windows**, `/workspace`, phím thật qua CDP: kiểm **1440 × 900**, **1280 × 800**, **390 × 844**, mỗi kích thước chạy với cả TEXT và LIVE, mỗi loại lặp hai vòng. Chuỗi Enter mở menu → Enter mở danh sách → focus heading → Tab tới nút chọn Workspace → Enter quay lại → focus trigger đều PASS. Sau khi về, Enter mở lại menu và Escape đóng/trả focus đúng. Ở LIVE, focus vẫn ở trigger sau effect panel. Đây là 12 vòng điều hướng bằng bàn phím, không dùng sự kiện Tab tổng hợp.
+- Fixture RoomShell đầy đủ tiếp tục PASS: `subscriptions=24, remaining=0, video attach/detach=16/16, peak=1, call A init/dispose=1/1, observers=0`. Kiểm media vẫn dùng track tổng hợp, không chứng minh camera/mic/TURN hoặc media end-to-end.
+- `pnpm check` đạt **745/745 test**, format, lint, typecheck và build. Harness đạt 54 ca, skip một ca symlink trên Windows; `pnpm media:smoke` đạt native worker và Router Opus/VP8.
+
+### Phạm vi navigation cần tiếp nối ở Workspace
+
+Ở 390 px, đọc computed style của navigation cho kết quả `display: flex; overflow-x: auto`: danh sách kênh vẫn cuộn ngang. Từ 721 px hiện có sidebar 256 px; chưa có nút mở drawer. Do đó các kết quả mobile PASS ở báo cáo này **không phải** nghiệm thu responsive navigation theo design system.
+
+Phần drawer bàn giao **SCRUM-45 / M1-T7.2**: áp dụng quy tắc bề rộng shell của `layouts.md` (drawer dưới 1280 px, gồm cả hai dải dưới 768 và 768–1279); nút mở có tên, drawer modal có focus bên trong và nền không tương tác; Escape/nút Đóng trả về trigger; chọn kênh đóng drawer, focus heading nội dung mới và giữ runtime cuộc gọi. Cần kiểm lại responsive navigation và bàn phím sau khi phần này được triển khai. PR #70 giữ phạm vi RoomShell, các slot và tích hợp fixture; chưa tuyên bố hoàn thành drawer.

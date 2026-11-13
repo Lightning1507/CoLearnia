@@ -733,6 +733,31 @@ async function verifyWorkspaceRoute() {
       page.activeElement === listScreen.querySelector('h1'),
       'Màn danh sách mới phải nhận focus tại heading thay vì body',
     );
+    const chooseWorkspace = listScreen.querySelector('button');
+    check(chooseWorkspace, 'Màn danh sách phải có nút chọn Workspace');
+    chooseWorkspace.focus();
+    check(
+      page.activeElement === chooseWorkspace,
+      'Nút chọn Workspace phải nhận focus trước khi chọn',
+    );
+    chooseWorkspace.click();
+    const returnedTrigger = await waitForElement<HTMLButtonElement>(
+      page,
+      'button[aria-label^="Mở menu Workspace"]',
+    );
+    await afterLayout();
+    check(
+      !listScreen.isConnected &&
+        page.activeElement === returnedTrigger &&
+        returnedTrigger.getAttribute('aria-expanded') === 'false',
+      'Chọn Workspace phải trả focus về nút mở menu thay vì body',
+    );
+    check(
+      page
+        .querySelector('.workspace-channel[aria-current="page"]')
+        ?.textContent?.includes(roomName),
+      'Quay lại Workspace phải giữ kênh LIVE đã chọn',
+    );
     return `workspace=${workspaceWidth}×${view.innerHeight}, room=${roomWidth}`;
   } finally {
     frame.remove();

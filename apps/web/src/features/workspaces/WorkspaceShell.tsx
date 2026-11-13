@@ -1,5 +1,6 @@
 import type { ChannelSummary, WorkspaceSummary } from '@colearnia/contracts';
 import { Fragment, useEffect, useId, useRef, useState } from 'react';
+import type { RefObject } from 'react';
 import type { WorkspaceShellProps } from './shell-contract';
 import { readableSidebarChannels, resolvePanelChannel } from './shell-contract';
 
@@ -39,13 +40,16 @@ function ChannelIcon({ channel }: { channel: ChannelSummary }) {
 function WorkspaceMenu({
   workspace,
   onOpenWorkspaceList,
+  triggerRef,
 }: {
   workspace: WorkspaceSummary;
   onOpenWorkspaceList: () => void;
+  triggerRef: RefObject<HTMLButtonElement | null> | undefined;
 }) {
   const [open, setOpen] = useState(false);
   const container = useRef<HTMLDivElement>(null);
-  const trigger = useRef<HTMLButtonElement>(null);
+  const internalTrigger = useRef<HTMLButtonElement>(null);
+  const trigger = triggerRef ?? internalTrigger;
   const listButton = useRef<HTMLButtonElement>(null);
   const menuId = useId();
 
@@ -183,6 +187,7 @@ export function WorkspaceShell({
   panel,
   onSelectChannel,
   onOpenWorkspaceList,
+  workspaceMenuTriggerRef,
   chatPanel,
   callPanel,
   persistentCallControls,
@@ -201,7 +206,11 @@ export function WorkspaceShell({
         className="workspace-sidebar min-w-0 border-b border-[color:var(--workspace-border)] bg-[var(--workspace-sidebar-bg)] min-[721px]:border-r min-[721px]:border-b-0"
         aria-label={`Kênh của ${workspace.name}`}
       >
-        <WorkspaceMenu workspace={workspace} onOpenWorkspaceList={onOpenWorkspaceList} />
+        <WorkspaceMenu
+          workspace={workspace}
+          onOpenWorkspaceList={onOpenWorkspaceList}
+          triggerRef={workspaceMenuTriggerRef}
+        />
 
         {readable.length === 0 ? (
           <p className="px-4 py-6 text-sm text-[color:var(--workspace-muted)]">
