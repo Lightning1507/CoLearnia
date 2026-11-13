@@ -1104,9 +1104,12 @@ export function createMainJoinRegistry(options: {
         const outcome = await run(auth, destination, async (held) => {
           deadlines.set(held, deadline);
           sweep();
-          const current = await authority(auth, destination, held);
+          let current = await authority(auth, destination, held);
           const pendingRoom = rooms.get(destination.channelId);
-          if (pendingRoom?.metadata) await settleMetadata(pendingRoom);
+          if (pendingRoom?.metadata) {
+            await settleMetadata(pendingRoom);
+            current = await authority(auth, destination, held);
+          }
           if (clock() >= deadline) fail('DEPENDENCY_UNAVAILABLE');
           const key = JSON.stringify([auth.userId, auth.authSessionId, input.requestId]);
           const existing = intents.get(key);
@@ -1773,7 +1776,9 @@ export function createMainJoinRegistry(options: {
     // Composition calls periodically. Workspace-only cleanup never acquires a User gate.
     async sweepExpired() {
       sweep();
+      const deferredWorkspaces = new Set<string>();
       for (const room of [...rooms.values()]) {
+        if (deferredWorkspaces.has(room.state.workspaceId)) continue;
         if (room.state.state === 'ACTIVE' && room.metadata) {
           try {
             await options.coordinator.run({ workspaceId: room.state.workspaceId }, async () => {
@@ -1781,7 +1786,9 @@ export function createMainJoinRegistry(options: {
                 if (closed || rooms.get(room.state.channelId) !== room) fail('CONFLICT');
               });
             });
-          } catch {
+          } catch (error) {
+            if (error instanceof CoordinationError && ['BUSY', 'TIMEOUT'].includes(error.code))
+              deferredWorkspaces.add(room.state.workspaceId);
             continue;
           }
         }
@@ -1803,8 +1810,10 @@ export function createMainJoinRegistry(options: {
           try {
             await record.retryCleanup();
           } catch (error) {
-            if (error instanceof CoordinationError && ['BUSY', 'TIMEOUT'].includes(error.code))
-              continue;
+            if (error instanceof CoordinationError && ['BUSY', 'TIMEOUT'].includes(error.code)) {
+              deferredWorkspaces.add(room.state.workspaceId);
+              break;
+            }
             if (
               error instanceof MainJoinError &&
               error.code === 'CONFLICT' &&
@@ -1817,6 +1826,7 @@ export function createMainJoinRegistry(options: {
             throw error;
           }
         }
+        if (deferredWorkspaces.has(room.state.workspaceId)) continue;
         let ending: EndRecord | undefined;
         try {
           ending = await options.coordinator.run(
@@ -1830,6 +1840,10 @@ export function createMainJoinRegistry(options: {
             },
           );
         } catch (error) {
+          if (error instanceof CoordinationError && ['BUSY', 'TIMEOUT'].includes(error.code)) {
+            deferredWorkspaces.add(room.state.workspaceId);
+            continue;
+          }
           // Admission for this orphan must not starve already accepted end
           // records later in the sweep. Their replay slots keep the same TTL.
           if (error instanceof MainJoinError && error.code === 'SERVER_BUSY') continue;

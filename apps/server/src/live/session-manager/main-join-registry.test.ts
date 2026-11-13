@@ -2078,7 +2078,9 @@ describe('MAIN reconnect and resync', () => {
     await expect(f.registry.disconnect(f.socket.socketId)).rejects.toMatchObject({ code: 'BUSY' });
     f.advance(30_000);
     await f.registry.sweepExpired();
-    expect(run).toHaveBeenCalledTimes(7);
+    // Three attempts for disconnect, three for sweep; a busy Workspace is then
+    // deferred instead of trying its gate again for the empty-room decision.
+    expect(run).toHaveBeenCalledTimes(6);
     expect(f.registry.stats().ownerships).toBe(2);
     expect(f.messaging).not.toHaveBeenCalled();
     await f.registry.sweepExpired();

@@ -31,6 +31,14 @@ Ca cuối kiểm dọn orphan rồi tạo phiên mới dùng chung budget issue 
 - Hai lỗi đã tái hiện trước sửa bằng integration MongoDB/mediasoup. Sau sửa, registry đạt 24 ca, toàn bộ DB integration đạt 154 ca trong 10 file, dùng replica set riêng.
 - Kiểm lại toàn repo: 749 unit test trong 46 file; harness, format, lint, typecheck, build, media smoke và `git diff --check` đạt. Vite giữ cảnh báo bundle trên 500 kB.
 
+## Bổ sung sau review ngày 14/11/2026
+
+- Coordinator thật: giữ gate Workspace A, tạo hai room A đứng trước room B ở Workspace khác. Cả BUSY do đầy hàng đợi lẫn TIMEOUT đều chỉ hoãn Workspace A; trong cùng sweep, B được đọc lại DB và tới ENDED khi gate A vẫn đang bị giữ. Không lặp chờ trên room A thứ hai. Sau khi nhả gate, lượt sweep sau kết thúc cả hai room A.
+- Replay issue: trong lúc readMutation đọc bằng chứng join đã commit, đổi riêng fence hoặc quyền đọc của M1 sang từ chối. Cả hai trường hợp đều bị từ chối trước trả ticket; không ghi lại join hoặc công bố ownership từ metadata. M1 là fixture, snapshot DB/commit là thật.
+- Bốn regression mới đều tái hiện lỗi trước sửa và đạt sau sửa. Registry integration đạt 28 ca; toàn bộ DB integration đạt 158 ca trong 10 file với replica set riêng. Unit giới hạn retry được cập nhật theo hành vi hoãn Workspace: hết lượt thì không lấy lại cùng gate để xét phiên rỗng trong lượt sweep đó.
+- Sửa hàng mô tả write intent trong bảng contract để danh sách kind không bị hiểu thành các cột Markdown riêng.
+- Kiểm lại toàn repo: 749 unit test trong 46 file; harness, format, lint, typecheck, build, media smoke và `git diff --check` đạt. Giữ cảnh báo bundle Vite hiện có; không dùng smoke để kết luận cuộc gọi trình duyệt/TURN đã chạy.
+
 ## Giới hạn kiểm chứng
 
 M1 auth/access và M2/M5 cleanup là fixture; MongoDB transaction/CAS/read-back, Router và worker trong integration là thật. Chưa mount registry/scheduler vào production, chưa kiểm gọi trình duyệt, RTP, TURN hoặc capacity. Composition cần gọi sweep tại deadline/lifecycle theo contract; kiểm fake clock không chứng minh timer production.
