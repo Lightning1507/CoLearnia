@@ -430,6 +430,28 @@ describe('share lease and media gate', () => {
     expect(f.registry.canPublishHeld(f.held(3), 'SCREEN', 'CREATE', lease)).toBe(false);
   });
 
+  it('stops only the exact lease after its owner changes scope', () => {
+    const f = fixture();
+    const main = f.acquire();
+    const activity = f.acquire(3);
+    const closeMain = vi.fn(() => true);
+    f.registry.bindPublicationHeld(f.held(), main, {
+      close: closeMain,
+      isStopped: () => false,
+    });
+    expect(f.registry.commitHeld(f.held(), main).ok).toBe(true);
+    expect(f.registry.commitHeld(f.held(3), activity).ok).toBe(true);
+    expect(f.registry.stopHeld(f.held(2), main)).toBe(false);
+
+    f.session.helpingGroupId = f.groupId;
+    f.member(1).scope = { type: 'GROUP', groupId: f.groupId };
+    f.member(1).audienceEpoch++;
+    expect(f.registry.stopHeld(f.held(), main)).toBe(true);
+    expect(closeMain).toHaveBeenCalledOnce();
+    expect(f.registry.canPublishHeld(f.held(3), 'SCREEN', 'READY', activity)).toBe(true);
+    expect(f.registry.stopHeld(f.held(), main)).toBe(false);
+  });
+
   it('closes a late created resource when the reserved lease has expired', async () => {
     const f = fixture();
     const lease = f.acquire();

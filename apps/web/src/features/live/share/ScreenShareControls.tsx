@@ -43,8 +43,20 @@ export function ScreenShareControls({ picker }: { picker: ScreenSharePicker }) {
     picker.getSnapshot,
   );
   const canReserve = status === 'idle';
+  const sharing = status === 'sharing';
+  const publishing = status === 'publishing';
+  const retryStop = status === 'stopFailed';
+  const stopping = status === 'stopping';
+  const canStop = sharing || publishing || retryStop;
   const canChoose = status === 'reserved';
   const choosing = status === 'choosing';
+  const action = retryStop
+    ? 'Thử dừng lại'
+    : stopping
+      ? 'Đang dừng…'
+      : canStop
+        ? 'Dừng share'
+        : 'Chia sẻ';
   useLayoutEffect(() => {
     const modal = dialog.current;
     if (!modal) return;
@@ -58,8 +70,8 @@ export function ScreenShareControls({ picker }: { picker: ScreenSharePicker }) {
     }
     if (!restoreFocus.current) return;
     restoreFocus.current = false;
-    (canReserve ? primary.current : announcement.current)?.focus();
-  }, [canChoose, canReserve, choosing, status]);
+    (canReserve || canStop ? primary.current : announcement.current)?.focus();
+  }, [canChoose, canReserve, canStop, choosing, status]);
 
   return (
     <div className="contents">
@@ -67,17 +79,27 @@ export function ScreenShareControls({ picker }: { picker: ScreenSharePicker }) {
         <button
           ref={triggerRef}
           type="button"
-          className="live-toolbar-control inline-flex min-h-11 items-center gap-1.5 rounded-lg px-3 text-sm"
-          aria-label="Chia sẻ màn hình"
-          aria-haspopup="dialog"
-          aria-disabled={!canReserve}
+          className="live-toolbar-control inline-flex h-[42px] min-w-12 items-center justify-center gap-1.5 rounded-lg px-[11px] text-[9px]"
+          data-state={sharing ? 'active' : undefined}
+          aria-label={
+            retryStop
+              ? 'Thử dừng chia sẻ màn hình lại'
+              : stopping
+                ? 'Đang dừng chia sẻ màn hình'
+                : canStop
+                  ? 'Dừng chia sẻ màn hình'
+                  : 'Chia sẻ màn hình'
+          }
+          aria-haspopup={canReserve ? 'dialog' : undefined}
+          aria-disabled={!canReserve && !canStop}
           aria-describedby={statusId}
           onClick={() => {
-            if (canReserve) void picker.reserve();
+            if (canStop) picker.cancel();
+            else if (canReserve) void picker.reserve();
           }}
         >
           <ScreenIcon className="size-4" />
-          Chia sẻ
+          {action}
         </button>
       )}
       <span
@@ -90,13 +112,17 @@ export function ScreenShareControls({ picker }: { picker: ScreenSharePicker }) {
         {error ??
           (status === 'acquiring'
             ? 'Đang giữ chỗ chia sẻ…'
-            : status === 'selected'
-              ? 'Đã chọn màn hình.'
-              : status === 'unavailable'
-                ? 'Hiện chưa thể chia sẻ màn hình.'
-                : status === 'hidden'
-                  ? 'Tính năng chia sẻ màn hình không khả dụng trong nhóm thảo luận.'
-                  : '')}
+            : publishing
+              ? 'Đang bắt đầu chia sẻ…'
+              : stopping
+                ? 'Đang xác nhận dừng chia sẻ…'
+                : status === 'selected'
+                  ? 'Đã chọn màn hình.'
+                  : status === 'unavailable'
+                    ? 'Hiện chưa thể chia sẻ màn hình.'
+                    : status === 'hidden'
+                      ? 'Tính năng chia sẻ màn hình không khả dụng trong nhóm thảo luận.'
+                      : '')}
       </span>
       <dialog
         ref={dialog}
