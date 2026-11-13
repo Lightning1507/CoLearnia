@@ -209,7 +209,7 @@ async function counts() {
   ];
 }
 
-describe('SCRUM-32 Workspace/general with real M1 models and M2 factory', () => {
+describe('SCRUM-32/33 Workspace/general with real M1 models and M2 factory', () => {
   it('commits the full graph and audit; the OWNER can resolve general through the shared policy', async () => {
     const f = await fixture();
     const dto = await create({ ...f.input, name: '  Nhóm học 🍀  ' }, f.identity);
@@ -537,11 +537,13 @@ describe('SCRUM-32 Workspace/general with real M1 models and M2 factory', () => 
     expect(await counts()).toEqual(before);
   });
 
-  it('does not promise REST deduplication or uniqueness of Workspace names', async () => {
+  it('replays the same request but permits the same name with a new requestId', async () => {
     const f = await fixture();
     const first = await create(f.input, f.identity);
     const second = await create(f.input, f.identity);
-    expect(first.id).not.toBe(second.id);
+    expect(first.id).toBe(second.id);
+    const third = await create({ ...f.input, requestId: randomUUID() }, f.identity);
+    expect(third.id).not.toBe(first.id);
   });
 
   it('serves HTTP 201 with real cookie authentication and bound CSRF; rejects missing/invalid credentials', async () => {
@@ -665,6 +667,425 @@ describe('SCRUM-32 Workspace/general with real M1 models and M2 factory', () => 
     } finally {
       await server?.stop();
       await Audit.createIndexes();
+    }
+  });
+  it('deduplicates simultaneous calls and normalized names, including uppercase UUIDs', async () => {
+    const f = await fixture();
+    const before = await counts();
+    const results = await Promise.all(
+      Array.from({ length: 8 }, (_, i) =>
+        create(
+          {
+            ...f.input,
+            name: i % 2 ? `  ${f.input.name}  ` : f.input.name,
+            requestId: i % 2 ? f.input.requestId.toUpperCase() : f.input.requestId,
+          },
+          f.identity,
+        ),
+      ),
+    );
+    expect(new Set(results.map((r) => r.id)).size).toBe(1);
+    expect(await counts()).toEqual(before.map((n) => n + 1));
+    expect(coordinator.stats().operations).toBe(0);
+  });
+
+  it('returns HTTP 409 for a reused key with different input and isolates actors', async () => {
+    const f = await fixture();
+    const first = await create(f.input, f.identity);
+    const before = await counts();
+    const response = await postWorkspace({ ...f, input: { ...f.input, name: 'Different name' } });
+    expect(response.status).toBe(409);
+    expect(response.body.error.code).toBe('CONFLICT');
+    expect(await counts()).toEqual(before);
+    const other = await fixture();
+    const second = await create(f.input, other.identity);
+    expect(second.id).not.toBe(first.id);
+    expect(second.ownerId).toBe(other.user.id);
+  });
+
+  it.each(['revoked', 'disabled', 'removed', 'deleted', 'barrier'] as const)(
+    'revalidates %s access before replay, without another write',
+    async (kind) => {
+      const f = await fixture();
+      const first = await create(f.input, f.identity);
+      const member = await Membership.findOne({ workspaceId: first.id }).orFail();
+      if (kind === 'revoked')
+        await AuthSession.updateOne({ _id: f.session.id }, { revokedAt: new Date() });
+      if (kind === 'disabled') await User.updateOne({ _id: f.user.id }, { status: 'DISABLED' });
+      if (kind === 'removed') {
+        // Establish a valid replacement OWNER before removing the creator fixture.
+        const replacement = await fixture();
+        await database.transaction(async (session) => {
+          await Membership.updateOne(
+            { _id: member.id },
+            { role: 'MEMBER', status: 'REMOVED', removedAt: new Date() },
+          ).session(session);
+          await Membership.create(
+            [
+              {
+                workspaceId: first.id,
+                userId: replacement.user.id,
+                role: 'OWNER',
+                status: 'ACTIVE',
+                incarnation: 1,
+                revision: 0,
+                joinedAt: new Date(),
+                removedAt: null,
+              },
+            ],
+            { session },
+          );
+          await Workspace.updateOne({ _id: first.id }, { ownerId: replacement.user.id }).session(
+            session,
+          );
+        });
+      }
+      if (kind === 'deleted')
+        await Workspace.updateOne({ _id: first.id }, { deletedAt: new Date() });
+      if (kind === 'barrier')
+        await revocations.revoke({
+          userId: f.user.id,
+          event: {
+            kind: 'WORKSPACE_MEMBERSHIP',
+            operationId: randomUUID(),
+            revision: 1,
+            workspaceId: first.id,
+            userId: f.user.id,
+            membershipId: member.id,
+            membershipIncarnation: 1,
+          },
+          persistence: {
+            prepareHeld: async () => ({ authSessionIds: [] }),
+            commitHeld: async () => 'unknown',
+            reconcileHeld: async () => 'unknown',
+          },
+        });
+      const before = await counts();
+      await expect(create(f.input, f.identity)).rejects.toMatchObject({
+        code: kind === 'revoked' || kind === 'disabled' ? 'AUTH_REQUIRED' : 'FORBIDDEN',
+      });
+      expect(await counts()).toEqual(before);
+    },
+  );
+
+  it.each([Workspace, Membership, Channel, Conversation, Audit])(
+    'rolls back after the real write to $modelName and allows a clean retry',
+    async (model) => {
+      const f = await fixture();
+      const before = await counts();
+      const original = model.prototype.save;
+      const failure = new Error('Injected after real transactional write');
+      const spy = vi.spyOn(model.prototype, 'save').mockImplementationOnce(async function (
+        ...args
+      ) {
+        await original.apply(this, args);
+        throw failure;
+      });
+      try {
+        await expect(create(f.input, f.identity)).rejects.toBe(failure);
+      } finally {
+        spy.mockRestore();
+      }
+      expect(await counts()).toEqual(before);
+      expect(coordinator.stats().operations).toBe(0);
+      const result = await create(f.input, f.identity);
+      expect((await create(f.input, f.identity)).id).toBe(result.id);
+      expect(await counts()).toEqual(before.map((n) => n + 1));
+    },
+  );
+
+  it('exhausts bounded transient retries without partial data, then safely retries the request', async () => {
+    const f = await fixture();
+    const before = await counts();
+    const attempts: string[] = [];
+    const fail = async (input: Parameters<typeof factory.create>[0]) => {
+      await factory.create(input);
+      attempts.push(input.workspaceId);
+      const error = new mongoose.mongo.MongoServerError({
+        message: 'Injected write conflict',
+        code: 112,
+      });
+      error.addErrorLabel('TransientTransactionError');
+      throw error;
+    };
+    createConversation.mockImplementationOnce(fail).mockImplementationOnce(fail);
+    await expect(create(f.input, f.identity)).rejects.toMatchObject({
+      code: 'DEPENDENCY_UNAVAILABLE',
+    });
+    expect(attempts).toHaveLength(2);
+    expect(new Set(attempts).size).toBe(1);
+    expect(await counts()).toEqual(before);
+    expect(coordinator.stats().operations).toBe(0);
+    await create(f.input, f.identity);
+    expect(await counts()).toEqual(before.map((n) => n + 1));
+  });
+
+  it('keeps unresolved IDs across requests and later reconciles without a second transaction', async () => {
+    const f = await fixture();
+    const before = await counts();
+    const transaction = database.transaction.bind(database);
+    const unknown = new mongoose.mongo.MongoServerError({ message: 'Injected lost ack' });
+    unknown.addErrorLabel('UnknownTransactionCommitResult');
+    const read = vi.spyOn(Audit, 'findOne');
+    const tx = vi.spyOn(database, 'transaction').mockImplementationOnce(async (work) => {
+      await transaction(work);
+      read.mockImplementationOnce(() => {
+        throw new Error('Injected reconciliation outage');
+      });
+      throw unknown;
+    });
+    try {
+      await expect(create(f.input, f.identity)).rejects.toMatchObject({ unconfirmed: true });
+      read.mockImplementationOnce(() => {
+        throw new Error('Still unavailable');
+      });
+      await expect(create(f.input, f.identity)).rejects.toMatchObject({ unconfirmed: true });
+      const result = await create(f.input, f.identity);
+      expect((await create(f.input, f.identity)).id).toBe(result.id);
+      expect(tx).toHaveBeenCalledTimes(1);
+    } finally {
+      tx.mockRestore();
+      read.mockRestore();
+    }
+    expect(await counts()).toEqual(before.map((n) => n + 1));
+  });
+
+  it('retains a committed result after expiry during response, and accepts a fresh valid session', async () => {
+    const f = await fixture();
+    const transaction = database.transaction.bind(database);
+    let clock: ReturnType<typeof vi.spyOn> | undefined;
+    const tx = vi.spyOn(database, 'transaction').mockImplementationOnce(async (work) => {
+      const result = await transaction(work);
+      clock = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 200_000);
+      return result;
+    });
+    try {
+      await expect(create(f.input, f.identity)).rejects.toMatchObject({ committed: true });
+    } finally {
+      clock?.mockRestore();
+      tx.mockRestore();
+    }
+    const before = await counts();
+    const session = await AuthSession.create({
+      userId: f.user.id,
+      expiresAt: new Date(Date.now() + 120_000),
+      tokenHash: hashAuthToken(randomBytes(32).toString('base64url')),
+    });
+    const dto = await create(f.input, {
+      ...f.identity,
+      authSessionId: session.id,
+      expiresAt: session.expiresAt.toISOString(),
+    });
+    expect(await Workspace.countDocuments({ _id: dto.id })).toBe(1);
+    expect(await counts()).toEqual(before);
+  });
+
+  it('bounds replay capacity, permits cached requests when full and expires only completed entries', async () => {
+    const local = createWorkspaceCreator({
+      database,
+      coordinator,
+      barrier: revocations.barrier,
+      indexesReady: () => ready,
+      createConversation: factory.create,
+      replay: { ttlMs: 1000, maxEntries: 1 },
+    });
+    const f = await fixture();
+    const first = await local(f.input, f.identity);
+    expect((await local(f.input, f.identity)).id).toBe(first.id);
+    const next = { ...f.input, requestId: randomUUID() };
+    await expect(local(next, f.identity)).rejects.toMatchObject({ code: 'SERVER_BUSY' });
+    await new Promise((done) => setTimeout(done, 1100));
+    expect((await local(next, f.identity)).id).not.toBe(first.id);
+  });
+  it('never evicts unresolved commits even after the replay TTL or when capacity is exhausted', async () => {
+    const local = createWorkspaceCreator({
+      database,
+      coordinator,
+      barrier: revocations.barrier,
+      indexesReady: () => ready,
+      createConversation: factory.create,
+      replay: { ttlMs: 1, maxEntries: 1 },
+    });
+    const f = await fixture();
+    const before = await counts();
+    const unknown = new mongoose.mongo.MongoServerError({ message: 'Injected unresolved result' });
+    unknown.addErrorLabel('UnknownTransactionCommitResult');
+    const tx = vi.spyOn(database, 'transaction').mockRejectedValueOnce(unknown);
+    try {
+      await expect(local(f.input, f.identity)).rejects.toMatchObject({ unconfirmed: true });
+      await new Promise((done) => setTimeout(done, 10));
+      await expect(
+        local({ ...f.input, requestId: randomUUID() }, f.identity),
+      ).rejects.toMatchObject({ code: 'SERVER_BUSY' });
+      await expect(local(f.input, f.identity)).rejects.toMatchObject({ unconfirmed: true });
+      expect(tx).toHaveBeenCalledTimes(1);
+    } finally {
+      tx.mockRestore();
+    }
+    expect(await counts()).toEqual(before);
+  });
+
+  it('replays through HTTP with a fresh trace and rechecks a shortened DB session expiry', async () => {
+    const f = await fixture();
+    const first = await postWorkspace(f);
+    const before = await counts();
+    const replay = await postWorkspace(f);
+    expect(replay.status).toBe(201);
+    expect(replay.body.data).toEqual(first.body.data);
+    expect(replay.body.requestId).not.toBe(first.body.requestId);
+    await AuthSession.updateOne({ _id: f.session.id }, { expiresAt: new Date(0) });
+    await expect(create(f.input, f.identity)).rejects.toMatchObject({ code: 'AUTH_REQUIRED' });
+    expect(await counts()).toEqual(before);
+  });
+
+  it.skipIf(process.env.COLEARNIA_DB_TEST_FAILPOINTS !== '1')(
+    'aborts all writes when MongoDB rejects commit itself',
+    async () => {
+      const f = await fixture();
+      const before = await counts();
+      const admin = database.connection.db!.admin();
+      await admin.command({
+        configureFailPoint: 'failCommand',
+        mode: { times: 1 },
+        data: { failCommands: ['commitTransaction'], errorCode: 1 },
+      });
+      try {
+        await expect(create(f.input, f.identity)).rejects.toBeInstanceOf(
+          mongoose.mongo.MongoServerError,
+        );
+      } finally {
+        await admin.command({ configureFailPoint: 'failCommand', mode: 'off' });
+      }
+      expect(await counts()).toEqual(before);
+      expect(coordinator.stats().operations).toBe(0);
+      await create(f.input, f.identity);
+      expect(await counts()).toEqual(before.map((n) => n + 1));
+    },
+  );
+  it.each(['renamed', 'deleted', 'membership-removed', 'conversation-closed'] as const)(
+    'reconciles the commit after %s without requiring the creation snapshot',
+    async (kind) => {
+      const f = await fixture();
+      const transaction = database.transaction.bind(database);
+      const unknown = new mongoose.mongo.MongoServerError({ message: 'Injected lost ack' });
+      unknown.addErrorLabel('UnknownTransactionCommitResult');
+      const read = vi.spyOn(Audit, 'findOne');
+      const tx = vi.spyOn(database, 'transaction').mockImplementationOnce(async (work) => {
+        await transaction(work);
+        read.mockImplementationOnce(() => {
+          throw new Error('Injected receipt read outage');
+        });
+        throw unknown;
+      });
+      const before = await counts();
+      try {
+        await expect(create(f.input, f.identity)).rejects.toMatchObject({ unconfirmed: true });
+        const workspace = await Workspace.findOne({ ownerId: f.user.id }).orFail();
+        await coordinator.run({ workspaceId: workspace.id }, async () => {
+          if (kind === 'renamed')
+            await Workspace.updateOne(
+              { _id: workspace.id },
+              { name: 'Current Workspace name', $inc: { revision: 1 } },
+            );
+          if (kind === 'deleted')
+            await Workspace.updateOne(
+              { _id: workspace.id },
+              { deletedAt: new Date(), $inc: { revision: 1 } },
+            );
+          if (kind === 'membership-removed') {
+            const replacement = await fixture();
+            await transaction(async (session) => {
+              await Membership.updateOne(
+                { workspaceId: workspace.id, userId: f.user.id },
+                { role: 'MEMBER', status: 'REMOVED', removedAt: new Date(), $inc: { revision: 1 } },
+              ).session(session);
+              await Membership.create(
+                [
+                  {
+                    workspaceId: workspace.id,
+                    userId: replacement.user.id,
+                    role: 'OWNER',
+                    status: 'ACTIVE',
+                    incarnation: 1,
+                    revision: 0,
+                    joinedAt: new Date(),
+                    removedAt: null,
+                  },
+                ],
+                { session },
+              );
+              await Workspace.updateOne(
+                { _id: workspace.id },
+                { ownerId: replacement.user.id, $inc: { revision: 1 } },
+              ).session(session);
+            });
+          }
+          if (kind === 'conversation-closed')
+            await Conversation.updateOne(
+              { workspaceId: workspace.id },
+              { closedAt: new Date(), purgeAt: new Date(Date.now() + 86_400_000) },
+            );
+        });
+        // Once the commit is reconciled the operation must remain completed, even
+        // when current access rejects the DTO. No second receipt read is necessary.
+        if (kind === 'deleted' || kind === 'membership-removed') {
+          await expect(create(f.input, f.identity)).rejects.toMatchObject({
+            code: 'FORBIDDEN',
+            unconfirmed: false,
+          });
+          read.mockImplementationOnce(() => {
+            throw new Error('Must not reconcile again');
+          });
+          await expect(create(f.input, f.identity)).rejects.toMatchObject({
+            code: 'FORBIDDEN',
+            unconfirmed: false,
+          });
+        } else {
+          const result = await create(f.input, f.identity);
+          expect(result).toMatchObject({
+            id: workspace.id,
+            name: kind === 'renamed' ? 'Current Workspace name' : f.input.name,
+            revision: kind === 'renamed' ? 1 : 0,
+          });
+          expect((await create(f.input, f.identity)).id).toBe(workspace.id);
+        }
+        expect(tx).toHaveBeenCalledTimes(1);
+        expect(await counts()).toEqual(
+          before.map((n, index) => n + 1 + (kind === 'membership-removed' && index === 1 ? 1 : 0)),
+        );
+        expect(coordinator.stats().operations).toBe(0);
+      } finally {
+        tx.mockRestore();
+        read.mockRestore();
+      }
+    },
+  );
+
+  it('does not accept a missing or mismatched commit receipt as a successful creation', async () => {
+    const f = await fixture();
+    const transaction = database.transaction.bind(database);
+    const unknown = new mongoose.mongo.MongoServerError({ message: 'Injected lost ack' });
+    unknown.addErrorLabel('UnknownTransactionCommitResult');
+    const read = vi.spyOn(Audit, 'findOne');
+    const tx = vi.spyOn(database, 'transaction').mockImplementationOnce(async (work) => {
+      await transaction(work);
+      read.mockImplementationOnce(() => {
+        throw new Error('Injected read outage');
+      });
+      throw unknown;
+    });
+    try {
+      await expect(create(f.input, f.identity)).rejects.toMatchObject({ unconfirmed: true });
+      const receipt = await Audit.findOne({ actorUserId: f.user.id }).orFail();
+      // Corrupt only the isolated fixture: an unrelated receipt must not prove commit.
+      await Audit.updateOne({ _id: receipt.id }, { requestId: randomUUID() });
+      await expect(create(f.input, f.identity)).rejects.toMatchObject({ unconfirmed: true });
+      await Audit.deleteOne({ _id: receipt.id });
+      await expect(create(f.input, f.identity)).rejects.toMatchObject({ unconfirmed: true });
+      expect(tx).toHaveBeenCalledTimes(1);
+    } finally {
+      tx.mockRestore();
+      read.mockRestore();
     }
   });
 });

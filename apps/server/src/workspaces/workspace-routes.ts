@@ -48,6 +48,9 @@ export function createWorkspaceRouter(
           AUTH_REQUIRED: error.committed
             ? 'Workspace đã được tạo. Phiên đăng nhập đã hết hạn; đăng nhập lại và kiểm tra danh sách Workspace trước khi tạo lại.'
             : 'Phiên đăng nhập không hợp lệ hoặc đã hết hạn.',
+          CONFLICT: 'Mã yêu cầu đã được sử dụng với nội dung khác.',
+          FORBIDDEN: 'Bạn không còn quyền truy cập Workspace này.',
+          SERVER_BUSY: 'Hệ thống đang bận. Vui lòng thử lại sau.',
           VALIDATION_ERROR: 'Tên Workspace hoặc thông tin yêu cầu không hợp lệ.',
           DEPENDENCY_UNAVAILABLE: error.unconfirmed
             ? 'Chưa xác nhận được kết quả tạo Workspace. Kiểm tra danh sách trước khi tạo lại.'
