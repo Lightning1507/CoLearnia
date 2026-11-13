@@ -1,6 +1,6 @@
 # 3. Design Tokens
 
-**Thiết kế đề xuất · 07/11/2026.** Palette/scale ở [foundations](foundations.md) còn cần visual review và contrast check. Palette đang dùng cho lobby đã được đưa vào `@theme` trong [global.css](../../../apps/web/src/styles/global.css), với các nhóm canvas/surface, text, border, action và feedback. Các token này giữ giá trị màu của implementation hiện có; danh mục mở rộng bên dưới vẫn là đề xuất.
+**Thiết kế đề xuất · 07/11/2026.** Palette/scale ở [foundations](foundations.md) còn cần visual review và contrast check. Palette đang dùng cho lobby đã được đưa vào `@theme` trong [global.css](../../../apps/web/src/styles/global.css), với các nhóm canvas/surface, text, border, action và feedback. Preview dùng token riêng --color-preview-surface (#222927); action primary (#0d7c62) và hover (#0c654f) đối chiếu bản export figma-ui. Focus có token riêng --color-focus-ring; danh mục mở rộng bên dưới vẫn là đề xuất.
 
 ## Ba tầng, một hướng tham chiếu
 

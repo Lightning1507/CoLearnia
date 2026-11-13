@@ -4,7 +4,7 @@ import type { DeviceKind, PreviewStatus } from './lobbyPreview';
 import { useLobbyPreview } from './useLobbyPreview';
 
 const focusClass =
-  'focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-action-primary focus-visible:ring-3 focus-visible:ring-surface';
+  'focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-focus-ring focus-visible:ring-3 focus-visible:ring-surface';
 const controlClass = `min-h-11 min-w-0 rounded-lg border px-3 py-2 text-sm leading-[1.4] disabled:cursor-not-allowed disabled:opacity-60 ${focusClass}`;
 const buttonClass = `${controlClass} border-border-control bg-surface-subtle font-semibold text-text-primary enabled:hover:bg-action-accent`;
 const ghostButtonClass = `${controlClass} border-transparent bg-transparent font-semibold text-text-primary enabled:hover:bg-action-accent`;
@@ -27,8 +27,8 @@ const deviceStatusLabel: Record<PreviewStatus, string> = {
 
 const deviceStatusClass: Record<PreviewStatus, string> = {
   off: 'bg-canvas text-text-secondary',
-  requesting: 'bg-surface-subtle text-action-primary',
-  ready: 'bg-surface-subtle text-action-primary',
+  requesting: 'bg-surface-subtle text-text-primary',
+  ready: 'bg-surface-subtle text-text-primary',
   denied: 'bg-feedback-warning-surface text-feedback-warning',
   unavailable: 'bg-feedback-warning-surface text-feedback-warning',
   busy: 'bg-feedback-warning-surface text-feedback-warning',
@@ -216,7 +216,7 @@ export function LobbyDeviceCheck({
                 Chỉ trên máy này
               </span>
             </div>
-            <div className="relative isolate flex aspect-[16/10] min-h-72 w-full flex-col overflow-hidden rounded-b-[calc(1rem-1px)] bg-action-primary text-surface">
+            <div className="relative isolate flex aspect-[16/10] min-h-72 w-full flex-col overflow-hidden rounded-b-[calc(1rem-1px)] bg-preview-surface text-surface">
               <div className="grid flex-1 place-items-center">
                 {state.videoStream ? (
                   <CameraPreview
@@ -226,7 +226,7 @@ export function LobbyDeviceCheck({
                   />
                 ) : (
                   <div className="grid justify-items-center gap-2 p-4 text-center sm:p-6">
-                    <span className="mb-1 grid size-11 place-items-center rounded-xl bg-action-accent text-action-primary">
+                    <span className="mb-1 grid size-11 place-items-center rounded-xl bg-action-accent text-text-primary">
                       <DeviceIcon kind="camera" />
                     </span>
                     <strong>
@@ -248,7 +248,7 @@ export function LobbyDeviceCheck({
                   return (
                     <button
                       key={kind}
-                      className={`grid size-11 place-items-center rounded-full bg-feedback-error-surface text-feedback-error shadow-md enabled:hover:brightness-95 aria-pressed:bg-action-accent aria-pressed:text-action-primary disabled:cursor-not-allowed disabled:opacity-60 ${focusClass}`}
+                      className={`grid size-11 place-items-center rounded-full bg-feedback-error-surface text-feedback-error shadow-md enabled:hover:brightness-95 aria-pressed:bg-action-accent aria-pressed:text-text-primary disabled:cursor-not-allowed disabled:opacity-60 ${focusClass}`}
                       type="button"
                       aria-label={`${action} ${name.toLowerCase()}`}
                       aria-pressed={enabled}

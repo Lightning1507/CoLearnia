@@ -8,8 +8,10 @@
   --color-text-secondary: #63756b;
   --color-border-subtle: #dce3d6;
   --color-border-control: #648272;
-  --color-action-primary: #173f35;
-  --color-action-primary-hover: #285649;
+  --color-preview-surface: #222927;
+  --color-focus-ring: #173f35;
+  --color-action-primary: #0d7c62;
+  --color-action-primary-hover: #0c654f;
   --color-action-accent: #d9ecac;
   --color-feedback-warning: #754b26;
   --color-feedback-warning-surface: #fff4e5;

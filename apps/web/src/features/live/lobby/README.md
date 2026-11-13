@@ -62,3 +62,7 @@ PR title đề xuất: `feat(media): add lobby device selection and preview [SCR
 ## Bàn giao preferences khi tiếp tục
 
 Nút Tiếp tục bị khóa khi camera hoặc microphone đang requesting (mở lần đầu hoặc đổi thiết bị); UI hướng dẫn chờ hoàn tất hoặc tắt thiết bị để tiếp tục. Handler kiểm snapshot runtime mới nhất để chặn cả click trước khi React kịp render lại. Payload lấy selectedId của từng thiết bị (chuỗi rỗng giữ lựa chọn mặc định), còn enabled lấy isActive sau khi request hoàn tất. Có thể tiếp tục khi cả hai thiết bị tắt. Test lobbyContinue.test.ts kiểm nút, callback và payload cho cả mic/camera, gồm pending A→B, thành công B, hủy mở, lựa chọn mặc định và handler cũ.
+
+## Màu preview và action theo export
+
+Đối chiếu docs/figma-ui/src/index.css: .device-preview dùng #222927, .btn-primary dùng #0d7c62 và hover #0c654f. Lobby ánh xạ qua các token global.css: --color-preview-surface, --color-action-primary và --color-action-primary-hover. Focus dùng --color-focus-ring riêng; chữ/icon trên nền nhạt dùng text-primary để không bị đổi theo màu action. Không chỉnh source export.
