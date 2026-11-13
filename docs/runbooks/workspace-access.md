@@ -13,7 +13,13 @@ Nguồn nghiệp vụ: [Workspace/kênh](../product/workspace-channels.md),
 Composition khi gắn consumer thật:
 
 ```ts
-const access = createWorkspaceAccessService(database, operationCoordinator, () => accessReady);
+const access = createWorkspaceAccessService(
+  database,
+  operationCoordinator,
+  () => accessReady,
+  revocations.barrier,
+);
+// revocations là cùng instance điều phối thu quyền của bootstrap (SCRUM-28).
 // accessReady chỉ true sau preflightIndexes(connection, workspaceAccessIndexRequirements)
 // thành công, và false khi shutdown. Không dùng () => true ở production.
 const resolveChannelAccess: ResolveChannelAccess = access.resolveChannelAccess;
@@ -72,8 +78,8 @@ policy runtime phiên/nhóm. Nếu resource đã chuẩn bị, cleanup trong `fi
 lại trả false **hoặc ném lỗi**; chưa chuyển ownership thì phải đóng.
 
 SCRUM-27 không tự gắn provider vào chat/LIVE hiện tại, không triển khai CRUD, DM ACL,
-channel/session queues hay thu socket/media. Deny barrier, đóng tài nguyên đang hoạt
-động và fanout khi thu quyền thuộc SCRUM-28/các task tích hợp; gate và DB snapshot
+channel/session queues hay thu socket/media. Deny barrier và điều phối adapter có ở [SCRUM-28](access-revocation.md); đóng tài nguyên
+đang hoạt động và fanout thật cần task tích hợp. Gate và DB snapshot
 không thay cơ chế đó. Tạo Workspace khi chưa có membership dùng auth + transaction
 của task tạo Workspace, không gọi policy membership để tự cấp OWNER.
 

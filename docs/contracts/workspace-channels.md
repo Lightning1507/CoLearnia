@@ -4,7 +4,7 @@ Model kênh/PRIVATE grant, index, validator và cách tích hợp theo [SCRUM-26
 
 Model Workspace, membership và invitation theo [SCRUM-30](../database/workspace-models.md). Invitation lưu thêm token mã hóa để lấy lại link hiện hành; chưa bổ sung endpoint/DTO lời mời trong contract này.
 
-**Trạng thái:** schema và port Workspace/kênh đã có; SCRUM-27 bổ sung policy và provider `ResolveChannelAccess` dùng MongoDB theo [runbook quyền](../runbooks/workspace-access.md). Chưa có API CRUD Workspace/kênh hoặc tích hợp thu quyền runtime từ task này. M4 review chính; M2 xác nhận phần conversation và thu chat/tệp trước khi tích hợp. Chưa ghi nhận xác nhận của hai miền trong task này.
+**Trạng thái:** schema và port Workspace/kênh đã có; SCRUM-27 bổ sung policy và provider `ResolveChannelAccess` dùng MongoDB theo [runbook quyền](../runbooks/workspace-access.md). SCRUM-28 bổ sung [điều phối deny/cleanup](../runbooks/access-revocation.md) và nối barrier vào provider; SCRUM-32 bổ sung [service và router tạo Workspace/general](../runbooks/workspace-creation.md), đã mount trong main với barrier/ledger dùng chung; thiếu preflight DB thì trả 503. Barrier chưa có adapter cleanup vẫn giữ deny và không báo hoàn tất thu quyền. Các CRUD khác và tích hợp adapter runtime thật chưa có. M4 review chính; M2 xác nhận phần conversation và thu chat/tệp trước khi tích hợp. Chưa ghi nhận xác nhận của hai miền trong task này.
 
 Nguồn: [proposal M1](../proposals/m1-workspace-auth.md), [quyền Workspace/kênh](../product/workspace-channels.md), [PRIVATE](../product/messaging.md), [quy ước API](api-conventions.md), [mã lỗi](error-codes.md). Schema ở `packages/contracts/src/workspace.ts`; chữ ký hàm server ở `apps/server/src/workspaces/ports.ts`.
 
@@ -82,7 +82,7 @@ Nhận `workspaceId`, `channelId`, `conversationId`, `createdAt: Date` và `dbSe
 
 M1 chuẩn bị các ID và createdAt ở server trước callback transaction có thể được chạy lại; mọi lượt callback dùng lại cùng ID/thời gian, cùng dbSession của transaction. Không lấy createdAt từ client hoặc sinh lại conversationId trong callback. Khi kết quả commit chưa rõ, đọc lại theo bộ ID ổn định và đối chiếu đủ quan hệ trước khi quyết định thử lại; không tạo bộ ID mới để che kết quả chưa xác định.
 
-M2 không tự commit/mở transaction khác hoặc phát event trong callback có thể retry. Lỗi thì ném về caller để hủy toàn bộ lần tạo; chỉ phát thông báo sau khi biết commit thành công. Chữ ký hàm hiện chưa chứng minh transaction/rollback thực tế.
+M2 không tự commit/mở transaction khác hoặc phát event trong callback có thể retry. Lỗi thì ném về caller để hủy toàn bộ lần tạo; chỉ phát thông báo sau khi biết commit thành công. SCRUM-32 tích hợp factory thật với model M1 và kiểm transaction trong DB riêng; ma trận rollback/retry đầy đủ tiếp tục ở M1-T6.2. Xem [runbook tạo Workspace](../runbooks/workspace-creation.md).
 
 ### Thu quyền từ M1 tới M2/M4
 
@@ -99,7 +99,7 @@ M2 không tự commit/mở transaction khác hoặc phát event trong callback c
 
 Theo góp ý PR #39, dùng tên `USER_AUTH_SESSIONS` và `PRIVATE_CHANNEL_ACCESS`; không nhận hai tên cũ `USER_SESSIONS`/`PRIVATE_CHANNEL`. M4 cần import `accessRevocationSchema` và alias thành `liveAccessRevocationSchema` thay vì khai báo lại union. PRIVATE vẫn bắt buộc `membershipId` và `membershipIncarnation`: coordinator đối chiếu lượt thành viên và revision cũ trước khi chọn runtime resource, không bỏ field chỉ để vượt strict schema. Chưa tương thích với nguyên trạng PR #39 (`f6979c9`) cho đến khi M4 nối schema chung; không coi kiểm local là M4 đã xác nhận. Schema cleanup runtime của M4 tiếp tục riêng vì có session/epoch/transition token và target đời kết nối.
 
-Với `USER_AUTH_SESSIONS`, operation/revision phải gắn tập phiên bị thu đã được coordinator xác định; retry không chọn lại mọi phiên hiện có theo userId rồi đóng nhầm phiên đăng nhập mới. Cách giữ tập đó thuộc thiết kế coordinator, chưa triển khai trong task contract.
+Với `USER_AUTH_SESSIONS`, operation/revision phải gắn tập phiên bị thu đã được coordinator xác định; retry không chọn lại mọi phiên hiện có theo userId rồi đóng nhầm phiên đăng nhập mới. SCRUM-28 giữ cohort bất biến theo operation, cung cấp callback `revokedAuthSessions` cho M4; retry không query lại tập phiên.
 
 revision là bản hiện tại khi bắt đầu thu, chưa phải revision sau commit. Hai loại auth cần M1-T5/M4-T1.2 xác nhận cách cấp bộ đếm ở coordinator; không thêm field DB trong task này. Adapter không dùng số này thay epoch/generation LIVE.
 
@@ -107,7 +107,7 @@ M1 điều phối: kiểm quyền/revision → chặn truy cập đích → gọ
 
 `AccessCleanupResult` trả operationId, permissionRevoked, pendingInvalidated, cleanupPending. Chỉ coi thu quyền hiệu lực khi hai cờ đầu đều true; cleanupPending có thể còn việc xóa byte/ref phía sau. Lỗi/timeout dùng cơ chế lỗi của coordinator, giữ deny và đối soát; không giả kết quả thành công. Không giữ transaction MongoDB khi chờ cleanup.
 
-Cách truyền context giữ gate, hủy tác vụ, timeout/retry và lỗi adapter cụ thể được M1-T5/M4-T1.2 chốt trước triển khai coordinator. Chưa export một hàm revoke thiếu context khóa; union/result ở đây là dữ liệu trao đổi để hai miền review.
+SCRUM-28 cung cấp coordinator nội bộ tự lấy/nhả shared gate, deny barrier và callback persistence Held theo [runbook](../runbooks/access-revocation.md). M2/M4 cleanup chạy ngoài gate, có budget/retry và watermark; callback nghiệp vụ chịu trách nhiệm authorize/CAS/read-back. Kiểm adapter giả không thay việc tích hợp runtime thật.
 
 ## 4. Contract shell/sidebar cho SCRUM-45
 
