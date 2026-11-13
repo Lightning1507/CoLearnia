@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import type { ReactNode, RefObject } from 'react';
 import type { ChannelSummary, WorkspaceSummary } from '@colearnia/contracts';
 
 // UI projection supplied by the data owner; never an authorization credential.
@@ -16,6 +16,8 @@ export type WorkspaceShellProps = {
   channels: readonly SidebarChannel[];
   panel: WorkspacePanel;
   onSelectChannel: (channel: ChannelSummary) => void;
+  onOpenWorkspaceList: () => void;
+  workspaceMenuTriggerRef?: RefObject<HTMLButtonElement | null>;
   // M2 owns chat rendering; M3/M4 own call state outside the selected panel.
   chatPanel: ReactNode;
   callPanel: ReactNode;
