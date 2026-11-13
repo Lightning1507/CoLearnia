@@ -11,6 +11,13 @@ import { createDatabase } from './lib/database.js';
 import { preflightIndexes } from './lib/database-preflight.js';
 import { logger } from './lib/logger.js';
 import { operationCoordinator } from './lib/shared-coordination.js';
+import { accessRevocations } from './lib/shared-access-revocation.js';
+import { createChannelConversationFactory } from './messaging/conversation.js';
+import {
+  createWorkspaceCreator,
+  preflightWorkspaceCreation,
+} from './workspaces/create-workspace.js';
+import { createWorkspaceRouter } from './workspaces/workspace-routes.js';
 import { createRealtime } from './realtime/server.js';
 import {
   createColdSessionArtifactGuard,
@@ -29,6 +36,7 @@ const database = createDatabase(config.MONGO_URI, {
 let media: Awaited<ReturnType<typeof createMediaRuntime>> | undefined;
 let stopping = false;
 let authIndexesReady = false;
+let workspaceIndexesReady = false;
 let acceptingLiveRuntime = false;
 const sessionBootstrap = createSessionBootstrap(database, {
   isOffline: () => !acceptingLiveRuntime && !stopping,
@@ -44,19 +52,34 @@ const status = (): SystemStatus => ({
     sessionBootstrap.isReady() &&
     database.isConnected() &&
     Boolean(media?.isReady()) &&
-    (!config.SESSION_SECRET || authIndexesReady),
+    (!config.SESSION_SECRET || (authIndexesReady && workspaceIndexesReady)),
 });
 
 const canUseAuthIndexes = () => authIndexesReady && !stopping;
 const readSession = createSessionReader(database, canUseAuthIndexes);
-const authRouter = config.SESSION_SECRET
+const httpAuth = config.SESSION_SECRET
+  ? createHttpAuth(config.APP_ORIGIN, config.SESSION_SECRET, readSession)
+  : undefined;
+const authRouter = httpAuth
   ? createAuthRouter(
-      createHttpAuth(config.APP_ORIGIN, config.SESSION_SECRET, readSession),
+      httpAuth,
       createRegistration(database, canUseAuthIndexes, config.AUTH_TTL_SECONDS),
       createLogin(database, canUseAuthIndexes, config.AUTH_TTL_SECONDS, operationCoordinator),
     )
   : undefined;
-const httpServer = createServer(createApp(config, status, authRouter));
+const workspaceRouter = httpAuth
+  ? createWorkspaceRouter(
+      httpAuth,
+      createWorkspaceCreator({
+        database,
+        coordinator: operationCoordinator,
+        barrier: accessRevocations.barrier,
+        indexesReady: () => canUseAuthIndexes() && workspaceIndexesReady,
+        createConversation: createChannelConversationFactory(database.connection).create,
+      }),
+    )
+  : undefined;
+const httpServer = createServer(createApp(config, status, authRouter, workspaceRouter));
 const io = createRealtime(httpServer, config, readSession);
 
 async function start() {
@@ -78,6 +101,17 @@ async function start() {
         logger.warn({ issues }, 'Authentication requires the auth indexes before startup.');
     } catch {
       logger.warn('Could not check auth indexes; authentication remains unavailable.');
+    }
+  }
+
+  if (workspaceRouter && database.isConnected()) {
+    try {
+      workspaceIndexesReady = await preflightWorkspaceCreation(database);
+      if (!workspaceIndexesReady)
+        logger.warn('Workspace creation requires its collections and indexes before startup.');
+      else logger.info('Workspace creation database preflight passed.');
+    } catch {
+      logger.warn('Could not check Workspace collections/indexes; creation remains unavailable.');
     }
   }
 
