@@ -14,6 +14,7 @@ import type { CoordinationContext } from '../src/lib/operation-coordinator.js';
 import { createWorkspaceAccessService } from '../src/workspaces/access-service.js';
 import { channelModels } from '../src/workspaces/channel-models.js';
 import { workspaceModels } from '../src/workspaces/workspace-models.js';
+import { createAccessRevocationCoordinator } from '../src/workspaces/access-revocation.js';
 import { testReplicaUri } from './replica-uri.js';
 
 const databaseName = `colearnia_test_scrum27_${randomUUID().replaceAll('-', '')}`;
@@ -23,7 +24,27 @@ const { Workspace, Membership } = workspaceModels(database.connection);
 const { Channel, ChannelAccessGrant } = channelModels(database.connection);
 const coordinator = createOperationCoordinator();
 let ready = true;
-const service = createWorkspaceAccessService(database, coordinator, () => ready);
+const revocations = createAccessRevocationCoordinator({
+  coordinator,
+  messaging: {
+    fence: () => ({ throughResourceGeneration: 1 }),
+    revoke: async ({ revocationId }) => ({ status: 'completed', revocationId }),
+  },
+  live: {
+    revoke: async ({ operationId }) => ({
+      operationId,
+      permissionRevoked: true,
+      pendingInvalidated: true,
+      cleanupPending: false,
+    }),
+  },
+});
+const service = createWorkspaceAccessService(
+  database,
+  coordinator,
+  () => ready,
+  revocations.barrier,
+);
 let ownsDatabase = false;
 beforeAll(async () => {
   await database.connect();
@@ -396,5 +417,199 @@ describe('SCRUM-27 real Mongo shared access provider', () => {
       transaction.mockRestore();
     }
     expect((await service.resolveChannelAccess(f.input)).canReadContent).toBe(true);
+  });
+});
+
+describe('SCRUM-28 deny barrier with real Mongo provider', () => {
+  function controlledCleanup() {
+    let unavailable = true;
+    const control = createAccessRevocationCoordinator({
+      coordinator,
+      messaging: {
+        fence: () => ({ throughResourceGeneration: 1 }),
+        revoke: async ({ revocationId }) => ({ status: 'completed', revocationId }),
+      },
+      live: {
+        revoke: async ({ operationId }) => ({
+          operationId,
+          permissionRevoked: !unavailable,
+          pendingInvalidated: !unavailable,
+          cleanupPending: unavailable,
+        }),
+      },
+    });
+    return {
+      control,
+      allowCleanup: () => {
+        unavailable = false;
+      },
+      access: createWorkspaceAccessService(database, coordinator, () => ready, control.barrier),
+    };
+  }
+  it('denies Workspace and channel while membership in Mongo remains ACTIVE', async () => {
+    const f = await fixture('MEMBER', 'WORKSPACE');
+    const runtime = controlledCleanup();
+    expect((await runtime.access.resolveChannelAccess(f.input)).canReadContent).toBe(true);
+    const pending = await runtime.control.revoke({
+      event: {
+        kind: 'WORKSPACE_MEMBERSHIP',
+        operationId: randomUUID(),
+        revision: 7,
+        workspaceId: f.workspace.id,
+        userId: f.user.id,
+        membershipId: f.membership.id,
+        membershipIncarnation: 2,
+      },
+      userId: f.user.id,
+      persistence: {
+        prepareHeld: async () => ({ authSessionIds: [] }),
+        commitHeld: async () => {
+          throw new Error('must not write before cleanup');
+        },
+        reconcileHeld: async () => 'unknown',
+      },
+    });
+    expect(pending.permissionRevoked).toBe(false);
+    expect((await Membership.findById(f.membership.id))!.status).toBe('ACTIVE');
+    await expect(runtime.access.resolveChannelAccess(f.input)).rejects.toEqual(deny('NOT_FOUND'));
+    await expect(
+      runtime.access.requireWorkspacePermission({
+        identity: f.input.identity,
+        workspaceId: f.workspace.id,
+        action: 'read',
+      }),
+    ).rejects.toEqual(deny('NOT_FOUND'));
+  });
+  it('keeps PRIVATE denial through cleanup, commits CAS, then permits a new grant revision', async () => {
+    const f = await fixture();
+    await f.grant();
+    const runtime = controlledCleanup();
+    const old = await runtime.access.resolveChannelAccess(f.input);
+    const commit = vi.fn(async () => {
+      await database.transaction(async (session) => {
+        const update = await Channel.updateOne(
+          { _id: f.channel.id, revision: 9 },
+          { $inc: { revision: 1 } },
+          { session },
+        );
+        if (update.modifiedCount !== 1) throw new Error('CONFLICT');
+        await ChannelAccessGrant.updateOne(
+          { channelId: f.channel.id, membershipId: f.membership.id, membershipIncarnation: 2 },
+          { $set: { revokedAt: new Date() } },
+          { session },
+        );
+      });
+      return 'committed' as const;
+    });
+    const input = {
+      event: {
+        kind: 'PRIVATE_CHANNEL_ACCESS' as const,
+        operationId: randomUUID(),
+        revision: 9,
+        workspaceId: f.workspace.id,
+        channelId: f.channel.id,
+        userId: f.user.id,
+        membershipId: f.membership.id,
+        membershipIncarnation: 2,
+      },
+      userId: f.user.id,
+      persistence: {
+        prepareHeld: async () => ({ authSessionIds: [] }),
+        commitHeld: commit,
+        reconcileHeld: async () => 'unknown' as const,
+      },
+    };
+    expect((await runtime.control.revoke(input)).permissionRevoked).toBe(false);
+    expect((await ChannelAccessGrant.findOne({ channelId: f.channel.id }))!.revokedAt).toBeNull();
+    await expect(runtime.access.resolveChannelAccess(f.input)).rejects.toEqual(deny('NOT_FOUND'));
+    runtime.allowCleanup();
+    expect((await runtime.control.revoke(input)).permissionRevoked).toBe(true);
+    expect(commit).toHaveBeenCalledOnce();
+    await expect(runtime.access.resolveChannelAccess(f.input)).rejects.toEqual(deny('NOT_FOUND'));
+    // Business regrant follows the same gate and increments channel revision.
+    await coordinator.run({ userId: f.user.id, workspaceId: f.workspace.id }, async () => {
+      await ChannelAccessGrant.updateOne(
+        { channelId: f.channel.id },
+        { $set: { revokedAt: null } },
+      );
+      await Channel.updateOne({ _id: f.channel.id }, { $inc: { revision: 1 } });
+    });
+    expect((await runtime.access.resolveChannelAccess(f.input)).canReadContent).toBe(true);
+    await coordinator.run({ workspaceId: f.workspace.id }, (held) => {
+      expect(runtime.control.barrier.isCurrent(f.input.identity, old, held)).toBe(false);
+    });
+  });
+  it('denies auth before DB session is revoked and preserves a second session', async () => {
+    const f = await fixture('MEMBER', 'WORKSPACE');
+    const runtime = controlledCleanup();
+    await runtime.control.revoke({
+      event: {
+        kind: 'AUTH_SESSION',
+        operationId: randomUUID(),
+        revision: 0,
+        authSessionId: f.session.id,
+      },
+      userId: f.user.id,
+      persistence: {
+        prepareHeld: async () => ({ authSessionIds: [] }),
+        commitHeld: async () => 'committed',
+        reconcileHeld: async () => 'unknown',
+      },
+    });
+    expect((await AuthSession.findById(f.session.id))!.revokedAt).toBeNull();
+    await expect(runtime.access.resolveChannelAccess(f.input)).rejects.toEqual(
+      deny('AUTH_REQUIRED'),
+    );
+    const second = await AuthSession.create({
+      userId: f.user._id,
+      tokenHash: createHash('sha256').update(randomUUID()).digest('hex'),
+      expiresAt: new Date(f.input.identity.expiresAt),
+    });
+    expect(
+      (
+        await runtime.access.resolveChannelAccess({
+          ...f.input,
+          identity: { ...f.input.identity, authSessionId: second.id },
+        })
+      ).canReadContent,
+    ).toBe(true);
+  });
+  it('reads back an unknown DB commit without repeating the write or opening stale access', async () => {
+    const f = await fixture('MEMBER', 'WORKSPACE');
+    const runtime = controlledCleanup();
+    runtime.allowCleanup();
+    const commit = vi.fn(async () => {
+      await Membership.updateOne(
+        { _id: f.membership.id, revision: 7, incarnation: 2 },
+        { $set: { status: 'REMOVED', removedAt: new Date() }, $inc: { revision: 1 } },
+      );
+      return 'unknown' as const;
+    });
+    const input = {
+      event: {
+        kind: 'WORKSPACE_MEMBERSHIP' as const,
+        operationId: randomUUID(),
+        revision: 7,
+        workspaceId: f.workspace.id,
+        userId: f.user.id,
+        membershipId: f.membership.id,
+        membershipIncarnation: 2,
+      },
+      userId: f.user.id,
+      persistence: {
+        prepareHeld: async () => ({ authSessionIds: [] }),
+        commitHeld: commit,
+        reconcileHeld: async () => {
+          const row = await Membership.findById(f.membership.id);
+          return row?.status === 'REMOVED' && row.revision === 8
+            ? ('committed' as const)
+            : ('unknown' as const);
+        },
+      },
+    };
+    expect((await runtime.control.revoke(input)).permissionRevoked).toBe(false);
+    await expect(runtime.access.resolveChannelAccess(f.input)).rejects.toEqual(deny('NOT_FOUND'));
+    expect((await runtime.control.revoke(input)).permissionRevoked).toBe(true);
+    expect(commit).toHaveBeenCalledOnce();
   });
 });

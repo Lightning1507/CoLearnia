@@ -14,6 +14,7 @@ import { workspaceIndexRequirements, workspaceModels } from './workspace-models.
 import { allowsWorkspaceAction, channelPermissions, hasWorkspaceAccess } from './access-policy.js';
 import type { ChannelAccessState, WorkspaceAction } from './access-policy.js';
 import type { ResolveChannelAccess } from './ports.js';
+import type { AccessRevocationBarrier } from './access-revocation.js';
 
 export const workspaceAccessIndexRequirements = [
   ...authIndexRequirements,
@@ -45,6 +46,7 @@ export function createWorkspaceAccessService(
   database: Database,
   coordinator: OperationCoordinator,
   indexesReady: () => boolean,
+  barrier: AccessRevocationBarrier,
 ) {
   const { Workspace, Membership } = workspaceModels(database.connection);
   const { Channel, ChannelAccessGrant } = channelModels(database.connection);
@@ -146,6 +148,31 @@ export function createWorkspaceAccessService(
       throw error;
     }
   }
+  function checkBarrier(
+    actor: AuthenticatedContext,
+    state: ChannelAccessState,
+    context: CoordinationContext,
+  ) {
+    if (!barrier.isCurrent(actor, undefined, context))
+      throw new WorkspaceAccessError('AUTH_REQUIRED');
+    if (
+      state.membership &&
+      !barrier.isCurrent(
+        actor,
+        {
+          workspaceId: state.membership.workspaceId,
+          membershipId: state.membership.id,
+          membershipIncarnation: state.membership.incarnation,
+          membershipRevision: state.membership.revision,
+          ...(state.channel
+            ? { channelId: state.channel.id, channelRevision: state.channel.revision }
+            : {}),
+        },
+        context,
+      )
+    )
+      throw new WorkspaceAccessError('NOT_FOUND');
+  }
   async function resolveChannelAccessHeld(input: AccessInput, context: CoordinationContext) {
     const actor = identity(input.identity);
     const workspaceId = id(input.workspaceId);
@@ -153,6 +180,7 @@ export function createWorkspaceAccessService(
     context.assertHeld({ userId: actor.userId, workspaceId });
     return read(actor, async (session) => {
       const state = await readState(actor, workspaceId, session);
+      checkBarrier(actor, state, context);
       if (!hasWorkspaceAccess(state, actor.userId)) throw new WorkspaceAccessError('NOT_FOUND');
       const channel = await Channel.findOne({ _id: channelId, workspaceId, deletedAt: null })
         .select('_id workspaceId type accessMode revision')
@@ -189,6 +217,7 @@ export function createWorkspaceAccessService(
             revoked: false,
           };
       }
+      checkBarrier(actor, state, context);
       const permissions = channelPermissions(state, actor.userId);
       if (!permissions.canKnowChannel) throw new WorkspaceAccessError('NOT_FOUND');
       return channelAccessSnapshotSchema.parse({
@@ -214,6 +243,7 @@ export function createWorkspaceAccessService(
     context.assertHeld({ userId: actor.userId, workspaceId });
     return read(actor, async (session) => {
       const state = await readState(actor, workspaceId, session);
+      checkBarrier(actor, state, context);
       if (!hasWorkspaceAccess(state, actor.userId)) throw new WorkspaceAccessError('NOT_FOUND');
       const target = targetUserId
         ? await Membership.findOne({
