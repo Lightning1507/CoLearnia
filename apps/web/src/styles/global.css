@@ -1,57 +1,45 @@
 @import 'tailwindcss';
 
-@theme {
-  --color-canvas: #f7f8f2;
-  --color-surface: #fff;
-  --color-surface-subtle: #edf2dd;
-  --color-text-primary: #193e35;
-  --color-text-secondary: #63756b;
-  --color-border-subtle: #dce3d6;
-  --color-border-control: #648272;
-  --color-preview-surface: #222927;
-  --color-focus-ring: #173f35;
-  --color-action-primary: #0d7c62;
-  --color-action-primary-hover: #0c654f;
-  --color-action-accent: #d9ecac;
-  --color-feedback-warning: #754b26;
-  --color-feedback-warning-surface: #fff4e5;
-  --color-feedback-error: #8e3333;
-  --color-feedback-error-surface: #fff0ef;
+:root {
+  --workspace-sidebar-bg: #f1f3f2;
+  --workspace-channel-selected-bg: #dcefe8;
+  --workspace-content-bg: #ffffff;
+  --workspace-brand-bg: #0d7c62;
+  --workspace-brand-text: #ffffff;
+  --workspace-text: #34413d;
+  --workspace-muted: #5f7067;
+  --workspace-border: #dfe4e2;
+  --workspace-channel-hover-bg: #e5e9e7;
+  --workspace-channel-selected-text: #0b604b;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  color: #193e35;
+  background: #f7f8f2;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
 }
 
-@layer base {
-  :root {
-    font-family: 'Segoe UI', system-ui, sans-serif;
-    color: var(--color-text-primary);
-    background: var(--color-canvas);
-    font-synthesis: none;
-    text-rendering: optimizeLegibility;
-    -webkit-font-smoothing: antialiased;
-  }
-
-  * {
-    box-sizing: border-box;
-  }
-  body {
-    margin: 0;
-    min-width: 0;
-  }
-  a {
-    color: inherit;
-  }
-  button {
-    font: inherit;
-    cursor: pointer;
-  }
-  button:disabled {
-    opacity: 0.6;
-    cursor: wait;
-  }
-  a:focus-visible,
-  button:focus-visible {
-    outline: 3px solid #a2b949;
-    outline-offset: 5px;
-  }
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  min-width: 320px;
+}
+a {
+  color: inherit;
+}
+button {
+  cursor: pointer;
+}
+button:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+a:focus-visible,
+button:focus-visible {
+  outline: 3px solid #a2b949;
+  outline-offset: 5px;
 }
 .shell {
   min-height: 100dvh;
