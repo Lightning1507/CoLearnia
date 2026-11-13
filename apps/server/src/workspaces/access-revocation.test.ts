@@ -551,3 +551,60 @@ describe('revocation barrier input boundaries', () => {
     expect(await f.current(auth, workspace)).toBe(false);
   });
 });
+
+describe('application barrier before runtime cleanup is mounted', () => {
+  it('installs deny without adapters and resumes the same operation after real ports are bound', async () => {
+    const f = setup();
+    const control = createAccessRevocationCoordinator({ coordinator: f.coordinator });
+    const command = event('USER_AUTH_SESSIONS');
+    vi.mocked(f.persistence.prepareHeld).mockResolvedValue({ authSessionIds: [sessionId] });
+    const isCurrent = () =>
+      f.coordinator.run({ userId }, (held) => control.barrier.isCurrent(auth, undefined, held));
+    expect(await isCurrent()).toBe(true);
+    const pending = await control.revoke({ event: command, userId, persistence: f.persistence });
+    expect(pending).toEqual({
+      operationId: command.operationId,
+      permissionRevoked: false,
+      pendingInvalidated: false,
+      cleanupPending: true,
+    });
+    expect(await isCurrent()).toBe(false);
+    expect(f.persistence.commitHeld).not.toHaveBeenCalled();
+    expect(control.revokedAuthSessions(command)).toEqual([sessionId]);
+    expect(control.metrics()).toMatchObject({ operations: 1, pending: 1, adapterTasks: 0 });
+    control.bindCleanupAdapters({ messaging: f.messaging, live: f.live });
+    const done = await control.revoke({ event: command, userId, persistence: f.persistence });
+    expect(done.permissionRevoked).toBe(true);
+    expect(f.persistence.prepareHeld).toHaveBeenCalledTimes(1);
+    expect(f.persistence.commitHeld).toHaveBeenCalledTimes(1);
+    expect(f.messaging.fence).toHaveBeenCalledTimes(1);
+    expect(f.live.revoke).toHaveBeenCalledTimes(1);
+    expect(await isCurrent()).toBe(false);
+  });
+
+  it('does not install deny for a rejected business preparation when adapters are absent', async () => {
+    const f = setup();
+    const control = createAccessRevocationCoordinator({ coordinator: f.coordinator });
+    const error = new Error('not authorized');
+    vi.mocked(f.persistence.prepareHeld).mockRejectedValue(error);
+    await expect(
+      control.revoke({ event: event('AUTH_SESSION'), userId, persistence: f.persistence }),
+    ).rejects.toBe(error);
+    expect(control.metrics().operations).toBe(0);
+    expect(
+      await f.coordinator.run({ userId }, (held) =>
+        control.barrier.isCurrent(auth, undefined, held),
+      ),
+    ).toBe(true);
+  });
+
+  it('rejects half-configured ports and replacing an already bound pair', () => {
+    const f = setup();
+    expect(() =>
+      createAccessRevocationCoordinator({ coordinator: f.coordinator, messaging: f.messaging }),
+    ).toThrow('supplied together');
+    expect(() => f.control.bindCleanupAdapters({ messaging: f.messaging, live: f.live })).toThrow(
+      'already bound',
+    );
+  });
+});

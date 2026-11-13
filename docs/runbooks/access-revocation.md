@@ -59,8 +59,24 @@ revision/generation hiện có. Hàm này chỉ kiểm freshness, không cấp A
 User gate lồng. M2 cũng phải kiểm lại deny cho các principal liên quan trước
 đọc/gửi/fanout/download, kể cả peer của DM; watermark không thay ACL.
 HTTP/socket đọc phiên phải kiểm auth barrier dưới User gate trước khi sử dụng context.
-Provider Workspace đã nối cả auth và Workspace/channel barrier, nhưng task này chưa
-mount hệ thống thu quyền vào `main.ts` hoặc sửa mọi consumer HTTP/socket/chat/LIVE.
+Provider Workspace đã nối cả auth và Workspace/channel barrier. SCRUM-32 khởi tạo một
+ledger/barrier dùng chung ở `lib/shared-access-revocation.ts` và truyền nó vào API tạo
+Workspace đã mount trong main. Chưa sửa mọi consumer HTTP/socket/chat/LIVE.
+
+### Khởi tạo trước adapter runtime
+
+`createAccessRevocationCoordinator({ coordinator })` có thể khởi tạo barrier thật trước khi
+có cleanup. Nếu nhận operation hợp lệ, `prepareHeld` vẫn xác thực/chụp cohort dưới gate;
+sau đó install deny, trả `permissionRevoked:false`, `pendingInvalidated:false`,
+`cleanupPending:true`. Không chạy `commitHeld`, không tự coi registry rỗng là cleanup xong.
+Lỗi authorize ở prepare không cài deny. Đây là trạng thái dependency chưa sẵn sàng, không
+phải adapter giả trả thành công.
+
+Bootstrap runtime sau đó gọi `accessRevocations.bindCleanupAdapters({ messaging, live })`
+với cả hai port thật trên cùng singleton, trước khi nhận consumer tương ứng. Bind một lần;
+không thay adapter khi đã bind. Nếu truyền qua constructor thì cũng phải có đủ cả hai.
+Retry operation ID cũ tiếp tục dùng cohort/target/watermark cũ; bind không tự chạy lại hoặc
+thay ledger, không tự giải phóng deny. M4 nối cohort callback và freshness theo mục trên.
 
 ## Callback persistence của service nghiệp vụ
 

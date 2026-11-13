@@ -94,18 +94,29 @@ const fail = (code: ConstructorParameters<typeof AccessRevocationError>[0]): nev
   throw new AccessRevocationError(code);
 };
 
+export type AccessCleanupAdapters = {
+  messaging: MessagingRevocationPort;
+  live: { revoke(event: AccessRevocation): Promise<AccessCleanupResult> };
+};
+
 // One process, shared with ALL ACL/mutation/runtime consumers. No timer evicts an
 // unresolved deny. Capacity exhaustion fails closed; restart recovery is not provided.
 export function createAccessRevocationCoordinator(options: {
   coordinator: OperationCoordinator;
-  messaging: MessagingRevocationPort;
-  live: { revoke(event: AccessRevocation): Promise<AccessCleanupResult> };
+  messaging?: MessagingRevocationPort;
+  live?: AccessCleanupAdapters['live'];
   maxOperations?: number;
   maxAuthSessions?: number;
   maxConcurrentOperations?: number;
   maxInFlightAdapterTasks?: number;
   cleanupTimeoutMs?: number;
 }) {
+  if (Boolean(options.messaging) !== Boolean(options.live))
+    throw new TypeError('Messaging and LIVE cleanup must be supplied together');
+  let cleanupAdapters: AccessCleanupAdapters | undefined =
+    options.messaging && options.live
+      ? { messaging: options.messaging, live: options.live }
+      : undefined;
   const maxOperations = options.maxOperations ?? 1024;
   const maxConcurrentOperations = options.maxConcurrentOperations ?? 16;
   let activeOperations = 0;
@@ -259,6 +270,9 @@ export function createAccessRevocationCoordinator(options: {
       });
   }
   async function execute(record: RecordEntry) {
+    // Capture one adapter pair per attempt. Late binding takes effect on a retry,
+    // without replacing the barrier, ledger, captured cohort or watermarks.
+    const adapters = cleanupAdapters;
     await options.coordinator.run(scope(record), async (held) => {
       if (!record.prepared) {
         const captured = await record.persistence.prepareHeld(held);
@@ -275,9 +289,10 @@ export function createAccessRevocationCoordinator(options: {
         // Install BEFORE fence, including when a synchronous adapter fence throws.
         record.installed = true;
       }
+      if (!adapters) return;
       for (const leg of record.legs) {
         if (leg.generation !== undefined) continue;
-        const fence = options.messaging.fence({
+        const fence = adapters.messaging.fence({
           revocationId: record.event.operationId,
           target: structuredClone(leg.target),
         });
@@ -289,6 +304,8 @@ export function createAccessRevocationCoordinator(options: {
         leg.generation = fence.throughResourceGeneration;
       }
     });
+    // No cleanup provider: keep deny installed and never call persistence.commitHeld.
+    if (!adapters) return result(record);
     // M4 acquires Workspace gates internally; never await these adapters while holding one.
     const controller = new AbortController();
     const deadlineMs = performance.now() + cleanupTimeoutMs;
@@ -296,7 +313,7 @@ export function createAccessRevocationCoordinator(options: {
       if (leg.done) return;
       if (!leg.pending) {
         const pending = launch(async () => {
-          const reply = await options.messaging.revoke({
+          const reply = await adapters.messaging.revoke({
             revocationId: record.event.operationId,
             target: structuredClone(leg.target),
             throughResourceGeneration: leg.generation!,
@@ -319,7 +336,7 @@ export function createAccessRevocationCoordinator(options: {
       if (!record.livePending) {
         const pending = launch(async () => {
           const reply = accessCleanupResultSchema.parse(
-            await options.live.revoke(structuredClone(record.event)),
+            await adapters.live.revoke(structuredClone(record.event)),
           );
           if (reply.operationId !== record.event.operationId) return false;
           record.cleanupPending = reply.cleanupPending;
@@ -361,6 +378,16 @@ export function createAccessRevocationCoordinator(options: {
   }
   return {
     barrier,
+    bindCleanupAdapters(adapters: AccessCleanupAdapters) {
+      if (cleanupAdapters) throw new Error('Cleanup adapters are already bound');
+      if (
+        typeof adapters.messaging?.fence !== 'function' ||
+        typeof adapters.messaging.revoke !== 'function' ||
+        typeof adapters.live?.revoke !== 'function'
+      )
+        throw new TypeError('Both real cleanup adapters are required');
+      cleanupAdapters = { messaging: adapters.messaging, live: adapters.live };
+    },
     // M4's revokedAuthSessions callback: exact immutable cohort, never a fresh DB query.
     revokedAuthSessions(raw: AccessRevocation): readonly string[] {
       const event = accessRevocationSchema.parse(raw);
@@ -396,7 +423,6 @@ export function createAccessRevocationCoordinator(options: {
       if (!record && activeOperations >= maxConcurrentOperations) return fail('SERVER_BUSY');
       if (!record) {
         if (records.size >= maxOperations) return fail('SERVER_BUSY');
-        if (!options.messaging || !options.live) return fail('DEPENDENCY_UNAVAILABLE');
         record = {
           event,
           userId,
