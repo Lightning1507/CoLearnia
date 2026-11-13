@@ -4,7 +4,7 @@ Model kênh/PRIVATE grant, index, validator và cách tích hợp theo [SCRUM-26
 
 Model Workspace, membership và invitation theo [SCRUM-30](../database/workspace-models.md). Invitation lưu thêm token mã hóa để lấy lại link hiện hành; chưa bổ sung endpoint/DTO lời mời trong contract này.
 
-**Trạng thái:** schema và chữ ký hàm để review; chưa có API/service thực thi. M4 review chính; M2 xác nhận phần conversation và thu chat/tệp trước khi tích hợp. Chưa ghi nhận xác nhận của hai miền trong task này.
+**Trạng thái:** schema và port Workspace/kênh đã có; SCRUM-27 bổ sung policy và provider `ResolveChannelAccess` dùng MongoDB theo [runbook quyền](../runbooks/workspace-access.md). Chưa có API CRUD Workspace/kênh hoặc tích hợp thu quyền runtime từ task này. M4 review chính; M2 xác nhận phần conversation và thu chat/tệp trước khi tích hợp. Chưa ghi nhận xác nhận của hai miền trong task này.
 
 Nguồn: [proposal M1](../proposals/m1-workspace-auth.md), [quyền Workspace/kênh](../product/workspace-channels.md), [PRIVATE](../product/messaging.md), [quy ước API](api-conventions.md), [mã lỗi](error-codes.md). Schema ở `packages/contracts/src/workspace.ts`; chữ ký hàm server ở `apps/server/src/workspaces/ports.ts`.
 
@@ -66,7 +66,7 @@ Ví dụ tạo kênh hợp lệ (requestId minh họa):
 | Đọc/sử dụng WORKSPACE                   | Membership ACTIVE và Workspace/kênh còn tồn tại                                                  |
 | Đọc/sử dụng PRIVATE                     | Thêm grant còn hiệu lực, đúng membershipIncarnation hiện tại; OWNER/ADMIN cũng không được bỏ qua |
 
-Ví dụ admin ngoài danh sách PRIVATE có thể quản lý danh sách nhưng không mở chat/LIVE/tệp. Thành viên bị loại rồi tham gia lại có incarnation mới; grant cũ không hợp lệ. Role host không cấp quyền quản trị Workspace. Schema không tự thực hiện các quy tắc này.
+Ví dụ admin ngoài danh sách PRIVATE có thể quản lý danh sách nhưng không mở chat/LIVE/tệp. Thành viên bị loại rồi tham gia lại có incarnation mới; grant cũ không hợp lệ. Role host không cấp quyền quản trị Workspace. Schema không tự thực hiện các quy tắc này; policy/provider SCRUM-27 kiểm chúng trên dữ liệu server hiện hành.
 
 ## 3. Các hàm nội bộ
 
@@ -151,3 +151,12 @@ instance, khai báo scope ban đầu theo thứ tự baseline; context chỉ gi�
 dùng `withWorkspace` để xử lý các Workspace lần lượt, giữ User suốt thao tác;
 context khóa không thay ACL hoặc deny barrier. Channel/session queue thật và
 coordinator thu quyền tiếp tục ở task tương ứng.
+
+## Policy thực thi — SCRUM-27
+
+`createWorkspaceAccessService` thực thi resolver và kiểm action Workspace; xem
+[composition, bảng ca và giới hạn](../runbooks/workspace-access.md). Provider đọc
+phiên/membership/channel/grant trong snapshot transaction mới, dùng cùng coordinator
+User → Workspace; hàm `Held` cho service đã giữ gate. Consumer vẫn phải từ chối nội
+dung khi `canReadContent:false`, kiểm lại sau await và giữ cleanup khi resolver ném
+lỗi. Chưa thay provider DM hoặc policy runtime phiên/nhóm, chưa là deny barrier.

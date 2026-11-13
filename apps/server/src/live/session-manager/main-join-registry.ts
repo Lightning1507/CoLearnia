@@ -10,6 +10,9 @@ import {
   workspaceDocumentIdSchema,
   liveAccessRevocationSchema,
   accessCleanupResultSchema,
+  sessionResumeInputSchema,
+  sessionResyncInputSchema,
+  sessionResyncAckSchema,
 } from '@colearnia/contracts';
 import type {
   AuthenticatedContext,
@@ -26,6 +29,7 @@ import type {
 import { Types } from 'mongoose';
 import type { types as MediaTypes } from 'mediasoup';
 import type { OperationCoordinator, CoordinationContext } from '../../lib/operation-coordinator.js';
+import { CoordinationError } from '../../lib/operation-coordinator.js';
 import {
   createSessionProjectionCursor,
   prepareSessionSnapshot,
@@ -76,6 +80,15 @@ type Ownership = {
   binding: Binding;
   room: Room;
   participant: PolicyParticipant;
+  resumeTicket: string;
+  reconnect?: {
+    deadline: number;
+    generation: number;
+    handle?: ReturnType<typeof beginSessionTransition>;
+    task?: Promise<unknown>;
+    retryCleanup?: () => Promise<unknown>;
+  };
+  resumeReplay?: { digest: string; requestId: string; socketId: string; generation: number };
 };
 type Intent = {
   key: string;
@@ -122,6 +135,7 @@ const defaults = {
   endReplayTtlMs: 60_000,
   maxRevocations: 128,
   revocationReplayTtlMs: 60_000,
+  reconnectGraceMs: 30_000,
 };
 
 // Construct once at composition, with the SAME coordinator used by M1/M2.
@@ -143,6 +157,7 @@ export function createMainJoinRegistry(options: {
   createRouter(): Promise<MediaTypes.Router>;
   endCleanup?: SessionTransitionAdapters;
   revocationCleanup?: Parameters<typeof beginSessionTransition>[2];
+  reconnectCleanup?: SessionTransitionAdapters;
   // Exact cohort committed by M1 for this user/operation/revision. Never infer
   // logout-all targets from the sessions present when its notification arrives.
   revokedAuthSessions?(
@@ -154,7 +169,8 @@ export function createMainJoinRegistry(options: {
   const limits = { ...defaults, ...options.limits };
   if (
     Object.values(limits).some((value) => !Number.isSafeInteger(value) || value < 1) ||
-    limits.ticketTtlMs > 60_000
+    limits.ticketTtlMs > 60_000 ||
+    limits.reconnectGraceMs > 30_000
   )
     throw new TypeError('Invalid join limits');
   const now = options.now ?? Date.now;
@@ -219,6 +235,7 @@ export function createMainJoinRegistry(options: {
         { userId: auth.userId, workspaceId: destination.workspaceId },
         (held) => {
           deadlines.set(held, deadline);
+          expireConnections(rooms.get(destination.channelId));
           return work(held);
         },
         { waitTimeoutMs: 2000 },
@@ -356,6 +373,24 @@ export function createMainJoinRegistry(options: {
     if (tickets.get(intent.digest) === intent) tickets.delete(intent.digest);
     intent.token = '';
   }
+  function expireConnections(room: Room | undefined) {
+    if (!room) return;
+    for (const owner of ownerships.values()) {
+      const record = owner.reconnect;
+      if (owner.room !== room || !record || clock() < record.deadline) continue;
+      blockPeer(room, owner.participant);
+      owner.resumeTicket = '';
+      delete owner.resumeReplay;
+      const cleanup = record.handle?.inspect();
+      if (!cleanup?.permissionRevoked || !cleanup.pendingInvalidated) continue;
+      ownerships.delete(owner.participant.auth.userId);
+      const participants = new Map(room.state.participants);
+      participants.delete(owner.participant.participantId);
+      room.state = { ...room.state, participants };
+      if (room.state.hostParticipantId === owner.participant.participantId)
+        room.state.hostParticipantId = null;
+    }
+  }
   function sweep() {
     const time = clock();
     for (const intent of intents.values()) if (intent.expiresAt <= time) forget(intent);
@@ -441,7 +476,7 @@ export function createMainJoinRegistry(options: {
     for (const owner of ownerships.values()) {
       if (owner.room !== room) continue;
       const participant = owner.participant;
-      participant.connected = owner.binding.isConnected();
+      participant.connected = !owner.reconnect && owner.binding.isConnected();
       if (participant.blocked || !participant.connected) continue;
       participant.currentAccess = { ...participant.currentAccess, canReadContent: false };
       try {
@@ -489,7 +524,8 @@ export function createMainJoinRegistry(options: {
   function policyInput(owner: Ownership, current: Authority): SessionPolicyInput {
     owner.participant.currentAccess = { ...current.access };
     for (const bound of ownerships.values())
-      if (bound.room === owner.room) bound.participant.connected = bound.binding.isConnected();
+      if (bound.room === owner.room)
+        bound.participant.connected = !bound.reconnect && bound.binding.isConnected();
     return {
       request: {
         auth: current.auth,
@@ -526,6 +562,7 @@ export function createMainJoinRegistry(options: {
         result: {
           participantId: owner.participant.participantId,
           callGeneration: owner.participant.callGeneration,
+          resumeTicket: owner.resumeTicket,
           snapshot: snapshot.ack.data!.result,
         },
       },
@@ -749,6 +786,280 @@ export function createMainJoinRegistry(options: {
       endRecords: endRecords.size,
     }),
 
+    // Trusted socket lifecycle callback; never accept a client-supplied socket id.
+    async disconnect(socketId: string) {
+      assertRunning();
+      const owner = [...ownerships.values()].find((value) => value.binding.socketId === socketId);
+      if (!owner) return;
+      if (owner.reconnect) return owner.reconnect.task ?? owner.reconnect.retryCleanup?.();
+      const { participant, room } = owner;
+      const record: NonNullable<Ownership['reconnect']> = {
+        deadline: clock() + limits.reconnectGraceMs,
+        generation: participant.callGeneration,
+      };
+      owner.reconnect = record;
+      participant.connected = false;
+      if (
+        participant.audienceEpoch >= Number.MAX_SAFE_INTEGER ||
+        room.state.policyRevision >= Number.MAX_SAFE_INTEGER
+      ) {
+        room.uncertain = true;
+        fail('SERVER_BUSY');
+      }
+      participant.audienceEpoch++;
+      room.state.policyRevision++;
+      const adapters = options.reconnectCleanup;
+      if (!adapters || typeof adapters.media === 'function') fail('DEPENDENCY_UNAVAILABLE');
+      const request: SessionCleanupRequest = {
+        operationId: randomUUID(),
+        sessionId: room.state.sessionId,
+        epoch: room.state.epoch,
+        transitionToken: randomUUID(),
+        callGeneration: record.generation,
+        target: { type: 'PARTICIPANT', participantId: participant.participantId },
+        reason: 'DISCONNECTED',
+      };
+      // Fence/close media before waiting for a gate; beginSessionTransition consumes
+      // the same result rather than issuing a second native revoke.
+      let mediaResult: ReturnType<typeof adapters.media.revoke>;
+      try {
+        mediaResult = adapters.media.revoke(structuredClone(request));
+      } catch {
+        fail('DEPENDENCY_UNAVAILABLE');
+      }
+      const timing = createSessionTransitionTiming();
+      record.retryCleanup = () => {
+        const task = (async () => {
+          // Retry only acquisition failures, before a cleanup handle exists. A
+          // callback retry reuses this record, request and synchronous media result.
+          for (let attempt = 0; ; attempt++) {
+            try {
+              await options.coordinator.run(
+                { workspaceId: room.state.workspaceId },
+                async (held) => {
+                  if (
+                    closed ||
+                    ownerships.get(participant.auth.userId) !== owner ||
+                    owner.reconnect !== record ||
+                    participant.callGeneration !== record.generation ||
+                    room.state.state !== 'ACTIVE'
+                  )
+                    fail('CONFLICT');
+                  record.handle = beginSessionTransition(
+                    request,
+                    {
+                      assertHeld: () => held.assertHeld({ workspaceId: room.state.workspaceId }),
+                      isCurrent: () =>
+                        !closed &&
+                        ownerships.get(participant.auth.userId) === owner &&
+                        owner.reconnect === record &&
+                        participant.callGeneration === record.generation,
+                    },
+                    { ...adapters, media: { revoke: () => mediaResult } },
+                    {
+                      userId: participant.auth.userId,
+                      timing,
+                    },
+                  );
+                },
+                { waitTimeoutMs: 2000 },
+              );
+              break;
+            } catch (error) {
+              if (
+                record.handle ||
+                !(error instanceof CoordinationError) ||
+                !['TIMEOUT', 'BUSY'].includes(error.code) ||
+                attempt >= 2
+              )
+                throw error;
+            }
+          }
+          await record.handle!.runForeground();
+          return record.handle!.reconcile();
+        })().catch((error: unknown) => {
+          if (!record.handle) delete record.task;
+          throw error;
+        });
+        record.task = task;
+        return task;
+      };
+      return record.retryCleanup();
+    },
+
+    async resume(rawBinding: Binding, raw: unknown) {
+      assertRunning();
+      const input = sessionResumeInputSchema.parse(raw);
+      const auth = identity(rawBinding.auth);
+      const binding = { ...rawBinding, auth };
+      if (!binding.socketId || binding.socketId.length > 256) fail('VALIDATION_ERROR');
+      const owner = ownerships.get(auth.userId);
+      if (!owner || owner.participant.auth.authSessionId !== auth.authSessionId) fail('CONFLICT');
+      const digest = hash(input.resumeTicket);
+      const replay = owner.resumeReplay;
+      const isReplay =
+        !!replay &&
+        replay.digest === digest &&
+        replay.requestId === input.requestId &&
+        replay.socketId === binding.socketId &&
+        replay.generation === input.callGeneration &&
+        !owner.reconnect;
+      const record = owner.reconnect;
+      // Preserve one lost-ACK intent across a subsequent REAL disconnect. It may
+      // never move an ownership that is still connected to another socket.
+      const hasResumeGrant = () =>
+        (record?.generation === input.callGeneration && hash(owner.resumeTicket) === digest) ||
+        (!!record &&
+          !!replay &&
+          owner.resumeReplay === replay &&
+          replay.digest === digest &&
+          replay.requestId === input.requestId &&
+          replay.generation === input.callGeneration &&
+          record.generation === owner.participant.callGeneration);
+      if (!isReplay && (!record || !hasResumeGrant() || clock() >= record.deadline))
+        fail('CONFLICT');
+      if (record) await (record.task ?? record.retryCleanup?.());
+      const destination = {
+        workspaceId: owner.room.state.workspaceId,
+        channelId: owner.room.state.channelId,
+      };
+      return run(auth, destination, async (held) => {
+        if (
+          ownerships.get(auth.userId) !== owner ||
+          !binding.isConnected() ||
+          owner.room.state.sessionId !== input.sessionId ||
+          owner.room.state.epoch !== input.epoch
+        )
+          fail('CONFLICT');
+        usable(owner.room);
+        let current: Authority;
+        try {
+          current = await authority(auth, destination, held);
+        } catch (error) {
+          if (
+            error instanceof MainJoinError &&
+            ['AUTH_REQUIRED', 'FORBIDDEN', 'NOT_FOUND', 'CONFLICT'].includes(error.code)
+          ) {
+            blockPeer(owner.room, owner.participant);
+            owner.resumeTicket = '';
+          }
+          throw error;
+        }
+        const previousAccess = owner.participant.access;
+        if (
+          owner.participant.blocked ||
+          current.access.membershipId !== previousAccess.membershipId ||
+          current.access.membershipIncarnation !== previousAccess.membershipIncarnation ||
+          current.access.membershipRevision < previousAccess.membershipRevision ||
+          current.access.channelRevision < previousAccess.channelRevision ||
+          !currentFence(current, held, previousAccess)
+        ) {
+          blockPeer(owner.room, owner.participant);
+          owner.resumeTicket = '';
+          fail('FORBIDDEN');
+        }
+        usable(owner.room);
+        if (!binding.isConnected()) fail('CONFLICT');
+        const latestReplay = owner.resumeReplay;
+        if (
+          latestReplay &&
+          !owner.reconnect &&
+          latestReplay.digest === digest &&
+          latestReplay.requestId === input.requestId &&
+          latestReplay.socketId === binding.socketId &&
+          latestReplay.generation === input.callGeneration &&
+          owner.binding.socketId === binding.socketId
+        ) {
+          return delivery(owner, input.requestId, held);
+        }
+        if (
+          !record ||
+          owner.reconnect !== record ||
+          clock() >= record.deadline ||
+          owner.participant.callGeneration !== record.generation ||
+          !hasResumeGrant()
+        )
+          fail('CONFLICT');
+        const cleanup = record.handle?.inspect();
+        if (!cleanup?.permissionRevoked || !cleanup.pendingInvalidated)
+          fail('DEPENDENCY_UNAVAILABLE');
+        if (
+          nextGeneration >= Number.MAX_SAFE_INTEGER ||
+          owner.room.state.policyRevision >= Number.MAX_SAFE_INTEGER
+        )
+          fail('SERVER_BUSY');
+        const committed = record.handle!.commitHeld(
+          {
+            assertHeld: () =>
+              held.assertHeld({ userId: auth.userId, workspaceId: destination.workspaceId }),
+            isCurrent: () =>
+              !closed &&
+              owner.reconnect === record &&
+              ownerships.get(auth.userId) === owner &&
+              clock() < record.deadline &&
+              binding.isConnected() &&
+              !owner.participant.blocked &&
+              currentFence(current, held, owner.participant.access),
+          },
+          () => {
+            owner.binding = binding;
+            owner.participant.auth = current.auth;
+            owner.participant.access = { ...current.access };
+            owner.participant.currentAccess = { ...current.access };
+            owner.participant.callGeneration = ++nextGeneration;
+            owner.participant.scope = { type: 'MAIN' };
+            owner.participant.connected = true;
+            owner.resumeReplay = {
+              digest,
+              requestId: input.requestId,
+              socketId: binding.socketId,
+              generation: input.callGeneration,
+            };
+            owner.resumeTicket = randomBytes(32).toString('base64url');
+            delete owner.reconnect;
+            owner.room.state.policyRevision++;
+            return true;
+          },
+        );
+        if (!committed.ok) fail(committed.errorCode);
+        return delivery(owner, input.requestId, held);
+      });
+    },
+
+    async resync(rawBinding: Binding, raw: unknown) {
+      assertRunning();
+      const input = sessionResyncInputSchema.parse(raw);
+      const auth = identity(rawBinding.auth);
+      const owner = ownerships.get(auth.userId);
+      if (!owner) fail('CONFLICT');
+      return run(
+        auth,
+        { workspaceId: owner.room.state.workspaceId, channelId: owner.room.state.channelId },
+        async (held) => {
+          if (
+            ownerships.get(auth.userId) !== owner ||
+            owner.reconnect ||
+            owner.binding.socketId !== rawBinding.socketId ||
+            !rawBinding.isConnected() ||
+            owner.participant.auth.authSessionId !== auth.authSessionId ||
+            owner.room.state.sessionId !== input.sessionId ||
+            owner.room.state.epoch !== input.epoch ||
+            owner.participant.callGeneration !== input.callGeneration
+          )
+            fail('CONFLICT');
+          usable(owner.room);
+          const result = await delivery(owner, input.requestId, held);
+          return {
+            parts: result.parts,
+            ack: sessionResyncAckSchema.parse({
+              requestId: input.requestId,
+              data: { status: 'completed', result: result.ack.data.result.snapshot },
+            }),
+          };
+        },
+      );
+    },
+
     async issue(rawAuth: AuthenticatedContext, rawTarget: Target, raw: unknown) {
       const auth = identity(rawAuth);
       const destination = target(rawTarget);
@@ -966,7 +1277,12 @@ export function createMainJoinRegistry(options: {
             blocked: false,
             scope: { type: 'MAIN' as const },
           };
-          const owner: Ownership = { binding, room, participant };
+          const owner: Ownership = {
+            binding,
+            room,
+            participant,
+            resumeTicket: randomBytes(32).toString('base64url'),
+          };
           // Persist first. No runtime rights are exposed by metadata alone.
           try {
             const saved = await options.repository.join({
@@ -1390,8 +1706,41 @@ export function createMainJoinRegistry(options: {
     async sweepExpired() {
       sweep();
       for (const room of [...rooms.values()]) {
+        // A socket may emit disconnect only once. Recover preparation failures
+        // through the periodic sweep, including after grace, without awaiting
+        // cleanup I/O under a Workspace gate or renewing the resume deadline.
+        for (const owner of [...ownerships.values()]) {
+          const record = owner.reconnect;
+          if (
+            closed ||
+            owner.room !== room ||
+            room.state.state !== 'ACTIVE' ||
+            !record ||
+            record.handle ||
+            record.task ||
+            !record.retryCleanup
+          )
+            continue;
+          try {
+            await record.retryCleanup();
+          } catch (error) {
+            if (error instanceof CoordinationError && ['BUSY', 'TIMEOUT'].includes(error.code))
+              continue;
+            if (
+              error instanceof MainJoinError &&
+              error.code === 'CONFLICT' &&
+              (ownerships.get(owner.participant.auth.userId) !== owner ||
+                owner.reconnect !== record ||
+                owner.participant.callGeneration !== record.generation ||
+                room.state.state !== 'ACTIVE')
+            )
+              continue;
+            throw error;
+          }
+        }
         await options.coordinator.run({ workspaceId: room.state.workspaceId }, async (held) => {
           held.assertHeld({ workspaceId: room.state.workspaceId });
+          expireConnections(room);
           if (!closed && rooms.get(room.state.channelId) === room) await retireOrphan(room);
         });
       }

@@ -122,4 +122,4 @@ Host chỉ vào hỗ trợ ACTIVITY; DISCUSSION hỏi/trả lời qua chat riên
 
 ## Recording MAIN — sau kickoff
 
-Theo [RECORD-01](recording.md), chỉ host hiện hành ghi/dừng, recorder nhận màn hình/camera/âm thanh MAIN; không nhận nhóm riêng hoặc đi theo host vào hỗ trợ. Video theo phiên/kênh, người xem cần quyền hiện hành. Chưa chọn pipeline, quota/retention hoặc chứng minh record chạy thật.
+Theo [RECORD-01](recording.md), chỉ host hiện hành ghi/dừng, recorder nhận màn hình/camera/âm thanh MAIN; không nhận nhóm riêng hoặc đi theo host vào hỗ trợ. Video theo phiên/kênh, người xem cần quyền hiện hành. Hướng pipeline mediasoup PlainTransport → GStreamer, tối đa 3 tiếng/đoạn và READY giữ vô thời hạn đã chốt tại nguồn recording. Quota, quyền xóa và xử lý khi xóa kênh/Workspace còn mở; chưa có bằng chứng pipeline recording tích hợp chạy thật.
