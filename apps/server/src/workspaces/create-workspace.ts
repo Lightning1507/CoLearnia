@@ -28,6 +28,7 @@ export class WorkspaceCreationError extends Error {
       | 'AUTH_REQUIRED'
       | 'DEPENDENCY_UNAVAILABLE'
       | 'CONFLICT'
+      | 'WORKSPACE_REPLAY_UNAVAILABLE'
       | 'FORBIDDEN'
       | 'SERVER_BUSY',
     public readonly unconfirmed = false,
@@ -156,6 +157,7 @@ export function createWorkspaceCreator(options: {
         let record = records.get(key);
         if (record && record.hash !== hash) throw new WorkspaceCreationError('CONFLICT');
         if (!record) {
+          if (request.replayOnly) throw new WorkspaceCreationError('WORKSPACE_REPLAY_UNAVAILABLE');
           if (records.size >= limits.maxEntries) throw new WorkspaceCreationError('SERVER_BUSY');
           record = {
             hash,

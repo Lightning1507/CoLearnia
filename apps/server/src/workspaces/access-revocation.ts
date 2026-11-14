@@ -46,6 +46,8 @@ const revocationAccessSchema = z.union([
 ]);
 export type RevocationAccess = z.infer<typeof revocationAccessSchema>;
 export interface AccessRevocationBarrier {
+  // Final deny snapshot for rows already checked under each Workspace gate.
+  workspaceDeletionDenies(userId: string, held: CoordinationContext): ReadonlySet<string>;
   // Freshness only, not an ACL grant. Called under the same shared gate as the consumer.
   isCurrent(
     auth: AuthenticatedContext,
@@ -174,6 +176,15 @@ export function createAccessRevocationCoordinator(options: {
     }
   }
   const barrier: AccessRevocationBarrier = {
+    workspaceDeletionDenies(userId, held) {
+      held.assertHeld({ userId: objectId(userId) });
+      const denied = new Set<string>();
+      for (const record of records.values()) {
+        if (record.installed && record.event.kind === 'WORKSPACE_DELETED')
+          denied.add(record.event.workspaceId);
+      }
+      return denied;
+    },
     isCurrent(auth, access, held) {
       const principal = revocationPrincipalSchema.safeParse(auth);
       const parsedAccess =

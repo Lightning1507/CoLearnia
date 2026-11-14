@@ -1,0 +1,71 @@
+.workspace-picker {
+  min-height: 100dvh;
+  background: var(--cl-color-canvas);
+  color: var(--cl-color-text-primary);
+}
+.workspace-picker-header,
+.workspace-picker-content {
+  box-sizing: border-box;
+  width: min(100%, 70rem);
+  margin-inline: auto;
+  padding: var(--cl-space-6);
+}
+.workspace-picker-header,
+.workspace-picker-heading,
+.workspace-picker-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--cl-space-4);
+}
+.workspace-picker h1 {
+  font-size: clamp(1.5rem, 4vw, 2.25rem);
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+.workspace-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
+  gap: var(--cl-space-4);
+  margin-block: var(--cl-space-6);
+  list-style: none;
+  padding: 0;
+}
+.workspace-picker-card,
+.workspace-picker-form,
+.workspace-picker-empty {
+  background: var(--cl-color-surface);
+  border: 1px solid var(--cl-color-border-subtle);
+  border-radius: var(--cl-radius-control);
+  padding: var(--cl-space-6);
+}
+.workspace-picker-card {
+  display: grid;
+  gap: var(--cl-space-2);
+  overflow-wrap: anywhere;
+  text-decoration: none;
+  min-height: 100%;
+}
+.workspace-picker-card:hover {
+  border-color: var(--cl-color-border-control);
+}
+.workspace-picker-card span {
+  color: var(--cl-color-text-secondary);
+}
+.workspace-picker-form,
+.workspace-picker-empty {
+  margin-block: var(--cl-space-4);
+}
+.workspace-picker-empty {
+  display: grid;
+  gap: var(--cl-space-4);
+  justify-items: start;
+}
+.workspace-picker-actions {
+  justify-content: flex-start;
+}
+.workspace-picker :focus-visible {
+  outline: 2px solid var(--cl-color-action-primary-bg);
+  outline-offset: 3px;
+}
