@@ -329,6 +329,39 @@ export function beginSessionTransition(
 
   return {
     inspect,
+    // Explicit retry keeps the original request and any still-running I/O. The caller
+    // must hold the original ownership's gate before retrying synchronous media cleanup.
+    retryMediaHeld(held: HeldTransitionContext) {
+      held.assertHeld();
+      if (committed || retired || !held.isCurrent(request)) return;
+      if (
+        typeof cleanup.media !== 'function' &&
+        !(states.media.outcome?.permissionRevoked && states.media.outcome.pendingInvalidated)
+      ) {
+        try {
+          states.media.outcome = readOutcome(cleanup.media.revoke(structuredClone(request)));
+        } catch {
+          states.media.outcome = failure();
+        }
+      }
+    },
+    async retryCleanup() {
+      if (committed || retired) return inspect();
+      const until = currentTime() + sessionControlBudget.cleanupAttemptTimeoutMs;
+      await Promise.all(
+        domains.map(async (name) => {
+          const state = states[name];
+          if (state.outcome?.permissionRevoked && state.outcome.pendingInvalidated) return;
+          if (typeof cleanup[name] !== 'function') return;
+          // An explicit retry may recover a previously unavailable provider. Automatic
+          // foreground retries still respect retryable:false. Never duplicate pending I/O.
+          if (!state.inFlight) state.outcome = null;
+          const running = startAdapter(name);
+          if (running) await waitFor(running, Math.max(1, until - currentTime()));
+        }),
+      );
+      return inspect();
+    },
     // Registry/policy checks all live barriers before grant/read/fanout.
     blocks(audience: TransitionAudience): boolean {
       if (

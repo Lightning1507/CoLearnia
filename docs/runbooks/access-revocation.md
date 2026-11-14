@@ -49,14 +49,18 @@ const access = createWorkspaceAccessService(
 ```
 
 Biến trong ví dụ là các port thật do bootstrap cung cấp; không thay bằng adapter luôn
-trả thành công. M4 cấu hình `revokedAuthSessions: event => revocations.revokedAuthSessions(event)`.
-Callback trả bản sao cohort đã chụp; không query lại mọi phiên của user.
-Đây là dependency composition; khởi tạo registry trước khi nhận request.
+trả thành công. Với MAIN, truyền `accessRevocations: revocations` vào
+`createMainJoinRegistry` cùng coordinator đã dùng để tạo ledger. Registry kiểm cùng
+instance coordinator ngay khi khởi tạo và lấy cohort trực tiếp từ
+`revocations.revokedAuthSessions(event)`. Callback trả bản sao cohort đã chụp;
+không query lại mọi phiên của user. Khởi tạo registry trước khi nhận request.
 
-Trong `isAuthorityCurrent` của M4, dưới Workspace gate đang giữ, gọi
-`revocations.barrier.isCurrent(authority.auth, authority.access, held)` cùng với các kiểm
-revision/generation hiện có. Hàm này chỉ kiểm freshness, không cấp ACL và không lấy
-User gate lồng. M2 cũng phải kiểm lại deny cho các principal liên quan trước
+M4 kiểm `revocations.barrier.isCurrent(authority.auth, authority.access, held)` trong
+`currentFence`, trước callback `isAuthorityCurrent`, dưới Workspace gate đang giữ.
+Nếu có stamp đã commit thì kiểm cả stamp đó để không bỏ qua khoảng đã bị thu quyền.
+Các kiểm identity/expiry/revision/generation/ACL vẫn giữ nguyên. Barrier chỉ kiểm
+freshness, không cấp ACL và không lấy User gate lồng.
+M2 cũng phải kiểm lại deny cho các principal liên quan trước
 đọc/gửi/fanout/download, kể cả peer của DM; watermark không thay ACL.
 HTTP/socket đọc phiên phải kiểm auth barrier dưới User gate trước khi sử dụng context.
 Provider Workspace đã nối cả auth và Workspace/channel barrier. SCRUM-32 khởi tạo một
@@ -76,7 +80,15 @@ Bootstrap runtime sau đó gọi `accessRevocations.bindCleanupAdapters({ messag
 với cả hai port thật trên cùng singleton, trước khi nhận consumer tương ứng. Bind một lần;
 không thay adapter khi đã bind. Nếu truyền qua constructor thì cũng phải có đủ cả hai.
 Retry operation ID cũ tiếp tục dùng cohort/target/watermark cũ; bind không tự chạy lại hoặc
-thay ledger, không tự giải phóng deny. M4 nối cohort callback và freshness theo mục trên.
+thay ledger, không tự giải phóng deny.
+
+`lib/shared-main-registry.ts` cung cấp `createApplicationMainRegistry(options, messaging)`:
+dùng singleton `accessRevocations` và `operationCoordinator` của ứng dụng, yêu cầu đủ
+cleanup media/messaging/board và bind cặp M2/LIVE đúng một lần. Bind lại bị từ chối;
+registry vừa tạo bị đóng, registry đã bind được giữ nguyên. Hàm chỉ được gọi trong
+bootstrap có authority/repository/cleanup thật. `main.ts` hiện chưa truyền
+`mountRegistry` vào `startLiveRuntime`; việc bổ sung factory không đồng nghĩa toàn bộ
+HTTP/socket/LIVE đã được mount hay đã nghiệm thu tích hợp.
 
 ## Callback persistence của service nghiệp vụ
 
@@ -114,9 +126,15 @@ Barrier không bảo vệ writer ghi DB ngoài giao thức.
   thêm một lần gọi cho đến khi promise cũ kết thúc. Kết quả trễ không tự commit DB.
 - Adapter phải idempotent theo operation + target/watermark. M2 logout-all dùng từng
   AUTH_SESSION, không target USER rộng. Watermark retry không đóng tài nguyên đăng ký sau.
-  Port M4 hiện replay kết quả cùng operation; nếu M4 đã lưu kết quả incomplete thì retry
-  M1 chưa tự sửa được cleanup đó. Cần M4 có cơ chế tiếp tục cleanup cùng operation khi
-  tích hợp thật; không đổi operationId để né fence.
+  M4 giữ cohort, ownership/epoch/generation, transition token và các handle cleanup
+  từ lần đầu. Retry tiếp tục phần chưa hoàn tất; phần đã xác nhận không gọi lại.
+  Synchronous media cleanup được retry dưới Workspace gate; I/O M2/M5 chạy ngoài gate.
+  Promise adapter quá hạn vẫn được theo dõi, không mở I/O trùng khi retry.
+  Lỗi không tự retry trong foreground (`retryable:false`) vẫn có thể được thử lại khi
+  caller chủ động retry cùng operation sau khi provider đã khắc phục.
+  Operation đang chạy dùng chung promise, hoàn tất thì replay; cùng ID khác payload
+  trả CONFLICT. Record incomplete không hết hạn/không bị evict để né deny. Không quét
+  lại cohort/đổi target sang login, incarnation hoặc generation mới để làm retry thành công.
 - Mặc định: tối đa 16 orchestration đồng thời, 256 adapter task chưa kết thúc,
   128 session/cohort, 1024 record/process;
   constructor cho phép cấu hình số nguyên dương. Hết admission trả SERVER_BUSY trước
@@ -138,3 +156,4 @@ kết hợp 25/50; adapter thật, business CRUD và recovery thuộc phần tí
 - Mongo provider + barrier (DB test ngẫu nhiên riêng):
   `COLEARNIA_DB_TEST_PORT=27228 pnpm exec vitest run --config vitest.database.config.ts apps/server/test/workspace-access.integration.ts`.
 - [Kết quả SCRUM-28](../test-evidence/2026-11-13-scrum-28-access-revocation.md).
+- [Tích hợp deny/cohort và retry của M4](../test-evidence/2026-11-14-m4-access-revocation.md).
