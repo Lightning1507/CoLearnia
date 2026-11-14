@@ -138,4 +138,4 @@ Policy Workspace/kênh dùng chung và resolver MongoDB: [SCRUM-27](../runbooks/
 
 Điều phối thu quyền SCRUM-28: [deny barrier, adapter và persistence callback](../runbooks/access-revocation.md); barrier dùng chung đã được main khởi tạo cho tạo Workspace; adapter cleanup runtime thật chưa bind, yêu cầu revoke giữ pending và không commit quyền.
 
-Tạo Workspace/general: [service, transaction M1/M2 và giới hạn runtime SCRUM-32](../runbooks/workspace-creation.md).
+Tạo Workspace/general: [service, transaction M1/M2 và chống yêu cầu lặp SCRUM-32/33](../runbooks/workspace-creation.md).
