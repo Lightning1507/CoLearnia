@@ -16,6 +16,8 @@
   --cl-color-live-control-bg: #2d3533;
   --cl-color-live-control-text: #e4e9e7;
   --cl-color-live-control-hover-bg: #3b4542;
+  --cl-color-live-control-active-bg: #dff4ed;
+  --cl-color-live-control-active-text: #126a53;
   --cl-color-live-control-disabled-bg: #242a28;
   --cl-color-live-control-disabled-text: #717c78;
   --cl-color-dialog-border: #d6dcda;
@@ -64,6 +66,10 @@ button:focus-visible {
 }
 .live-toolbar-control:hover {
   background: var(--cl-color-live-control-hover-bg);
+}
+.live-toolbar-control[data-state='active'] {
+  background: var(--cl-color-live-control-active-bg);
+  color: var(--cl-color-live-control-active-text);
 }
 .live-toolbar-control[aria-disabled='true'] {
   background: var(--cl-color-live-control-disabled-bg);

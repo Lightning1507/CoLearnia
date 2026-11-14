@@ -76,7 +76,7 @@ export function attachScreenShareSocket(
               });
             }
             // An unrelated revision change must not block cleanup of the exact reservation.
-            return completed({ released: share.leases.cancelHeld(share.held, payload) });
+            return completed({ released: share.leases.stopHeld(share.held, payload) });
           },
         )
         .then(ack, (cause) =>

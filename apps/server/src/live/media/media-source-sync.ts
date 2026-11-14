@@ -231,20 +231,21 @@ export function createMediaSourceSync({
       const readProjection = (
         context: LiveContext,
         policy: Parameters<typeof media.visibleSources>[0],
+        share?: Parameters<typeof media.visibleSources>[1],
       ): Payload => ({
-        sources: media.visibleSources(policy),
+        sources: media.visibleSources(policy, share),
         ownTransports: transports.readOwnTransports(socket.id, context),
-        ...media.readOwnSources(context, policy),
+        ...media.readOwnSources(context, policy, share),
       });
 
       function read(
         input: Pick<MediaSourcesResyncInput, 'sessionId' | 'epoch' | 'callGeneration'>,
       ) {
-        return withContext(socket.id, input, (resolved, _router, policy) => {
+        return withContext(socket.id, input, (resolved, _router, policy, share) => {
           if (!resolved.ok) throw new MainJoinError(resolved.errorCode);
           if (!policy || !socket.connected) throw new MainJoinError('DEPENDENCY_UNAVAILABLE');
           const { context } = resolved;
-          const projection = structuredClone(readProjection(context, policy));
+          const projection = structuredClone(readProjection(context, policy, share));
           if (!stream || !sameAudience(stream.context, context)) {
             stream = {
               context,
@@ -312,7 +313,7 @@ export function createMediaSourceSync({
             const parts = pack(header, projection);
             if (!parts) return deny('SERVER_BUSY');
 
-            await withContext(socket.id, input, (resolved, _router, policy) => {
+            await withContext(socket.id, input, (resolved, _router, policy, share) => {
               if (!resolved.ok) throw new MainJoinError(resolved.errorCode);
               if (!policy || !socket.connected || performance.now() >= deadline)
                 throw new MainJoinError('DEPENDENCY_UNAVAILABLE');
@@ -324,7 +325,7 @@ export function createMediaSourceSync({
                 throw new MainJoinError('CONFLICT');
               if (
                 snapshotDirty ||
-                !isDeepStrictEqual(projection, readProjection(resolved.context, policy))
+                !isDeepStrictEqual(projection, readProjection(resolved.context, policy, share))
               )
                 throw new MainJoinError('SERVER_BUSY');
 
@@ -371,7 +372,7 @@ export function createMediaSourceSync({
           }
           const previous = stream;
           if (!previous || previous.requiresSnapshot) return false;
-          return withContext(socket.id, previous.context, (resolved, _router, policy) => {
+          return withContext(socket.id, previous.context, (resolved, _router, policy, share) => {
             if (snapshotInFlight) {
               snapshotDirty = true;
               return false;
@@ -387,7 +388,7 @@ export function createMediaSourceSync({
               return false;
             }
             const { context } = resolved;
-            const projection = readProjection(context, policy);
+            const projection = readProjection(context, policy, share);
             const result = mediaSourceEventSchemas[name].safeParse({
               sessionId: context.sessionId,
               epoch: context.epoch,

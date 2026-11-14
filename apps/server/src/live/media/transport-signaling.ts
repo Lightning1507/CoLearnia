@@ -24,6 +24,8 @@ import { sessionCleanupAdmission } from '../session-manager/cleanup-admission.js
 import type { CleanupAdmission } from '../session-manager/cleanup-admission.js';
 import { createPendingMediaOperations, matchesMediaCleanup } from './pending-media-operations.js';
 
+import type { HeldShareLease } from '../session-manager/share-lease.js';
+
 type Command =
   | { kind: 'create'; input: MediaTransportCreateInput }
   | { kind: 'connect'; input: MediaTransportConnectInput };
@@ -33,7 +35,12 @@ type Authority = <T>(
   socketId: string,
   input: ContextInput,
   // Called synchronously under the M4 gate with current socket binding and access.
-  use: (resolved: LiveContextResult, router?: MediaTypes.Router, policy?: SessionPolicyInput) => T,
+  use: (
+    resolved: LiveContextResult,
+    router?: MediaTypes.Router,
+    policy?: SessionPolicyInput,
+    share?: HeldShareLease,
+  ) => T,
 ) => Promise<T>;
 type Direction = MediaTransportCreateInput['payload']['direction'];
 type Transport = Pick<
@@ -376,9 +383,10 @@ export function createTransportSignaling({
         router: MediaTypes.Router,
         policy: SessionPolicyInput,
         transport: Pick<MediaTypes.WebRtcTransport, 'id' | 'produce' | 'consume'>,
+        share?: HeldShareLease,
       ) => T,
     ): Promise<T | Failure> {
-      return withContext(socketId, input, (resolved, router, policy) => {
+      return withContext(socketId, input, (resolved, router, policy, share) => {
         const access = authorize(socketId, input, resolved);
         if ('errorCode' in access) return access;
         const slot = transports.get(transportId);
@@ -402,11 +410,17 @@ export function createTransportSignaling({
         ) {
           return reject('DEPENDENCY_UNAVAILABLE');
         }
-        return use(access.context, router, policy, {
-          id: transport.id,
-          produce: transport.produce.bind(transport),
-          consume: transport.consume.bind(transport),
-        });
+        return use(
+          access.context,
+          router,
+          policy,
+          {
+            id: transport.id,
+            produce: transport.produce.bind(transport),
+            consume: transport.consume.bind(transport),
+          },
+          share,
+        );
       });
     },
     attach(socket: SocketPort) {
