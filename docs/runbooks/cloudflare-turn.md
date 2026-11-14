@@ -69,6 +69,26 @@ Credential TURN chỉ cho phép dùng relay, không cấp quyền vào cuộc h�
 
 ## Kiểm trên trình duyệt
 
+### Chẩn đoán khi baseline trả mã chưa rõ
+
+Nếu cần đo tiếp mà baseline mật khẩu sai trả 400/quota/mã chưa rõ, dùng:
+
+```bash
+python3 -u scripts/verify-cloudflare-turn.py --diagnostic --ttl 60 --delay 120
+```
+
+Chế độ này chạy khoảng 3 phút, ghi baseline-warning rồi tiếp tục hai mốc sau TTL và credential mới đối chứng. Điều kiện pass không thay đổi: baseline chưa được xác nhận là từ chối xác thực thì không thể expiryVerified=true. Credential cũ còn dùng được trả failed/exit 1; bị từ chối nhưng bằng chứng chưa đủ trả inconclusive/exit 2. Không kết hợp --diagnostic với --auth-only. Mặc định không thêm flag vẫn giữ hành vi dừng an toàn hiện có.
+
+Runner [diagnose-cloudflare-turn.mjs](../../scripts/diagnose-cloudflare-turn.mjs) đối chiếu Python với WebRTC Chrome/Edge trên Windows bằng profile riêng:
+
+```powershell
+node --env-file=.env.turn.local scripts/diagnose-cloudflare-turn.mjs --ttl 60 --delay 120
+```
+
+Runner kiểm mật khẩu bị sửa cùng chiều dài, cặp username/credential không khớp và relay trước/sau TTL qua TLS 443. Chỉ ghi boolean relay, mã lỗi và tuổi credential; bỏ khóa dài hạn khỏi môi trường tiến trình con. Exit 0 chỉ là thu thập xong quan sát, luôn expiryVerified=false. Xem [kết quả kiểm ngắn SCRUM-92](../test-evidence/2026-11-14-scrum-92-turn-expiry.md); phần hết hạn vẫn chưa đạt.
+
+### Cuộc gọi tích hợp
+
 Buộc `iceTransportPolicy: 'relay'` ở cả hai đầu. Giới hạn một URL TURN mỗi lượt để phân biệt TLS 443 với UDP 3478. Dùng `getStats()` lấy transport có `selectedCandidatePairId`, tra hai candidate từ cặp đó và ghi:
 
 - `candidateType` của hai đầu, `relayProtocol`, trạng thái ICE/kết nối.
