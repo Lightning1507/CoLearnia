@@ -8,6 +8,8 @@ import { authCookie } from '../auth/session-credentials.js';
 import type { AppConfig } from '../config/env.js';
 import { logger } from '../lib/logger.js';
 
+import type { createSessionConnections } from './session-connections.js';
+
 type SocketData = { auth: AuthenticatedContext };
 type ConnectErrorCode = 'AUTH_REQUIRED' | 'CSRF_INVALID' | 'DEPENDENCY_UNAVAILABLE';
 
@@ -19,6 +21,8 @@ export function createRealtime(
   httpServer: HttpServer,
   config: AppConfig,
   readSession: ReturnType<typeof createSessionReader>,
+  connections?: ReturnType<typeof createSessionConnections>,
+  checkCurrent?: (auth: AuthenticatedContext) => boolean,
 ) {
   const io = new Server<never, never, never, SocketData>(httpServer, {
     transports: ['websocket'],
@@ -60,5 +64,16 @@ export function createRealtime(
     next();
   });
 
+  if (connections) {
+    io.on('connection', (socket) => {
+      const auth = socket.data.auth;
+      if (Date.parse(auth.expiresAt) <= Date.now() || checkCurrent?.(auth) === false) {
+        socket.disconnect(true);
+        return;
+      }
+      const untrack = connections.track(auth, () => socket.disconnect(true));
+      socket.once('disconnect', untrack);
+    });
+  }
   return io;
 }

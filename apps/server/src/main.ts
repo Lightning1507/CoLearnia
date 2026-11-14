@@ -19,6 +19,8 @@ import {
 } from './workspaces/create-workspace.js';
 import { createWorkspaceAccessService } from './workspaces/access-service.js';
 import { createWorkspaceRouter } from './workspaces/workspace-routes.js';
+import { createSessionRevocation } from './auth/session-revocation.js';
+import { createSessionConnections } from './realtime/session-connections.js';
 import { createRealtime } from './realtime/server.js';
 import {
   createColdSessionArtifactGuard,
@@ -57,7 +59,21 @@ const status = (): SystemStatus => ({
 });
 
 const canUseAuthIndexes = () => authIndexesReady && !stopping;
-const readSession = createSessionReader(database, canUseAuthIndexes);
+const readPersistedSession = createSessionReader(database, canUseAuthIndexes);
+const readSession: typeof readPersistedSession = async (token) => {
+  const session = await readPersistedSession(token);
+  return session && !accessRevocations.isSessionDenied(session.context) ? session : null;
+};
+const connections = createSessionConnections(
+  (auth) => sessionRevocation.revoke(auth),
+  () => logger.warn('Expired session cleanup has not been confirmed'),
+);
+const sessionRevocation = createSessionRevocation(
+  database,
+  canUseAuthIndexes,
+  accessRevocations,
+  connections.close,
+);
 const httpAuth = config.SESSION_SECRET
   ? createHttpAuth(config.APP_ORIGIN, config.SESSION_SECRET, readSession)
   : undefined;
@@ -66,6 +82,7 @@ const authRouter = httpAuth
       httpAuth,
       createRegistration(database, canUseAuthIndexes, config.AUTH_TTL_SECONDS),
       createLogin(database, canUseAuthIndexes, config.AUTH_TTL_SECONDS, operationCoordinator),
+      sessionRevocation.logout,
     )
   : undefined;
 const workspaceRouter = httpAuth
@@ -87,7 +104,13 @@ const workspaceRouter = httpAuth
     )
   : undefined;
 const httpServer = createServer(createApp(config, status, authRouter, workspaceRouter));
-const io = createRealtime(httpServer, config, readSession);
+const io = createRealtime(
+  httpServer,
+  config,
+  readSession,
+  connections,
+  (auth) => !accessRevocations.isSessionDenied(auth),
+);
 
 async function start() {
   // Health endpoints respond during cold bootstrap; LIVE stays gated by readiness.
@@ -164,6 +187,7 @@ async function shutdown() {
   if (stopping) return;
   stopping = true;
   const deadline = setTimeout(() => process.exit(1), 10_000).unref();
+  connections.stop();
   media?.close();
   await new Promise<void>((resolve) => io.close(() => resolve()));
   await database.close();
