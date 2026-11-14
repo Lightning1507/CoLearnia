@@ -40,7 +40,11 @@ export function createAuthRouter(
   ) {
     // Set-Cookie Expires has second precision.
     if (Math.floor(expiresAt.getTime() / 1000) <= Math.floor(Date.now() / 1000)) {
-      fail(res, 'DEPENDENCY_UNAVAILABLE', expiredMessage);
+      fail(
+        res,
+        status === 201 ? 'ACCOUNT_CREATED_LOGIN_REQUIRED' : 'DEPENDENCY_UNAVAILABLE',
+        expiredMessage,
+      );
       return;
     }
     const freshCsrf = httpAuth.issueCsrf(token);

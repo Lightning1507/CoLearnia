@@ -1,4 +1,5 @@
 @import 'tailwindcss';
+@import './tokens.css';
 
 :root {
   --workspace-sidebar-bg: #f1f3f2;

@@ -8,7 +8,7 @@
 - `src/index.css` khoảng 57 KB chứa Tailwind theme và CSS theo màn, nhiều HEX/spacing/font trực tiếp, có selector trùng; body min-width 1120 px và overflow hidden. Có metadata/label 9–10 px cần review khả năng đọc.
 - Đã có `Button`, `IconButton`, `Avatar`, `Dialog`, `Composer`, `MessageRow`; cần đánh giá hành vi/accessibility trước đưa lên shared, không mặc định primitive hiện có đã đạt chuẩn.
 - Dữ liệu mẫu ở `mockData.ts`, role/host/connection/scenario là state demo. Package export là app độc lập và Vite config có công cụ Figma; manifest dùng khoảng version khác app chính.
-- App chính hiện có shell trong `apps/web/src/app/App.tsx`, `styles/global.css`, HTTP system adapter và dependencies theo workspace. Source prototype không chứng minh auth/media/storage sản phẩm đã triển khai.
+- App chính đã có auth ở `apps/web/src/features/auth` (SCRUM-25), token tối thiểu và điểm vào xác thực tại `apps/web/src/app/App.tsx`; Workspace vẫn là fixture. Xem [bằng chứng auth và phần chưa tích hợp](../../test-evidence/2026-11-12-scrum-25-auth-ui.md). Source prototype không chứng minh media/storage sản phẩm đã triển khai.
 
 ## Mapping trách nhiệm
 
