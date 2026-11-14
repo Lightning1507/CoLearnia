@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { requestIdSchema, sameSessionScope } from '@colearnia/contracts';
+import { requestIdSchema, sameSessionScope, screenPickerLeaseMs } from '@colearnia/contracts';
 import type { LiveContext, MediaSource, SessionCleanupRequest } from '@colearnia/contracts';
 import {
   canPublishMedia,
@@ -9,7 +9,7 @@ import {
 import type { SessionPolicyInput } from '../policy/session-policy.js';
 import type { HeldTransitionContext } from './session-transition.js';
 
-export const sharePickerLeaseMs = 30_000;
+export const sharePickerLeaseMs = screenPickerLeaseMs;
 
 // All methods run synchronously inside the same session gate as policy transitions.
 export type HeldShareContext = SessionPolicyInput & { assertHeld(): void };
@@ -65,7 +65,7 @@ export function createShareLeaseRegistry(sessionId: string, epoch: string) {
     );
   }
 
-  function assertSession(held: HeldShareContext) {
+  function assertSession(held: Pick<HeldShareContext, 'assertHeld' | 'session' | 'nowMs'>) {
     held.assertHeld();
     if (held.session.sessionId !== sessionId || held.session.epoch !== epoch) {
       throw new Error('Share registry belongs to another session incarnation');
@@ -207,6 +207,23 @@ export function createShareLeaseRegistry(sessionId: string, epoch: string) {
       if (!result.ok || result.value.state !== 'RESERVED') return false;
       slots.delete(scopeKey(result.value.owner));
       return true;
+    },
+
+    // Trusted lifecycle callers capture the old generation before changing ownership.
+    cancelPendingFor(
+      held: Pick<HeldShareContext, 'assertHeld' | 'session' | 'nowMs'>,
+      participantId: string,
+      callGeneration: number,
+    ) {
+      assertSession(held);
+      for (const [key, slot] of slots) {
+        if (
+          slot.state === 'RESERVED' &&
+          slot.owner.participantId === participantId &&
+          slot.owner.callGeneration === callGeneration
+        )
+          slots.delete(key);
+      }
     },
 
     // Server-owned Producer close/track-ended callbacks must retain their original lease ID.
