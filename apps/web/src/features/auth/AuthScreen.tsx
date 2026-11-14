@@ -17,9 +17,19 @@ type Props = {
   onSuccess: (data: AuthenticatedData) => void;
   onCheckSession: () => void;
   onFinish: () => void;
+  sessionCheckFailed?: boolean;
+  sessionChecking?: boolean;
 };
 
-export function AuthScreen({ mode, onStart, onSuccess, onCheckSession, onFinish }: Props) {
+export function AuthScreen({
+  mode,
+  onStart,
+  onSuccess,
+  onCheckSession,
+  onFinish,
+  sessionCheckFailed,
+  sessionChecking,
+}: Props) {
   const [fields, setFields] = useState({
     email: '',
     password: '',
@@ -234,6 +244,19 @@ export function AuthScreen({ mode, onStart, onSuccess, onCheckSession, onFinish 
             ),
           )}
         </nav>
+        {sessionCheckFailed && (
+          <div className="auth-error" role="alert">
+            Chưa kiểm tra lại được phiên đăng nhập. Thông tin bạn đang nhập vẫn được giữ.
+            <button
+              className="auth-secondary"
+              type="button"
+              disabled={sessionChecking || pending}
+              onClick={onCheckSession}
+            >
+              Thử kiểm tra phiên lại
+            </button>
+          </div>
+        )}
         <form ref={form} onSubmit={(event) => void submit(event)} noValidate aria-busy={pending}>
           {mode === 'register' &&
             field(
@@ -260,13 +283,20 @@ export function AuthScreen({ mode, onStart, onSuccess, onCheckSession, onFinish 
             role={failure ? 'alert' : undefined}
           >
             {failure?.message}
+            {failure?.code === 'ACCOUNT_CREATED_LOGIN_REQUIRED' && (
+              <Link to="/login">Đăng nhập ngay</Link>
+            )}
             {failure?.uncertain && (
               <button className="auth-secondary" type="button" onClick={onCheckSession}>
                 Kiểm tra phiên lại
               </button>
             )}
           </div>
-          <button className="auth-primary" type="submit" disabled={pending || wait > 0}>
+          <button
+            className="auth-primary"
+            type="submit"
+            disabled={pending || wait > 0 || failure?.code === 'ACCOUNT_CREATED_LOGIN_REQUIRED'}
+          >
             {pending
               ? 'Đang xử lý…'
               : wait > 0

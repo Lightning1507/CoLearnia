@@ -40,7 +40,7 @@ export function AuthBoundary() {
         Đang kiểm tra phiên đăng nhập…
       </main>
     );
-  if (session.isError)
+  if (session.isError && data === undefined)
     return (
       <main className="auth-state">
         <h1>Chưa kiểm tra được phiên đăng nhập</h1>
@@ -83,6 +83,8 @@ export function AuthBoundary() {
       onSuccess={success}
       onFinish={finish}
       onCheckSession={() => void session.refetch()}
+      sessionCheckFailed={session.isRefetchError}
+      sessionChecking={session.isFetching}
     />
   );
 }

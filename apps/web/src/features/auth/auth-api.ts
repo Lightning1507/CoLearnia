@@ -60,6 +60,8 @@ export function createAuthApi(base: string, transport: typeof fetch = fetch) {
         VALIDATION_ERROR: 'Kiểm tra lại thông tin đã nhập.',
         CSRF_INVALID: 'Không xác nhận được phiên gửi form. Vui lòng thử lại.',
         RATE_LIMITED: 'Bạn đã thử quá nhiều lần. Vui lòng chờ rồi thử lại.',
+        ACCOUNT_CREATED_LOGIN_REQUIRED:
+          'Tài khoản đã được tạo nhưng phiên đăng nhập đã hết hạn. Vui lòng đăng nhập.',
         DEPENDENCY_UNAVAILABLE: 'Dịch vụ tạm thời không khả dụng. Vui lòng thử lại sau.',
       };
       throw new AuthApiError(
@@ -67,7 +69,12 @@ export function createAuthApi(base: string, transport: typeof fetch = fetch) {
         messages[code] ?? 'Không xử lý được yêu cầu. Vui lòng thử lại.',
         fields,
         Number.isFinite(retryAt) ? retryAt : 0,
-        response.status >= 500,
+        response.status >= 500 &&
+          !(
+            path === '/auth/register' &&
+            response.status === 503 &&
+            code === 'ACCOUNT_CREATED_LOGIN_REQUIRED'
+          ),
       );
     }
     return json;

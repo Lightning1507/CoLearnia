@@ -56,3 +56,37 @@ Dùng backend auth hiện có theo [local runbook](../runbooks/local-development
 Màn sau đăng nhập chưa có danh sách/tạo Workspace (SCRUM-34); pending invite sẽ ghép cùng luồng lời mời ở task tương ứng, chưa có autojoin. Logout/thu socket/media thuộc task vòng đời phiên, không được nghiệm thu từ form auth. Chưa kiểm staging, screen reader, Safari/Firefox, thiết bị mobile thật hoặc hai tab đồng thời; ca CSRF đổi proof được kiểm bằng transport test, không thay bằng chứng multi-tab thật. Reflow 640 CSS px không là bằng chứng đã thao tác zoom browser 200%.
 
 Build còn cảnh báo chunk >500 kB; không đổi ngưỡng cảnh báo. Chưa commit/push từ lượt triển khai này.
+
+## Cập nhật review PR #93 — 14/11/2026
+
+Hai comment của WANNAREST được xử lý trên nhánh `feat/SCRUM-25-auth-ui`:
+
+- Đăng ký đã commit nhưng phiên hết hạn trước response: server trả 503 với code có cấu trúc
+  `ACCOUNT_CREATED_LOGIN_REQUIRED`. Frontend hiển thị đã tạo tài khoản, có link Đăng nhập ngay
+  và khóa nút đăng ký; không đổi thành OUTCOME_UNKNOWN, không tự gửi lại mutation.
+  Lỗi 503/network chưa rõ vẫn kiểm `/auth/me` theo quy tắc cũ.
+- Sau khi đã xác định anonymous, lỗi refetch giữ AuthScreen mounted và hiển thị cảnh báo/nút
+  kiểm lại ngay trên form. Chỉ lỗi kiểm phiên lần đầu chưa có dữ liệu mới dùng màn lỗi toàn trang.
+
+Kiểm thực chạy:
+
+```sh
+pnpm exec vitest run apps/web/src/features/auth/AuthBoundary.test.ts apps/web/src/features/auth/auth-api.test.ts
+COLEARNIA_DB_TEST_PORT=27236 pnpm exec vitest run --config vitest.database.config.ts apps/server/test/registration.integration.ts
+pnpm check
+```
+
+- Hai file frontend: 21 test pass; kiểm mã register đã xác nhận không gọi read-back hoặc POST lại,
+  và state TanStack Query qua anonymous → refetch error → anonymous.
+- Backend: 28 integration test pass, gồm đăng ký thật commit rồi hết phiên trước response,
+  trả code mới, không Set-Cookie và User vẫn tồn tại. MongoDB 8.0.16 rs0 trong container
+  `colearnia-pr93-review`, cổng 27236, DB UUID riêng do suite tạo/dọn; không dùng DB dev.
+- `pnpm check`: pass, 48 file / 766 unit test, harness, format, lint, typecheck và build.
+  Web build vẫn có cảnh báo chunk >500 kB đã có trước thay đổi.
+- Chrome kiểm component thật trên Vite 5186 với HTTP fixture (không đăng ký tài khoản thật):
+  `/auth/me` 401 → điền form → chuyển tab/quay lại để nhận 503 → bấm kiểm lại nhận 401.
+  Form vẫn hiện tên đã nhập; gửi được form đó mà không nhập lại. Fixture ghi nhận một POST
+  register; response xác nhận tạo tài khoản hiện thông báo và nút đăng ký bị khóa; link Đăng
+  nhập ngay mở `/login`. Ảnh bằng chứng lưu tạm ngoài repo.
+- Browser dùng API fixture nên không thay kiểm cookie/CSRF với backend thật. Ca backend thật
+  được kiểm riêng bằng integration suite. Chưa kiểm lại Safari/Firefox hoặc mobile thật.

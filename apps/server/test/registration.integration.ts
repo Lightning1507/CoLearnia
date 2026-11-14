@@ -678,7 +678,7 @@ describe('SCRUM-18 registration with MongoDB', () => {
       const csrf = await bootstrap(http);
       const response = await register(http, csrf).send(body).expect(503);
       expect(apiErrorSchema.parse(response.body).error).toMatchObject({
-        code: 'DEPENDENCY_UNAVAILABLE',
+        code: 'ACCOUNT_CREATED_LOGIN_REQUIRED',
         message: 'Tài khoản đã được tạo nhưng phiên đăng nhập đã hết hạn. Vui lòng đăng nhập.',
       });
       expect(response.headers['set-cookie']).toBeUndefined();

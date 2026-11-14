@@ -171,4 +171,18 @@ describe('auth browser HTTP contract', () => {
     ).rejects.toThrow();
     expect(fetcher).toHaveBeenCalledTimes(2);
   });
+  it('directs confirmed registration to login without read-back or another POST', async () => {
+    const { api, fetcher, signal } = setup(
+      bootstrap(),
+      fail('ACCOUNT_CREATED_LOGIN_REQUIRED', 503),
+      fail('AUTH_REQUIRED', 401),
+    );
+    await expect(
+      api.authenticate('register', { ...input, displayName: 'Học viên' }, signal),
+    ).rejects.toMatchObject({ code: 'ACCOUNT_CREATED_LOGIN_REQUIRED', uncertain: false });
+    expect(fetcher.mock.calls.map(([url]) => url)).toEqual([
+      '/api/v1/auth/csrf',
+      '/api/v1/auth/register',
+    ]);
+  });
 });
