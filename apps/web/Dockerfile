@@ -1,4 +1,4 @@
-FROM node:26.12.1-bookworm-slim AS build
+FROM node:26.13.0-bookworm-slim AS build
 RUN npm install --global pnpm@11.5.2
 WORKDIR /repo
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
