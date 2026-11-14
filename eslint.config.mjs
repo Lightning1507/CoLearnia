@@ -6,7 +6,15 @@ import reactRefresh from 'eslint-plugin-react-refresh';
 import { architecturePlugin } from './scripts/architecture-rules.mjs';
 
 export default tseslint.config(
-  { ignores: ['**/dist/**', '**/node_modules/**', '**/coverage/**', 'docs/archive/**'] },
+  {
+    ignores: [
+      '.worktrees/**',
+      '**/dist/**',
+      '**/node_modules/**',
+      '**/coverage/**',
+      'docs/archive/**',
+    ],
+  },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {

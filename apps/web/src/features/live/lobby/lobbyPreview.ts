@@ -4,6 +4,7 @@ export type PreviewStatus =
 
 export type DeviceOption = { id: string; label: string };
 export type DeviceState = {
+  isActive: boolean;
   selectedId: string;
   openedId: string | null;
   status: PreviewStatus;
@@ -32,6 +33,7 @@ type BrowserEnvironment = {
 
 function initialDevice(): DeviceState {
   return {
+    isActive: false,
     selectedId: '',
     openedId: null,
     status: 'off',
@@ -105,7 +107,13 @@ export class LobbyPreview {
     videoStream = this.state.videoStream,
   ) {
     this.publish({
-      [kind]: { ...this.state[kind], ...patch },
+      [kind]: {
+        ...this.state[kind],
+        ...patch,
+        isActive:
+          this.owned[kind]?.stream.getTracks().some((track) => track.readyState === 'live') ??
+          false,
+      },
       videoStream: kind === 'camera' ? videoStream : this.state.videoStream,
     });
   }
@@ -233,7 +241,9 @@ export class LobbyPreview {
     const selectedId = this.state[kind].selectedId;
     this.update(kind, {
       status: 'requesting',
-      message: 'Đang mở thiết bị… Nếu được hỏi, hãy chọn quyền trong trình duyệt.',
+      message: this.state[kind].isActive
+        ? 'Đang đổi thiết bị…'
+        : 'Đang mở thiết bị… Nếu được hỏi, hãy chọn quyền trong trình duyệt.',
     });
     try {
       const constraint = selectedId ? { deviceId: { exact: selectedId } } : true;
