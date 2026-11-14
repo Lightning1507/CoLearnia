@@ -9,7 +9,8 @@ export const textHistoryDefaultLimit = 30;
 // Preserve the submitted text, including whitespace around nonblank content.
 const messageTextSchema = z.string().refine((value) => {
   if (value.trim().length === 0 || value.length > textMessageMaxCodePoints * 2) return false;
-  return [...value].length <= textMessageMaxCodePoints;
+  // With the u flag, valid surrogate pairs match as one supplementary code point.
+  return !/[\uD800-\uDFFF]/u.test(value) && [...value].length <= textMessageMaxCodePoints;
 });
 const opaqueToken = z
   .string()
@@ -38,7 +39,7 @@ export const textMessageScopeSchema = textChannelScopeSchema.extend({
 });
 
 export const textMessageSendBodySchema = z.strictObject({
-  clientMessageId: z.uuid(),
+  clientMessageId: z.uuid().transform((value) => value.toLowerCase()),
   text: messageTextSchema,
   rootMessageId: workspaceDocumentIdSchema.optional(),
 });

@@ -37,7 +37,9 @@ const schema = new Schema(
 
 schema.pre('validate', function () {
   const result = bodySchema.safeParse({ clientMessageId: this.clientMessageId, text: this.text });
-  if (!result.success) {
+  if (result.success) {
+    this.clientMessageId = result.data.clientMessageId;
+  } else {
     for (const issue of result.error.issues) this.invalidate(String(issue.path[0]), issue.message);
   }
   if (this.rootMessageId !== null) this.invalidate('rootMessageId', 'Expected a root message');
@@ -82,8 +84,11 @@ export function createTextMessageRepository(database: ReturnType<typeof createDa
       text: string;
       createdAt: Date;
     }) {
-      const { conversationId, senderId, clientMessageId, text, createdAt } = input;
-      bodySchema.parse({ clientMessageId, text });
+      const { conversationId, senderId, createdAt } = input;
+      const { clientMessageId, text } = bodySchema.parse({
+        clientMessageId: input.clientMessageId,
+        text: input.text,
+      });
       const id = new Types.ObjectId();
       const scope = { _id: conversationId, kind: 'CHANNEL', closedAt: null };
       return database.transaction(async (session) => {

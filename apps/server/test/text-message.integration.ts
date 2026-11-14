@@ -82,6 +82,56 @@ it('enforces retry uniqueness and allocates commit sequences only for new messag
   });
 });
 
+it('retries the same UUID across case variants without allocating another sequence', async () => {
+  const { _id: conversationId } = await conversation();
+  const clientMessageId = 'abcdefab-abcd-4abc-8abc-abcdefabcdef';
+  const input = {
+    conversationId,
+    senderId: new Types.ObjectId(),
+    clientMessageId: clientMessageId.toUpperCase(),
+    text: 'Chào',
+    createdAt,
+  };
+  const first = await repository.append(input);
+  expect(first).toMatchObject({ outcome: 'created', message: { clientMessageId, commitSeq: 1 } });
+  if (first.outcome !== 'created') throw new Error('Expected a created message');
+  await expect(repository.append({ ...input, clientMessageId })).resolves.toMatchObject({
+    outcome: 'existing',
+    message: { _id: first.message._id, clientMessageId, commitSeq: 1 },
+  });
+  expect(await messages.countDocuments({ conversationId })).toBe(1);
+  expect((await conversations.findById(conversationId).orFail()).lastMessageCommitSeq).toBe(1);
+});
+
+it('rejects lone surrogates and preserves valid supplementary characters through retry', async () => {
+  const { _id: conversationId } = await conversation();
+  const input = {
+    conversationId,
+    senderId: new Types.ObjectId(),
+    clientMessageId: randomUUID(),
+    text: '  Chào 👋  ',
+    createdAt,
+  };
+  for (const text of ['Hello \ud800', 'Hello \udc00']) {
+    const invalid = { ...input, text };
+    await expect(repository.append(invalid)).rejects.toMatchObject({ name: 'ZodError' });
+    await expect(repository.append(invalid)).rejects.toMatchObject({ name: 'ZodError' });
+  }
+  expect(await messages.countDocuments({ conversationId })).toBe(0);
+  expect(
+    (await conversations.findById(conversationId).orFail()).lastMessageCommitSeq,
+  ).toBeUndefined();
+  await expect(repository.append(input)).resolves.toMatchObject({
+    outcome: 'created',
+    message: { text: input.text, commitSeq: 1 },
+  });
+  expect((await repository.listRoots(conversationId, 1)).items[0]?.text).toBe(input.text);
+  await expect(repository.append(input)).resolves.toMatchObject({
+    outcome: 'existing',
+    message: { text: input.text, commitSeq: 1 },
+  });
+});
+
 it('pages roots within one conversation by time and ID, including legacy roots', async () => {
   const { _id: conversationId } = await conversation();
   const { _id: otherId } = await conversation();

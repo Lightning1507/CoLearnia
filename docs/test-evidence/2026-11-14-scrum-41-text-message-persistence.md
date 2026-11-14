@@ -17,3 +17,10 @@ pnpm exec vitest run --config vitest.database.config.ts apps/server/test/text-me
 ## Bàn giao SCRUM-42
 
 Tích hợp repository sau bước xác thực, kiểm quyền kênh TEXT và phân giải conversation. Dùng `textMessageIndexes` để kiểm preflight trước khi mở handler. Thực hiện provisioning index theo quy trình DB của môi trường. REST/Socket.IO, điều phối quyền và budget theo Workspace, cursor truyền qua mạng và đối soát khi mất ACK thuộc bước tích hợp. [Contract TEXT](../contracts/text-messaging.md) · [Quy trình DB](../database/integrity-and-migrations.md)
+
+## Review PR #111
+
+Chạy lại hai suite trên MongoDB 8.0.16 sau khi sửa: 13/13 test đạt.
+
+- Gửi UUID chữ hoa rồi retry bằng chữ thường trả cùng ID và `commitSeq: 1`. MongoDB chỉ có một tin với UUID chữ thường.
+- High hoặc low surrogate đứng một mình bị từ chối ngay ở lần gửi đầu và lần retry. MongoDB không ghi tin và bộ đếm chưa được cấp. Tin có emoji và khoảng trắng được đọc lại nguyên văn và retry trả tin cũ.
