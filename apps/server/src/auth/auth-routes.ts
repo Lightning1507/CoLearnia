@@ -1,12 +1,14 @@
 import { Router } from 'express';
 import {
   authenticatedResponseSchema,
+  authMutationResponseSchema,
+  logoutInputSchema,
   csrfResponseSchema,
   loginInputSchema,
   registerInputSchema,
 } from '@colearnia/contracts';
 import type { OwnUser } from '@colearnia/contracts';
-import { authCookieOptions, readCookie, setCsrfCookie } from './csrf.js';
+import { authCookieOptions, csrfCookie, readCookie, setCsrfCookie } from './csrf.js';
 import { authFailure as fail, requireVerifiedSession } from './http-auth.js';
 import type { AuthResponse, createHttpAuth } from './http-auth.js';
 import { InvalidCredentialsError, LoginUnavailableError, LoginUnconfirmedError } from './login.js';
@@ -19,12 +21,14 @@ import {
   RegistrationUnconfirmedError,
 } from './registration.js';
 import type { createRegistration } from './registration.js';
+import { logger } from '../lib/logger.js';
 import { authCookie } from './session-credentials.js';
 
 export function createAuthRouter(
   httpAuth: ReturnType<typeof createHttpAuth>,
   register: ReturnType<typeof createRegistration>,
   login: ReturnType<typeof createLogin>,
+  logout?: (token: string | undefined) => Promise<boolean>,
 ) {
   const router = Router();
   const attempts = new Map<string, number>();
@@ -83,6 +87,27 @@ export function createAuthRouter(
     if (csrf.cookie) setCsrfCookie(res, csrf.cookie);
     res.json(payload);
   });
+
+  if (logout) {
+    router.post('/logout', httpAuth.requireBootstrapCsrf, async (req, res) => {
+      res.setHeader('Cache-Control', 'no-store');
+      if (!logoutInputSchema.safeParse(req.body).success)
+        return fail(res, 'VALIDATION_ERROR', 'Yêu cầu đăng xuất không hợp lệ.');
+      const token = readCookie(req.headers.cookie, authCookie);
+      try {
+        if (await logout(token)) {
+          res.clearCookie(authCookie, authCookieOptions);
+          res.clearCookie(csrfCookie, authCookieOptions);
+          return res.json(
+            authMutationResponseSchema.parse({ data: null, requestId: res.locals.requestId }),
+          );
+        }
+      } catch {
+        logger.warn({ requestId: res.locals.requestId }, 'Session logout could not be confirmed');
+      }
+      fail(res, 'DEPENDENCY_UNAVAILABLE', 'Chưa xác nhận được việc đăng xuất.');
+    });
+  }
 
   router.post('/login', httpAuth.requireBootstrapCsrf, async (req, res, next) => {
     const ip = req.ip ?? 'unknown';
