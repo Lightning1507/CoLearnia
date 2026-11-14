@@ -377,6 +377,7 @@ export function createAccessRevocationCoordinator(options: {
     return result(record);
   }
   return {
+    coordinator: options.coordinator,
     barrier,
     bindCleanupAdapters(adapters: AccessCleanupAdapters) {
       if (cleanupAdapters) throw new Error('Cleanup adapters are already bound');

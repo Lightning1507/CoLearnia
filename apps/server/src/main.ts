@@ -131,8 +131,9 @@ async function start() {
     try {
       const { startLiveRuntime } = await import('./live/media/live-runtime.js');
       media = await startLiveRuntime(config, {
-        // SCRUM-88 supplies mountRegistry with real M1/M2/M3/M5 ports when
-        // composing MAIN. Never substitute a fake authority/cleanup here.
+        // SCRUM-88 supplies mountRegistry with real M1/M2/M3/M5 ports through
+        // createApplicationMainRegistry (shared deny/cohort and one-time binding).
+        // Never substitute a fake authority/cleanup here.
         closeAdmission() {
           acceptingLiveRuntime = false;
           logger.error(
