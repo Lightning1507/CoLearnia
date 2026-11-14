@@ -163,7 +163,7 @@ function fixture() {
         };
       },
     },
-    async withMediaTransport(socket, input, transport, direction, use) {
+    async withMediaTransport(socket, input, transport, direction, use, mode) {
       const gate = nextGate;
       nextGate = undefined;
       if (gate) await gate;
@@ -171,7 +171,8 @@ function fixture() {
       if (
         !context ||
         ![direction, `${direction}-new`].includes(transport) ||
-        input.callGeneration !== context.callGeneration
+        input.callGeneration !== context.callGeneration ||
+        (mode !== 'cleanup' && input.expectedPolicyRevision !== context.policyRevision)
       ) {
         return { errorCode: 'CONFLICT' };
       }
@@ -318,6 +319,11 @@ function fixture() {
     makeProducer,
     cleanup,
     admission,
+    advanceReceiverRevision() {
+      const context = contexts.get('b');
+      if (!context) throw new Error('Missing fixture receiver');
+      contexts.set('b', { ...context, policyRevision: context.policyRevision + 1 });
+    },
     advanceAudience() {
       const context = contexts.get('a');
       const participant = participants.get('a'.repeat(24));
@@ -631,6 +637,35 @@ describe('paused-ready media signaling', () => {
     expect(result).toMatchObject({ data: { result: { consumerId: native.id, ready: true } } });
     expect(canConsume).toHaveBeenCalledTimes(3);
     expect(native.resume).toHaveBeenCalledTimes(1);
+  });
+
+  it('replays a lost ready ACK and closes only the matching Consumer', async () => {
+    const { createPaused, receive, native, advanceReceiverRevision } = fixture();
+    const binding = await createPaused();
+    const readyId = randomUUID();
+    const ready = await receive('media.consumer.ready', binding, readyId);
+    expect(await receive('media.consumer.ready', binding, readyId)).toEqual(ready);
+    expect(native.resume).toHaveBeenCalledOnce();
+    advanceReceiverRevision();
+    expect(await receive('media.consumer.ready', binding, readyId)).toMatchObject({
+      error: { code: 'CONFLICT' },
+    });
+
+    const close = {
+      consumerId: binding.consumerId,
+      sourceId: binding.sourceId,
+      sourceGeneration: binding.sourceGeneration,
+      transportId: 'RECV',
+    };
+    expect(await receive('media.consumer.close', { ...close, sourceGeneration: 2 })).toMatchObject({
+      error: { code: 'NOT_FOUND' },
+    });
+    expect(native.close).not.toHaveBeenCalled();
+    const closeId = randomUUID();
+    const closed = await receive('media.consumer.close', close, closeId);
+    expect(closed).toMatchObject({ data: { result: { closed: true } } });
+    expect(await receive('media.consumer.close', close, closeId)).toEqual(closed);
+    expect(native.close).toHaveBeenCalledOnce();
   });
 
   it('closes the paused Consumer without resuming if the publisher loses permission', async () => {

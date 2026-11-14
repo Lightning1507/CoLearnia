@@ -32,6 +32,8 @@ Schema kiểm phần riêng lẻ và giới hạn số part theo `sessionControl
 
 ## Event và ví dụ watermark
 
+`media.consumer.close` dùng command envelope và payload gồm `transportId`, `consumerId`, `sourceId` và `sourceGeneration`. Server kiểm quyền hiện hành và ownership của RECV transport, socket và đời context của Consumer, rồi đóng đúng binding. Riêng lệnh đóng chấp nhận `expectedPolicyRevision` cũ khi các kiểm tra ownership vẫn đạt; `create` và `ready` vẫn yêu cầu revision hiện hành. Nếu ID đã vắng mặt trên server, retry trên RECV còn hợp lệ trả `completed` với `{ consumerId, closed: true }`. Nếu ID vẫn tồn tại nhưng binding không khớp, trả `NOT_FOUND`. Client MAIN dùng lệnh này khi không xác nhận được ACK của `media.consumer.ready` sau khi thử lại cùng request ID. Nếu mất transport hoặc context thì việc dọn server đi theo lifecycle thu quyền, rời hoặc mất kết nối.
+
 Tên event đi riêng trong Socket.IO. Mỗi event chứa `sessionId`, `epoch`, `callGeneration` của **người nhận**, `audienceEpoch`, `policyRevision`, `mediaStreamId`, `mediaSequence` và `payload`.
 
 | Event                         | Payload                                                                                                             |

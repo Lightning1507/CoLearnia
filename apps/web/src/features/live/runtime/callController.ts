@@ -1,4 +1,5 @@
 import type { LiveContext } from '@colearnia/contracts';
+import { AudioGraph } from '../../audio';
 import { MediaSnapshotRuntime } from './mediaSnapshotRuntime';
 
 export type CallIdentity = Readonly<
@@ -21,13 +22,18 @@ type InitializeRuntime = (
 
 class CallController {
   readonly identity: CallIdentity;
+  readonly audio: AudioGraph;
   #abort = new AbortController();
   #mediaSnapshots: MediaSnapshotRuntime;
   #disposeRuntime: DisposeRuntime | undefined;
 
-  constructor({ sessionId, epoch, participantId, callGeneration }: CallIdentity) {
+  constructor(
+    { sessionId, epoch, participantId, callGeneration }: CallIdentity,
+    onAudioChange: () => void,
+  ) {
     this.identity = Object.freeze({ sessionId, epoch, participantId, callGeneration });
-    this.#mediaSnapshots = new MediaSnapshotRuntime(this.identity, this.#abort.signal);
+    this.audio = new AudioGraph(onAudioChange);
+    this.#mediaSnapshots = new MediaSnapshotRuntime(this.identity, this.#abort.signal, this.audio);
   }
 
   async initialize(initialize: InitializeRuntime) {
@@ -45,6 +51,7 @@ class CallController {
     const dispose = this.#disposeRuntime;
     this.#disposeRuntime = undefined;
     this.#abort.abort();
+    this.audio.dispose();
     dispose?.();
   }
 }
@@ -78,6 +85,13 @@ export class CallControllerOwner {
 
   getSnapshot = () => this.#snapshot;
 
+  getAudioBlocked = () => this.#current?.controller.audio.blocked ?? false;
+
+  enableAudio = (identity: CallIdentity) => {
+    const controller = this.#current?.controller;
+    if (controller?.identity === identity) controller.audio.resume();
+  };
+
   subscribe = (listener: () => void) => {
     this.#listeners.add(listener);
     return () => {
@@ -94,7 +108,9 @@ export class CallControllerOwner {
       return Promise.reject(new Error('End the current call before acquiring a different call'));
     }
 
-    const controller = new CallController(identity);
+    const controller = new CallController(identity, () => {
+      if (this.#current?.controller === controller) this.#notify();
+    });
     let resolve!: (handle: CallHandle) => void;
     let reject!: (reason: unknown) => void;
     const ready = new Promise<CallHandle>((resolveReady, rejectReady) => {

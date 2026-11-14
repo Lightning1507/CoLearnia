@@ -9,6 +9,8 @@ import {
 import { Device } from 'mediasoup-client';
 import type { types as MediaTypes } from 'mediasoup-client';
 import { io } from 'socket.io-client';
+import { CallControllerOwner } from '../../../src/features/live/runtime/callController';
+import { receiveMainAudio } from '../../../src/features/live/runtime/receiveMainAudio';
 
 type CommandContext = {
   sessionId: string;
@@ -28,8 +30,9 @@ async function verifyMedia(video: HTMLVideoElement) {
     transports: ['websocket'],
     reconnection: false,
   });
-  const { context, routerRtpCapabilities } = await new Promise<{
+  const { context, participantId, routerRtpCapabilities } = await new Promise<{
     context: CommandContext;
+    participantId: string;
     routerRtpCapabilities: MediaTypes.RtpCapabilities;
   }>((resolve, reject) => {
     socket.once('fixture.ready', resolve);
@@ -107,12 +110,14 @@ async function verifyMedia(video: HTMLVideoElement) {
   };
   paint();
   const paintTimer = window.setInterval(paint, 100);
+  const call = new CallControllerOwner();
   const [mic] = destination.stream.getAudioTracks();
   const [camera] = canvas.captureStream(10).getVideoTracks();
   if (!mic || !camera) throw new Error('Missing synthetic media');
   window.addEventListener(
     'pagehide',
     () => {
+      call.shutdown();
       window.clearInterval(paintTimer);
       mic.stop();
       camera.stop();
@@ -145,7 +150,60 @@ async function verifyMedia(video: HTMLVideoElement) {
   silence.gain.value = 0;
   analyser.connect(silence).connect(audio.destination);
   const samples = new Float32Array(analyser.fftSize);
-  for (const { producerId, sourceId, sourceGeneration, sourceRevision } of peers) {
+  await call.acquire({ ...context, participantId }, async (_, signal, media) => {
+    media.updateContext({
+      ...context,
+      participantId,
+      audienceEpoch: 0,
+      policyRevision: context.expectedPolicyRevision,
+      projectionSequence: 0,
+      scope: { type: 'MAIN' },
+    });
+    const requestId = crypto.randomUUID();
+    const request = media.begin(requestId);
+    if (!request) throw new Error('Could not initialize fixture media snapshot');
+    const descriptor = {
+      snapshotId: crypto.randomUUID(),
+      mediaStreamId: crypto.randomUUID(),
+      mediaSequence: 0,
+      audienceEpoch: 0,
+      policyRevision: context.expectedPolicyRevision,
+      partCount: 1,
+    };
+    request.acceptAck({ requestId, data: { status: 'completed', result: descriptor } });
+    request.acceptPart({
+      requestId,
+      sessionId: context.sessionId,
+      epoch: context.epoch,
+      callGeneration: context.callGeneration,
+      ...descriptor,
+      partIndex: 0,
+      payload: { sources: peers, ownConsumers: [], ownProducers: [], ownTransports: [] },
+    });
+    const outcome = await request.result;
+    if (outcome.status !== 'applied') throw new Error('Fixture media snapshot rejected');
+    const source = peers.find(({ kind }) => kind === 'audio');
+    if (!source) throw new Error('Missing peer audio');
+    const consumer = await receiveMainAudio({
+      media,
+      snapshot: outcome.snapshot,
+      source,
+      transport: recv,
+      rtpCapabilities: device.recvRtpCapabilities,
+      command: async (event, envelope) => socket.timeout(4000).emitWithAck(event, envelope),
+      signal,
+    });
+    consumers.push(consumer);
+    // Keep the remote stream attached to the media element for browser decoding.
+    // The video element is muted; AudioGraph remains the sole audible output.
+    stream.addTrack(consumer.track);
+    // A separate silent analyser measures the track. AudioGraph owns audible playback.
+    audio.createMediaStreamSource(new MediaStream([consumer.track])).connect(analyser);
+    return () => {};
+  });
+  for (const { producerId, sourceId, sourceGeneration, sourceRevision } of peers.filter(
+    ({ kind }) => kind === 'video',
+  )) {
     const binding = { sourceId, sourceGeneration, expectedSourceRevision: sourceRevision };
     const params = await command(
       'media.consumer.create',
@@ -159,9 +217,6 @@ async function verifyMedia(video: HTMLVideoElement) {
       rtpParameters: params.rtpParameters as MediaTypes.RtpParameters,
     });
     stream.addTrack(consumer.track);
-    if (consumer.kind === 'audio') {
-      audio.createMediaStreamSource(new MediaStream([consumer.track])).connect(analyser);
-    }
     consumers.push(consumer);
     await command(
       'media.consumer.ready',
@@ -173,7 +228,7 @@ async function verifyMedia(video: HTMLVideoElement) {
   const received = new Map<string, number>();
   let audioPeak = 0;
   const statsDeadline = performance.now() + 10_000;
-  while (received.size < 2 && performance.now() < statsDeadline) {
+  while ((received.size < 2 || audioPeak <= 0.001) && performance.now() < statsDeadline) {
     analyser.getFloatTimeDomainData(samples);
     for (const sample of samples) audioPeak = Math.max(audioPeak, Math.abs(sample));
     for (const consumer of consumers) {
@@ -181,14 +236,16 @@ async function verifyMedia(video: HTMLVideoElement) {
         if (entry.type !== 'inbound-rtp' || !(entry.packetsReceived > 0)) return;
         if (consumer.kind === 'video' && entry.framesDecoded > 0)
           received.set('video', entry.framesDecoded);
-        if (consumer.kind === 'audio' && audioPeak > 0.001)
-          received.set('audio', entry.packetsReceived);
+        if (consumer.kind === 'audio') received.set('audio', entry.packetsReceived);
       });
     }
-    if (received.size < 2) await delay(200);
+    if (received.size < 2 || audioPeak <= 0.001) await delay(200);
   }
   const stats = `video frames decoded=${received.get('video') ?? 0} · audio packets=${received.get('audio') ?? 0} · audio peak=${audioPeak.toFixed(3)}`;
-  if (received.size !== 2) throw new Error(stats);
+  if (received.size !== 2 || audioPeak <= 0.001) throw new Error(stats);
+  call.shutdown();
+  if (!consumers.find(({ kind }) => kind === 'audio')?.closed)
+    throw new Error('Call shutdown retained its audio Consumer');
   return `PASS · ${browser} · ${stats}`;
 }
 

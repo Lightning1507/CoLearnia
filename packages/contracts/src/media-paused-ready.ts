@@ -74,6 +74,11 @@ export const mediaConsumerReadyInputSchema = sessionCommandEnvelopeSchema({
   ...sourceBinding,
   consumerId: resourceIdSchema,
 });
+export const mediaConsumerCloseInputSchema = sessionCommandEnvelopeSchema({
+  ...sourceVersion,
+  consumerId: resourceIdSchema,
+  transportId: resourceIdSchema,
+});
 export const mediaProducerCreateAckSchema = commandAckSchema(
   z.strictObject({
     status: z.literal('completed'),
@@ -97,5 +102,11 @@ export const mediaConsumerReadyAckSchema = commandAckSchema(
   z.strictObject({
     status: z.literal('completed'),
     result: z.strictObject({ consumerId: resourceIdSchema, ready: z.literal(true) }),
+  }),
+);
+export const mediaConsumerCloseAckSchema = commandAckSchema(
+  z.strictObject({
+    status: z.literal('completed'),
+    result: z.strictObject({ consumerId: resourceIdSchema, closed: z.literal(true) }),
   }),
 );

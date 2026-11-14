@@ -150,7 +150,12 @@ export function createTransportSignaling({
     transport?.close();
   }
 
-  function authorize(socketId: string, input: MutationContext, resolved: LiveContextResult) {
+  function authorize(
+    socketId: string,
+    input: MutationContext,
+    resolved: LiveContextResult,
+    mode: 'mutation' | 'cleanup' = 'mutation',
+  ) {
     if (!resolved.ok) return reject(resolved.errorCode);
     const { context } = resolved;
     if (!(Date.parse(context.auth.expiresAt) > Date.now())) return reject('AUTH_REQUIRED');
@@ -158,7 +163,9 @@ export function createTransportSignaling({
       context.sessionId !== input.sessionId ||
       context.epoch !== input.epoch ||
       context.callGeneration !== input.callGeneration ||
-      context.policyRevision !== input.expectedPolicyRevision
+      (mode === 'mutation'
+        ? context.policyRevision !== input.expectedPolicyRevision
+        : context.policyRevision < input.expectedPolicyRevision)
     )
       return reject('CONFLICT');
     if (
@@ -377,9 +384,10 @@ export function createTransportSignaling({
         policy: SessionPolicyInput,
         transport: Pick<MediaTypes.WebRtcTransport, 'id' | 'produce' | 'consume'>,
       ) => T,
+      mode: 'mutation' | 'cleanup' = 'mutation',
     ): Promise<T | Failure> {
       return withContext(socketId, input, (resolved, router, policy) => {
-        const access = authorize(socketId, input, resolved);
+        const access = authorize(socketId, input, resolved, mode);
         if ('errorCode' in access) return access;
         const slot = transports.get(transportId);
         const transport = slot?.transport;

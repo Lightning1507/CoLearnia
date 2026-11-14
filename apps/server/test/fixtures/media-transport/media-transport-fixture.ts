@@ -141,6 +141,7 @@ io.on('connection', (socket) => {
     });
   });
   socket.emit('fixture.ready', {
+    participantId,
     context: {
       sessionId: context.sessionId,
       epoch: context.epoch,
