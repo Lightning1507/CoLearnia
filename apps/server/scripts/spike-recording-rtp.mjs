@@ -9,26 +9,37 @@ const ip = '127.0.0.1';
 const ports = process.argv.slice(2).map(Number);
 assert.ok(
   ports.length === 0 ||
-    (ports.length === 4 &&
-      new Set(ports).size === 4 &&
+    (ports.length === 6 &&
+      new Set(ports).size === 6 &&
       ports.every((port) => Number.isInteger(port) && port >= 1024 && port <= 65535)),
-  'Provide four distinct ports: video RTP/RTCP then audio RTP/RTCP',
+  'Provide six distinct ports: screen, camera, then mic (RTP/RTCP for each)',
 );
+const vp8 = { mimeType: 'video/VP8', clockRate: 90000 };
+const opus = { mimeType: 'audio/opus', clockRate: 48000, channels: 2 };
+const vp8Encode = ['-c:v', 'libvpx', '-threads', '1', '-deadline', 'realtime', '-g', '25'];
 const tracks = [
   {
+    source: 'screen',
     kind: 'video',
-    mimeType: 'video/VP8',
-    clockRate: 90000,
+    codec: vp8,
     payloadType: 96,
     ssrc: 111111,
     input: 'testsrc2=size=320x240:rate=25',
-    encode: ['-c:v', 'libvpx', '-threads', '1', '-deadline', 'realtime', '-g', '25'],
+    encode: vp8Encode,
   },
   {
+    source: 'camera',
+    kind: 'video',
+    codec: vp8,
+    payloadType: 97,
+    ssrc: 333333,
+    input: 'smptebars=size=160x120:rate=25',
+    encode: vp8Encode,
+  },
+  {
+    source: 'mic',
     kind: 'audio',
-    mimeType: 'audio/opus',
-    clockRate: 48000,
-    channels: 2,
+    codec: opus,
     payloadType: 111,
     ssrc: 222222,
     input: 'sine=frequency=440:sample_rate=48000',
@@ -78,12 +89,7 @@ const worker = await createWorker({ logLevel: 'error' });
 const sockets = [];
 const sources = [];
 try {
-  const mediaCodecs = tracks.map(({ mimeType, clockRate, channels }) => ({
-    mimeType,
-    clockRate,
-    ...(channels ? { channels } : {}),
-  }));
-  const router = await worker.createRouter({ mediaCodecs });
+  const router = await worker.createRouter({ mediaCodecs: [vp8, opus] });
   const createTransport = (comedia) =>
     router.createPlainTransport({
       listenInfo: { protocol: 'udp', ip },
@@ -99,7 +105,7 @@ try {
     const input = await createTransport(true);
     const output = await createTransport(false);
     const codec = {
-      ...mediaCodecs.find(({ mimeType }) => mimeType === track.mimeType),
+      ...track.codec,
       payloadType: track.payloadType,
     };
     const producer = await input.produce({
@@ -109,7 +115,9 @@ try {
     const consumer = await output.consume({
       producerId: producer.id,
       rtpCapabilities: {
-        codecs: router.rtpCapabilities.codecs.filter(({ mimeType }) => mimeType === track.mimeType),
+        codecs: router.rtpCapabilities.codecs.filter(
+          ({ mimeType }) => mimeType === track.codec.mimeType,
+        ),
       },
     });
     const packets = { rtp: 0, rtcp: 0, senderReports: 0, invalidRtp: 0 };
@@ -138,6 +146,7 @@ try {
       }));
     await output.connect({ ip, port: rtpPort, rtcpPort });
     descriptors.push({
+      source: track.source,
       kind: track.kind,
       ip,
       rtpPort,
@@ -162,9 +171,9 @@ try {
   for (const { track, input } of ingress) runs.push(startSource(track, input, sources));
   await Promise.all(runs);
   await setTimeout(250);
-  for (const { kind, packets } of ports.length ? [] : descriptors) {
-    assert.ok(packets.rtp > 0 && packets.senderReports > 0, `Missing RTP or RTCP SR for ${kind}`);
-    assert.equal(packets.invalidRtp, 0, `RTP did not match Consumer descriptor for ${kind}`);
+  for (const { source, packets } of ports.length ? [] : descriptors) {
+    assert.ok(packets.rtp > 0 && packets.senderReports > 0, `Missing RTP or RTCP SR for ${source}`);
+    assert.equal(packets.invalidRtp, 0, `RTP did not match Consumer descriptor for ${source}`);
   }
   console.log(
     JSON.stringify(
@@ -172,7 +181,7 @@ try {
         ? { event: 'sources-completed' }
         : {
             event: 'verified',
-            tracks: descriptors.map(({ kind, packets }) => ({ kind, packets })),
+            tracks: descriptors.map(({ source, kind, packets }) => ({ source, kind, packets })),
           },
     ),
   );
