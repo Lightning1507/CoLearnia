@@ -25,7 +25,7 @@ Socket phải được M1 xác thực. Actor/authSession/socket lấy ở server
 
 Allow trả ack cùng requestId, `data: {status: "completed", result: {sessionId, epoch, state: "ENDED", cleanupPending: false}}`. `cleanupPending` có thể còn true khi quyền và pending intent đã thu nhưng byte/ref/finalize còn được dọn ở adapter. Không chờ encode/video READY để kết thúc cuộc gọi.
 
-Khi đã chấp nhận lệnh nhưng cleanup, DB hoặc deadline chưa xác nhận được, ack là `data: {status: "pending", result: {sessionId, epoch, state: "ENDING", cleanupPending: true}}`. Trạng thái này không khẳng định DB đã rollback. Lệnh vẫn giữ deny và không tự chạy lại khi client retry.
+Khi đã chấp nhận lệnh nhưng cleanup, DB hoặc deadline chưa xác nhận được, ack là `data: {status: "pending", result: {sessionId, epoch, state: "ENDING", cleanupPending: true}}`. Trạng thái này không khẳng định DB đã rollback. Lệnh vẫn giữ deny và không tự chạy lại khi client retry. [Đối chiếu SCRUM-87](session-reconciliation.md) cho sweep tiếp tục cùng operation: metadata đã gửi chỉ được đọc lại, bước mới chỉ được ghi sau khi bước trước và cleanup được xác nhận. Khi hoàn tất, retry cùng lệnh trả ACK completed.
 
 Deny trước acceptance dùng error envelope chung: member `FORBIDDEN`; socket/generation/epoch/revision cũ hoặc reuse request khác `CONFLICT`; thiếu cấu hình cleanup `DEPENDENCY_UNAVAILABLE`; quá admission `SERVER_BUSY`. Không trả lỗi DB thô. Socket không có ack callback không tạo mutation.
 

@@ -16,6 +16,8 @@ Source schema ở `packages/contracts/src`, frontend và backend import qua `@co
 
 **Kết thúc phiên (SCRUM-86):** [host end/rời, idempotency và cleanup](session-end.md); schema `session-end.ts`, adapter `session.end` dùng cùng registry MAIN. Chưa mount vào app production; xem giới hạn tích hợp trong contract.
 
+**Đối chiếu và phiên rỗng (SCRUM-87):** [read-back mutation và ordering join/end](session-reconciliation.md); đọc snapshot session/participation, không ghi lặp khi mất ACK; ownership hết grace không giữ phiên bằng ticket cũ.
+
 **Thu quyền MAIN (SCRUM-83):** [cổng M1, hủy ticket và cleanup theo generation](main-revocation.md). Registry dùng schema revocation M1 và cleanup coordinator hiện có; chưa nối publisher ACL/logout production.
 
 **Auth/profile (SCRUM-12):** [contract và ví dụ](auth-profile.md), schema input/output và identity nội bộ trong `auth.ts`; chờ M4 review trước khi consumer dùng. Upload avatar tiếp tục ở M1-T1.3 với M2; chưa có endpoint chỉ từ contract này.
