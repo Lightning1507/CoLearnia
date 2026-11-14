@@ -62,6 +62,14 @@ SCRUM-18 cấp token phiên ngẫu nhiên 32 byte qua cookie `__Host-colearnia-s
 
 Route HTTP đọc dữ liệu riêng dùng `requireAuth`. Mutation yêu cầu đăng nhập chạy `requireAuth` rồi `requireCsrf`. Handler lấy `AuthenticatedContext` từ `requireVerifiedSession(res).context` sau khi xác nhận hàm trả kết quả. M2 vẫn kiểm ACL của tài nguyên ở handler. Các helper nằm trong [http-auth.ts](../../apps/server/src/auth/http-auth.ts) và [read-session.ts](../../apps/server/src/auth/read-session.ts).
 
+### Frontend auth (SCRUM-25)
+
+Form đăng ký dùng nhãn **Họ và tên**; giá trị này được lưu vào `displayName` và dùng làm tên hiển thị trong CoLearnia. Giữ giới hạn 1–80 Unicode code point sau trim, không tách họ/tên thành field riêng.
+
+`apps/web/src/features/auth` triển khai form `/login`, `/register` và khôi phục phiên ở `/`. Query phiên trong bộ nhớ được điều phối tại `AuthBoundary`; consumer ghép tại app lấy danh tính từ kết quả đã kiểm phiên, không dùng fixture hoặc persist cookie/token. API adapter dùng schema auth và xử lý CSRF/retry/read-back theo các quy tắc dưới đây. Form chỉ nhận success sau response hợp lệ hoặc read-back cùng email; lỗi đọc phiên không được diễn giải thành đăng xuất.
+
+Điểm vào sau xác thực hiện hiển thị tài khoản thật, chờ ghép danh sách Workspace ở SCRUM-34; `/workspace` vẫn là fixture. Luồng lời mời và logout/thu tài nguyên tiếp tục ở task tương ứng. [Bằng chứng và giới hạn kiểm SCRUM-25](../test-evidence/2026-11-12-scrum-25-auth-ui.md).
+
 ### Kết nối Socket.IO trong Sprint 1
 
 FE kết nối cùng origin qua `io({ transports: ['websocket'], auth: { csrfToken } })` với token từ register/login hoặc `GET /api/v1/auth/me`. Trình duyệt tự gửi cookie theo chính sách cookie hiện có. Môi trường triển khai dùng HTTPS/WSS và proxy chuyển tiếp WebSocket cho `/socket.io/`. Sprint 1 chỉ bật WebSocket, nên mạng chặn WebSocket sẽ không kết nối được.
@@ -81,7 +89,7 @@ SCRUM-20 giới hạn riêng đăng nhập ở 10 yêu cầu đã qua CSRF/Origi
 - Hai tab có thể nhận token CSRF khác nhau khi cùng làm mới cookie. Với `403 CSRF_INVALID` từ guard, SCRUM-25 gọi lại `GET /auth/me` cho mutation cần đăng nhập hoặc `GET /auth/csrf` cho register/login. Gửi lại tối đa một lần với token mới, giữ nguyên payload và `requestId` nếu có. Với mutation cần đăng nhập, chỉ gửi lại khi `/auth/me` xác nhận cùng `user.id`. Nếu phiên mất hoặc tài khoản đã đổi, cập nhật trạng thái UI và dừng. Timeout hoặc lỗi mạng tiếp tục theo quy tắc riêng của từng mutation.
 - Logout lặp với CSRF/Origin hợp lệ, phiên đã thu/không còn: 200 `data: null`, clear cookie. Nếu CSRF không còn hợp lệ thì bootstrap lại; không bỏ bảo vệ CSRF để đạt lặp an toàn.
 - Register/login timeout: kiểm `/auth/me` trước, không tự gửi lại vô hạn. Unique email ngăn User trùng nhưng không bảo đảm trả lại response đăng ký cũ; nếu chưa xác định, cho người dùng đăng nhập.
-- Nếu đã tạo User nhưng phiên hết hạn trước khi gửi phản hồi, register trả `503 DEPENDENCY_UNAVAILABLE`, báo tài khoản đã được tạo và hướng người dùng đăng nhập.
+- Nếu đã tạo User nhưng phiên hết hạn trước khi gửi phản hồi, register trả `503 ACCOUNT_CREATED_LOGIN_REQUIRED`, báo tài khoản đã được tạo và hướng người dùng đăng nhập. Client dùng code này để phân biệt kết quả đã xác nhận; không chuyển thành OUTCOME_UNKNOWN hoặc tự gửi lại POST. `DEPENDENCY_UNAVAILABLE` vẫn dành cho phụ thuộc lỗi/kết quả chưa rõ và cần read-back theo quy tắc trên.
 - PATCH tên timeout: đọc lại `/users/me`. Đổi mật khẩu timeout: có thể đã đổi và thu phiên; không tự retry mutation cũ hoặc khẳng định rollback. Yêu cầu đăng nhập lại/kiểm kết quả thực tế.
 - Body `requestId` của mutation là operation ID dự kiến; nơi lưu/thời hạn dedupe và read-back thuộc T5. Chưa có exactly-once hoặc endpoint tra kết quả. ID trace HTTP ngoài envelope vẫn do server tạo mỗi lần gọi.
 

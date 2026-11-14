@@ -15,6 +15,7 @@ Nguồn: [proposal M1](../proposals/m1-workspace-auth.md), [quyền Workspace/k�
 - Giữ giới hạn tên của scaffold: Workspace 2–80, kênh 1–80 Unicode code point sau trim. Đây là giới hạn hiện có được chuyển sang cách đếm chung; không thêm quy tắc tên trùng hoặc ký tự cấm. M4 cần review giới hạn trước consumer adoption.
 - revision là số nguyên an toàn ≥0; membershipIncarnation là số nguyên an toàn ≥1. Revision của Workspace, membership và kênh là các bộ đếm riêng; không dùng thay policyRevision của LIVE.
 - Body mutation có requestId; mutation trên đối tượng hiện có thêm expectedRevision. UUID không tự tạo cơ chế chống lặp: service vẫn phải xử lý theo lifecycle. requestId trong response là mã truy vết theo quy ước API.
+- Riêng POST tạo Workspace (SCRUM-33): actor + WORKSPACE_CREATE + requestId là khóa chống lặp trong process, 10 phút từ khi xác nhận, tối đa 10.000 entry. Payload là tên sau trim; cùng khóa khác payload trả CONFLICT (409), cùng payload trả Workspace ID đã tạo với DTO hiện hành sau kiểm phiên/membership/barrier. Commit chưa rõ giữ entry để reconcile, không tạo lại hoặc evict theo TTL. Không bảo đảm dedupe xuyên restart/quá TTL; kiểm trạng thái trước retry. Khác requestId vẫn có thể tạo cùng tên. Xem [runbook](../runbooks/workspace-creation.md#retry-commit-chưa-rõ-và-giới-hạn).
 - Input strict: không nhận ownerId, actorId, role tự khai. PATCH tên kênh không nhận type/accessMode; endpoint đổi role chỉ nhận ADMIN/MEMBER, không chuyển owner.
 
 | Thao tác dưới `/api/v1`                           | Schema params / body                                      | Kết quả đã định nghĩa                                  |
@@ -82,7 +83,7 @@ Nhận `workspaceId`, `channelId`, `conversationId`, `createdAt: Date` và `dbSe
 
 M1 chuẩn bị các ID và createdAt ở server trước callback transaction có thể được chạy lại; mọi lượt callback dùng lại cùng ID/thời gian, cùng dbSession của transaction. Không lấy createdAt từ client hoặc sinh lại conversationId trong callback. Khi kết quả commit chưa rõ, đọc lại theo bộ ID ổn định và đối chiếu đủ quan hệ trước khi quyết định thử lại; không tạo bộ ID mới để che kết quả chưa xác định.
 
-M2 không tự commit/mở transaction khác hoặc phát event trong callback có thể retry. Lỗi thì ném về caller để hủy toàn bộ lần tạo; chỉ phát thông báo sau khi biết commit thành công. SCRUM-32 tích hợp factory thật với model M1 và kiểm transaction trong DB riêng; ma trận rollback/retry đầy đủ tiếp tục ở M1-T6.2. Xem [runbook tạo Workspace](../runbooks/workspace-creation.md).
+M2 không tự commit/mở transaction khác hoặc phát event trong callback có thể retry. Lỗi thì ném về caller để hủy toàn bộ lần tạo; chỉ phát thông báo sau khi biết commit thành công. SCRUM-32 tích hợp factory thật với model M1 và kiểm transaction trong DB riêng; SCRUM-33 bổ sung ma trận rollback/retry và chống POST tạo Workspace lặp trong process. Xem [runbook tạo Workspace](../runbooks/workspace-creation.md).
 
 ### Thu quyền từ M1 tới M2/M4
 
