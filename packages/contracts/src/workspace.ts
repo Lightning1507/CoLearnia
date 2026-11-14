@@ -35,6 +35,7 @@ export const mutationInputSchema = z.strictObject({
 export const createWorkspaceSchema = z.strictObject({
   name: workspaceNameSchema,
   requestId: requestIdSchema,
+  replayOnly: z.literal(true).optional(),
 });
 export const renameWorkspaceSchema = mutationInputSchema.extend({ name: workspaceNameSchema });
 export const createChannelSchema = z.strictObject({
@@ -56,6 +57,24 @@ export const workspaceSummarySchema = z.strictObject({
   ownerId: workspaceDocumentIdSchema,
   revision: accessRevisionSchema,
 });
+export const workspaceSelectionSchema = workspaceSummarySchema.extend({
+  role: workspaceRoleSchema,
+});
+export const workspaceListQuerySchema = z.strictObject({
+  after: workspaceDocumentIdSchema.optional(),
+  limit: z
+    .string()
+    .regex(/^(?:[1-9]|1[0-9]|20)$/)
+    .transform(Number)
+    .optional(),
+});
+export const workspaceListResponseSchema = apiResponseSchema(
+  z.strictObject({
+    items: z.array(workspaceSelectionSchema),
+    nextCursor: workspaceDocumentIdSchema.nullable(),
+  }),
+);
+export const workspaceSelectionResponseSchema = apiResponseSchema(workspaceSelectionSchema);
 export const channelSummarySchema = z.strictObject({
   id: workspaceDocumentIdSchema,
   workspaceId: workspaceDocumentIdSchema,

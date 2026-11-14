@@ -4,12 +4,14 @@ import { Navigate, useLocation } from 'react-router-dom';
 import type { AuthenticatedData } from '@colearnia/contracts';
 import { AuthScreen } from './AuthScreen';
 import { sessionKey, sessionOptions } from './session';
+import { WorkspaceOpen, WorkspacePicker } from '../workspaces/WorkspacePages';
 import './auth.css';
 
 // Composition point for SCRUM-34. No fixture identity is used after authentication.
 export function AuthBoundary() {
   const client = useQueryClient();
   const location = useLocation();
+  const pathname = location.pathname.replace(/\/+$/, '') || '/';
   const [submitting, setSubmitting] = useState(false);
   const session = useQuery({ ...sessionOptions, enabled: !submitting });
   const data = session.data;
@@ -56,33 +58,21 @@ export function AuthBoundary() {
       </main>
     );
   if (data) {
-    if (location.pathname !== '/') return <Navigate to="/" replace />;
-    return (
-      <main className="auth-layout">
-        <section className="auth-brand" aria-label="CoLearnia">
-          <span className="auth-mark" aria-hidden="true">
-            C
-          </span>
-          <strong>CoLearnia</strong>
-        </section>
-        <section className="auth-card" aria-labelledby="account-title">
-          <p className="auth-eyebrow">TÀI KHOẢN</p>
-          <h1 id="account-title">Chào {data.user.displayName}</h1>
-          <p className="auth-intro">Bạn đã đăng nhập bằng {data.user.email}.</p>
-          <p className="auth-intro">Phiên đăng nhập sẽ được kiểm tra lại khi bạn tải lại trang.</p>
-        </section>
-      </main>
-    );
+    if (pathname === '/workspaces') return <WorkspacePicker key={data.user.id} session={data} />;
+    if (pathname.startsWith('/workspaces/'))
+      return <WorkspaceOpen key={data.user.id} userId={data.user.id} />;
+    return <Navigate to="/workspaces" replace />;
   }
-  if (location.pathname === '/') return <Navigate to="/login" replace />;
+  if (pathname !== '/login' && pathname !== '/register') return <Navigate to="/login" replace />;
   return (
     <AuthScreen
       key={location.pathname}
-      mode={location.pathname === '/register' ? 'register' : 'login'}
+      mode={pathname === '/register' ? 'register' : 'login'}
       onStart={start}
       onSuccess={success}
       onFinish={finish}
       onCheckSession={() => void session.refetch()}
+      checkWorkspaceList={location.state?.checkWorkspaceList === true}
       sessionCheckFailed={session.isRefetchError}
       sessionChecking={session.isFetching}
     />

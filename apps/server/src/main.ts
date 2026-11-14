@@ -17,6 +17,7 @@ import {
   createWorkspaceCreator,
   preflightWorkspaceCreation,
 } from './workspaces/create-workspace.js';
+import { createWorkspaceAccessService } from './workspaces/access-service.js';
 import { createWorkspaceRouter } from './workspaces/workspace-routes.js';
 import { createRealtime } from './realtime/server.js';
 import {
@@ -77,6 +78,12 @@ const workspaceRouter = httpAuth
         indexesReady: () => canUseAuthIndexes() && workspaceIndexesReady,
         createConversation: createChannelConversationFactory(database.connection).create,
       }),
+      createWorkspaceAccessService(
+        database,
+        operationCoordinator,
+        () => canUseAuthIndexes() && workspaceIndexesReady,
+        accessRevocations.barrier,
+      ),
     )
   : undefined;
 const httpServer = createServer(createApp(config, status, authRouter, workspaceRouter));
