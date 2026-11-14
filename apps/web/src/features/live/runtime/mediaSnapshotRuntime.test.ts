@@ -89,6 +89,53 @@ async function apply(
 }
 
 describe('SCRUM-67 media snapshot runtime', () => {
+  it.each(['MIC', 'SCREEN_AUDIO'] as const)(
+    'routes an authorized remote MAIN %s to audio and detaches it on revoke',
+    async (sourceKind) => {
+      const detach = vi.fn();
+      const audio = { attach: vi.fn(() => detach) };
+      const runtime = new MediaSnapshotRuntime(context, new AbortController().signal, audio);
+      runtime.updateContext(context);
+      const snapshot = await apply(runtime, {
+        ...empty,
+        sources: [{ ...mic, sourceKind }],
+      });
+      const handle = { attach: vi.fn(), close: vi.fn(), audioTrack: {} as MediaStreamTrack };
+
+      expect(runtime.attachConsumer(snapshot, binding, handle)).toBe(true);
+      expect(runtime.attachConsumer(snapshot, binding, handle)).toBe(true);
+      expect(audio.attach).toHaveBeenCalledExactlyOnceWith(handle.audioTrack);
+
+      runtime.updateContext(null);
+      expect(detach).toHaveBeenCalledOnce();
+      expect(handle.close).toHaveBeenCalledOnce();
+      expect(runtime.attachConsumer(snapshot, binding, { ...handle })).toBe(false);
+      expect(audio.attach).toHaveBeenCalledOnce();
+    },
+  );
+
+  it.each(['local MAIN', 'remote GROUP'] as const)(
+    'excludes %s mic from the MAIN audio graph',
+    async (scenario) => {
+      const audio = { attach: vi.fn() };
+      const runtime = new MediaSnapshotRuntime(context, new AbortController().signal, audio);
+      runtime.updateContext(context);
+      const source =
+        scenario === 'local MAIN'
+          ? { ...mic, ownerParticipantId: context.participantId }
+          : { ...mic, scope: { type: 'GROUP' as const, groupId: uuid(18) } };
+      const snapshot = await apply(runtime, {
+        ...empty,
+        sources: [source],
+        ownProducers: scenario === 'local MAIN' ? [{ source, replacement: null }] : [],
+      });
+      const handle = { attach: vi.fn(), close: vi.fn(), audioTrack: {} as MediaStreamTrack };
+
+      expect(runtime.attachConsumer(snapshot, binding, handle)).toBe(true);
+      expect(audio.attach).not.toHaveBeenCalled();
+    },
+  );
+
   it('accepts a late Consumer after equivalent replay and rejects completion for an old revision', async () => {
     const runtime = setup();
     const payload = { ...empty, sources: [mic] };
