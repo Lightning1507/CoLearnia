@@ -91,16 +91,17 @@ export function createAuthApi(base: string, transport: typeof fetch = fetch) {
     }
   }
 
+  async function csrf(signal: AbortSignal) {
+    return csrfResponseSchema.parse(await request('/auth/csrf', signal)).data.csrfToken;
+  }
+
   async function authenticate(
     mode: AuthMode,
     input: LoginInput | RegisterInput,
     signal: AbortSignal,
   ) {
-    async function bootstrap() {
-      return csrfResponseSchema.parse(await request('/auth/csrf', signal)).data.csrfToken;
-    }
     // Bootstrap failures have not submitted a mutation and need no read-back.
-    let token = await bootstrap();
+    let token = await csrf(signal);
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
         const data = authenticatedResponseSchema.parse(
@@ -112,7 +113,7 @@ export function createAuthApi(base: string, transport: typeof fetch = fetch) {
         if (signal.aborted) throw error;
         if (error instanceof AuthApiError && error.code === 'CSRF_INVALID') {
           if (attempt === 0) {
-            token = await bootstrap();
+            token = await csrf(signal);
             continue;
           }
           throw error;
@@ -142,5 +143,5 @@ export function createAuthApi(base: string, transport: typeof fetch = fetch) {
     // A refreshed proof could belong to a different browser session.
     authMutationResponseSchema.parse(await request('/auth/logout', signal, {}, csrfToken));
   }
-  return { me, authenticate, logout };
+  return { me, csrf, authenticate, logout };
 }

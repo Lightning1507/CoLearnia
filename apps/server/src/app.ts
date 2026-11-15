@@ -13,6 +13,7 @@ export function createApp(
   getStatus: () => SystemStatus,
   authRouter?: Router,
   workspaceRouter?: Router,
+  mediaRouter?: Router,
 ) {
   const app = express();
   app.disable('x-powered-by');
@@ -28,9 +29,16 @@ export function createApp(
     res.setHeader('Cache-Control', 'no-store');
     next();
   });
+  if (mediaRouter) {
+    app.use('/api/v1/live-sessions', (_req, res, next) => {
+      res.setHeader('Cache-Control', 'no-store');
+      next();
+    });
+  }
   app.use(express.json({ limit: '32kb' }));
   if (authRouter) app.use('/api/v1/auth', authRouter);
   if (workspaceRouter) app.use('/api/v1/workspaces', workspaceRouter);
+  if (mediaRouter) app.use('/api/v1/live-sessions', mediaRouter);
 
   app.get('/health/live', (_req, res) => {
     res.json({ data: { status: 'alive' }, requestId: res.locals.requestId });

@@ -111,7 +111,7 @@ Không đính kèm SDP, ICE credential hoặc bản dump WebRTC nguyên gốc v�
 
 ## Bàn giao và giới hạn
 
-- SCRUM-64 triển khai cấp ICE credential sau xác thực, kiểm quyền session/ownership, giới hạn tần suất và `Cache-Control: no-store`. Cấp credential mới không tự thực hiện ICE restart. Hiện chưa nối Cloudflare vào endpoint ứng dụng trong task này.
-- `TURN_SECRET` theo phương án coturn là HMAC shared secret; không thay bằng Cloudflare API token. Tên biến cho adapter Cloudflare của ứng dụng cần được cập nhật cùng SCRUM-64.
+- Adapter SCRUM-64 đọc `TURN_KEY_ID` và `TURN_KEY_API_TOKEN` từ môi trường server. Endpoint kiểm cookie, CSRF, proof và ownership trước khi cấp credential. SCRUM-88 ghép REST router và socket vào registry MAIN của app. Khi thiếu cấu hình, endpoint cấp ICE trả `DEPENDENCY_UNAVAILABLE`.
+- `TURN_SECRET` dành cho phương án coturn dùng HMAC shared secret. Cloudflare dùng API token riêng.
 - SCRUM-81 kiểm cuộc gọi tích hợp qua hai mạng, âm thanh thực và rollback. Không đánh dấu kiểm media đạt từ readiness hoặc phép Allocate.
 - Nếu Cloudflare không đáp ứng yêu cầu hết hạn, cần làm rõ độ trễ với nhà cung cấp hoặc chọn [coturn](../../infra/coturn/README.md) cùng người quản trị hạ tầng. Không tự mở thêm cổng EC2 hay đổi nhà cung cấp trong lúc đo.
