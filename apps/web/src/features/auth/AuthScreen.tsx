@@ -17,6 +17,7 @@ type Props = {
   onSuccess: (data: AuthenticatedData) => void;
   onCheckSession: () => void;
   onFinish: () => void;
+  checkWorkspaceList?: boolean;
   sessionCheckFailed?: boolean;
   sessionChecking?: boolean;
 };
@@ -27,6 +28,7 @@ export function AuthScreen({
   onSuccess,
   onCheckSession,
   onFinish,
+  checkWorkspaceList,
   sessionCheckFailed,
   sessionChecking,
 }: Props) {
@@ -244,6 +246,9 @@ export function AuthScreen({
             ),
           )}
         </nav>
+        {checkWorkspaceList && (
+          <p role="status">Đăng nhập lại rồi kiểm tra danh sách Workspace trước khi tạo lại.</p>
+        )}
         {sessionCheckFailed && (
           <div className="auth-error" role="alert">
             Chưa kiểm tra lại được phiên đăng nhập. Thông tin bạn đang nhập vẫn được giữ.
