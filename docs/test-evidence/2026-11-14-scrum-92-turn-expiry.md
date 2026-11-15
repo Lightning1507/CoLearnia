@@ -7,7 +7,7 @@ Theo dõi: [Jira SCRUM-92](https://faker1652005.atlassian.net/browse/SCRUM-92), 
 | Phép đo                                              | Quan sát                                                                                                                |
 | ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
 | Baseline credential TTL 14.400 giây                  | Python Allocate được relay; cùng username nhưng mật khẩu sai trả 400. `--auth-only` trả exit 2, expiryVerified=false.   |
-| Credential TTL 60 giây, trước TTL                    | Python và Chrome đều tạo được relay.                                                                                    |
+| Credential TTL 60 giây, baseline runner cũ           | Python và Chrome đều tạo được relay; chưa ghi tuổi riêng cho từng probe.                                                |
 | Mật khẩu giữ nguyên chiều dài, sửa ký tự cuối        | Python trả 400; Chrome không có relay, icecandidateerror=400.                                                           |
 | Ghép username với credential hợp lệ của lần cấp khác | Python trả 400. Không phải phép kiểm credential còn hạn dùng đúng cặp.                                                  |
 | Sau TTL, khoảng 80–81 giây                           | Credential đã dùng và credential chưa dùng trước TTL vẫn Allocate được trên kết nối TLS mới.                            |
@@ -16,6 +16,10 @@ Theo dõi: [Jira SCRUM-92](https://faker1652005.atlassian.net/browse/SCRUM-92), 
 | Revoke khi kết thúc lượt Python diagnostic           | Hai credential cũ trả HTTP 404, credential mới trả 204. Không dùng 404 làm bằng chứng relay đã bị chặn.                 |
 
 Phép Python `--diagnostic --ttl 60 --delay 120` trả `status=failed`, `reason=credential-still-accepted`, `expiryVerified=false`, exit 1. Mã 400 vẫn là kết quả chưa rõ về nguyên nhân xác thực; chế độ diagnostic chỉ cho tiếp tục thu quan sát, không đổi 400 thành 401 hoặc nới điều kiện pass.
+
+Các mốc tuổi của runner Node cũ tính từ sau hai request cấp credential, chưa chụp
+thời điểm đầu/cuối riêng cho từng probe. Không dùng các mốc này để chứng nhận baseline
+Chrome hoàn tất trước TTL hoặc suy ra tuổi chính xác của từng credential.
 
 ## Nhận định và giới hạn
 
@@ -53,3 +57,19 @@ Lệnh Python cần môi trường đã có hai biến TURN. Lệnh Node dùng P
 - Cùng username với mật khẩu bị sửa hoặc credential khác trả 400 trên cả hai client; cách phân biệt lỗi xác thực, token không hợp lệ và lỗi protocol của dịch vụ là gì?
 
 Đây là nội dung chuẩn bị đối chiếu, chưa gửi yêu cầu hỗ trợ. Sau khi làm rõ cần kiểm TTL buổi học và phối hợp SCRUM-64; việc chấp nhận giới hạn vẫn cần M3 review. Jira giữ trạng thái công việc, issue GitHub lưu liên kết bằng chứng.
+
+## Sửa theo review ngày 15/11/2026
+
+- Ghi riêng cửa sổ request/response cấp credential và tuổi monotonic đầu/cuối của từng
+  probe. Baseline chạm TTL, qua TTL hoặc đồng hồ không hợp lệ được đánh dấu inconclusive;
+  không gọi phép đo muộn là baseline trước TTL.
+- Bắt lỗi spawn ngay khi tạo child process, chuyển lỗi về try/finally để thử revoke
+  các credential đã cấp và dọn profile. Hủy vòng chờ readiness khi spawn lỗi.
+- 9 test Node offline đạt, gồm browser baseline muộn sau Python baseline hợp lệ,
+  latency cấp credential, ranh giới TTL, tuổi từng credential, spawn lỗi đồng bộ/bất đồng bộ.
+  Test subprocess chạy runner thật với network/browser fixture: xác nhận exit lỗi,
+  revoke cả hai credential, dọn profile và không in credential/token ra stdout/stderr.
+- Chưa chạy lại phép đo Cloudflare/Chrome thật trong lượt sửa này; các quan sát ngày
+  14/11 giữ nguyên giới hạn bên trên. Test offline không xác nhận TTL của nhà cung cấp.
+- 15 test Python và 852 unit test repo đạt; format, lint, typecheck, server/web build,
+  harness source/link check và `git diff --check` đạt. Web build giữ cảnh báo bundle lớn.

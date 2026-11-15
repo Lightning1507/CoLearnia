@@ -85,6 +85,17 @@ Runner [diagnose-cloudflare-turn.mjs](../../scripts/diagnose-cloudflare-turn.mjs
 node --env-file=.env.turn.local scripts/diagnose-cloudflare-turn.mjs --ttl 60 --delay 120
 ```
 
+Mỗi probe ghi thời điểm bắt đầu request cấp credential, thời điểm nhận về và khoảng
+tuổi ở đầu/cuối phép đo. Khoảng tuổi dùng đồng hồ monotonic và tính cả độ trễ request;
+không suy ra timestamp phía Cloudflare. Baseline chỉ hợp lệ về thời gian khi hoàn tất
+trước TTL tính từ lúc bắt đầu request cấp. Chạm/vượt TTL trả `inconclusive`, kể cả
+Python trước đó chạy kịp nhưng browser khởi động chậm. Credential đối chứng mới cũng
+phải hoàn tất trước TTL; kết quả diagnostic không bao giờ tự xác nhận expiry.
+
+Lỗi spawn Chrome/Edge được bắt trước await để chạy cleanup trong `finally`: thử revoke
+từng credential đã cấp rồi dọn profile tạm. Regression offline chạy bằng
+`node --test scripts/turn-diagnostic-support.test.mjs`; không cần TURN secret hoặc browser thật.
+
 Runner kiểm mật khẩu bị sửa cùng chiều dài, cặp username/credential không khớp và relay trước/sau TTL qua TLS 443. Chỉ ghi boolean relay, mã lỗi và tuổi credential; bỏ khóa dài hạn khỏi môi trường tiến trình con. Exit 0 chỉ là thu thập xong quan sát, luôn expiryVerified=false. Xem [kết quả kiểm ngắn SCRUM-92](../test-evidence/2026-11-14-scrum-92-turn-expiry.md); phần hết hạn vẫn chưa đạt.
 
 ### Cuộc gọi tích hợp

@@ -1,9 +1,10 @@
 import { readFileSync, existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve, sep, basename } from 'node:path';
-import { spawn, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
+import { launchDiagnosticBrowser, observeCredentialProbe } from './turn-diagnostic-support.mjs';
 const { values } = parseArgs({
   options: {
     help: { type: 'boolean' },
@@ -56,11 +57,15 @@ async function api(path, body) {
   return { status: r.status, data: r.status === 204 ? null : await r.json() };
 }
 async function generate(ttl) {
+  const requestedAtMs = performance.now();
+  const requestedAt = new Date().toISOString();
   const { data } = await api('/generate-ice-servers', { ttl });
+  const receivedAtMs = performance.now();
+  const receivedAt = new Date().toISOString();
   const c = data.iceServers.find((x) => x.username);
   if (!c) throw Error('Credential absent');
   issued.push(c);
-  return c;
+  return { credentials: c, requestedAtMs, receivedAtMs, requestedAt, receivedAt };
 }
 function python(c) {
   const r = spawnSync('python', ['-u', 'scripts/verify-cloudflare-turn.py', '--allocate-stdin'], {
@@ -82,7 +87,7 @@ async function browserSetup() {
   ].find(existsSync);
   if (!executable) throw Error('Isolated browser unavailable');
   profile = mkdtempSync(resolve(tmpdir(), 'colearnia-turn-diagnostic-'));
-  child = spawn(
+  const launched = launchDiagnosticBrowser(
     executable,
     [
       '--headless=new',
@@ -93,10 +98,17 @@ async function browserSetup() {
       'about:blank',
     ],
     { stdio: 'ignore', windowsHide: true, env: safeEnv },
+    async (signal) => {
+      for (let i = 0; i < 100 && !existsSync(profile + '/DevToolsActivePort'); i++) {
+        signal.throwIfAborted();
+        await new Promise((r) => setTimeout(r, 100));
+      }
+      signal.throwIfAborted();
+      return readFileSync(profile + '/DevToolsActivePort', 'utf8').split('\n')[0];
+    },
   );
-  for (let i = 0; i < 100 && !existsSync(profile + '/DevToolsActivePort'); i++)
-    await new Promise((r) => setTimeout(r, 100));
-  const port = readFileSync(profile + '/DevToolsActivePort', 'utf8').split('\n')[0];
+  child = launched.child;
+  const port = await launched.ready;
   const tabs = await (await fetch('http://127.0.0.1:' + port + '/json/list')).json();
   ws = new WebSocket(tabs.find((x) => x.type === 'page').webSocketDebuggerUrl);
   await new Promise((ok, no) => {
@@ -144,40 +156,60 @@ try {
     throw Error('TURN environment missing');
   const used = await generate(ttl),
     unused = await generate(ttl);
-  const start = performance.now();
-  const change = used.credential.at(-1) === '0' ? '1' : '0';
-  const altered = { ...used, credential: used.credential.slice(0, -1) + change };
-  out('python-baseline', {
+  const observe = (issued, measure, baseline = false) =>
+    observeCredentialProbe(issued, ttl, measure, { baseline });
+  const change = used.credentials.credential.at(-1) === '0' ? '1' : '0';
+  const altered = {
+    ...used.credentials,
+    credential: used.credentials.credential.slice(0, -1) + change,
+  };
+  const pythonBaseline = {
     ttl,
-    valid: python(used),
-    sameLengthTampered: python(altered),
-    swappedCredential: python({ ...used, credential: unused.credential }),
-  });
+    valid: await observe(used, () => python(used.credentials), true),
+    sameLengthTampered: await observe(used, () => python(altered), true),
+    swappedCredential: await observe(
+      used,
+      () => python({ ...used.credentials, credential: unused.credentials.credential }),
+      true,
+    ),
+  };
+  out('python-baseline', pythonBaseline);
   const send = await browserSetup();
-  out('browser-baseline', {
-    valid: await chrome(send, used),
-    sameLengthTampered: await chrome(send, altered),
-  });
+  const browserBaseline = {
+    valid: await observe(used, () => chrome(send, used.credentials), true),
+    sameLengthTampered: await observe(used, () => chrome(send, altered), true),
+  };
+  out('browser-baseline', browserBaseline);
+  const baselineBeforeTtl = [
+    pythonBaseline.valid,
+    pythonBaseline.sameLengthTampered,
+    pythonBaseline.swappedCredential,
+    browserBaseline.valid,
+    browserBaseline.sameLengthTampered,
+  ].every((probe) => probe.status === 'observed');
   for (const target of [ttl + 20, ttl + delay]) {
     out('waiting', { targetAgeSeconds: target });
     await new Promise((r) =>
-      setTimeout(r, Math.max(0, target * 1000 - (performance.now() - start))),
+      setTimeout(r, Math.max(0, target * 1000 - (performance.now() - used.receivedAtMs))),
     );
     out('expiry-observation', {
-      ageSeconds: Math.round((performance.now() - start) / 1000),
-      used: python(used),
-      unused: python(unused),
+      used: await observe(used, () => python(used.credentials)),
+      unused: await observe(unused, () => python(unused.credentials)),
     });
   }
   const fresh = await generate(ttl);
-  out('browser-after-ttl', {
-    ageSeconds: Math.round((performance.now() - start) / 1000),
-    oldUsed: await chrome(send, used),
-    oldUnused: await chrome(send, unused),
-    freshControl: await chrome(send, fresh),
-  });
+  const browserAfterTtl = {
+    oldUsed: await observe(used, () => chrome(send, used.credentials)),
+    oldUnused: await observe(unused, () => chrome(send, unused.credentials)),
+    freshControl: await observe(fresh, () => chrome(send, fresh.credentials), true),
+  };
+  out('browser-after-ttl', browserAfterTtl);
   out('result', {
-    status: 'diagnostic-only',
+    status:
+      baselineBeforeTtl && browserAfterTtl.freshControl.status === 'observed'
+        ? 'diagnostic-only'
+        : 'inconclusive',
+    baselineBeforeTtl,
     expiryVerified: false,
     scope: 'diagnostic',
     credentialTtlSeconds: ttl,
