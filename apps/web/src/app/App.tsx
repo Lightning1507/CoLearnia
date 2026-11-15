@@ -14,6 +14,8 @@ export function App() {
         <Route path="/" element={<AuthBoundary />} />
         <Route path="/login" element={<AuthBoundary />} />
         <Route path="/register" element={<AuthBoundary />} />
+        <Route path="/workspaces" element={<AuthBoundary />} />
+        <Route path="/workspaces/:workspaceId" element={<AuthBoundary />} />
         <Route path="/workspace" element={<WorkspaceFixturePage />} />
         <Route
           path="*"

@@ -1,6 +1,7 @@
 """Checks that authentication-only results cannot count as expiry verification."""
 
 import argparse
+import hashlib
 import contextlib
 import importlib.util
 import io
@@ -32,8 +33,8 @@ class ApiResponse:
 
 
 class VerificationTest(unittest.TestCase):
-    def run_probe(self, accepted, auth_only=False):
-        args = argparse.Namespace(ttl=14400, delay=840, auth_only=auth_only)
+    def run_probe(self, accepted, auth_only=False, diagnostic=False):
+        args = argparse.Namespace(ttl=14400, delay=840, auth_only=auth_only, diagnostic=diagnostic)
         output = io.StringIO()
         with patch.dict(probe.os.environ, {
             "TURN_KEY_ID": "fixture-key", "TURN_KEY_API_TOKEN": "fixture-token"
@@ -56,6 +57,51 @@ class VerificationTest(unittest.TestCase):
         self.assertFalse(summary["expiryVerified"])
         self.assertEqual(summary["credentialTtlSeconds"], 14400)
         sleep.assert_not_called()
+
+    def test_diagnostic_continues_but_does_not_pass_an_unconfirmed_baseline(self):
+        result, events, sleep = self.run_probe([
+            True, {"accepted": False, "turnCode": 400},
+            False, False, False, False, True], diagnostic=True)
+        self.assertEqual(result, 2)
+        self.assertEqual(len([e for e in events if e["event"] == "expiry"]), 2)
+        self.assertTrue(any(e["event"] == "baseline-warning" for e in events))
+        summary = next(e for e in events if e["event"] == "result")
+        self.assertFalse(summary["expiryVerified"])
+        self.assertEqual(summary["reason"], "baseline-authentication-unconfirmed")
+        self.assertEqual(sleep.call_count, 2)
+
+    def test_diagnostic_reports_old_credentials_still_accepted(self):
+        result, events, _ = self.run_probe([
+            True, {"accepted": False, "turnCode": 400},
+            True, True, True, True, True], diagnostic=True)
+        self.assertEqual(result, 1)
+        summary = next(e for e in events if e["event"] == "result")
+        self.assertEqual(summary["status"], "failed")
+        self.assertFalse(summary["expiryVerified"])
+
+    def test_diagnostic_does_not_allow_an_accepted_wrong_password(self):
+        result, _, sleep = self.run_probe([True, True], diagnostic=True)
+        self.assertEqual(result, 1)
+        sleep.assert_not_called()
+
+    def test_diagnostic_and_auth_only_are_mutually_exclusive(self):
+        with patch.object(probe.sys, "argv", ["verify-cloudflare-turn.py", "--diagnostic", "--auth-only"]), \
+                contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as error:
+            probe.main()
+        self.assertEqual(error.exception.code, 2)
+
+    def test_long_term_auth_message_integrity_matches_rfc5769_section_2_4(self):
+        # Public STUN test vector, not a Cloudflare credential.
+        username = "マトリックス".encode()
+        realm = b"example.org"
+        nonce = b"f//499k954d6OL34oL9FSTvy64sA"
+        password = b"TheMatrIX"  # Already normalized as specified by the vector.
+        key = hashlib.md5(username + b":" + realm + b":" + password).digest()
+        packet = probe.message(1, [probe.attribute(6, username),
+            probe.attribute(0x15, nonce), probe.attribute(0x14, realm)],
+            bytes.fromhex("78ad3433c6ad72c029da412e"), key)
+        self.assertEqual(packet[-20:].hex(), "f67024656dd64a3e02b8e0712e85c9a28ca89666")
+        self.assertEqual(int.from_bytes(packet[2:4], "big"), 96)
 
     def test_wrong_password_accepted_fails_even_in_auth_only(self):
         result, _, _ = self.run_probe([True, True], auth_only=True)

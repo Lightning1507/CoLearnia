@@ -1,7 +1,7 @@
 import { useId, useLayoutEffect, useRef } from 'react';
 import type { FocusEvent, ReactNode } from 'react';
 import type { CallHandle, CallIdentity, CallSnapshot } from '../runtime/callController';
-import { useCallSnapshot } from '../runtime/callControllerContext';
+import { useCallAudio, useCallSnapshot } from '../runtime/callControllerContext';
 
 const statusLabels: Record<CallSnapshot['status'], string> = {
   idle: 'Chưa tham gia cuộc gọi',
@@ -57,12 +57,15 @@ export function RoomShell({
   error,
 }: RoomShellProps) {
   const call = useCallSnapshot();
+  const audio = useCallAudio();
   const titleId = useId();
   const panelId = useId();
   const panelHeading = useRef<HTMLHeadingElement>(null);
   const roomElement = useRef<HTMLElement>(null);
   const stageElement = useRef<HTMLElement>(null);
   const backButton = useRef<HTMLButtonElement>(null);
+  const toolbar = useRef<HTMLElement>(null);
+  const audioButtonFocused = useRef(false);
   const panelLabel = sidePanel?.label;
 
   useLayoutEffect(() => {
@@ -113,6 +116,15 @@ export function RoomShell({
   }
 
   const roomCall = call.status !== 'idle' && call.identity.sessionId === sessionId ? call : null;
+  const showAudioRecovery = roomCall?.status === 'active' && audio.blocked;
+  useLayoutEffect(() => {
+    if (showAudioRecovery || !audioButtonFocused.current) return;
+    audioButtonFocused.current = false;
+    const element = toolbar.current;
+    if (element && element.ownerDocument.activeElement === element.ownerDocument.body) {
+      element.focus({ preventScroll: true });
+    }
+  }, [showAudioRecovery]);
   // The handle and snapshot share the identity of the same call generation.
   const stream =
     roomCall?.status === 'active' && stageMedia?.call.identity === roomCall.identity
@@ -175,10 +187,37 @@ export function RoomShell({
           )}
         </div>
         <footer
-          className="flex flex-wrap gap-3 border-t border-stone-200 pt-4"
+          className="flex flex-wrap gap-3 border-t border-stone-200 pt-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--cl-color-focus-ring)]"
           aria-label="Điều khiển cuộc gọi"
+          ref={toolbar}
+          tabIndex={-1}
         >
           {controls ?? <p>Chưa có điều khiển cuộc gọi khả dụng.</p>}
+          {showAudioRecovery && (
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="text-sm text-[color:var(--workspace-muted)]" role="status">
+                Âm thanh cuộc gọi đang tạm dừng.
+              </p>
+              <button
+                type="button"
+                className="live-toolbar-control min-h-10 rounded-lg px-3 py-2 text-sm font-medium"
+                onFocus={() => {
+                  audioButtonFocused.current = true;
+                }}
+                onBlur={(event) => {
+                  if (
+                    event.relatedTarget &&
+                    event.relatedTarget !== event.currentTarget.ownerDocument.body
+                  ) {
+                    audioButtonFocused.current = false;
+                  }
+                }}
+                onClick={() => audio.enable(roomCall.identity)}
+              >
+                Bật âm thanh
+              </button>
+            </div>
+          )}
         </footer>
       </div>
     </article>

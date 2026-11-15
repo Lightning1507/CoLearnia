@@ -1,3 +1,4 @@
+import { AsyncResource } from 'node:async_hooks';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:net';
@@ -177,7 +178,11 @@ async function bootWorkspaceServer(expectedMessage: string) {
   }
 }
 
-async function postWorkspace(f: Awaited<ReturnType<typeof fixture>>) {
+async function postWorkspace(
+  f: Awaited<ReturnType<typeof fixture>>,
+  creator = create,
+  replayOnly?: true,
+) {
   const config = loadConfig({});
   const httpAuth = createHttpAuth(
     config.APP_ORIGIN,
@@ -188,7 +193,7 @@ async function postWorkspace(f: Awaited<ReturnType<typeof fixture>>) {
     config,
     () => ({ name: 'CoLearnia', database: 'connected', media: 'disabled', ready: false }),
     undefined,
-    createWorkspaceRouter(httpAuth, create),
+    createWorkspaceRouter(httpAuth, creator),
   );
   const csrf = httpAuth.issueCsrf(f.token);
   return request(app)
@@ -196,7 +201,7 @@ async function postWorkspace(f: Awaited<ReturnType<typeof fixture>>) {
     .set('Cookie', `${authCookie}=${f.token}; ${csrfCookie}=${csrf.cookie}`)
     .set('Origin', config.APP_ORIGIN)
     .set('X-CSRF-Token', csrf.token)
-    .send(f.input);
+    .send({ ...f.input, replayOnly });
 }
 const denied = (code: string) => expect.objectContaining({ name: 'WorkspaceCreationError', code });
 async function counts() {
@@ -546,6 +551,28 @@ describe('SCRUM-32/33 Workspace/general with real M1 models and M2 factory', () 
     expect(third.id).not.toBe(first.id);
   });
 
+  it('replays a known request over HTTP and refuses to create if a fresh process lacks the key', async () => {
+    const f = await fixture();
+    const first = await postWorkspace(f);
+    expect(first.status).toBe(201);
+    const before = await counts();
+    const replay = await postWorkspace(f, create, true);
+    expect(replay.status).toBe(201);
+    expect(replay.body.data.id).toBe(first.body.data.id);
+
+    const restarted = createWorkspaceCreator({
+      database,
+      coordinator,
+      barrier: revocations.barrier,
+      indexesReady: () => ready,
+      createConversation,
+    });
+    const missing = await postWorkspace(f, restarted, true);
+    expect(missing.status).toBe(410);
+    expect(missing.body.error.code).toBe('WORKSPACE_REPLAY_UNAVAILABLE');
+    expect(await counts()).toEqual(before);
+  });
+
   it('serves HTTP 201 with real cookie authentication and bound CSRF; rejects missing/invalid credentials', async () => {
     const f = await fixture();
     const config = loadConfig({});
@@ -610,6 +637,16 @@ describe('SCRUM-32/33 Workspace/general with real M1 models and M2 factory', () 
     const server = await bootWorkspaceServer('Workspace creation database preflight passed.');
     try {
       const auth = `${authCookie}=${f.token}`;
+      const other = await fixture();
+      const list = (token: string, query = '') =>
+        request(server.url)
+          .get(`/api/v1/workspaces${query}`)
+          .set('Cookie', `${authCookie}=${token}`);
+      const open = (token: string, id: string) =>
+        request(server.url).get(`/api/v1/workspaces/${id}`).set('Cookie', `${authCookie}=${token}`);
+      expect((await list(f.token).expect(200)).body.data).toEqual({ items: [], nextCursor: null });
+      await request(server.url).get('/api/v1/workspaces').expect(401);
+      await list(f.token, '?limit=0').expect(400);
       const csrf = await request(server.url).get('/api/v1/auth/csrf').set('Cookie', auth);
       expect(csrf.status).toBe(200);
       const setCookies = csrf.headers['set-cookie'] as unknown as string[];
@@ -635,6 +672,33 @@ describe('SCRUM-32/33 Workspace/general with real M1 models and M2 factory', () 
       );
       expect(await Conversation.countDocuments({ workspaceId: id, kind: 'CHANNEL' })).toBe(1);
       expect(await Audit.countDocuments({ workspaceId: id, outcome: 'SUCCEEDED' })).toBe(1);
+      const second = await create({ ...f.input, requestId: randomUUID() }, f.identity);
+      const foreign = await create(other.input, other.identity);
+      // ObjectIds from separate processes can sort either way within the same second.
+      const [firstId, lastId] = [id, second.id].sort();
+      const firstPage = await list(f.token, '?limit=1').expect(200);
+      expect(firstPage.body.data.items).toEqual([
+        expect.objectContaining({ id: firstId, role: 'OWNER' }),
+      ]);
+      expect(firstPage.body.data.nextCursor).toBe(firstId);
+      const lastPage = await list(f.token, `?after=${firstId}&limit=1`).expect(200);
+      expect(lastPage.body.data.items).toEqual([expect.objectContaining({ id: lastId })]);
+      expect(lastPage.body.data.nextCursor).toBeNull();
+      expect((await list(other.token).expect(200)).body.data.items).toEqual([
+        expect.objectContaining({ id: foreign.id }),
+      ]);
+      expect((await open(f.token, id).expect(200)).body.data).toMatchObject({ id, role: 'OWNER' });
+      const denied = await open(other.token, id).expect(404);
+      const missing = await open(other.token, new mongoose.Types.ObjectId().toHexString()).expect(
+        404,
+      );
+      expect(denied.body.error).toEqual(missing.body.error);
+      await open(f.token, 'invalid').expect(404);
+      await Workspace.updateOne({ _id: id }, { deletedAt: new Date() });
+      await open(f.token, id).expect(404);
+      if (firstId !== id) await Workspace.updateOne({ _id: firstId }, { deletedAt: new Date() });
+      const filtered = await list(f.token, '?limit=1').expect(200);
+      expect(filtered.body.data).toEqual({ items: [], nextCursor: firstId });
     } finally {
       await server.stop();
     }
@@ -1087,5 +1151,107 @@ describe('SCRUM-32/33 Workspace/general with real M1 models and M2 factory', () 
       tx.mockRestore();
       read.mockRestore();
     }
+  });
+  it('omits a Workspace denied after its read while the next list row is being loaded', async () => {
+    const owner = await fixture();
+    const member = await fixture();
+    const first = await create(owner.input, owner.identity);
+    const second = await create({ ...owner.input, requestId: randomUUID() }, owner.identity);
+    for (const workspace of [first, second]) {
+      await Membership.create({
+        workspaceId: workspace.id,
+        userId: member.user.id,
+        role: 'MEMBER',
+        status: 'ACTIVE',
+        incarnation: 1,
+        revision: 0,
+        joinedAt: new Date(),
+        removedAt: null,
+      });
+    }
+    const access = createWorkspaceAccessService(
+      database,
+      coordinator,
+      () => ready,
+      revocations.barrier,
+    );
+    const transaction = database.transaction.bind(database);
+    const revokeFirst = AsyncResource.bind(() =>
+      revocations.revoke({
+        userId: owner.user.id,
+        event: {
+          kind: 'WORKSPACE_DELETED',
+          workspaceId: first.id,
+          operationId: randomUUID(),
+          revision: 1,
+        },
+        persistence: {
+          prepareHeld: async () => ({ authSessionIds: [] }),
+          commitHeld: async () => 'unknown',
+          reconcileHeld: async () => 'unknown',
+        },
+      }),
+    );
+    let reads = 0;
+    const spy = vi.spyOn(database, 'transaction').mockImplementation(async (work) => {
+      if (++reads === 3) await revokeFirst();
+      return transaction(work);
+    });
+    try {
+      const result = await access.listWorkspaces(member.identity, {});
+      expect(result.items.map(({ id }) => id)).toEqual([second.id]);
+      expect(reads).toBe(3);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('hides a membership behind a pending Workspace deny even while Mongo still says ACTIVE', async () => {
+    const owner = await fixture();
+    const member = await fixture();
+    const workspace = await create(owner.input, owner.identity);
+    const membership = await Membership.create({
+      workspaceId: workspace.id,
+      userId: member.user.id,
+      role: 'MEMBER',
+      status: 'ACTIVE',
+      incarnation: 1,
+      revision: 0,
+      joinedAt: new Date(),
+      removedAt: null,
+    });
+    const access = createWorkspaceAccessService(
+      database,
+      coordinator,
+      () => ready,
+      revocations.barrier,
+    );
+    expect(await access.openWorkspace(member.identity, workspace.id)).toMatchObject({
+      role: 'MEMBER',
+    });
+    await revocations.revoke({
+      userId: member.user.id,
+      event: {
+        kind: 'WORKSPACE_MEMBERSHIP',
+        workspaceId: workspace.id,
+        userId: member.user.id,
+        membershipId: membership.id,
+        membershipIncarnation: 1,
+        operationId: randomUUID(),
+        revision: 1,
+      },
+      persistence: {
+        prepareHeld: async () => ({ authSessionIds: [] }),
+        commitHeld: async () => 'unknown',
+        reconcileHeld: async () => 'unknown',
+      },
+    });
+    await expect(access.openWorkspace(member.identity, workspace.id)).rejects.toMatchObject({
+      code: 'NOT_FOUND',
+    });
+    expect(await access.listWorkspaces(member.identity, {})).toEqual({
+      items: [],
+      nextCursor: null,
+    });
   });
 });
