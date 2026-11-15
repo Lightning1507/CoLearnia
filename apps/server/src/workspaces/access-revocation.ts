@@ -390,6 +390,7 @@ export function createAccessRevocationCoordinator(options: {
     return result(record);
   }
   return {
+    coordinator: options.coordinator,
     barrier,
     isSessionDenied(auth: AuthenticatedContext) {
       return [...records.values()].some((record) => matches(record, auth));

@@ -210,6 +210,27 @@ export function createSessionRepository(database: Database) {
     },
 
     // Primary/majority metadata read for the caller's reconcile step, never a runtime grant.
+    async readMutation(raw: z.infer<typeof identity> & { userId?: Types.ObjectId }) {
+      const input = identity.extend({ userId: objectId.optional() }).parse(raw);
+      // One snapshot prevents a session revision and participant from different commits
+      // from being mistaken for proof of a single mutation.
+      return database.transaction(async (session) => {
+        const version = await LiveSession.findOne({ _id: input.sessionId, epoch: input.epoch })
+          .session(session)
+          .lean();
+        const participant = input.userId
+          ? await SessionParticipant.findOne({ sessionId: input.sessionId, userId: input.userId })
+              .session(session)
+              .lean()
+          : null;
+        const activeParticipants = await SessionParticipant.countDocuments({
+          sessionId: input.sessionId,
+          leftAt: null,
+        }).session(session);
+        return { version, participant, activeParticipants };
+      });
+    },
+
     async readVersion(raw: z.infer<typeof identity>) {
       const input = identity.parse(raw);
       return LiveSession.findOne({ _id: input.sessionId, epoch: input.epoch })
