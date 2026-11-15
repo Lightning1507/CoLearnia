@@ -37,7 +37,7 @@ function setup(
   revokedAuthSessions?: Parameters<
     typeof createMainJoinRegistry
   >[0]['accessRevocations']['revokedAuthSessions'],
-  endCleanup?: Parameters<typeof createMainJoinRegistry>[0]['endCleanup'],
+  endCleanup?: Parameters<typeof createMainJoinRegistry>[0]['endCleanup'] | null,
   reconnectCleanup?: Parameters<typeof createMainJoinRegistry>[0]['reconnectCleanup'],
 ) {
   let time = Date.UTC(2026, 10, 10);
@@ -81,6 +81,9 @@ function setup(
     return router;
   });
   const repository = {
+    readMutation: vi.fn<Parameters<typeof createMainJoinRegistry>[0]['repository']['readMutation']>(
+      async () => ({ version: null, participant: null, activeParticipants: 0 }),
+    ),
     beginEnding: vi.fn(async (input: { expectedRevision: number }) => ({
       revision: input.expectedRevision + 1,
     })),
@@ -114,7 +117,15 @@ function setup(
     now: () => time,
     limits,
     ...(revocationCleanup ? { revocationCleanup } : {}),
-    ...(endCleanup ? { endCleanup } : {}),
+    ...(endCleanup === null
+      ? {}
+      : {
+          endCleanup: endCleanup ?? {
+            media: { revoke: cleanupAck },
+            messaging: async (request) => cleanupAck(request),
+            board: async (request) => cleanupAck(request),
+          },
+        }),
     ...(reconnectCleanup ? { reconnectCleanup } : {}),
   });
   registries.push(registry);
@@ -509,7 +520,7 @@ describe('SCRUM-86 session end', () => {
     expect(f.routers[0]!.closed).toBe(false);
   });
   it('does not enable end when a cleanup domain has not been configured', async () => {
-    const f = setup();
+    const f = setup({}, undefined, undefined, null);
     const socket = f.binding();
     const ticket = await f.issue();
     const joined = await f.registry.join(socket, {
@@ -654,6 +665,9 @@ describe('SCRUM-86 session end', () => {
 describe('SCRUM-83 MAIN revocation', () => {
   it('polls byte cleanup after permission revocation without expiring or retargeting the operation', async () => {
     const f = await revokeFixture();
+    const peer = f.principal();
+    const peerTicket = await f.issue(peer);
+    await f.registry.join(f.binding(peer), { ticket: peerTicket.ticket, requestId: randomUUID() });
     f.board.mockImplementationOnce(async (request) => ({
       ...cleanupAck(request),
       outcome: { permissionRevoked: true, pendingInvalidated: true, cleanupPending: true },
@@ -662,7 +676,7 @@ describe('SCRUM-83 MAIN revocation', () => {
       permissionRevoked: true,
       cleanupPending: true,
     });
-    expect(f.registry.stats().ownerships).toBe(0);
+    expect(f.registry.stats().ownerships).toBe(1);
     const login = { ...f.auth, authSessionId: id() };
     const ticket = await f.issue(login);
     await f.registry.join(f.binding(login), { ticket: ticket.ticket, requestId: randomUUID() });
@@ -674,7 +688,7 @@ describe('SCRUM-83 MAIN revocation', () => {
     expect(f.board).toHaveBeenCalledTimes(2);
     expect(f.board.mock.calls[1]![0]).toEqual(f.board.mock.calls[0]![0]);
     expect(f.media).toHaveBeenCalledTimes(1);
-    expect(f.registry.stats().ownerships).toBe(1);
+    expect(f.registry.stats().ownerships).toBe(2);
   });
 
   it('rejects composition with a separate M1 coordinator', () => {
@@ -721,6 +735,9 @@ describe('SCRUM-83 MAIN revocation', () => {
 
   it('resumes failed cleanup, coalesces concurrent retries and replays completion', async () => {
     const f = await revokeFixture();
+    const peer = f.principal();
+    const peerTicket = await f.issue(peer);
+    await f.registry.join(f.binding(peer), { ticket: peerTicket.ticket, requestId: randomUUID() });
     f.board.mockImplementationOnce(async (request) => ({
       ...cleanupAck(request),
       outcome: {
@@ -747,7 +764,7 @@ describe('SCRUM-83 MAIN revocation', () => {
     const result = await retry;
     expect(result).toMatchObject({ permissionRevoked: true, pendingInvalidated: true });
     expect(await concurrent).toEqual(result);
-    expect(f.registry.stats().ownerships).toBe(0);
+    expect(f.registry.stats().ownerships).toBe(1);
     const login = { ...f.auth, authSessionId: id() };
     const ticket = await f.issue(login);
     const socket = f.binding(login);
@@ -759,7 +776,7 @@ describe('SCRUM-83 MAIN revocation', () => {
       f.joined.ack.data.result.callGeneration,
     );
     expect(await f.registry.revoke(f.event)).toEqual(result);
-    expect(f.registry.stats().ownerships).toBe(1);
+    expect(f.registry.stats().ownerships).toBe(2);
     expect(f.media).toHaveBeenCalledTimes(1);
   });
 
@@ -2023,11 +2040,13 @@ describe('SCRUM-82 MAIN join registry', () => {
   });
 });
 
-async function reconnectFixture() {
+async function reconnectFixture(
+  endCleanup?: Parameters<typeof createMainJoinRegistry>[0]['endCleanup'],
+) {
   const media = vi.fn((request: SessionCleanupRequest) => cleanupAck(request));
   const messaging = vi.fn(async (request: SessionCleanupRequest) => cleanupAck(request));
   const board = vi.fn(async (request: SessionCleanupRequest) => cleanupAck(request));
-  const f = setup({}, undefined, undefined, undefined, {
+  const f = setup({}, undefined, undefined, endCleanup, {
     media: { revoke: media },
     messaging,
     board,
@@ -2107,6 +2126,97 @@ describe('screen picker commands through the MAIN registry', () => {
 });
 
 describe('MAIN reconnect and resync', () => {
+  it('does not renew the issue budget when retiring an orphan before creating a replacement', async () => {
+    const f = setup({}, undefined, undefined, {
+      media: { revoke: cleanupAck },
+      messaging: async (request) => cleanupAck(request),
+      board: async (request) => {
+        f.advance(10_000);
+        return cleanupAck(request);
+      },
+    });
+    await f.issue();
+    f.advance(60_000);
+    await expect(f.issue()).rejects.toMatchObject({ code: 'DEPENDENCY_UNAVAILABLE' });
+    expect(f.repository.create).toHaveBeenCalledOnce();
+    expect(f.registry.stats().rooms).toBe(0);
+    const fresh = await f.issue();
+    expect(fresh.sessionId).toBeDefined();
+    expect(f.repository.create).toHaveBeenCalledTimes(2);
+  });
+  it('keeps the final grace until its boundary, then ends despite an unused live ticket', async () => {
+    const f = await reconnectFixture();
+    await f.registry.disconnect(f.socket.socketId);
+    f.advance(29_999);
+    const other = f.principal();
+    const waiting = await f.issue(other);
+    await f.registry.sweepExpired();
+    expect(f.registry.stats().rooms).toBe(1);
+    expect(f.repository.beginEnding).not.toHaveBeenCalled();
+    f.advance(1);
+    await f.registry.sweepExpired();
+    expect(f.registry.stats().rooms).toBe(0);
+    expect(f.repository.beginEnding).toHaveBeenCalledOnce();
+    expect(f.repository.completeEnding).toHaveBeenCalledOnce();
+    await expect(
+      f.registry.join(f.binding(other), { ticket: waiting.ticket, requestId: randomUUID() }),
+    ).rejects.toThrow();
+    const next = await f.issue(other);
+    expect(next.epoch).not.toBe(f.command.epoch);
+  });
+  it('keeps the session if a serialized join commits before the empty decision', async () => {
+    const f = await reconnectFixture();
+    await f.registry.disconnect(f.socket.socketId);
+    const other = f.principal();
+    const waiting = await f.issue(other);
+    f.advance(30_000);
+    const hold = deferred<void>();
+    const original = f.repository.join.getMockImplementation()!;
+    f.repository.join.mockImplementationOnce(async (input) => {
+      await hold.promise;
+      return original(input);
+    });
+    const joining = f.registry.join(f.binding(other), {
+      ticket: waiting.ticket,
+      requestId: randomUUID(),
+    });
+    await vi.waitFor(() => expect(f.repository.join).toHaveBeenCalledTimes(2));
+    const sweeping = f.registry.sweepExpired();
+    hold.resolve();
+    await joining;
+    await sweeping;
+    expect(f.registry.stats().rooms).toBe(1);
+    expect(f.registry.stats().ownerships).toBe(1);
+    expect(f.repository.beginEnding).not.toHaveBeenCalled();
+  });
+  it('rejects join after empty end wins and never lets its stale callbacks affect a new epoch', async () => {
+    const pending = deferred<SessionCleanupResult>();
+    const board = vi.fn<(request: SessionCleanupRequest) => Promise<SessionCleanupResult>>(
+      () => pending.promise,
+    );
+    const f = await reconnectFixture({
+      media: { revoke: cleanupAck },
+      messaging: async (request) => cleanupAck(request),
+      board,
+    });
+    await f.registry.disconnect(f.socket.socketId);
+    const other = f.principal();
+    const waiting = await f.issue(other);
+    f.advance(30_000);
+    const ending = f.registry.sweepExpired();
+    await vi.waitFor(() => expect(board).toHaveBeenCalledOnce());
+    await expect(
+      f.registry.join(f.binding(other), { ticket: waiting.ticket, requestId: randomUUID() }),
+    ).rejects.toThrow();
+    await expect(f.issue(other)).rejects.toMatchObject({ code: 'DEPENDENCY_UNAVAILABLE' });
+    pending.resolve(cleanupAck(board.mock.calls[0]![0]));
+    await ending;
+    const next = await f.issue(other);
+    await expect(f.registry.resume(f.next, f.command)).rejects.toMatchObject({ code: 'CONFLICT' });
+    await f.registry.disconnect(f.socket.socketId);
+    expect(next.epoch).not.toBe(f.command.epoch);
+    expect(f.routers.at(-1)!.closed).toBe(false);
+  });
   it('retries a timed out Workspace gate and releases the expired ownership after cleanup', async () => {
     const f = await reconnectFixture();
     const entered = deferred<void>();
@@ -2188,6 +2298,9 @@ describe('MAIN reconnect and resync', () => {
   });
   it('concurrent sweeps keep the gate available and do not duplicate pending cleanup', async () => {
     const f = await reconnectFixture();
+    const peer = f.principal();
+    const peerTicket = await f.issue(peer);
+    await f.registry.join(f.binding(peer), { ticket: peerTicket.ticket, requestId: randomUUID() });
     const run = vi.spyOn(f.coordinator, 'run');
     for (let attempt = 0; attempt < 3; attempt++)
       run.mockRejectedValueOnce(new CoordinationError('BUSY'));
@@ -2198,7 +2311,7 @@ describe('MAIN reconnect and resync', () => {
     const first = f.registry.sweepExpired();
     await vi.waitFor(() => expect(f.board).toHaveBeenCalledOnce());
     await f.registry.sweepExpired();
-    expect(f.registry.stats().ownerships).toBe(1);
+    expect(f.registry.stats().ownerships).toBe(2);
     expect(await f.registry.withContext(f.socket.socketId, f.context, (value) => value.ok)).toBe(
       false,
     );
@@ -2206,22 +2319,27 @@ describe('MAIN reconnect and resync', () => {
     expect(f.messaging).toHaveBeenCalledOnce();
     pending.resolve(cleanupAck(f.board.mock.calls[0]![0]));
     await first;
-    expect(f.registry.stats().ownerships).toBe(0);
+    expect(f.registry.stats().ownerships).toBe(1);
     expect(f.board).toHaveBeenCalledOnce();
   });
   it('keeps cleanup bounded per sweep and retries on a later sweep when admission recovers', async () => {
     const f = await reconnectFixture();
+    const peer = f.principal();
+    const peerTicket = await f.issue(peer);
+    await f.registry.join(f.binding(peer), { ticket: peerTicket.ticket, requestId: randomUUID() });
     const run = vi.spyOn(f.coordinator, 'run');
     for (let attempt = 0; attempt < 6; attempt++)
       run.mockRejectedValueOnce(new CoordinationError('BUSY'));
     await expect(f.registry.disconnect(f.socket.socketId)).rejects.toMatchObject({ code: 'BUSY' });
     f.advance(30_000);
     await f.registry.sweepExpired();
-    expect(run).toHaveBeenCalledTimes(7);
-    expect(f.registry.stats().ownerships).toBe(1);
+    // Three attempts for disconnect, three for sweep; a busy Workspace is then
+    // deferred instead of trying its gate again for the empty-room decision.
+    expect(run).toHaveBeenCalledTimes(6);
+    expect(f.registry.stats().ownerships).toBe(2);
     expect(f.messaging).not.toHaveBeenCalled();
     await f.registry.sweepExpired();
-    expect(f.registry.stats().ownerships).toBe(0);
+    expect(f.registry.stats().ownerships).toBe(1);
     expect(f.media).toHaveBeenCalledOnce();
     expect(f.messaging).toHaveBeenCalledOnce();
     expect(f.board).toHaveBeenCalledOnce();

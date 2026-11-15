@@ -62,3 +62,10 @@ Regression giữ login/generation mới và native transport mới trong lúc ca
 chưa kết thúc; callback cũ kết thúc rồi retry mới cho M1 commit. Ca board đã thu quyền
 nhưng còn dọn byte cũng retry được sau hơn 60 giây, không đổi target.
 Đã chạy lại riêng registry/M1/transition: 197 unit test; MAIN MongoDB/native: 16/16.
+
+Sau khi PR #92 được merge vào main `a91657b`, đã hợp nhất cả metadata reconciliation
+và shared deny/retry. Quality gate chạy lại: 861 unit test, format/lint/typecheck và
+server/web build đạt; toàn bộ DB suite 233 đạt/1 bỏ qua (failpoint chưa bật), trong đó
+MAIN MongoDB/native 30/30. Media smoke đạt. Web build vẫn có cảnh báo bundle lớn.
+Các ca giữ generation mới dùng thêm một peer để không kích hoạt kết thúc phòng rỗng
+của #92; không giảm kiểm request cleanup, số lần gọi adapter hoặc quyền của generation mới.

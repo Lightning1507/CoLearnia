@@ -10,6 +10,7 @@ it('binds both cleanup ports once on the application-owned M1 ledger', async () 
   });
   const options: Parameters<typeof createApplicationMainRegistry>[0] = {
     repository: {
+      readMutation: vi.fn(),
       create: vi.fn(),
       join: vi.fn(),
       beginEnding: vi.fn(),
