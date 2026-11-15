@@ -168,3 +168,9 @@ phiên/membership/channel/grant trong snapshot transaction mới, dùng cùng co
 User → Workspace; hàm `Held` cho service đã giữ gate. Consumer vẫn phải từ chối nội
 dung khi `canReadContent:false`, kiểm lại sau await và giữ cleanup khi resolver ném
 lỗi. Chưa thay provider DM hoặc policy runtime phiên/nhóm, chưa là deny barrier.
+
+## SCRUM-35 — tạo kênh
+
+POST `/workspaces/:workspaceId/channels` đã nối service và form trong Workspace thật. OWNER/ADMIN hiện hành mới được tạo, MEMBER trả FORBIDDEN; Workspace ngoài quyền/đã xóa trả NOT_FOUND. TEXT tạo cùng conversation M2 và audit trong transaction chung; LIVE không gọi factory TEXT. PRIVATE chưa cấp grant cho ai, kể cả người tạo; quản lý danh sách PRIVATE thuộc T13.
+
+Body tạo kênh bổ sung `replayOnly: true` tùy chọn. Khóa actor + Workspace + CHANNEL_CREATE + requestId (chữ thường) giữ trong process 10 phút sau xác nhận, tối đa 10.000 entry; cùng khóa khác name/type/accessMode trả CONFLICT. Replay kiểm quyền hiện hành, không phục hồi kênh đã xóa. Commit chưa rõ giữ IDs để reconcile, không evict theo TTL. Khi replayOnly không còn entry, trả CHANNEL_REPLAY_UNAVAILABLE (410), không tạo kênh mới. Response vẫn HTTP 201 với Channel DTO hiện hành. Không bảo đảm dedupe xuyên restart/quá TTL; xem [runbook tạo kênh](../runbooks/channel-creation.md).

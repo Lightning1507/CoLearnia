@@ -79,6 +79,32 @@ describe('database admission and configuration', () => {
     },
   );
 
+  it.each(['work', 'commit'] as const)(
+    'classifies an unlabeled network failure during %s',
+    async (phase) => {
+      const database = createDatabase('mongodb://127.0.0.1:27017/unused');
+      vi.spyOn(database.connection, 'readyState', 'get').mockReturnValue(1);
+      const client = new mongoose.mongo.MongoClient('mongodb://127.0.0.1:27017');
+      const session = client.startSession();
+      vi.spyOn(database.connection, 'startSession').mockResolvedValue(session);
+      const failure = new mongoose.mongo.MongoNetworkError('connection closed');
+      const commit = vi.spyOn(session, 'commitTransaction').mockRejectedValue(failure);
+      const work = vi.fn(async () => {
+        if (phase === 'work') throw failure;
+      });
+      try {
+        await expect(database.transaction(work)).rejects.toBe(failure);
+        expect(failure.hasErrorLabel('UnknownTransactionCommitResult')).toBe(phase === 'commit');
+        expect(commit).toHaveBeenCalledTimes(phase === 'commit' ? 2 : 0);
+        expect(work).toHaveBeenCalledTimes(1);
+      } finally {
+        vi.restoreAllMocks();
+        await database.close();
+        await client.close();
+      }
+    },
+  );
+
   it.each(['timeoutMS=100', 'TIMEOUTMS=0', 'timeout%4dS=100'])(
     'rejects CSOT from MONGO_URI (%s)',
     (option) => {

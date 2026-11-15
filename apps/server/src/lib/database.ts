@@ -26,6 +26,14 @@ async function commitTransaction(session: ClientSession): Promise<void> {
   try {
     await session.commitTransaction();
   } catch (error) {
+    // The driver can exhaust its retry budget before attaching the commit label.
+    // A dropped acknowledgement is ambiguous only after entering the commit phase.
+    if (
+      error instanceof mongoose.mongo.MongoNetworkError ||
+      error instanceof mongoose.mongo.MongoWriteConcernError
+    ) {
+      error.addErrorLabel('UnknownTransactionCommitResult');
+    }
     if (!hasLabel(error, 'UnknownTransactionCommitResult')) throw error;
     try {
       await session.commitTransaction();
