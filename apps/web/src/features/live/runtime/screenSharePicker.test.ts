@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { screenPickerLeaseMs } from '@colearnia/contracts';
+import { screenPickerLeaseMs, sessionControlBudget } from '@colearnia/contracts';
 import type {
   ScreenPickerLease,
   SessionProjection,
@@ -46,7 +46,7 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
-function fixture() {
+function fixture(publish?: ConstructorParameters<typeof ScreenSharePicker>[1]['publish']) {
   vi.useFakeTimers();
   const context: SessionProjectionCursor = {
     sessionId: '111111111111111111111111',
@@ -73,6 +73,7 @@ function fixture() {
     acquire: vi.fn(async () => lease),
     release: vi.fn(async () => {}),
     capture: vi.fn(async () => stream),
+    ...(publish && { publish }),
   };
   const picker = new ScreenSharePicker(context, ports, () => Date.now());
   picker.updateContext({ ...context, projection: projectionFor(context) });
@@ -180,4 +181,89 @@ describe('screen picker lease', () => {
     expect(f.picker.getSnapshot().status).toBe('reserved');
     f.picker.dispose();
   });
+});
+
+it('browser Stop aborts the published pair and releases the exact lease after picker TTL', async () => {
+  const publish = vi.fn<NonNullable<ConstructorParameters<typeof ScreenSharePicker>[1]['publish']>>(
+    async () => {},
+  );
+  const f = fixture(publish);
+  await f.picker.reserve();
+  await f.picker.choose();
+  const signal = publish.mock.calls[0]![3];
+  expect(f.picker.getSnapshot().status).toBe('sharing');
+  await vi.advanceTimersByTimeAsync(screenPickerLeaseMs);
+  expect(signal.aborted).toBe(false);
+  f.video.dispatchEvent(new Event('ended'));
+  expect(signal.aborted).toBe(true);
+  expect(f.video.stop).toHaveBeenCalledOnce();
+  expect(f.audio.stop).toHaveBeenCalledOnce();
+  expect(f.ports.release).toHaveBeenCalledExactlyOnceWith(f.context, f.lease);
+  expect(f.picker.getSnapshot().status).toBe('stopping');
+  await Promise.resolve();
+  expect(f.picker.getSnapshot()).toEqual({
+    status: 'idle',
+    error: 'Đã dừng chia sẻ màn hình.',
+  });
+});
+
+it('keeps the old lease for retry when browser Stop cannot be confirmed', async () => {
+  const f = fixture(async () => {});
+  const confirmation = deferred<void>();
+  f.ports.release
+    .mockRejectedValueOnce(new Error('Stop request timed out'))
+    .mockReturnValueOnce(confirmation.promise);
+  await f.picker.reserve();
+  await f.picker.choose();
+  f.video.dispatchEvent(new Event('ended'));
+  await Promise.resolve();
+  expect(f.picker.getSnapshot().status).toBe('stopFailed');
+  expect(f.video.stop).toHaveBeenCalledOnce();
+  expect(f.audio.stop).toHaveBeenCalledOnce();
+  await f.picker.reserve();
+  expect(f.ports.acquire).toHaveBeenCalledOnce();
+
+  f.picker.cancel();
+  f.picker.cancel();
+  expect(f.picker.getSnapshot().status).toBe('stopping');
+  expect(f.ports.release.mock.calls).toEqual([
+    [f.context, f.lease],
+    [f.context, f.lease],
+  ]);
+  confirmation.resolve();
+  await Promise.resolve();
+  expect(f.picker.getSnapshot().status).toBe('idle');
+  expect(f.video.stop).toHaveBeenCalledOnce();
+});
+
+it('does not stop a committed SCREEN at the picker deadline while audio is pending', async () => {
+  const audio = deferred<void>();
+  const publish = vi.fn<NonNullable<ConstructorParameters<typeof ScreenSharePicker>[1]['publish']>>(
+    () => audio.promise,
+  );
+  const f = fixture(publish);
+  await f.picker.reserve();
+  await vi.advanceTimersByTimeAsync(screenPickerLeaseMs - 1);
+  const choosing = f.picker.choose();
+  await vi.advanceTimersByTimeAsync(2);
+  expect(publish).toHaveBeenCalledOnce();
+  expect(publish.mock.calls[0]![3].aborted).toBe(false);
+  expect(f.picker.getSnapshot().status).toBe('publishing');
+  expect(f.ports.release).not.toHaveBeenCalled();
+  audio.resolve();
+  await choosing;
+  expect(f.picker.getSnapshot().status).toBe('sharing');
+});
+
+it('cancels publication that exceeds its own deadline and ignores a late result', async () => {
+  const publication = deferred<void>();
+  const f = fixture(() => publication.promise);
+  await f.picker.reserve();
+  const choosing = f.picker.choose();
+  await vi.advanceTimersByTimeAsync(sessionControlBudget.foregroundTransitionTimeoutMs);
+  expect(f.ports.release).toHaveBeenCalledExactlyOnceWith(f.context, f.lease);
+  expect(f.video.stop).toHaveBeenCalledOnce();
+  publication.resolve();
+  await choosing;
+  expect(f.picker.getSnapshot().status).toBe('idle');
 });
