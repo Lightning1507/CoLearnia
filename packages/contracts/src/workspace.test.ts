@@ -190,3 +190,12 @@ describe('Workspace/channel contracts', () => {
     ).toBe(false);
   });
 });
+
+it('supports explicit channel replay without accepting arbitrary replay flags or private allowlists', () => {
+  const input = { name: 'Kênh', type: 'TEXT', accessMode: 'PRIVATE', requestId, replayOnly: true };
+  expect(createChannelSchema.parse(input).replayOnly).toBe(true);
+  expect(createChannelSchema.safeParse({ ...input, replayOnly: false }).success).toBe(false);
+  expect(createChannelSchema.safeParse({ ...input, memberIds: [id] }).success).toBe(false);
+  expect(createChannelSchema.safeParse({ ...input, name: 'Nhóm \ud800' }).success).toBe(false);
+  expect(createChannelSchema.safeParse({ ...input, name: 'Nhóm 👋' }).success).toBe(true);
+});

@@ -17,6 +17,8 @@ import type { createWorkspaceCreator } from './create-workspace.js';
 
 import { WorkspaceAccessError } from './access-service.js';
 import type { createWorkspaceAccessService } from './access-service.js';
+import { installChannelCreationRoute } from './create-channel-route.js';
+import type { createChannelCreator } from './create-channel.js';
 
 function handleReadError(error: unknown, res: AuthResponse, next: NextFunction) {
   if (error instanceof WorkspaceAccessError) {
@@ -38,12 +40,14 @@ export function createWorkspaceRouter(
     ReturnType<typeof createWorkspaceAccessService>,
     'listWorkspaces' | 'openWorkspace'
   >,
+  createChannel?: ReturnType<typeof createChannelCreator>,
 ) {
   const router = Router();
   router.use((_req, res, next) => {
     res.setHeader('Cache-Control', 'no-store');
     next();
   });
+  if (createChannel) installChannelCreationRoute(router, auth, createChannel);
   if (access) {
     router.get('/', auth.requireAuth, async (req, res, next) => {
       const verified = requireVerifiedSession(res);
