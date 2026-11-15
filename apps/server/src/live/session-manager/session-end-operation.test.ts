@@ -86,6 +86,30 @@ afterEach(() => {
   vi.useRealTimers();
 });
 describe('session end deadline and late callbacks', () => {
+  it('uses a fresh recovery guard without reviving a timed-out foreground callback', async () => {
+    const f = setup();
+    const wait = deferred();
+    let oldGuardRejected = false;
+    f.beginEnding.mockImplementationOnce(async (guard) => {
+      await wait.promise;
+      try {
+        guard();
+      } catch (error) {
+        oldGuardRejected = true;
+        throw error;
+      }
+    });
+    const initial = f.operation.run();
+    await f.expire();
+    expect(await initial).toMatchObject({ data: { status: 'pending' } });
+    expect(await f.operation.reconcile()).toMatchObject({ data: { status: 'completed' } });
+    wait.resolve();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(oldGuardRejected).toBe(true);
+    expect(f.completeEnding).toHaveBeenCalledOnce();
+    expect(f.finalize).toHaveBeenCalledOnce();
+    expect(await f.operation.run()).toMatchObject({ data: { status: 'completed' } });
+  });
   it('still calls messaging and board cleanup if beginEnding cannot confirm the DB write', async () => {
     const f = setup();
     f.beginEnding.mockRejectedValueOnce(new Error('Injected database failure'));
