@@ -28,6 +28,13 @@ type Slot = {
   owner: LiveContext;
   state: 'RESERVED' | 'OWNED' | 'RELEASING';
   publicationId?: string;
+  publication?: { close(): boolean; isStopped(): boolean };
+};
+
+export type HeldShareLease = {
+  leases: ReturnType<typeof createShareLeaseRegistry>;
+  held: HeldShareContext;
+  retire(ref: ShareLeaseRef): Promise<void>;
 };
 
 function screen(source: MediaSource) {
@@ -79,9 +86,13 @@ export function createShareLeaseRegistry(sessionId: string, epoch: string) {
 
   function currentSlot(held: HeldShareContext, key: string) {
     const slot = slots.get(key);
-    if (slot?.state === 'RESERVED' && slot.lease.expiresAtMs <= held.nowMs) {
-      slots.delete(key);
-      return undefined;
+    if (
+      slot &&
+      ((slot.state === 'RESERVED' && slot.lease.expiresAtMs <= held.nowMs) ||
+        slot.publication?.isStopped())
+    ) {
+      closeSlot(key, slot);
+      return slots.get(key);
     }
     return slot;
   }
@@ -108,7 +119,59 @@ export function createShareLeaseRegistry(sessionId: string, epoch: string) {
     return { ok: true, value: slot };
   }
 
+  function closeSlot(key: string, slot: Slot) {
+    slot.state = 'RELEASING';
+    const closed = slot.publication?.close() ?? true;
+    if (closed && slots.get(key) === slot) slots.delete(key);
+  }
+
   return {
+    bindPublicationHeld(
+      held: HeldShareContext,
+      publication: SharePublication,
+      lifecycle: NonNullable<Slot['publication']>,
+    ) {
+      const result = ownedSlot(held, publication);
+      if (
+        !result.ok ||
+        result.value.publicationId !== publication.publicationId ||
+        result.value.publication
+      )
+        return false;
+      result.value.publication = lifecycle;
+      return true;
+    },
+
+    retireHeld(
+      held: Pick<HeldShareContext, 'assertHeld' | 'session' | 'nowMs'>,
+      ref: ShareLeaseRef,
+    ) {
+      assertSession(held);
+      for (const [key, slot] of slots) if (sameLease(slot, ref)) closeSlot(key, slot);
+    },
+
+    stopHeld(held: HeldShareContext, ref: ShareLeaseRef): boolean {
+      assertSession(held);
+      const resolved = resolveSessionPolicyContext(held);
+      if (!resolved.ok) return false;
+      const { context } = resolved;
+      // Stop is cleanup of an exact old lease. A scope change must not hide it.
+      for (const [key, slot] of slots) {
+        const { owner } = slot;
+        if (
+          !sameLease(slot, ref) ||
+          owner.participantId !== context.participantId ||
+          owner.callGeneration !== context.callGeneration ||
+          owner.auth.authSessionId !== context.auth.authSessionId ||
+          owner.auth.userId !== context.auth.userId
+        )
+          continue;
+        closeSlot(key, slot);
+        return true;
+      }
+      return false;
+    },
+
     acquireHeld(held: HeldShareContext): Result<ShareLease> {
       const resolved = authority(held);
       if (!resolved.ok) return resolved;
@@ -205,12 +268,12 @@ export function createShareLeaseRegistry(sessionId: string, epoch: string) {
     cancelHeld(held: HeldShareContext, ref: ShareLeaseRef): boolean {
       const result = ownedSlot(held, ref);
       if (!result.ok || result.value.state !== 'RESERVED') return false;
-      slots.delete(scopeKey(result.value.owner));
+      closeSlot(scopeKey(result.value.owner), result.value);
       return true;
     },
 
     // Trusted lifecycle callers capture the old generation before changing ownership.
-    cancelPendingFor(
+    closeFor(
       held: Pick<HeldShareContext, 'assertHeld' | 'session' | 'nowMs'>,
       participantId: string,
       callGeneration: number,
@@ -218,11 +281,10 @@ export function createShareLeaseRegistry(sessionId: string, epoch: string) {
       assertSession(held);
       for (const [key, slot] of slots) {
         if (
-          slot.state === 'RESERVED' &&
           slot.owner.participantId === participantId &&
           slot.owner.callGeneration === callGeneration
         )
-          slots.delete(key);
+          closeSlot(key, slot);
       }
     },
 
@@ -231,7 +293,7 @@ export function createShareLeaseRegistry(sessionId: string, epoch: string) {
       assertSession(held);
       for (const [key, slot] of slots) {
         if (!sameLease(slot, ref)) continue;
-        if (slot.state === 'RESERVED') slots.delete(key);
+        if (slot.publication || slot.state === 'RESERVED') closeSlot(key, slot);
         else slot.state = 'RELEASING';
         return true;
       }
@@ -262,7 +324,7 @@ export function createShareLeaseRegistry(sessionId: string, epoch: string) {
                   sameSessionScope(owner.scope, target.scope)));
         if (!matches) continue;
         affected.push(slot.lease);
-        if (slot.state === 'RESERVED') slots.delete(key);
+        if (slot.publication || slot.state === 'RESERVED') closeSlot(key, slot);
         else slot.state = 'RELEASING';
       }
       return affected;
@@ -272,8 +334,8 @@ export function createShareLeaseRegistry(sessionId: string, epoch: string) {
       assertSession(held);
       for (const [key, slot] of slots) {
         if (!sameLease(slot, ref) || slot.state !== 'RELEASING') continue;
-        slots.delete(key);
-        return true;
+        closeSlot(key, slot);
+        return !slots.has(key);
       }
       return false;
     },
