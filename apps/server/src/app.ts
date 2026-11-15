@@ -13,6 +13,7 @@ export function createApp(
   getStatus: () => SystemStatus,
   authRouter?: Router,
   workspaceRouter?: Router,
+  textRouter?: Router,
 ) {
   const app = express();
   app.disable('x-powered-by');
@@ -30,6 +31,7 @@ export function createApp(
   });
   app.use(express.json({ limit: '32kb' }));
   if (authRouter) app.use('/api/v1/auth', authRouter);
+  if (textRouter) app.use('/api/v1/channels', textRouter);
   if (workspaceRouter) app.use('/api/v1/workspaces', workspaceRouter);
 
   app.get('/health/live', (_req, res) => {

@@ -12,6 +12,9 @@ import { preflightIndexes } from './lib/database-preflight.js';
 import { logger } from './lib/logger.js';
 import { operationCoordinator } from './lib/shared-coordination.js';
 import { accessRevocations } from './lib/shared-access-revocation.js';
+import { createTextService } from './messaging/text-service.js';
+import { createTextRouter, createTextSocketSend } from './messaging/text-transport.js';
+import { textMessageIndexes } from './messaging/text-message.js';
 import { createChannelConversationFactory } from './messaging/conversation.js';
 import {
   createWorkspaceCreator,
@@ -40,6 +43,7 @@ let media: Awaited<ReturnType<typeof createMediaRuntime>> | undefined;
 let stopping = false;
 let authIndexesReady = false;
 let workspaceIndexesReady = false;
+let textIndexesReady = false;
 let acceptingLiveRuntime = false;
 const sessionBootstrap = createSessionBootstrap(database, {
   isOffline: () => !acceptingLiveRuntime && !stopping,
@@ -85,6 +89,23 @@ const authRouter = httpAuth
       sessionRevocation.logout,
     )
   : undefined;
+const workspaceAccess = createWorkspaceAccessService(
+  database,
+  operationCoordinator,
+  () => canUseAuthIndexes() && workspaceIndexesReady,
+  accessRevocations.barrier,
+);
+const textService = config.SESSION_SECRET
+  ? createTextService(
+      database,
+      operationCoordinator,
+      workspaceAccess,
+      () => canUseAuthIndexes() && workspaceIndexesReady && textIndexesReady,
+      config.SESSION_SECRET,
+      config.MESSAGING_BUDGET_JSON,
+    )
+  : undefined;
+const textRouter = httpAuth && textService ? createTextRouter(httpAuth, textService) : undefined;
 const workspaceRouter = httpAuth
   ? createWorkspaceRouter(
       httpAuth,
@@ -95,21 +116,17 @@ const workspaceRouter = httpAuth
         indexesReady: () => canUseAuthIndexes() && workspaceIndexesReady,
         createConversation: createChannelConversationFactory(database.connection).create,
       }),
-      createWorkspaceAccessService(
-        database,
-        operationCoordinator,
-        () => canUseAuthIndexes() && workspaceIndexesReady,
-        accessRevocations.barrier,
-      ),
+      workspaceAccess,
     )
   : undefined;
-const httpServer = createServer(createApp(config, status, authRouter, workspaceRouter));
+const httpServer = createServer(createApp(config, status, authRouter, workspaceRouter, textRouter));
 const io = createRealtime(
   httpServer,
   config,
   readSession,
   connections,
   (auth) => !accessRevocations.isSessionDenied(auth),
+  textService && createTextSocketSend(textService),
 );
 
 async function start() {
@@ -142,6 +159,18 @@ async function start() {
       else logger.info('Workspace creation database preflight passed.');
     } catch {
       logger.warn('Could not check Workspace collections/indexes; creation remains unavailable.');
+    }
+  }
+
+  if (textService && config.MESSAGING_BUDGET_JSON && database.isConnected()) {
+    try {
+      const { ready, issues } = await preflightIndexes(database.connection, [
+        ...textMessageIndexes,
+      ]);
+      textIndexesReady = ready;
+      if (!ready) logger.warn({ issues }, 'TEXT messaging requires its indexes before startup.');
+    } catch {
+      logger.warn('Could not check TEXT indexes; messaging remains unavailable.');
     }
   }
 

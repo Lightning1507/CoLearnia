@@ -77,13 +77,16 @@ export function createTextMessageRepository(database: ReturnType<typeof createDa
   const Conversation = conversationModel(database.connection);
 
   return {
-    async append(input: {
-      conversationId: Types.ObjectId;
-      senderId: Types.ObjectId;
-      clientMessageId: string;
-      text: string;
-      createdAt: Date;
-    }) {
+    async append(
+      input: {
+        conversationId: Types.ObjectId;
+        senderId: Types.ObjectId;
+        clientMessageId: string;
+        text: string;
+        createdAt: Date;
+      },
+      maxTimeMS = 5000,
+    ) {
       const { conversationId, senderId, createdAt } = input;
       const { clientMessageId, text } = bodySchema.parse({
         clientMessageId: input.clientMessageId,
@@ -92,10 +95,14 @@ export function createTextMessageRepository(database: ReturnType<typeof createDa
       const id = new Types.ObjectId();
       const scope = { _id: conversationId, kind: 'CHANNEL', closedAt: null };
       return database.transaction(async (session) => {
-        const conversation = await Conversation.findOne(scope).session(session).lean();
+        const conversation = await Conversation.findOne(scope)
+          .session(session)
+          .maxTimeMS(maxTimeMS)
+          .lean();
         if (!conversation) return { outcome: 'not-found' } as const;
         const existing = await Message.findOne({ conversationId, senderId, clientMessageId })
           .session(session)
+          .maxTimeMS(maxTimeMS)
           .lean();
         if (existing) {
           return existing.rootMessageId == null &&
@@ -110,7 +117,7 @@ export function createTextMessageRepository(database: ReturnType<typeof createDa
         const updated = await Conversation.findOneAndUpdate(
           scope,
           { $inc: { lastMessageCommitSeq: 1 } },
-          { session, returnDocument: 'after', timestamps: false },
+          { session, returnDocument: 'after', timestamps: false, maxTimeMS },
         ).orFail();
         const message = await new Message({
           _id: id,
@@ -124,7 +131,12 @@ export function createTextMessageRepository(database: ReturnType<typeof createDa
         return { outcome: 'created', message: message.toObject() } as const;
       });
     },
-    async listRoots(conversationId: Types.ObjectId, limit: number, cursor?: TextRootCursor) {
+    async listRoots(
+      conversationId: Types.ObjectId,
+      limit: number,
+      cursor?: TextRootCursor,
+      maxTimeMS = 5000,
+    ) {
       if (!Number.isInteger(limit) || limit < 1 || limit > textHistoryMaxLimit) {
         throw new RangeError('Invalid text history limit');
       }
@@ -147,6 +159,7 @@ export function createTextMessageRepository(database: ReturnType<typeof createDa
       })
         .sort({ createdAt: -1, _id: -1 })
         .limit(limit + 1)
+        .maxTimeMS(maxTimeMS)
         .lean();
       const items = rows.slice(0, limit);
       const last = items.at(-1);

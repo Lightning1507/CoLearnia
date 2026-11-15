@@ -66,3 +66,13 @@ Xem [checklist cấu hình staging SCRUM-54](staging-configuration.md) để đ�
 ## Profile capacity
 
 Theo [capacity](../capacity.md), local start/health hoặc media smoke không chứng minh 25/50 người. Các profile cần DB test/dữ liệu cũ, config pool/queue/quota hữu hạn và media thật trên hạ tầng ghi rõ; không đo 50 tab trên một laptop rồi suy capacity server. Một VPS/DB node là phương án thử, chưa là HA. Đợt đồng bộ tài liệu không start/stop container hoặc chạy migration.
+
+### Gửi và đọc tin nhắn TEXT (SCRUM-42)
+
+REST dùng `POST /api/v1/channels/:channelId/messages` để gửi và `GET` cùng đường dẫn để đọc lịch sử. Socket.IO dùng `message.send` với ACK theo contract. REST POST và kết nối socket cần CSRF gắn với phiên. Hai transport chia sẻ khóa retry và kiểm quyền nội dung TEXT qua cùng service.
+
+Để chạy trên môi trường riêng, cần `SESSION_SECRET`, các collection/index của auth/Workspace và hai index trong [manifest tin nhắn](../../apps/server/src/messaging/text-message.ts). Server chỉ kiểm index lúc khởi động. Tạo index theo [quy trình preflight](mongodb-transactions.md#kiểm-db-và-indexmigration-trên-môi-trường-riêng), rồi khởi động lại.
+
+`MESSAGING_BUDGET_JSON` nhận cấu hình theo [schema budget](../../apps/server/src/messaging/budget.ts). Điền `handlers.text` cho gửi và `handlers.history` cho đọc. Handler thiếu budget hoặc chưa qua preflight trả 503. Phần giới hạn pool và chờ kết nối do các biến `MONGO_*` của server quản lý. Dùng budget trong [fixture tích hợp](../../apps/server/test/text-transport.integration.ts) để tái lập kiểm thử trên DB riêng. Môi trường dùng chung cần budget được nhóm review cùng media và tải kết hợp trước khi bật. [Quy tắc budget](../contracts/messaging-access.md#7-giới-hạn-xử-lý-để-hệ-thống-không-bị-quá-tải)
+
+Phạm vi SCRUM-42 là tin gốc và lịch sử thường. Feed realtime, subscribe và snapshot/catch-up thuộc SCRUM-43. Một timeout hoặc mất ACK có thể xảy ra sau commit. Client retry với cùng `clientMessageId` và nội dung để lấy kết quả đã lưu.

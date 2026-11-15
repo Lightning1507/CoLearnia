@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { messagingBudgetSchema } from '../messaging/budget.js';
 
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -16,6 +17,18 @@ const envSchema = z.object({
   COORDINATOR_MAX_PENDING_PER_KEY: z.coerce.number().int().min(1).max(10_000).default(64),
   COORDINATOR_MAX_OPERATIONS: z.coerce.number().int().min(1).max(100_000).default(1024),
   COORDINATOR_WAIT_TIMEOUT_MS: z.coerce.number().int().min(1).max(60_000).default(5000),
+  MESSAGING_BUDGET_JSON: z
+    .string()
+    .optional()
+    .transform((value, ctx) => {
+      if (!value) return undefined;
+      try {
+        return messagingBudgetSchema.parse(JSON.parse(value));
+      } catch {
+        ctx.addIssue({ code: 'custom', message: 'Invalid messaging budget JSON' });
+        return z.NEVER;
+      }
+    }),
   SESSION_SECRET: z.preprocess(
     (value) =>
       value === '' || value === 'replace-with-at-least-32-random-characters' ? undefined : value,

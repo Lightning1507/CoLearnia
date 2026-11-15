@@ -16,7 +16,7 @@ export class CoordinationError extends Error {
   }
 }
 
-export type CoordinationInput = { signal?: AbortSignal; waitTimeoutMs?: number };
+export type CoordinationInput = { signal?: AbortSignal; waitTimeoutMs?: number; noWait?: boolean };
 
 export interface CoordinationContext {
   readonly scope: Readonly<CoordinationScope>;
@@ -79,7 +79,12 @@ export function createOperationCoordinator(options = defaultCoordinatorOptions) 
     return timeout;
   }
 
-  async function acquire(key: string, signal: AbortSignal, deadline: number): Promise<() => void> {
+  async function acquire(
+    key: string,
+    signal: AbortSignal,
+    deadline: number,
+    noWait = false,
+  ): Promise<() => void> {
     if (signal.aborted) throw new CoordinationError('ABORTED');
     if (performance.now() >= deadline) throw new CoordinationError('TIMEOUT');
     let gate = gates.get(key);
@@ -87,7 +92,8 @@ export function createOperationCoordinator(options = defaultCoordinatorOptions) 
       gate = { waiters: [] };
       gates.set(key, gate);
     } else {
-      if (gate.waiters.length >= limits.maxPendingPerKey) throw new CoordinationError('BUSY');
+      if (noWait || gate.waiters.length >= limits.maxPendingPerKey)
+        throw new CoordinationError('BUSY');
       const waitingGate = gate;
       await new Promise<void>((resolve, reject) => {
         const cleanup = () => {
@@ -125,6 +131,7 @@ export function createOperationCoordinator(options = defaultCoordinatorOptions) 
   }
 
   return {
+    maxWaitTimeoutMs: limits.waitTimeoutMs,
     // A snapshot without scope IDs or other user data. Counters are process-local.
     stats() {
       return {
@@ -251,7 +258,8 @@ export function createOperationCoordinator(options = defaultCoordinatorOptions) 
         },
       });
       try {
-        for (const key of requested) releases.push(await acquire(key, signal, deadline));
+        for (const key of requested)
+          releases.push(await acquire(key, signal, deadline, input.noWait));
         // Cancellation/deadline can happen after the final handoff and before this continuation.
         if (signal.aborted) throw new CoordinationError('ABORTED');
         if (performance.now() >= deadline) throw new CoordinationError('TIMEOUT');
