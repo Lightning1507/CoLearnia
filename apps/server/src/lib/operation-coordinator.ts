@@ -35,6 +35,11 @@ type Gate = { waiters: Waiter[] };
 // Detect nested entry even through another instance: one domain must not silently use its own gate.
 const execution = new AsyncLocalStorage<CoordinationContext>();
 
+// Lifecycle callbacks may inherit the context of a gate that has already exited.
+export function outsideCoordination<T>(work: () => T): T {
+  return execution.exit(work);
+}
+
 function keys(scope: CoordinationScope): string[] {
   if (
     (!scope.userId && !scope.workspaceId) ||

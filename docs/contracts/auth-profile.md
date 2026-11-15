@@ -62,6 +62,12 @@ SCRUM-18 cấp token phiên ngẫu nhiên 32 byte qua cookie `__Host-colearnia-s
 
 Route HTTP đọc dữ liệu riêng dùng `requireAuth`. Mutation yêu cầu đăng nhập chạy `requireAuth` rồi `requireCsrf`. Handler lấy `AuthenticatedContext` từ `requireVerifiedSession(res).context` sau khi xác nhận hàm trả kết quả. M2 vẫn kiểm ACL của tài nguyên ở handler. Các helper nằm trong [http-auth.ts](../../apps/server/src/auth/http-auth.ts) và [read-session.ts](../../apps/server/src/auth/read-session.ts).
 
+### Đăng xuất và hết hạn (SCRUM-29)
+
+Logout kiểm Origin và CSRF trước khi xử lý, lấy đúng phiên từ cookie và đi qua coordinator `AUTH_SESSION`. Phiên đang chờ cleanup bị deny trên HTTP và Socket.IO. Gửi lại với cookie cũ tiếp tục cùng thao tác nếu bản ghi còn và chưa thu xong. Chỉ trả 200 và clear cả hai cookie khi kết quả đã xác nhận hoặc phiên không còn hiệu lực trong DB. Nếu adapter chưa gắn hoặc cleanup chưa xác nhận, trả 503. Web đọc lại trạng thái phiên khi logout lỗi. Nếu trình duyệt còn phiên hợp lệ, UI mở lại Workspace và người dùng tự xác nhận lần đăng xuất tiếp theo. CSRF lỗi không tự đăng xuất bằng proof mới.
+
+Kết nối Socket.IO đang mở được theo dõi theo authSessionId. Timer phía server đóng kết nối và gọi thu quyền đến hạn, kể cả khi không có request mới. Nếu chưa xác nhận, thử lại tối đa bốn lần theo các khoảng 1, 2, 4 và 8 giây, rồi ghi cảnh báo nếu vẫn chưa xong. UI kiểm hạn khi tab hoạt động trở lại và quay về đăng nhập. Runtime cleanup chat/file/LIVE thật được nghiệm thu ở M1-T15.2.
+
 ### Frontend auth (SCRUM-25)
 
 Form đăng ký dùng nhãn **Họ và tên**; giá trị này được lưu vào `displayName` và dùng làm tên hiển thị trong CoLearnia. Giữ giới hạn 1–80 Unicode code point sau trim, không tách họ/tên thành field riêng.

@@ -608,3 +608,16 @@ describe('application barrier before runtime cleanup is mounted', () => {
     );
   });
 });
+
+it('keeps committed session denies until expiry without consuming active revocation capacity', async () => {
+  const f = setup({ maxOperations: 1 });
+  const command = event('AUTH_SESSION');
+  const result = await f.control.revoke({
+    event: command,
+    userId,
+    persistence: { ...f.persistence, authSessionExpiresAt: Date.now() + 60_000 },
+  });
+  expect(result.permissionRevoked).toBe(true);
+  expect(f.control.isSessionDenied(auth)).toBe(true);
+  expect((await f.revoke(event('WORKSPACE_MEMBERSHIP'))).permissionRevoked).toBe(true);
+});

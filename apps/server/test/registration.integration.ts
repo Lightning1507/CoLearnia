@@ -31,6 +31,9 @@ import { loadConfig } from '../src/config/env.js';
 import { createDatabase } from '../src/lib/database.js';
 import { preflightIndexes } from '../src/lib/database-preflight.js';
 import { createOperationCoordinator } from '../src/lib/operation-coordinator.js';
+import { createSessionRevocation } from '../src/auth/session-revocation.js';
+import { createAccessRevocationCoordinator } from '../src/workspaces/access-revocation.js';
+import { createSessionConnections } from '../src/realtime/session-connections.js';
 import { createRealtime } from '../src/realtime/server.js';
 
 const port = Number(process.env.COLEARNIA_DB_TEST_PORT ?? '27017');
@@ -53,9 +56,10 @@ function app(
   readSession = createSessionReader(database, () => true),
   onMutation = vi.fn(),
   login = createLogin(database, () => true, 604800, createOperationCoordinator()),
+  logout?: ReturnType<typeof createSessionRevocation>['logout'],
 ) {
   const httpAuth = createHttpAuth(origin, secret, readSession);
-  const router = createAuthRouter(httpAuth, register, login);
+  const router = createAuthRouter(httpAuth, register, login, logout);
   router.post('/test-mutation', httpAuth.requireAuth, httpAuth.requireCsrf, (_req, res) => {
     onMutation();
     res.json(requireVerifiedSession(res)?.context);
@@ -139,7 +143,13 @@ describe('SCRUM-24 Socket.IO session authentication with MongoDB', () => {
   let indexesReady = true;
   const readSession = createSessionReader(database, () => indexesReady);
   const server = createServer(app(undefined, readSession));
-  const realtime = createRealtime(server, { ...config, SESSION_SECRET: secret }, readSession);
+  const expire = vi.fn(async () => true);
+  const realtime = createRealtime(
+    server,
+    { ...config, SESSION_SECRET: secret },
+    readSession,
+    createSessionConnections(expire),
+  );
   const http = request(server);
 
   beforeAll(async () => {
@@ -178,6 +188,42 @@ describe('SCRUM-24 Socket.IO session authentication with MongoDB', () => {
       socket.disconnect();
     }
   }
+
+  it('SCRUM-29 disconnects an idle expired socket and rejects reconnect', async () => {
+    const signedIn = await signUp(http);
+    const cookie = sessionCookies(signedIn);
+    const token = signedIn.sessionCookie.slice(authCookie.length + 1);
+    const context = (await readSession(token))!.context;
+    await AuthSession.updateOne(
+      { _id: context.authSessionId },
+      {
+        $set: { expiresAt: new Date(Date.now() + 500) },
+      },
+    );
+    const socket = connectSocket(`http://127.0.0.1:${(server.address() as AddressInfo).port}`, {
+      transports: ['websocket'],
+      extraHeaders: { Cookie: cookie, Origin: origin },
+      auth: { csrfToken: signedIn.data.csrfToken },
+      reconnection: false,
+      autoConnect: false,
+    });
+    try {
+      const disconnected = new Promise((resolve, reject) => {
+        socket.once('disconnect', resolve);
+        socket.once('connect_error', reject);
+      });
+      socket.connect();
+      await expect(disconnected).resolves.toBe('io server disconnect');
+      expect(expire).toHaveBeenCalledWith(
+        expect.objectContaining({ authSessionId: context.authSessionId }),
+      );
+      await expect(handshake(cookie, signedIn.data.csrfToken)).rejects.toMatchObject({
+        data: { code: 'AUTH_REQUIRED' },
+      });
+    } finally {
+      socket.disconnect();
+    }
+  });
 
   it('binds the same server context as HTTP with the session cookies and CSRF token', async () => {
     const signedIn = await signUp(http);
@@ -960,4 +1006,89 @@ describe('SCRUM-20 password login with MongoDB', () => {
     expect(apiErrorSchema.parse(response.body).error.code).toBe('DEPENDENCY_UNAVAILABLE');
     expect(await AuthSession.countDocuments({ userId: signedIn.data.user.id })).toBe(2);
   });
+});
+
+it('SCRUM-29 denies the current session while cleanup is pending and completes a scoped logout on retry', async () => {
+  const coordinator = createOperationCoordinator();
+  const control = createAccessRevocationCoordinator({ coordinator });
+  const persisted = createSessionReader(database, () => true);
+  const close = vi.fn();
+  const service = createSessionRevocation(database, () => true, control, close);
+  const http = client(
+    undefined,
+    async (token) => {
+      const session = await persisted(token);
+      return session && !control.isSessionDenied(session.context) ? session : null;
+    },
+    undefined,
+    undefined,
+    service.logout,
+  );
+  const body = input();
+  const first = await signUp(http, body);
+  const csrf = await bootstrap(http);
+  const second = sessionFrom(
+    await http
+      .post(prefix + '/login')
+      .set('Origin', origin)
+      .set('Cookie', csrf.cookie)
+      .set('X-CSRF-Token', csrf.csrfToken)
+      .send({ email: body.email, password: body.password })
+      .expect(200),
+  );
+  const token = first.sessionCookie.slice(authCookie.length + 1);
+  const session = await persisted(token);
+  const authSessionId = session!.context.authSessionId;
+  function logout(requestOrigin = origin) {
+    return http
+      .post(prefix + '/logout')
+      .set('Origin', requestOrigin)
+      .set('Cookie', `${first.sessionCookie}; ${first.csrfCookieValue}`)
+      .set('X-CSRF-Token', first.data.csrfToken);
+  }
+  await logout('https://other.example.test').send({}).expect(403);
+  await logout().send({ authSessionId: 'other' }).expect(400);
+  await logout().send({}).expect(503);
+  expect(close).toHaveBeenCalledWith(authSessionId);
+  await http
+    .get(prefix + '/me')
+    .set('Cookie', first.sessionCookie)
+    .expect(401);
+  expect(await persisted(token)).not.toBeNull();
+
+  const messaging = vi.fn(async ({ revocationId }: { revocationId: string }) => ({
+    revocationId,
+    status: 'completed' as const,
+  }));
+  const live = vi.fn(async ({ operationId }: { operationId: string }) => ({
+    operationId,
+    permissionRevoked: true,
+    pendingInvalidated: true,
+    cleanupPending: false,
+  }));
+  control.bindCleanupAdapters({
+    messaging: { fence: () => ({ throughResourceGeneration: 0 }), revoke: messaging },
+    live: { revoke: live },
+  });
+  const success = await logout().send({}).expect(200);
+  expect(success.body.data).toBeNull();
+  expect(cookie(success, authCookie)).toContain('Expires=Thu, 01 Jan 1970');
+  expect(cookie(success, csrfCookie)).toContain('Expires=Thu, 01 Jan 1970');
+  expect(await persisted(token)).toBeNull();
+  await logout().send({}).expect(200);
+  expect(messaging).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({
+      target: { kind: 'AUTH_SESSION', userId: session!.context.userId, authSessionId },
+    }),
+  );
+  expect(live).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({
+      kind: 'AUTH_SESSION',
+      authSessionId,
+    }),
+  );
+  await http
+    .get(prefix + '/me')
+    .set('Cookie', second.sessionCookie)
+    .expect(200);
 });

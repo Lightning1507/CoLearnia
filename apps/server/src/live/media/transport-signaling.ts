@@ -24,6 +24,8 @@ import { sessionCleanupAdmission } from '../session-manager/cleanup-admission.js
 import type { CleanupAdmission } from '../session-manager/cleanup-admission.js';
 import { createPendingMediaOperations, matchesMediaCleanup } from './pending-media-operations.js';
 
+import type { HeldShareLease } from '../session-manager/share-lease.js';
+
 type Command =
   | { kind: 'create'; input: MediaTransportCreateInput }
   | { kind: 'connect'; input: MediaTransportConnectInput };
@@ -33,7 +35,12 @@ type Authority = <T>(
   socketId: string,
   input: ContextInput,
   // Called synchronously under the M4 gate with current socket binding and access.
-  use: (resolved: LiveContextResult, router?: MediaTypes.Router, policy?: SessionPolicyInput) => T,
+  use: (
+    resolved: LiveContextResult,
+    router?: MediaTypes.Router,
+    policy?: SessionPolicyInput,
+    share?: HeldShareLease,
+  ) => T,
 ) => Promise<T>;
 type Direction = MediaTransportCreateInput['payload']['direction'];
 type Transport = Pick<
@@ -150,7 +157,12 @@ export function createTransportSignaling({
     transport?.close();
   }
 
-  function authorize(socketId: string, input: MutationContext, resolved: LiveContextResult) {
+  function authorize(
+    socketId: string,
+    input: MutationContext,
+    resolved: LiveContextResult,
+    mode: 'mutation' | 'cleanup' = 'mutation',
+  ) {
     if (!resolved.ok) return reject(resolved.errorCode);
     const { context } = resolved;
     if (!(Date.parse(context.auth.expiresAt) > Date.now())) return reject('AUTH_REQUIRED');
@@ -158,7 +170,9 @@ export function createTransportSignaling({
       context.sessionId !== input.sessionId ||
       context.epoch !== input.epoch ||
       context.callGeneration !== input.callGeneration ||
-      context.policyRevision !== input.expectedPolicyRevision
+      (mode === 'mutation'
+        ? context.policyRevision !== input.expectedPolicyRevision
+        : context.policyRevision < input.expectedPolicyRevision)
     )
       return reject('CONFLICT');
     if (
@@ -376,10 +390,12 @@ export function createTransportSignaling({
         router: MediaTypes.Router,
         policy: SessionPolicyInput,
         transport: Pick<MediaTypes.WebRtcTransport, 'id' | 'produce' | 'consume'>,
+        share?: HeldShareLease,
       ) => T,
+      mode: 'mutation' | 'cleanup' = 'mutation',
     ): Promise<T | Failure> {
-      return withContext(socketId, input, (resolved, router, policy) => {
-        const access = authorize(socketId, input, resolved);
+      return withContext(socketId, input, (resolved, router, policy, share) => {
+        const access = authorize(socketId, input, resolved, mode);
         if ('errorCode' in access) return access;
         const slot = transports.get(transportId);
         const transport = slot?.transport;
@@ -402,11 +418,17 @@ export function createTransportSignaling({
         ) {
           return reject('DEPENDENCY_UNAVAILABLE');
         }
-        return use(access.context, router, policy, {
-          id: transport.id,
-          produce: transport.produce.bind(transport),
-          consume: transport.consume.bind(transport),
-        });
+        return use(
+          access.context,
+          router,
+          policy,
+          {
+            id: transport.id,
+            produce: transport.produce.bind(transport),
+            consume: transport.consume.bind(transport),
+          },
+          share,
+        );
       });
     },
     attach(socket: SocketPort) {

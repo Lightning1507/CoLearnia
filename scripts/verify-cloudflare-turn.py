@@ -135,11 +135,16 @@ def verify(args):
         emit("baseline", ttl=args.ttl, valid=valid, wrongPassword=wrong)
         if not valid["accepted"] or wrong["accepted"]:
             return 1
-        if wrong.get("turnCode") != 401:
+        baseline_authentication_confirmed = wrong.get("turnCode") == 401
+        if not baseline_authentication_confirmed and not getattr(args, "diagnostic", False):
             emit("result", scope="authentication", status="inconclusive",
                  reason="wrong-password-rejection-not-confirmed-as-authentication",
                  credentialTtlSeconds=args.ttl, expiryVerified=False)
             return 2
+        if not baseline_authentication_confirmed:
+            emit("baseline-warning", status="inconclusive",
+                 reason="wrong-password-rejection-not-confirmed-as-authentication",
+                 turnCode=wrong.get("turnCode"), expiryVerified=False)
         if args.auth_only:
             emit("result", scope="authentication", credentialTtlSeconds=args.ttl,
                  expiryVerified=False)
@@ -159,11 +164,12 @@ def verify(args):
             result.get("accepted") is False and result.get("turnCode") == 401
             for result in old_results
         )
-        verified = authentication_rejected and fresh["accepted"]
+        verified = baseline_authentication_confirmed and authentication_rejected and fresh["accepted"]
         status = "passed" if verified else "failed" if still_accepted else "inconclusive"
         reason = ("authentication-rejected-after-ttl" if verified else
                   "credential-still-accepted" if still_accepted else
                   "fresh-control-failed" if not fresh["accepted"] else
+                  "baseline-authentication-unconfirmed" if not baseline_authentication_confirmed else
                   "rejection-not-confirmed-as-authentication")
         emit("result", scope="expiry", status=status, reason=reason,
              expiryVerified=bool(verified))
@@ -184,8 +190,11 @@ def main():
     parser.add_argument("--allocate-stdin", action="store_true", help="Read temporary credentials from stdin; do not call the API")
     parser.add_argument("--ttl", type=int, default=14400,
                         help="Credential lifetime in seconds (default: 4 hours)")
-    parser.add_argument("--auth-only", action="store_true",
+    scope = parser.add_mutually_exclusive_group()
+    scope.add_argument("--auth-only", action="store_true",
                         help="Check authentication only; does not verify expiry")
+    scope.add_argument("--diagnostic", action="store_true",
+                       help="Continue expiry observations after an ambiguous negative control; never relax the pass criteria")
     parser.add_argument("--delay", type=int, default=840, help="Seconds after TTL for the final probe")
     args = parser.parse_args()
     if not 1 <= args.ttl <= 172800 or not 21 <= args.delay <= 3600:
