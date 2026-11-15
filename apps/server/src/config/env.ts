@@ -46,6 +46,8 @@ const envSchema = z.object({
   MEDIA_LISTEN_IP: z.string().default('127.0.0.1'),
   MEDIA_ANNOUNCED_ADDRESS: z.string().default('127.0.0.1'),
   MEDIA_PORT: z.coerce.number().int().min(1024).max(65535).default(40000),
+  TURN_KEY_ID: z.string().trim().optional(),
+  TURN_KEY_API_TOKEN: z.string().trim().optional(),
 });
 
 export function loadConfig(input: Record<string, string | undefined> = process.env) {

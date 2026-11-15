@@ -119,7 +119,9 @@ const workspaceRouter = httpAuth
       workspaceAccess,
     )
   : undefined;
-const httpServer = createServer(createApp(config, status, authRouter, workspaceRouter, textRouter));
+const httpServer = createServer(
+  createApp(config, status, authRouter, workspaceRouter, undefined, textRouter),
+);
 const io = createRealtime(
   httpServer,
   config,
@@ -192,6 +194,7 @@ async function start() {
       media = await startLiveRuntime(config, {
         // SCRUM-88 supplies mountRegistry with real M1/M2/M3/M5 ports through
         // createApplicationMainRegistry (shared deny/cohort and one-time binding).
+        // Wire its REST router and socket proof handler with createMediaBootstrapComposition.
         // Never substitute a fake authority/cleanup here.
         closeAdmission() {
           acceptingLiveRuntime = false;

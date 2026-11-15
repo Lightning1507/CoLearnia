@@ -63,6 +63,7 @@ const app = createApp(
   () => ({ name: 'CoLearnia', database: 'connected', media: 'disabled', ready: false }),
   undefined,
   undefined,
+  undefined,
   createTextRouter(auth, service),
 );
 const server = createServer(app);
