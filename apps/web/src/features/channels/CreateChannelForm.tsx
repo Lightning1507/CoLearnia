@@ -63,15 +63,18 @@ export function CreateChannelForm({
     dialog.current?.close();
     trigger.current?.focus();
   }
-  function isCurrent(session: AuthenticatedData) {
+  function currentSession(session: AuthenticatedData) {
     const current = client.getQueryData<AuthenticatedData | null>(sessionKey);
-    return (
-      alive.current &&
-      current?.user.id === userId &&
-      current.expiresAt === session.expiresAt &&
-      current.csrfToken === session.csrfToken &&
-      Date.parse(current.expiresAt) > Date.now()
-    );
+    // Reading /auth/me can rotate CSRF while the same login is still active.
+    if (
+      !alive.current ||
+      current?.user.id !== userId ||
+      current.expiresAt !== session.expiresAt ||
+      Date.parse(current.expiresAt) <= Date.now()
+    ) {
+      return null;
+    }
+    return current;
   }
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -82,8 +85,8 @@ export function CreateChannelForm({
       setError(messages.VALIDATION_ERROR);
       return;
     }
-    let session = client.getQueryData<AuthenticatedData | null>(sessionKey);
-    if (!session || !isCurrent(session)) {
+    const session = client.getQueryData<AuthenticatedData | null>(sessionKey);
+    if (!session || !currentSession(session)) {
       onAccessLost('Phiên đăng nhập đã hết hạn.');
       return;
     }
@@ -107,19 +110,31 @@ export function CreateChannelForm({
         result = await createChannel(workspaceId, input, session.csrfToken);
       } catch (failure) {
         if (!(failure instanceof ChannelApiError && failure.code === 'CSRF_INVALID')) throw failure;
-        if (!isCurrent(session)) return;
-        const refreshed = await authApi.me(AbortSignal.timeout(12_000));
-        if (!isCurrent(session)) return;
-        if (!refreshed) throw new ChannelApiError(401, 'AUTH_REQUIRED');
-        if (refreshed.user.id !== userId || refreshed.expiresAt !== session.expiresAt) {
-          void client.invalidateQueries({ queryKey: sessionKey, exact: true });
-          return;
+        const cached = currentSession(session);
+        if (!cached) return;
+        let retrySession = cached;
+        if (cached.csrfToken === session.csrfToken) {
+          const refreshed = await authApi.me(AbortSignal.timeout(12_000));
+          const latest = currentSession(session);
+          if (!latest) return;
+          if (
+            refreshed &&
+            (refreshed.user.id !== userId || refreshed.expiresAt !== session.expiresAt)
+          ) {
+            void client.invalidateQueries({ queryKey: sessionKey, exact: true });
+            return;
+          }
+          if (latest.csrfToken !== cached.csrfToken) {
+            retrySession = latest;
+          } else {
+            if (!refreshed) throw new ChannelApiError(401, 'AUTH_REQUIRED');
+            client.setQueryData(sessionKey, refreshed);
+            retrySession = refreshed;
+          }
         }
-        client.setQueryData(sessionKey, refreshed);
-        session = refreshed;
-        result = await createChannel(workspaceId, input, refreshed.csrfToken);
+        result = await createChannel(workspaceId, input, retrySession.csrfToken);
       }
-      if (!isCurrent(session)) return;
+      if (!currentSession(session)) return;
       setCreated(result);
       setAttempt(null);
       setName('');
@@ -128,7 +143,7 @@ export function CreateChannelForm({
       void client.invalidateQueries({ queryKey: ['channels', userId, workspaceId] });
       close();
     } catch (failure) {
-      if (!isCurrent(session)) return;
+      if (!currentSession(session)) return;
       const code = failure instanceof ChannelApiError ? failure.code : '';
       if (failure instanceof ChannelApiError && failure.status === 401) {
         client.setQueryData(sessionKey, null);
