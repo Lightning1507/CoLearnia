@@ -603,8 +603,8 @@ describe('MAIN registry with real MongoDB and mediasoup Router', () => {
         }
         const result = await revoke();
         expect(result).toMatchObject({
-          permissionRevoked: true,
-          pendingInvalidated: true,
+          permissionRevoked: !(shared && delayed),
+          pendingInvalidated: !(shared && delayed),
           cleanupPending: delayed,
         });
         if (shared) {
@@ -648,6 +648,11 @@ describe('MAIN registry with real MongoDB and mediasoup Router', () => {
         if (delayed)
           expect(mediaTransportCreateAckSchema.parse(await response)).toHaveProperty('error');
         await vi.waitFor(() => expect(native[0]!.closed).toBe(true));
+        expect(await revoke()).toMatchObject({
+          permissionRevoked: true,
+          pendingInvalidated: true,
+          cleanupPending: false,
+        });
         expect(f.routers[0]!.closed).toBe(false);
         expect(
           await f.registry.withContext(
@@ -658,7 +663,13 @@ describe('MAIN registry with real MongoDB and mediasoup Router', () => {
         ).toBe(true);
         expect(f.registry.stats().ownerships).toBe(shared ? 2 : 1);
         if (shared) expect(native[1]!.closed).toBe(false);
-        expect(mediaCleanup).toHaveBeenCalledTimes(1);
+        if (!delayed) expect(mediaCleanup).toHaveBeenCalledTimes(1);
+        for (const [request] of mediaCleanup.mock.calls) {
+          expect(request).toEqual(mediaCleanup.mock.calls[0]![0]);
+          expect('callGeneration' in request && request.callGeneration).toBe(
+            joined.ack.data.result.callGeneration,
+          );
+        }
         if (shared) {
           expect(board).toHaveBeenCalledTimes(2);
           expect(commitHeld).toHaveBeenCalledTimes(1);

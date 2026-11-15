@@ -8,11 +8,12 @@ import type {
   SessionCleanupRequest,
   SessionCleanupResult,
 } from '@colearnia/contracts';
-import { sessionJoinAckSchema } from '@colearnia/contracts';
+import { screenAcquireAckSchema, sessionJoinAckSchema } from '@colearnia/contracts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CoordinationError, createOperationCoordinator } from '../../lib/operation-coordinator.js';
 import { createMainJoinRegistry, MainJoinError } from './main-join-registry.js';
 import { createAccessRevocationCoordinator } from '../../workspaces/access-revocation.js';
+import { attachScreenShareSocket } from './screen-share-signaling.js';
 import { canReceiveMedia } from '../policy/session-policy.js';
 import type { PolicyParticipant, SessionPolicyState } from '../policy/session-policy.js';
 
@@ -651,6 +652,31 @@ describe('SCRUM-86 session end', () => {
 });
 
 describe('SCRUM-83 MAIN revocation', () => {
+  it('polls byte cleanup after permission revocation without expiring or retargeting the operation', async () => {
+    const f = await revokeFixture();
+    f.board.mockImplementationOnce(async (request) => ({
+      ...cleanupAck(request),
+      outcome: { permissionRevoked: true, pendingInvalidated: true, cleanupPending: true },
+    }));
+    expect(await f.registry.revoke(f.event)).toMatchObject({
+      permissionRevoked: true,
+      cleanupPending: true,
+    });
+    expect(f.registry.stats().ownerships).toBe(0);
+    const login = { ...f.auth, authSessionId: id() };
+    const ticket = await f.issue(login);
+    await f.registry.join(f.binding(login), { ticket: ticket.ticket, requestId: randomUUID() });
+    f.advance(61_000);
+    expect(await f.registry.revoke(f.event)).toMatchObject({
+      permissionRevoked: true,
+      cleanupPending: false,
+    });
+    expect(f.board).toHaveBeenCalledTimes(2);
+    expect(f.board.mock.calls[1]![0]).toEqual(f.board.mock.calls[0]![0]);
+    expect(f.media).toHaveBeenCalledTimes(1);
+    expect(f.registry.stats().ownerships).toBe(1);
+  });
+
   it('rejects composition with a separate M1 coordinator', () => {
     const f = setup();
     expect(() =>
@@ -2024,6 +2050,61 @@ async function reconnectFixture() {
   };
   return { ...f, socket, next, command, joined, context, media, messaging, board };
 }
+
+describe('screen picker commands through the MAIN registry', () => {
+  it('checks revision and only releases the exact pending lease', async () => {
+    const f = await reconnectFixture();
+    const handlers = new Map<string, (raw: unknown, ack?: (value: unknown) => void) => void>();
+    attachScreenShareSocket(
+      f.registry,
+      {
+        id: f.socket.socketId,
+        connected: true,
+        on(event, handler) {
+          handlers.set(event, handler);
+        },
+      },
+      () => f.auth,
+    );
+    const send = (event: string, payload: unknown, revision = f.joined.parts[0]!.policyRevision) =>
+      new Promise<unknown>((ack) =>
+        handlers.get(event)!(
+          {
+            requestId: randomUUID(),
+            ...f.context,
+            expectedPolicyRevision: revision,
+            payload,
+          },
+          ack,
+        ),
+      );
+    const acquire = () => send('screen.acquire', { scope: { type: 'MAIN' } });
+    await expect(send('screen.acquire', { scope: { type: 'MAIN' } }, 999)).resolves.toMatchObject({
+      error: { code: 'CONFLICT' },
+    });
+    const oldAck = screenAcquireAckSchema.parse(await acquire());
+    if ('error' in oldAck) throw new Error(oldAck.error.code);
+    await expect(acquire()).resolves.toMatchObject({ error: { code: 'SHARE_BUSY' } });
+    f.advance(30_000);
+    const freshAck = screenAcquireAckSchema.parse(await acquire());
+    if ('error' in freshAck) throw new Error(freshAck.error.code);
+    const { leaseId, leaseGeneration } = oldAck.data.result;
+    await expect(send('screen.release', { leaseId, leaseGeneration })).resolves.toMatchObject({
+      data: { result: { released: false } },
+    });
+    await expect(acquire()).resolves.toMatchObject({ error: { code: 'SHARE_BUSY' } });
+    await expect(
+      send(
+        'screen.release',
+        {
+          leaseId: freshAck.data.result.leaseId,
+          leaseGeneration: freshAck.data.result.leaseGeneration,
+        },
+        999,
+      ),
+    ).resolves.toMatchObject({ data: { result: { released: true } } });
+  });
+});
 
 describe('MAIN reconnect and resync', () => {
   it('retries a timed out Workspace gate and releases the expired ownership after cleanup', async () => {

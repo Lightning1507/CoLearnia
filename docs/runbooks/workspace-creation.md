@@ -142,8 +142,7 @@ SCRUM-33 bổ sung chống lặp riêng cho POST tạo Workspace trong cùng pro
 Không có bảo đảm dedupe xuyên restart, nhiều process hoặc quá 10 phút. Client phải kiểm
 trạng thái trước khi gửi lại ngoài cửa sổ này, không tự đổi requestId sau lỗi/timeout.
 Đặc biệt restart làm mất cả entry commit chưa rõ; không coi restart là cách rollback hay
-cho phép replay an toàn. Audit không được dùng làm ledger thay thế. API danh sách và UI
-chọn/tạo/mở thuộc M1-T7.1; task đó cần giữ operation requestId qua retry hợp lệ.
+cho phép replay an toàn. Audit không được dùng làm ledger thay thế. SCRUM-34 gửi `replayOnly: true` khi người dùng chủ động gửi lại yêu cầu chưa rõ kết quả. Nếu entry đã mất hoặc hết hạn, API trả `WORKSPACE_REPLAY_UNAVAILABLE` (410) trước khi ghi dữ liệu.
 
 Các ca transient/unknown trong test chỉ kiểm nhánh xử lý bằng lỗi chèn có kiểm soát; không
 chứng minh mất mạng/primary stepdown thật. SCRUM-33 kiểm lỗi sau cả năm write, hết lượt

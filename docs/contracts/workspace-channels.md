@@ -30,6 +30,13 @@ Nguồn: [proposal M1](../proposals/m1-workspace-auth.md), [quyền Workspace/k�
 | DELETE `/workspaces/:workspaceId/members/:userId` | `workspaceMemberParamsSchema` / `mutationInputSchema`     | `workspaceMutationResponseSchema`, HTTP 200            |
 | PUT/DELETE `/channels/:channelId/access/:userId`  | `channelAccessParamsSchema` / `changePrivateAccessSchema` | `workspaceMutationResponseSchema`, HTTP 200            |
 
+### Danh sách và mở Workspace (SCRUM-34)
+
+- GET `/api/v1/workspaces?limit=10&after=<cursor>` dùng cookie phiên. `limit` từ 1 đến 20, mặc định 10. `after` là cursor ObjectId trả về từ trang trước. Response `data: { items, nextCursor }`; mỗi item có `id,name,ownerId,revision,role`. Danh sách đi theo thứ tự Workspace ID từ index membership của người dùng.
+- Mỗi trang kiểm một lô membership, lọc Workspace đã xóa hoặc đang bị chặn. Trang có thể rỗng nhưng còn `nextCursor`; tiếp tục khi cần. `nextCursor: null` là hết danh sách.
+- GET `/api/v1/workspaces/:workspaceId` trả cùng DTO, kiểm lại policy và barrier dưới khóa User → Workspace. Phiên không hợp lệ trả 401; ID không tồn tại, không hợp lệ hoặc người dùng mất quyền đều trả 404. Hai GET dùng `Cache-Control: no-store`.
+- Web chuyển người dùng đã xác thực đến `/workspaces`. Khi tạo thành công, mở URL Workspace và đọc lại quyền qua GET. Với kết quả tạo chưa rõ, kiểm danh sách trước khi gửi lại cùng tên/requestId với `replayOnly: true` trong cửa sổ SCRUM-33. Nếu máy chủ không còn entry, trả `WORKSPACE_REPLAY_UNAVAILABLE` (410) và không tạo Workspace. Sau khi phiên mất hoặc tab tải lại, xem danh sách để đối chiếu trước khi tạo tiếp. Shell, kênh và panel chat/cuộc gọi ghép theo các task liên quan.
+
 ### Revision cần gửi theo từng thao tác
 
 | Thao tác                   | `expectedRevision` đối chiếu với                                        |

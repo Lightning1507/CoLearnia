@@ -50,3 +50,15 @@ endpoint thật, chat/tệp/board runtime thật hoặc hai trình duyệt trên
 Không dùng kết quả này để nghiệm thu toàn bộ runtime của issue #97/SCRUM-88.
 Chưa có durable recovery qua crash hoặc kiểm tải 25/50 người. Các giới hạn ledger,
 foreground/replay budget và thứ tự khóa giữ theo runbook hiện hành.
+
+## Đối chiếu main ngày 15/11/2026
+
+Main `2fd1ef5` yêu cầu M4 trả `cleanupPending:false` trước khi M1 commit.
+Bổ sung retry phần dọn byte còn lại sau khi ownership cũ đã bị gỡ, dùng nguyên
+request/epoch/generation cũ; adapter đã hoàn tất không gọi lại. Record còn pending
+không bắt đầu TTL replay 60 giây để tránh retry quét lại target mới.
+
+Regression giữ login/generation mới và native transport mới trong lúc callback cũ
+chưa kết thúc; callback cũ kết thúc rồi retry mới cho M1 commit. Ca board đã thu quyền
+nhưng còn dọn byte cũng retry được sau hơn 60 giây, không đổi target.
+Đã chạy lại riêng registry/M1/transition: 197 unit test; MAIN MongoDB/native: 16/16.

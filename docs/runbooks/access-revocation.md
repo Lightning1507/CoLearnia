@@ -119,8 +119,9 @@ Barrier không bảo vệ writer ghi DB ngoài giao thức.
 - Lỗi validate/prepare trước deny được trả cho caller, không gọi cleanup hay ghi DB.
 - Khi đã dựng deny, lỗi fence/cleanup/DB trả hai cờ hiệu lực false và cleanupPending true.
   Caller cần retry **cùng event/operationId**; thay payload/User gate cùng ID bị CONFLICT.
-- M2 `completed` và M4 `permissionRevoked && pendingInvalidated` phải có đúng operationId.
-  `cleanupPending:true` từ M4 vẫn có thể chỉ công việc dọn byte nền sau khi quyền đã bị thu.
+- M2 `completed` và M4 `permissionRevoked && pendingInvalidated && !cleanupPending`
+  phải có đúng operationId. M1 chỉ commit khi M4 xác nhận cả dọn tài nguyên đã xong;
+  `cleanupPending:true` giữ operation ở trạng thái chưa hoàn tất, kể cả quyền đã bị thu.
 - Budget cleanup mặc định 2 giây, dùng `performance.now()`. M2 nhận AbortSignal/deadline;
   M4 port hiện không nhận signal. Promise hết budget vẫn được theo dõi: retry không mở
   thêm một lần gọi cho đến khi promise cũ kết thúc. Kết quả trễ không tự commit DB.
@@ -132,6 +133,9 @@ Barrier không bảo vệ writer ghi DB ngoài giao thức.
   Promise adapter quá hạn vẫn được theo dõi, không mở I/O trùng khi retry.
   Lỗi không tự retry trong foreground (`retryable:false`) vẫn có thể được thử lại khi
   caller chủ động retry cùng operation sau khi provider đã khắc phục.
+  Nếu adapter đã thu quyền nhưng còn `cleanupPending:true`, retry gọi lại đúng request
+  cũ để kiểm/dọn phần còn lại. Native create đang chạy được theo dõi đến khi callback
+  dọn xong; record chưa bắt đầu TTL replay cho tới khi không còn cleanup pending.
   Operation đang chạy dùng chung promise, hoàn tất thì replay; cùng ID khác payload
   trả CONFLICT. Record incomplete không hết hạn/không bị evict để né deny. Không quét
   lại cohort/đổi target sang login, incarnation hoặc generation mới để làm retry thành công.

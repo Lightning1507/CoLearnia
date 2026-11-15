@@ -45,6 +45,8 @@ import { beginSessionTransition, createSessionTransitionTiming } from './session
 import { createSessionEndOperation } from './session-end-operation.js';
 import type { SessionTransitionAdapters, SessionTransitionTiming } from './session-transition.js';
 import { matchesMainRevocation, mayMatchMainRevocation } from './main-revocation.js';
+import { createShareLeaseRegistry } from './share-lease.js';
+import type { HeldShareContext } from './share-lease.js';
 
 type Target = { workspaceId: string; channelId: string };
 type Authority = { auth: AuthenticatedContext; access: ChannelAccessStamp; displayName: string };
@@ -60,6 +62,7 @@ type Repository = Pick<
 type Room = {
   state: SessionPolicyState;
   router: MediaTypes.Router;
+  shareLeases: ReturnType<typeof createShareLeaseRegistry>;
   revision: number;
   hostUserId: string;
   hostParticipantId: string;
@@ -855,6 +858,15 @@ export function createMainJoinRegistry(options: {
                     room.state.state !== 'ACTIVE'
                   )
                     fail('CONFLICT');
+                  room.shareLeases.cancelPendingFor(
+                    {
+                      session: room.state,
+                      nowMs: clock(),
+                      assertHeld: () => held.assertHeld({ workspaceId: room.state.workspaceId }),
+                    },
+                    participant.participantId,
+                    record.generation,
+                  );
                   record.handle = beginSessionTransition(
                     request,
                     {
@@ -1124,6 +1136,7 @@ export function createMainJoinRegistry(options: {
             if (!sameStamp(current.access, afterRouter.access)) fail('CONFLICT');
             room = {
               router,
+              shareLeases: createShareLeaseRegistry(sessionId.toHexString(), epoch),
               revision: 0,
               hostUserId: auth.userId,
               hostParticipantId: participantId.toHexString(),
@@ -1443,6 +1456,15 @@ export function createMainJoinRegistry(options: {
               { workspaceId },
               async (held) => {
                 assertRunning();
+                for (const value of captured) {
+                  if (value.owner.room.state.workspaceId !== workspaceId) continue;
+                  // Retry the immutable old resource request even after its ownership
+                  // was removed. Adapters compare target/epoch/generation, never user-wide.
+                  value.handle.retryMediaHeld({
+                    assertHeld: () => held.assertHeld({ workspaceId }),
+                    isCurrent: () => !closed && revocations.get(event.operationId) === record,
+                  });
+                }
                 for (const intent of originalIntents) {
                   if (
                     intent.room.state.workspaceId !== workspaceId ||
@@ -1477,18 +1499,17 @@ export function createMainJoinRegistry(options: {
                   )
                     continue;
                   const existing = captured.find((value) => value.owner === owner);
-                  if (existing) {
-                    existing.handle.retryMediaHeld({
-                      assertHeld: () => held.assertHeld({ workspaceId }),
-                      isCurrent: () =>
-                        participant.callGeneration === existing.generation &&
-                        participant.participantId === existing.participantId &&
-                        room.state.epoch === existing.epoch &&
-                        participant.blocked,
-                    });
-                    continue;
-                  }
+                  if (existing) continue;
                   participant.blocked = true;
+                  room.shareLeases.cancelPendingFor(
+                    {
+                      session: room.state,
+                      nowMs: clock(),
+                      assertHeld: () => held.assertHeld({ workspaceId }),
+                    },
+                    participant.participantId,
+                    participant.callGeneration,
+                  );
                   participant.currentAccess = {
                     ...participant.currentAccess,
                     canReadContent: false,
@@ -1604,7 +1625,7 @@ export function createMainJoinRegistry(options: {
             cleanupPending: true,
           }))
           .then((value) => {
-            if (value.permissionRevoked && value.pendingInvalidated)
+            if (value.permissionRevoked && value.pendingInvalidated && !value.cleanupPending)
               record.expiresAt = clock() + limits.revocationReplayTtlMs;
             else delete record.task;
             return accessCleanupResultSchema.parse(value);
@@ -1709,6 +1730,7 @@ export function createMainJoinRegistry(options: {
         resolved: LiveContextResult,
         router?: MediaTypes.Router,
         policy?: SessionPolicyInput,
+        share?: { leases: Room['shareLeases']; held: HeldShareContext },
       ) => T,
     ): Promise<T> {
       const owner = [...ownerships.values()].find((value) => value.binding.socketId === socketId);
@@ -1739,6 +1761,16 @@ export function createMainJoinRegistry(options: {
             resolved,
             resolved.ok ? owner.room.router : undefined,
             resolved.ok ? policy : undefined,
+            resolved.ok
+              ? {
+                  leases: owner.room.shareLeases,
+                  held: {
+                    ...policy,
+                    assertHeld: () =>
+                      held.assertHeld({ workspaceId: owner.room.state.workspaceId }),
+                  },
+                }
+              : undefined,
           );
           if (result && typeof (result as { then?: unknown }).then === 'function')
             throw new TypeError('Context use must be synchronous');

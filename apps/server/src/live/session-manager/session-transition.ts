@@ -336,7 +336,11 @@ export function beginSessionTransition(
       if (committed || retired || !held.isCurrent(request)) return;
       if (
         typeof cleanup.media !== 'function' &&
-        !(states.media.outcome?.permissionRevoked && states.media.outcome.pendingInvalidated)
+        !(
+          states.media.outcome?.permissionRevoked &&
+          states.media.outcome.pendingInvalidated &&
+          !states.media.outcome.cleanupPending
+        )
       ) {
         try {
           states.media.outcome = readOutcome(cleanup.media.revoke(structuredClone(request)));
@@ -351,7 +355,12 @@ export function beginSessionTransition(
       await Promise.all(
         domains.map(async (name) => {
           const state = states[name];
-          if (state.outcome?.permissionRevoked && state.outcome.pendingInvalidated) return;
+          if (
+            state.outcome?.permissionRevoked &&
+            state.outcome.pendingInvalidated &&
+            !state.outcome.cleanupPending
+          )
+            return;
           if (typeof cleanup[name] !== 'function') return;
           // An explicit retry may recover a previously unavailable provider. Automatic
           // foreground retries still respect retryable:false. Never duplicate pending I/O.
