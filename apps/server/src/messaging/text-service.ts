@@ -5,10 +5,10 @@ import type {
   CommonErrorCode,
   TextHistoryMessage,
 } from '@colearnia/contracts';
-import { workspaceDocumentIdSchema } from '@colearnia/contracts';
+import { textMessageMaxCodePoints, workspaceDocumentIdSchema } from '@colearnia/contracts';
 import { z } from 'zod';
 import type { Database } from '../lib/database.js';
-import { isDatabaseUnavailableError } from '../lib/database.js';
+import { databaseQueryOptions, isDatabaseUnavailableError } from '../lib/database.js';
 import { CoordinationError } from '../lib/operation-coordinator.js';
 import type { OperationCoordinator } from '../lib/operation-coordinator.js';
 import { channelModels } from '../workspaces/channel-models.js';
@@ -111,10 +111,11 @@ export function createTextService(
     handler: Handler,
     actor: AuthenticatedContext,
     channelId: string,
-    bytes: number,
+    requestBytes: number,
+    responseReserve: number,
     work: (
       scope: { channelId: string; conversationId: Types.ObjectId },
-      timeout: number,
+      remaining: () => number,
     ) => Promise<T>,
   ) {
     if (Date.parse(actor.expiresAt) <= Date.now()) throw new TextError('AUTH_REQUIRED');
@@ -122,7 +123,8 @@ export function createTextService(
     if (!budget || !limit || !indexesReady() || !database.isConnected()) {
       throw new TextError('DEPENDENCY_UNAVAILABLE');
     }
-    if (bytes > limit.payloadBytes) throw new TextError('PAYLOAD_TOO_LARGE');
+    if (requestBytes > limit.payloadBytes) throw new TextError('PAYLOAD_TOO_LARGE');
+    const bytes = requestBytes + responseReserve;
     const user = actor.userId.toLowerCase();
     const sameHandler = [...active].filter((item) => item.handler === handler);
     if (
@@ -153,7 +155,7 @@ export function createTextService(
     try {
       const channel = await Channel.findOne({ _id: channelId, deletedAt: null })
         .select('workspaceId')
-        .maxTimeMS(remaining())
+        .setOptions(databaseQueryOptions(remaining))
         .lean();
       if (!channel) throw new TextError('NOT_FOUND');
       const workspaceId = channel.workspaceId.toHexString();
@@ -176,6 +178,7 @@ export function createTextService(
           const current = await access.resolveChannelAccessHeld(
             { identity: actor, channelId, workspaceId },
             held,
+            remaining,
           );
           if (current.channelType !== 'TEXT') throw new TextError('NOT_FOUND');
           if (!current.canReadContent) throw new TextError('FORBIDDEN');
@@ -186,12 +189,12 @@ export function createTextService(
             closedAt: null,
           })
             .select('_id')
-            .maxTimeMS(remaining())
+            .setOptions(databaseQueryOptions(remaining))
             .lean();
           if (!conversation) throw new TextError('NOT_FOUND');
           if (Date.parse(actor.expiresAt) <= Date.now()) throw new TextError('AUTH_REQUIRED');
           if (handler === 'text') admitSend(user);
-          const result = await work({ channelId, conversationId: conversation._id }, remaining());
+          const result = await work({ channelId, conversationId: conversation._id }, remaining);
           if (Date.parse(actor.expiresAt) <= Date.now()) throw new TextError('AUTH_REQUIRED');
           remaining();
           return result;
@@ -239,7 +242,8 @@ export function createTextService(
         actor,
         channelId,
         Buffer.byteLength(JSON.stringify(input)),
-        async (scope, timeout) => {
+        0,
+        async (scope, remaining) => {
           const result = await messages.append(
             {
               conversationId: scope.conversationId,
@@ -248,7 +252,7 @@ export function createTextService(
               text: input.text,
               createdAt: new Date(),
             },
-            timeout,
+            remaining,
           );
           if (result.outcome === 'not-found') throw new TextError('NOT_FOUND');
           if (result.outcome === 'conflict') throw new TextError('CONFLICT');
@@ -266,12 +270,20 @@ export function createTextService(
         actor,
         channelId,
         Buffer.byteLength(JSON.stringify(query)),
-        async (scope, timeout) => {
+        // Include the lookahead row and reserve for BSON, DTO and JSON serialization.
+        // A supplementary scalar can need 12 bytes in escaped JSON.
+        4096 + (query.limit + 1) * (textMessageMaxCodePoints * 20 + 1024),
+        async (scope, remaining) => {
           const conversationId = scope.conversationId.toHexString();
           const cursor = query.cursor
             ? decodeCursor(query.cursor, channelId, conversationId)
             : undefined;
-          const page = await messages.listRoots(scope.conversationId, query.limit, cursor, timeout);
+          const page = await messages.listRoots(
+            scope.conversationId,
+            query.limit,
+            cursor,
+            remaining(),
+          );
           const next = page.nextCursor;
           return {
             mode: 'history' as const,

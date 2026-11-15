@@ -64,22 +64,30 @@ export function createTextRouter(auth: ReturnType<typeof createHttpAuth>, servic
       reject(res, error);
     }
   });
-  router.get(path, auth.requireAuth, async (req, res: AuthResponse) => {
-    const actor = requireVerifiedSession(res);
-    if (!actor) return;
-    try {
-      const { channelId } = channelParamsSchema.parse(req.params);
-      const query = textMessageHistoryQuerySchema.parse(req.query);
-      if (query.mode !== 'history') {
-        authFailure(res, 'VALIDATION_ERROR', 'Chế độ lịch sử chưa được hỗ trợ.');
-        return;
+  router.get(
+    path,
+    (_req, res, next) => {
+      res.setHeader('Cache-Control', 'no-store');
+      next();
+    },
+    auth.requireAuth,
+    async (req, res: AuthResponse) => {
+      const actor = requireVerifiedSession(res);
+      if (!actor) return;
+      try {
+        const { channelId } = channelParamsSchema.parse(req.params);
+        const query = textMessageHistoryQuerySchema.parse(req.query);
+        if (query.mode !== 'history') {
+          authFailure(res, 'VALIDATION_ERROR', 'Chế độ lịch sử chưa được hỗ trợ.');
+          return;
+        }
+        const data = await service.history(actor.context, channelId.toLowerCase(), query);
+        res.json({ data, requestId: res.locals.requestId });
+      } catch (error) {
+        reject(res, error);
       }
-      const data = await service.history(actor.context, channelId.toLowerCase(), query);
-      res.json({ data, requestId: res.locals.requestId });
-    } catch (error) {
-      reject(res, error);
-    }
-  });
+    },
+  );
   return router;
 }
 

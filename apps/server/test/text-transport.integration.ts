@@ -1,7 +1,7 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
 import { io as connect } from 'socket.io-client';
-import { afterAll, beforeAll, expect, it } from 'vitest';
+import { afterAll, beforeAll, expect, it, vi } from 'vitest';
 import request from 'supertest';
 import { textMessageHistoryResponseSchema, textMessageSendAckSchema } from '@colearnia/contracts';
 import { createApp } from '../src/app.js';
@@ -15,7 +15,7 @@ import { createDatabase } from '../src/lib/database.js';
 import { createOperationCoordinator } from '../src/lib/operation-coordinator.js';
 import { conversationModel } from '../src/messaging/conversation.js';
 import { textMessageModel } from '../src/messaging/text-message.js';
-import { createTextService } from '../src/messaging/text-service.js';
+import { createTextService, textErrorCode } from '../src/messaging/text-service.js';
 import { createTextRouter, createTextSocketSend } from '../src/messaging/text-transport.js';
 import { createRealtime } from '../src/realtime/server.js';
 import { createAccessRevocationCoordinator } from '../src/workspaces/access-revocation.js';
@@ -44,10 +44,10 @@ const handler = {
   executionMs: 5000,
 };
 const budget = {
-  process: { inFlight: 6, queued: 0, bytes: 262144 },
+  process: { inFlight: 6, queued: 0, bytes: 2600000 },
   database: { maxPoolSize: 10, waitQueueTimeoutMs: 5000, queryTimeoutMs: 1000 },
   revocation: { reservedInFlight: 1, cleanupBatchSize: 1, executionMs: 1000 },
-  handlers: { text: handler, history: handler },
+  handlers: { text: handler, history: { ...handler, processBytes: 2600000 } },
 };
 const secret = randomBytes(32).toString('hex');
 const config = loadConfig({
@@ -126,10 +126,9 @@ async function account() {
   };
 }
 
-it('shares REST and socket retry keys and enforces current TEXT access for both accounts', async () => {
+async function textChannel() {
   const owner = await account();
   const member = await account();
-  const outsider = await account();
   const workspace = await Workspace.create({ name: 'TEXT workspace', ownerId: owner.user._id });
   for (const actor of [owner, member]) {
     await Membership.create({
@@ -154,6 +153,20 @@ it('shares REST and socket retry keys and enforces current TEXT access for both 
     kind: 'CHANNEL',
     scope: { channelId: channel._id },
   });
+  return { owner, member, workspace, channel, conversation };
+}
+
+function identity(actor: Awaited<ReturnType<typeof account>>) {
+  return {
+    userId: actor.user.id,
+    authSessionId: actor.session.id,
+    expiresAt: actor.session.expiresAt.toISOString(),
+  };
+}
+
+it('shares REST and socket retry keys and enforces current TEXT access for both accounts', async () => {
+  const { owner, member, workspace, channel, conversation } = await textChannel();
+  const outsider = await account();
   const addr = server.address();
   if (!addr || typeof addr === 'string') throw new Error('Missing port');
   const socket = connect('http://127.0.0.1:' + addr.port, {
@@ -196,7 +209,7 @@ it('shares REST and socket retry keys and enforces current TEXT access for both 
     expect(await Message.countDocuments({ conversationId: conversation._id })).toBe(2);
 
     const page = textMessageHistoryResponseSchema.parse(
-      (await read(owner).query({ limit: 1 }).expect(200)).body,
+      (await read(owner).query({ limit: 1 }).expect(200).expect('Cache-Control', 'no-store')).body,
     ).data;
     expect(page.items[0]?.text).toBe(payload.text);
     expect(page.nextCursor).toBeTruthy();
@@ -205,13 +218,13 @@ it('shares REST and socket retry keys and enforces current TEXT access for both 
     await read(member)
       .query({ cursor: page.nextCursor + 'x' })
       .expect(400);
-    await read(outsider).expect(404);
+    await read(outsider).expect(404).expect('Cache-Control', 'no-store');
     await coordinator.run({ workspaceId: workspace.id }, async () => {
       const busy = await read(owner).expect(503);
       expect(busy.body.error.code).toBe('SERVER_BUSY');
     });
     await read(owner).expect(200);
-    await request(server).get(path).expect(401);
+    await request(server).get(path).expect(401).expect('Cache-Control', 'no-store');
     await AuthSession.updateOne({ _id: member.session._id }, { revokedAt: new Date() });
     expect(await send(payload)).toMatchObject({ error: { code: 'AUTH_REQUIRED' } });
     await read(member).expect(401);
@@ -219,3 +232,92 @@ it('shares REST and socket retry keys and enforces current TEXT access for both 
     socket.disconnect();
   }
 });
+
+it('reserves history page bytes before queueing another read and frees them after delivery', async () => {
+  const { owner, member, workspace, channel, conversation } = await textChannel();
+  const text = '😀'.repeat(3999);
+  for (let index = 0; index < 2; index++) {
+    await Message.create({
+      conversationId: conversation._id,
+      senderId: owner.user._id,
+      clientMessageId: randomUUID(),
+      text,
+      createdAt: new Date(),
+    });
+  }
+  const bounded = createTextService(database, coordinator, access, () => true, secret, {
+    ...budget,
+    process: { ...budget.process, queued: 2 },
+    handlers: { history: { ...handler, processQueued: 2, processBytes: 300000 } },
+  });
+  let unlock!: () => void;
+  let entered!: () => void;
+  const held = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  const blocker = coordinator.run({ workspaceId: workspace.id }, async () => {
+    entered();
+    await new Promise<void>((resolve) => {
+      unlock = resolve;
+    });
+  });
+  await held;
+  const first = bounded.history(identity(owner), channel.id, { limit: 2 });
+  // Observe the rejection immediately so a failed assertion cannot leave an unhandled promise.
+  const observed = first.then(
+    (page) => page,
+    (error: unknown) => error,
+  );
+  try {
+    await vi.waitFor(() => expect(coordinator.stats().pending).toBe(1));
+    await expect(bounded.history(identity(member), channel.id, { limit: 2 })).rejects.toMatchObject(
+      { code: 'SERVER_BUSY' },
+    );
+  } finally {
+    unlock();
+    await blocker;
+    await observed;
+  }
+  expect((await first).items.map((row) => row.text)).toEqual([text, text]);
+  expect((await bounded.history(identity(member), channel.id, { limit: 2 })).items).toHaveLength(2);
+});
+
+it.runIf(process.env.COLEARNIA_TEST_DB_FAILPOINTS === '1')(
+  'releases the Workspace gate after a slow Mongo ACL read within the request budget',
+  async () => {
+    const { owner, workspace, channel } = await textChannel();
+    const deadlineMs = 650;
+    const timed = createTextService(database, coordinator, access, () => true, secret, {
+      ...budget,
+      handlers: { history: { ...budget.handlers.history, executionMs: deadlineMs } },
+    });
+    const admin = database.connection.db!.admin();
+    // Enable only on a dedicated disposable mongod with enableTestCommands.
+    // The first find resolves the channel before taking the shared gate.
+    await admin.command({
+      configureFailPoint: 'failCommand',
+      mode: { skip: 1 },
+      data: {
+        failCommands: ['find'],
+        blockConnection: true,
+        blockTimeMS: 2000,
+      },
+    });
+    const t0 = performance.now();
+    try {
+      const error = await timed.history(identity(owner), channel.id, { limit: 1 }).then(
+        () => undefined,
+        (failure: unknown) => failure,
+      );
+      expect(textErrorCode(error)).toBe('DEPENDENCY_UNAVAILABLE');
+      const elapsed = performance.now() - t0;
+      expect(elapsed).toBeGreaterThan(200);
+      expect(elapsed).toBeLessThan(deadlineMs + 400);
+      console.info('Slow Mongo ACL request released its gate after %d ms', Math.round(elapsed));
+      await coordinator.run({ workspaceId: workspace.id }, () => undefined, { noWait: true });
+    } finally {
+      await admin.command({ configureFailPoint: 'failCommand', mode: 'off' });
+    }
+    expect((await timed.history(identity(owner), channel.id, { limit: 1 })).items).toEqual([]);
+  },
+);

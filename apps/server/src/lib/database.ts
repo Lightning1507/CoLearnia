@@ -36,6 +36,19 @@ async function commitTransaction(session: ClientSession): Promise<void> {
   }
 }
 
+export class DatabaseDeadlineError extends Error {}
+export type DatabaseDeadline = () => number;
+
+export function databaseQueryOptions(remaining: DatabaseDeadline) {
+  const maxTimeMS = remaining();
+  const controller = new AbortController();
+  const signal = AbortSignal.timeout(maxTimeMS);
+  signal.addEventListener('abort', () => controller.abort(new DatabaseDeadlineError()), {
+    once: true,
+  });
+  return { maxTimeMS, signal: controller.signal };
+}
+
 export class DatabaseBusyError extends Error {
   constructor() {
     super('Database transaction capacity exhausted');
@@ -50,6 +63,7 @@ const unavailableMongoCodes = new Set([
 export function isDatabaseUnavailableError(error: unknown): boolean {
   return (
     error instanceof DatabaseBusyError ||
+    error instanceof DatabaseDeadlineError ||
     error instanceof mongoose.mongo.MongoNetworkError ||
     error instanceof mongoose.mongo.MongoServerSelectionError ||
     (error instanceof mongoose.mongo.MongoError &&
@@ -101,7 +115,10 @@ export function createDatabase(uri: string, options: DatabaseOptions = defaultDa
       });
     },
     isConnected: () => connection.readyState === 1,
-    async transaction<T>(work: (session: ClientSession) => Promise<T>): Promise<T> {
+    async transaction<T>(
+      work: (session: ClientSession, beforeQuery?: DatabaseDeadline) => Promise<T>,
+      remaining?: DatabaseDeadline,
+    ): Promise<T> {
       if (connection.readyState !== 1) throw new Error('Database is not connected');
       // No hidden transaction queue. Workspace/User coordination remains caller-owned.
       if (activeTransactions >= limits.maxPoolSize) throw new DatabaseBusyError();
@@ -110,15 +127,34 @@ export function createDatabase(uri: string, options: DatabaseOptions = defaultDa
         const session = await connection.startSession();
         try {
           for (let attempt = 1; ; attempt += 1) {
+            // Reserve a bounded commit window before issuing any transaction command.
+            // The driver fixes maxCommitTimeMS when the transaction starts.
+            const commitBudget = remaining
+              ? Math.max(1, Math.floor(remaining() / 4))
+              : commitTimeoutMS;
+            const beforeQuery =
+              remaining &&
+              (() => {
+                const budget = remaining() - commitBudget;
+                if (budget < 1) throw new DatabaseDeadlineError();
+                return budget;
+              });
             session.startTransaction({
               readPreference: 'primary',
               readConcern: { level: 'snapshot' },
-              writeConcern: { w: 'majority', wtimeoutMS: commitTimeoutMS },
-              maxCommitTimeMS: commitTimeoutMS,
+              writeConcern: { w: 'majority', wtimeoutMS: commitBudget },
+              maxCommitTimeMS: commitBudget,
             });
             try {
-              const result = await work(session);
-              await commitTransaction(session);
+              const result = await work(session, beforeQuery);
+              if (remaining) {
+                if (remaining() < commitBudget) throw new DatabaseDeadlineError();
+                // Let the driver classify ambiguous commits. Avoid another application retry
+                // after the reserved window. The client can retry the same message key.
+                await session.commitTransaction();
+              } else {
+                await commitTransaction(session);
+              }
               return result;
             } catch (error) {
               if (

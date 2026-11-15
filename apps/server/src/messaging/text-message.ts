@@ -2,7 +2,8 @@ import { Schema, Types } from 'mongoose';
 import type { Connection } from 'mongoose';
 import { textHistoryMaxLimit, textMessageSendBodySchema } from '@colearnia/contracts';
 import type { IndexRequirement } from '../lib/database-preflight.js';
-import type { createDatabase } from '../lib/database.js';
+import { databaseQueryOptions } from '../lib/database.js';
+import type { createDatabase, DatabaseDeadline } from '../lib/database.js';
 import { conversationModel } from './conversation.js';
 
 export const textMessageIndexes = [
@@ -85,7 +86,7 @@ export function createTextMessageRepository(database: ReturnType<typeof createDa
         text: string;
         createdAt: Date;
       },
-      maxTimeMS = 5000,
+      remaining?: DatabaseDeadline,
     ) {
       const { conversationId, senderId, createdAt } = input;
       const { clientMessageId, text } = bodySchema.parse({
@@ -94,15 +95,15 @@ export function createTextMessageRepository(database: ReturnType<typeof createDa
       });
       const id = new Types.ObjectId();
       const scope = { _id: conversationId, kind: 'CHANNEL', closedAt: null };
-      return database.transaction(async (session) => {
+      return database.transaction(async (session, queryTime = () => 5000) => {
         const conversation = await Conversation.findOne(scope)
           .session(session)
-          .maxTimeMS(maxTimeMS)
+          .setOptions(databaseQueryOptions(queryTime))
           .lean();
         if (!conversation) return { outcome: 'not-found' } as const;
         const existing = await Message.findOne({ conversationId, senderId, clientMessageId })
           .session(session)
-          .maxTimeMS(maxTimeMS)
+          .setOptions(databaseQueryOptions(queryTime))
           .lean();
         if (existing) {
           return existing.rootMessageId == null &&
@@ -117,9 +118,14 @@ export function createTextMessageRepository(database: ReturnType<typeof createDa
         const updated = await Conversation.findOneAndUpdate(
           scope,
           { $inc: { lastMessageCommitSeq: 1 } },
-          { session, returnDocument: 'after', timestamps: false, maxTimeMS },
+          {
+            session,
+            returnDocument: 'after',
+            timestamps: false,
+            ...databaseQueryOptions(queryTime),
+          },
         ).orFail();
-        const message = await new Message({
+        const message = new Message({
           _id: id,
           conversationId,
           senderId,
@@ -127,9 +133,12 @@ export function createTextMessageRepository(database: ReturnType<typeof createDa
           text,
           createdAt,
           commitSeq: updated.lastMessageCommitSeq,
-        }).save({ session });
-        return { outcome: 'created', message: message.toObject() } as const;
-      });
+        });
+        await message.validate();
+        const row = message.toObject();
+        await Message.collection.insertOne(row, { session, ...databaseQueryOptions(queryTime) });
+        return { outcome: 'created', message: row } as const;
+      }, remaining);
     },
     async listRoots(
       conversationId: Types.ObjectId,
@@ -157,9 +166,10 @@ export function createTextMessageRepository(database: ReturnType<typeof createDa
           ],
         }),
       })
+        .select('_id senderId clientMessageId text createdAt replyCount commitSeq')
         .sort({ createdAt: -1, _id: -1 })
         .limit(limit + 1)
-        .maxTimeMS(maxTimeMS)
+        .setOptions(databaseQueryOptions(() => maxTimeMS))
         .lean();
       const items = rows.slice(0, limit);
       const last = items.at(-1);
