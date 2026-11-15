@@ -101,9 +101,10 @@ function setup(
   endCleanup?: Parameters<typeof createMainJoinRegistry>[0]['endCleanup'],
   reconnectCleanup?: Parameters<typeof createMainJoinRegistry>[0]['reconnectCleanup'],
   routerFactory?: () => Promise<MediaTypes.Router>,
+  limits?: Parameters<typeof createMainJoinRegistry>[0]['limits'],
+  coordinator = createOperationCoordinator(),
 ) {
   let time = Date.now();
-  const coordinator = createOperationCoordinator();
   const target = { workspaceId: id(), channelId: id() };
   const auth = (): AuthenticatedContext => ({
     userId: id(),
@@ -112,13 +113,19 @@ function setup(
   });
   const routers: MediaTypes.Router[] = [];
   const revoked = new Set<string>();
+  const fenced = new Set<string>();
   const registry = createMainJoinRegistry({
     coordinator,
     ...(revocationCleanup ? { revocationCleanup } : {}),
-    ...(endCleanup ? { endCleanup } : {}),
+    endCleanup: endCleanup ?? {
+      media: { revoke: cleanupResult },
+      messaging: async (value) => cleanupResult(value),
+      board: async (value) => cleanupResult(value),
+    },
     ...(reconnectCleanup ? { reconnectCleanup } : {}),
     repository: customRepository,
     now: () => time,
+    ...(limits ? { limits } : {}),
     // M1 authority is a fixture; DB session writes and native Routers are real.
     resolveAuthority: async (identity, destination, held) => {
       held.assertHeld({ workspaceId: destination.workspaceId });
@@ -136,7 +143,7 @@ function setup(
     },
     isAuthorityCurrent: (current, held) => {
       held.assertHeld({ workspaceId: current.access.workspaceId });
-      return !revoked.has(current.auth.userId);
+      return !revoked.has(current.auth.userId) && !fenced.has(current.auth.userId);
     },
     createRouter: async () => {
       const router = await (routerFactory?.() ?? worker.createRouter({ mediaCodecs }));
@@ -152,7 +159,9 @@ function setup(
   });
   return {
     registry,
+    coordinator,
     revoked,
+    fenced,
     target,
     auth,
     routers,
@@ -164,6 +173,507 @@ function setup(
 }
 
 describe('MAIN registry with real MongoDB and mediasoup Router', () => {
+  it.each(['BUSY', 'TIMEOUT'] as const)(
+    'reconciles Workspace B while Workspace A gate remains %s',
+    async (failure) => {
+      const coordinator = createOperationCoordinator({
+        maxPendingPerKey: 1,
+        maxOperations: 1024,
+        waitTimeoutMs: failure === 'TIMEOUT' ? 2000 : 5000,
+      });
+      let readable = false;
+      const begin = vi.fn(repository.beginEnding),
+        complete = vi.fn(repository.completeEnding);
+      const f = setup(
+        {
+          ...repository,
+          beginEnding: begin,
+          completeEnding: complete,
+          readMutation: async (input) => {
+            if (!readable) throw new Error('Injected read outage');
+            return repository.readMutation(input);
+          },
+        },
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        coordinator,
+      );
+      const a = f.auth();
+      const aTicket = await f.registry.issue(a, f.target, { requestId: randomUUID() });
+      const secondA = await f.registry.issue(
+        a,
+        { workspaceId: f.target.workspaceId, channelId: id() },
+        { requestId: randomUUID() },
+      );
+      const b = f.auth(),
+        bSocket = f.binding(b);
+      const bTarget = { workspaceId: id(), channelId: id() };
+      const bTicket = await f.registry.issue(b, bTarget, { requestId: randomUUID() });
+      const joined = await f.registry.join(bSocket, {
+        ticket: bTicket.ticket,
+        requestId: randomUUID(),
+      });
+      begin.mockImplementationOnce(async (input, guard) => {
+        await repository.beginEnding(input, guard);
+        throw new Error('Injected lost end ack');
+      });
+      const command = {
+        requestId: randomUUID(),
+        sessionId: bTicket.sessionId,
+        epoch: bTicket.epoch,
+        callGeneration: joined.ack.data.result.callGeneration,
+        expectedPolicyRevision: 1,
+        action: 'END',
+      };
+      expect(await f.registry.end(bSocket, command)).toMatchObject({ data: { status: 'pending' } });
+      f.advance(60_000);
+      readable = true;
+      let enter!: () => void, release!: () => void;
+      const entered = new Promise<void>((resolve) => {
+        enter = resolve;
+      });
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      let holding = false;
+      const busy = coordinator.run({ workspaceId: f.target.workspaceId }, async () => {
+        holding = true;
+        enter();
+        await held;
+        holding = false;
+      });
+      await entered;
+      let queued: Promise<void> | undefined;
+      try {
+        if (failure === 'BUSY') {
+          queued = coordinator.run({ workspaceId: f.target.workspaceId }, async () => {});
+          void queued.catch(() => {});
+          await vi.waitFor(() => expect(coordinator.stats().pending).toBe(1));
+        }
+        const rejected = coordinator.stats().rejected;
+        await f.registry.sweepExpired();
+        expect(holding).toBe(true);
+        expect(coordinator.stats().rejected).toBe(rejected + 1);
+        if (failure === 'BUSY') expect(coordinator.stats().pending).toBe(1);
+        expect(await models.LiveSession.findById(bTicket.sessionId).lean()).toMatchObject({
+          status: 'ENDED',
+          revision: 3,
+        });
+        expect(await models.LiveSession.findById(aTicket.sessionId).lean()).toMatchObject({
+          status: 'ACTIVE',
+          revision: 0,
+        });
+        expect(begin).toHaveBeenCalledOnce();
+        expect(complete).toHaveBeenCalledOnce();
+        expect(await models.LiveSession.findById(secondA.sessionId).lean()).toMatchObject({
+          status: 'ACTIVE',
+          revision: 0,
+        });
+        expect(f.registry.stats().rooms).toBe(2);
+      } finally {
+        release();
+        await Promise.allSettled([busy, ...(queued ? [queued] : [])]);
+      }
+      await f.registry.sweepExpired();
+      expect(await models.LiveSession.findById(aTicket.sessionId).lean()).toMatchObject({
+        status: 'ENDED',
+      });
+      expect(await models.LiveSession.findById(secondA.sessionId).lean()).toMatchObject({
+        status: 'ENDED',
+      });
+      expect(begin).toHaveBeenCalledTimes(3);
+      expect(complete).toHaveBeenCalledTimes(3);
+    },
+    15_000,
+  );
+  it.each(['fence', 'access'] as const)(
+    'rejects issue replay when %s is revoked during metadata read-back',
+    async (denial) => {
+      let readable = false,
+        userToDeny = '';
+      const join = vi.fn(repository.join);
+      const f = setup({
+        ...repository,
+        join,
+        readMutation: async (input) => {
+          if (!readable) throw new Error('Injected read outage');
+          const proof = await repository.readMutation(input);
+          (denial === 'fence' ? f.fenced : f.revoked).add(userToDeny);
+          return proof;
+        },
+      });
+      const host = f.auth(),
+        hostSocket = f.binding(host);
+      const first = await f.registry.issue(host, f.target, { requestId: randomUUID() });
+      await f.registry.join(hostSocket, { ticket: first.ticket, requestId: randomUUID() });
+      const requestId = randomUUID();
+      await f.registry.issue(host, f.target, { requestId });
+      const other = f.auth();
+      const otherTicket = await f.registry.issue(other, f.target, { requestId: randomUUID() });
+      join.mockImplementationOnce(async (input) => {
+        await repository.join(input);
+        throw new Error('Injected lost join ack');
+      });
+      await expect(
+        f.registry.join(f.binding(other), { ticket: otherTicket.ticket, requestId: randomUUID() }),
+      ).rejects.toMatchObject({ code: 'DEPENDENCY_UNAVAILABLE' });
+      userToDeny = host.userId;
+      readable = true;
+      await expect(f.registry.issue(host, f.target, { requestId })).rejects.toMatchObject({
+        code: 'FORBIDDEN',
+      });
+      expect(join).toHaveBeenCalledTimes(2);
+      expect(f.registry.stats().ownerships).toBe(1);
+      expect(await models.LiveSession.findById(first.sessionId).lean()).toMatchObject({
+        status: 'ACTIVE',
+        revision: 2,
+      });
+    },
+  );
+  it('reconciles an accepted end even when an earlier orphan cannot obtain the only end slot', async () => {
+    let readable = false;
+    const begin = vi.fn(repository.beginEnding);
+    const complete = vi.fn(repository.completeEnding);
+    const f = setup(
+      {
+        ...repository,
+        beginEnding: begin,
+        completeEnding: complete,
+        readMutation: async (input) => {
+          if (!readable) throw new Error('Injected read outage');
+          return repository.readMutation(input);
+        },
+      },
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      { maxEndRecords: 1 },
+    );
+    const a = f.auth();
+    const aTicket = await f.registry.issue(a, f.target, { requestId: randomUUID() });
+    const b = f.auth(),
+      bSocket = f.binding(b);
+    const bTarget = { workspaceId: f.target.workspaceId, channelId: id() };
+    const bTicket = await f.registry.issue(b, bTarget, { requestId: randomUUID() });
+    const joined = await f.registry.join(bSocket, {
+      ticket: bTicket.ticket,
+      requestId: randomUUID(),
+    });
+    begin.mockImplementationOnce(async (input, guard) => {
+      await repository.beginEnding(input, guard);
+      throw new Error('Injected acknowledgement loss');
+    });
+    const command = {
+      requestId: randomUUID(),
+      sessionId: bTicket.sessionId,
+      epoch: bTicket.epoch,
+      callGeneration: joined.ack.data.result.callGeneration,
+      expectedPolicyRevision: 1,
+      action: 'END',
+    };
+    expect(await f.registry.end(bSocket, command)).toMatchObject({ data: { status: 'pending' } });
+    f.advance(60_000);
+    readable = true;
+    await f.registry.sweepExpired();
+    expect(await f.registry.end(bSocket, command)).toMatchObject({ data: { status: 'completed' } });
+    expect(await models.LiveSession.findById(bTicket.sessionId).lean()).toMatchObject({
+      status: 'ENDED',
+      revision: 3,
+    });
+    expect(await models.LiveSession.findById(aTicket.sessionId).lean()).toMatchObject({
+      status: 'ACTIVE',
+      revision: 0,
+    });
+    expect(f.registry.stats().endRecords).toBe(1);
+    expect(begin).toHaveBeenCalledTimes(1);
+    expect(complete).toHaveBeenCalledTimes(1);
+    f.advance(59_999);
+    await f.registry.sweepExpired();
+    expect(begin).toHaveBeenCalledTimes(1);
+    f.advance(1);
+    await f.registry.sweepExpired();
+    expect(await models.LiveSession.findById(aTicket.sessionId).lean()).toMatchObject({
+      status: 'ENDED',
+      revision: 2,
+    });
+    expect(begin).toHaveBeenCalledTimes(2);
+    expect(complete).toHaveBeenCalledTimes(2);
+    expect(f.registry.stats().rooms).toBe(0);
+    expect(f.registry.stats().endRecords).toBe(1);
+  });
+  it.each([10_000, 10_001])(
+    'rejects issue replay after %s ms of read-back without repeating the join write',
+    async (delay) => {
+      let readable = false;
+      const join = vi.fn(repository.join);
+      const read = vi.fn(async (input: Parameters<typeof repository.readMutation>[0]) => {
+        if (!readable) throw new Error('Injected read outage');
+        const result = await repository.readMutation(input);
+        f.advance(delay);
+        return result;
+      });
+      const f = setup({ ...repository, join, readMutation: read });
+      const host = f.auth(),
+        socket = f.binding(host);
+      const first = await f.registry.issue(host, f.target, { requestId: randomUUID() });
+      await f.registry.join(socket, { ticket: first.ticket, requestId: randomUUID() });
+      const replayId = randomUUID();
+      const replay = await f.registry.issue(host, f.target, { requestId: replayId });
+      const other = f.auth();
+      const ticket = await f.registry.issue(other, f.target, { requestId: randomUUID() });
+      join.mockImplementationOnce(async (input) => {
+        await repository.join(input);
+        throw new Error('Injected lost join ack');
+      });
+      await expect(
+        f.registry.join(f.binding(other), { ticket: ticket.ticket, requestId: randomUUID() }),
+      ).rejects.toMatchObject({ code: 'DEPENDENCY_UNAVAILABLE' });
+      readable = true;
+      await expect(f.registry.issue(host, f.target, { requestId: replayId })).rejects.toMatchObject(
+        {
+          code: 'DEPENDENCY_UNAVAILABLE',
+        },
+      );
+      expect(join).toHaveBeenCalledTimes(2);
+      expect(read).toHaveBeenCalledTimes(2);
+      expect(f.registry.stats().ownerships).toBe(1);
+      expect(await models.LiveSession.findById(first.sessionId).lean()).toMatchObject({
+        status: 'ACTIVE',
+        revision: 2,
+      });
+      // A new request budget can replay the still-valid ticket after reconciliation.
+      const retried = await f.registry.issue(host, f.target, { requestId: replayId });
+      expect(retried.ticket).toBe(replay.ticket);
+      expect(retried.expiresAt).toBe(replay.expiresAt);
+      expect(join).toHaveBeenCalledTimes(2);
+      expect(read).toHaveBeenCalledTimes(2);
+    },
+  );
+  it('ends durable metadata at the last grace boundary and invalidates unused tickets', async () => {
+    const f = setup(repository, undefined, undefined, {
+      media: { revoke: cleanupResult },
+      messaging: endCleanup,
+      board: endCleanup,
+    });
+    const user = f.auth(),
+      socket = f.binding(user);
+    const ticket = await f.registry.issue(user, f.target, { requestId: randomUUID() });
+    await f.registry.join(socket, { ticket: ticket.ticket, requestId: randomUUID() });
+    await f.registry.disconnect(socket.socketId);
+    const newcomer = f.auth();
+    const unused = await f.registry.issue(newcomer, f.target, { requestId: randomUUID() });
+    f.advance(29_999);
+    await f.registry.sweepExpired();
+    expect(await models.LiveSession.findById(ticket.sessionId).lean()).toMatchObject({
+      status: 'ACTIVE',
+    });
+    f.advance(1);
+    await f.registry.sweepExpired();
+    expect(await models.LiveSession.findById(ticket.sessionId).lean()).toMatchObject({
+      status: 'ENDED',
+      hostUserId: null,
+      revision: 3,
+    });
+    expect(
+      await models.SessionParticipant.countDocuments({ sessionId: ticket.sessionId, leftAt: null }),
+    ).toBe(0);
+    expect(f.routers[0]!.closed).toBe(true);
+    expect(f.registry.stats().ownerships).toBe(0);
+    await expect(
+      f.registry.join(f.binding(newcomer), { ticket: unused.ticket, requestId: randomUUID() }),
+    ).rejects.toThrow();
+    const next = await f.registry.issue(newcomer, f.target, { requestId: randomUUID() });
+    expect(next.epoch).not.toBe(ticket.epoch);
+  });
+  it('does not count a revoked ownership as valid grace when deciding whether to end', async () => {
+    const f = setup(repository, undefined, undefined, {
+      media: { revoke: cleanupResult },
+      messaging: endCleanup,
+      board: endCleanup,
+    });
+    const user = f.auth(),
+      socket = f.binding(user);
+    const ticket = await f.registry.issue(user, f.target, { requestId: randomUUID() });
+    await f.registry.join(socket, { ticket: ticket.ticket, requestId: randomUUID() });
+    await f.registry.disconnect(socket.socketId);
+    f.revoked.add(user.userId);
+    await f.registry.sweepExpired();
+    expect(await models.LiveSession.findById(ticket.sessionId).lean()).toMatchObject({
+      status: 'ENDED',
+    });
+    expect(f.registry.stats().ownerships).toBe(0);
+  });
+  it('does not grant a join when access is revoked while reading back its committed metadata', async () => {
+    const join = vi.fn(repository.join);
+    let revokedUser = '';
+    const f = setup({
+      ...repository,
+      join,
+      readMutation: async (input) => {
+        const proof = await repository.readMutation(input);
+        f.revoked.add(revokedUser);
+        return proof;
+      },
+    });
+    const host = f.auth(),
+      hostSocket = f.binding(host);
+    const first = await f.registry.issue(host, f.target, { requestId: randomUUID() });
+    await f.registry.join(hostSocket, { ticket: first.ticket, requestId: randomUUID() });
+    join.mockImplementationOnce(async (input) => {
+      await repository.join(input);
+      throw new Error('Injected lost join ack');
+    });
+    const user = f.auth(),
+      socket = f.binding(user);
+    revokedUser = user.userId;
+    const ticket = await f.registry.issue(user, f.target, { requestId: randomUUID() });
+    await expect(
+      f.registry.join(socket, { ticket: ticket.ticket, requestId: randomUUID() }),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    expect(f.registry.stats().ownerships).toBe(1);
+    expect(join).toHaveBeenCalledTimes(2);
+    expect(
+      await f.registry.withContext(
+        socket.socketId,
+        { sessionId: ticket.sessionId, epoch: ticket.epoch, callGeneration: 2 },
+        (result) => result.ok,
+      ),
+    ).toBe(false);
+  });
+  it.each(['beginEnding', 'completeEnding'] as const)(
+    'reconciles a lost %s ack on sweep after the read service recovers',
+    async (phase) => {
+      let readable = false;
+      const begin = vi.fn(repository.beginEnding),
+        complete = vi.fn(repository.completeEnding);
+      const selected = phase === 'beginEnding' ? begin : complete;
+      selected.mockImplementationOnce(async (input, guard) => {
+        await repository[phase](input, guard);
+        throw new Error('Injected acknowledgement loss after commit');
+      });
+      const f = setup({
+        ...repository,
+        beginEnding: begin,
+        completeEnding: complete,
+        readMutation: async (input) => {
+          if (!readable) throw new Error('Injected read outage');
+          return repository.readMutation(input);
+        },
+      });
+      const user = f.auth(),
+        socket = f.binding(user);
+      const ticket = await f.registry.issue(user, f.target, { requestId: randomUUID() });
+      const joined = await f.registry.join(socket, {
+        ticket: ticket.ticket,
+        requestId: randomUUID(),
+      });
+      const command = {
+        requestId: randomUUID(),
+        sessionId: ticket.sessionId,
+        epoch: ticket.epoch,
+        callGeneration: joined.ack.data.result.callGeneration,
+        expectedPolicyRevision: 1,
+        action: 'END',
+      };
+      expect(await f.registry.end(socket, command)).toMatchObject({ data: { status: 'pending' } });
+      expect(f.registry.stats().ownerships).toBe(1);
+      await expect(f.registry.issue(user, f.target, { requestId: randomUUID() })).rejects.toThrow();
+      readable = true;
+      await f.registry.sweepExpired();
+      expect(await f.registry.end(socket, command)).toMatchObject({
+        data: { status: 'completed', result: { state: 'ENDED' } },
+      });
+      expect(begin).toHaveBeenCalledOnce();
+      expect(complete).toHaveBeenCalledOnce();
+      expect(f.registry.stats().ownerships).toBe(0);
+      expect(await models.LiveSession.findById(ticket.sessionId).lean()).toMatchObject({
+        status: 'ENDED',
+        revision: 3,
+      });
+    },
+  );
+  it('reconciles a lost join ack without replaying its write or granting a spent ticket', async () => {
+    let readable = false;
+    const join = vi.fn(repository.join);
+    const f = setup({
+      ...repository,
+      join,
+      readMutation: async (input) => {
+        if (!readable) throw new Error('Injected read outage');
+        return repository.readMutation(input);
+      },
+    });
+    const host = f.auth(),
+      hostSocket = f.binding(host);
+    const first = await f.registry.issue(host, f.target, { requestId: randomUUID() });
+    await f.registry.join(hostSocket, { ticket: first.ticket, requestId: randomUUID() });
+    join.mockImplementationOnce(async (input) => {
+      await repository.join(input);
+      throw new Error('Injected lost join ack');
+    });
+    const user = f.auth(),
+      socket = f.binding(user);
+    const ticket = await f.registry.issue(user, f.target, { requestId: randomUUID() });
+    const command = { ticket: ticket.ticket, requestId: randomUUID() };
+    await expect(f.registry.join(socket, command)).rejects.toMatchObject({
+      code: 'DEPENDENCY_UNAVAILABLE',
+    });
+    expect(f.registry.stats().uncertainRooms).toBe(1);
+    readable = true;
+    await f.registry.sweepExpired();
+    expect(f.registry.stats().uncertainRooms).toBe(0);
+    expect(f.registry.stats().ownerships).toBe(1);
+    await expect(f.registry.join(socket, command)).rejects.toMatchObject({ code: 'CONFLICT' });
+    expect(join).toHaveBeenCalledTimes(2);
+    expect(await models.LiveSession.findById(first.sessionId).lean()).toMatchObject({
+      revision: 2,
+      status: 'ACTIVE',
+    });
+    expect(
+      await models.SessionParticipant.countDocuments({
+        sessionId: first.sessionId,
+        userId: user.userId,
+      }),
+    ).toBe(1);
+    const fresh = await f.registry.issue(user, f.target, { requestId: randomUUID() });
+    await f.registry.join(socket, { ticket: fresh.ticket, requestId: randomUUID() });
+    expect(join).toHaveBeenCalledTimes(3);
+    expect(f.registry.stats().ownerships).toBe(2);
+  });
+  it('retires a confirmed late create whose native Router was already abandoned', async () => {
+    let readable = false;
+    const create = vi.fn(async (input: Parameters<typeof repository.create>[0]) => {
+      await repository.create(input);
+      throw new Error('Injected lost create ack');
+    });
+    const f = setup({
+      ...repository,
+      create,
+      readMutation: async (input) => {
+        if (!readable) throw new Error('Injected read outage');
+        return repository.readMutation(input);
+      },
+    });
+    const user = f.auth();
+    await expect(f.registry.issue(user, f.target, { requestId: randomUUID() })).rejects.toThrow();
+    expect(f.routers[0]!.closed).toBe(true);
+    readable = true;
+    await f.registry.sweepExpired();
+    expect(f.registry.stats().rooms).toBe(0);
+    expect(f.registry.stats().ownerships).toBe(0);
+    expect(create).toHaveBeenCalledOnce();
+    const stored = await models.LiveSession.findOne({ channelId: f.target.channelId })
+      .lean()
+      .orFail();
+    expect(stored).toMatchObject({ status: 'ENDED', hostUserId: null, revision: 2 });
+    const next = await f.registry.issue(user, f.target, { requestId: randomUUID() });
+    expect(next.sessionId).not.toBe(stored._id.toHexString());
+    expect(f.routers[1]!.closed).toBe(false);
+  });
   it('closes a native transport before resuming without rewriting participant metadata', async () => {
     const media = vi.fn((request: SessionCleanupRequest) => {
       transport.close();
@@ -316,7 +826,7 @@ describe('MAIN registry with real MongoDB and mediasoup Router', () => {
       runtime.close();
     }
   });
-  it('keeps a committed end with a lost acknowledgement pending without repeating writes', async () => {
+  it('confirms a committed end by read-back without repeating writes', async () => {
     let completes = 0;
     const f = setup(
       {
@@ -350,7 +860,7 @@ describe('MAIN registry with real MongoDB and mediasoup Router', () => {
       action: 'END',
     };
     const result = await f.registry.end(socket, command);
-    expect(result).toMatchObject({ data: { status: 'pending', result: { state: 'ENDING' } } });
+    expect(result).toMatchObject({ data: { status: 'completed', result: { state: 'ENDED' } } });
     expect(await f.registry.end(socket, command)).toEqual(result);
     expect(completes).toBe(1);
     expect(await models.LiveSession.findById(ticket.sessionId).lean()).toMatchObject({
@@ -366,9 +876,9 @@ describe('MAIN registry with real MongoDB and mediasoup Router', () => {
       )?.leftAt,
     ).toBeInstanceOf(Date);
     expect(f.routers[0]!.closed).toBe(true);
-    await expect(
-      f.registry.issue(user, f.target, { requestId: randomUUID() }),
-    ).rejects.toMatchObject({ code: 'DEPENDENCY_UNAVAILABLE' });
+    expect(f.registry.stats().ownerships).toBe(0);
+    const next = await f.registry.issue(user, f.target, { requestId: randomUUID() });
+    expect(next.sessionId).not.toBe(ticket.sessionId);
   });
   it('ends real MAIN metadata and closes the Router once for concurrent host leave retries', async () => {
     const cleanup = async (value: SessionCleanupRequest): Promise<SessionCleanupResult> => {
@@ -731,23 +1241,23 @@ describe('MAIN registry with real MongoDB and mediasoup Router', () => {
     ).toBe(1);
   });
 
-  it('keeps a truly committed create with a simulated lost acknowledgement denied', async () => {
+  it('confirms a truly committed create before issuing a ticket, without creating it twice', async () => {
     const error = new mongo.MongoServerError({ message: 'Injected lost acknowledgement' });
     error.addErrorLabel('UnknownTransactionCommitResult');
+    let creates = 0;
     const f = setup({
       ...repository,
       create: async (input) => {
+        creates++;
         await repository.create(input);
         throw error;
       },
     });
     const user = f.auth();
-    await expect(
-      f.registry.issue(user, f.target, { requestId: randomUUID() }),
-    ).rejects.toMatchObject({ code: 'DEPENDENCY_UNAVAILABLE' });
-    await expect(
-      f.registry.issue(user, f.target, { requestId: randomUUID() }),
-    ).rejects.toMatchObject({ code: 'DEPENDENCY_UNAVAILABLE' });
+    const first = await f.registry.issue(user, f.target, { requestId: randomUUID() });
+    const retry = await f.registry.issue(user, f.target, { requestId: randomUUID() });
+    expect(retry.sessionId).toBe(first.sessionId);
+    expect(creates).toBe(1);
     expect(f.registry.stats().ownerships).toBe(0);
     expect(
       await models.LiveSession.countDocuments({
@@ -755,7 +1265,7 @@ describe('MAIN registry with real MongoDB and mediasoup Router', () => {
       }),
     ).toBe(1);
     expect(f.routers).toHaveLength(1);
-    expect(f.routers[0]?.closed).toBe(true);
+    expect(f.routers[0]?.closed).toBe(false);
   });
 
   it('ends an unconsumed expired room and its metadata before admitting a new session', async () => {
