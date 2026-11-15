@@ -19,6 +19,7 @@ import {
 } from './workspaces/create-workspace.js';
 import { createWorkspaceAccessService } from './workspaces/access-service.js';
 import { createWorkspaceRouter } from './workspaces/workspace-routes.js';
+import { createChannelCreator } from './workspaces/create-channel.js';
 import { createSessionRevocation } from './auth/session-revocation.js';
 import { createSessionConnections } from './realtime/session-connections.js';
 import { createRealtime } from './realtime/server.js';
@@ -101,6 +102,13 @@ const workspaceRouter = httpAuth
         () => canUseAuthIndexes() && workspaceIndexesReady,
         accessRevocations.barrier,
       ),
+      createChannelCreator({
+        database,
+        coordinator: operationCoordinator,
+        barrier: accessRevocations.barrier,
+        indexesReady: () => canUseAuthIndexes() && workspaceIndexesReady,
+        createConversation: createChannelConversationFactory(database.connection).create,
+      }),
     )
   : undefined;
 const httpServer = createServer(createApp(config, status, authRouter, workspaceRouter));

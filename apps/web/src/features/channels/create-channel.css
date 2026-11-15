@@ -1,0 +1,98 @@
+.channel-create {
+  margin-top: var(--cl-space-6);
+}
+.channel-dialog {
+  margin: auto;
+  width: min(36rem, calc(100vw - 2rem));
+  max-height: calc(100dvh - 2rem);
+  padding: 0;
+  border: 1px solid var(--cl-color-dialog-border);
+  border-radius: 1rem;
+  background: var(--cl-color-surface);
+  color: var(--cl-color-text-primary);
+  box-shadow: 0 18px 50px var(--cl-color-dialog-shadow);
+}
+.channel-dialog::backdrop {
+  background: var(--cl-color-dialog-backdrop);
+}
+.channel-dialog header,
+.channel-dialog-fields,
+.channel-dialog footer {
+  padding: var(--cl-space-6);
+}
+.channel-dialog header {
+  border-bottom: 1px solid var(--cl-color-dialog-divider);
+}
+.channel-dialog h2 {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+.channel-dialog header p {
+  margin: var(--cl-space-2) 0 0;
+  color: var(--cl-color-text-secondary);
+}
+.channel-dialog-fields {
+  display: grid;
+  gap: var(--cl-space-6);
+}
+.channel-dialog fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.channel-dialog legend {
+  margin-bottom: var(--cl-space-2);
+  font-weight: 600;
+}
+.channel-choices {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--cl-space-2);
+}
+.channel-choice {
+  display: flex;
+  align-items: center;
+  gap: var(--cl-space-2);
+  padding: 0.875rem;
+  border: 1px solid var(--cl-color-border-control);
+  border-radius: var(--cl-radius-control);
+  cursor: pointer;
+}
+.channel-choice.selected {
+  border-color: var(--cl-color-action-primary-bg);
+  background: var(--cl-color-surface-subtle);
+}
+.channel-choice input {
+  accent-color: var(--cl-color-action-primary-bg);
+}
+.channel-choice small {
+  display: block;
+  color: var(--cl-color-text-secondary);
+  margin-top: 0.25rem;
+}
+.channel-dialog footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--cl-space-2);
+  border-top: 1px solid var(--cl-color-dialog-divider);
+  background: var(--cl-color-dialog-footer-bg);
+}
+.channel-error {
+  padding: var(--cl-space-4);
+  background: var(--cl-color-feedback-error-bg);
+  color: var(--cl-color-feedback-error-text);
+  border: 1px solid var(--cl-color-feedback-error-border);
+  border-radius: var(--cl-radius-control);
+  margin: 0;
+}
+.channel-dialog :focus-visible {
+  outline: 3px solid var(--cl-color-focus-ring);
+  outline-offset: 3px;
+}
+@media (max-width: 28rem) {
+  .channel-choices {
+    grid-template-columns: 1fr;
+  }
+}
