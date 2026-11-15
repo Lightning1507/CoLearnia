@@ -22,6 +22,9 @@ export type WorkspaceShellProps = {
   chatPanel: ReactNode;
   callPanel: ReactNode;
   persistentCallControls: ReactNode;
+  sidebarControls?: ReactNode;
+  sidebarStatus?: ReactNode;
+  contentOverride?: ReactNode;
 };
 
 export function readableSidebarChannels(channels: readonly SidebarChannel[], workspaceId: string) {

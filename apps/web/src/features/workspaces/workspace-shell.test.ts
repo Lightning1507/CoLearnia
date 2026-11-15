@@ -37,6 +37,20 @@ describe('WorkspaceShell', () => {
     expect(markup).not.toContain(privateChannelName);
   });
 
+  it.each(['TEXT', 'LIVE'] as const)(
+    'keeps both privacy and %s type visible and named in navigation',
+    (type) => {
+      const original = sidebarFixture[0]!;
+      const channel = { ...original.channel, type, accessMode: 'PRIVATE' as const };
+      const markup = renderShell({ kind: 'empty' }, [{ ...original, channel }]);
+      expect(markup).toContain('data-channel-icon="lock"');
+      expect(markup).toContain(`data-channel-icon="${type === 'TEXT' ? 'hash' : 'phone'}"`);
+      expect(markup).toContain(
+        `aria-label="${channel.name} · ${type === 'TEXT' ? 'Kênh trò chuyện' : 'Phòng trực tiếp'} · Riêng tư"`,
+      );
+    },
+  );
+
   it('does not render stale panel content after access projection removes the selection', () => {
     const selected = sidebarFixture.find(({ channel }) => channel.type === 'TEXT');
     expect(selected).toBeDefined();
