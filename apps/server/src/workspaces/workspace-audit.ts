@@ -9,18 +9,18 @@ export const workspaceAuditIndex = {
   key: { workspaceId: 1, createdAt: -1, _id: -1 },
 } satisfies IndexRequirement;
 
-// SCRUM-32 only catalogs workspace creation. Do not accept arbitrary metadata/actions
+// Structure creation only. Do not accept arbitrary metadata/actions
 // from clients, or use this collection as an idempotency ledger.
 const schema = new Schema(
   {
     actorUserId: { type: Schema.Types.ObjectId, required: true },
-    action: { type: String, enum: ['WORKSPACE_CREATE'], required: true },
+    action: { type: String, enum: ['WORKSPACE_CREATE', 'CHANNEL_CREATE'], required: true },
     workspaceId: { type: Schema.Types.ObjectId, required: true },
     sessionId: { type: Schema.Types.ObjectId, default: null },
     target: {
       type: new Schema(
         {
-          kind: { type: String, enum: ['WORKSPACE'], required: true },
+          kind: { type: String, enum: ['WORKSPACE', 'CHANNEL'], required: true },
           id: { type: String, required: true, match: /^[a-f0-9]{24}$/ },
         },
         { _id: false, strict: 'throw' },

@@ -49,3 +49,5 @@ HTTP limiter có thể trả `Retry-After` theo giây; socket ack dùng `error.r
 - Error middleware chung trả INTERNAL_ERROR cho lỗi chưa map, log an toàn để điều tra. Không gửi stack/query/secret cho client. Nếu stream đã gửi header, kết thúc stream thay vì ghi JSON lỗi lần hai.
 
 Kiểm bắt buộc: status/code khớp; lỗi không lộ dữ liệu; 403/404 đúng policy; validation không echo secret; timeout/retry không tạo tài nguyên trùng. Đường file Range có 416 riêng theo HTTP contract M2; health/readiness giữ response trạng thái riêng, không ép vào bảng lỗi nghiệp vụ.
+
+SCRUM-35: `CHANNEL_REPLAY_UNAVAILABLE` — HTTP 410: không còn entry cho yêu cầu đối chiếu tạo kênh (`replayOnly: true`); không tạo kênh mới. Kiểm kết quả hiện có trước khi tạo yêu cầu mới. Chi tiết [tạo kênh](../runbooks/channel-creation.md).

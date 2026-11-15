@@ -15,7 +15,7 @@ const nameSchema = (min: number) =>
     .trim()
     .refine((value) => [...value].length >= min && [...value].length <= 80);
 export const workspaceNameSchema = nameSchema(2);
-export const channelNameSchema = nameSchema(1);
+export const channelNameSchema = nameSchema(1).refine((value) => !/[\uD800-\uDFFF]/u.test(value));
 export const workspaceParamsSchema = z.strictObject({ workspaceId: workspaceDocumentIdSchema });
 export const channelParamsSchema = z.strictObject({ channelId: workspaceDocumentIdSchema });
 export const channelAccessParamsSchema = channelParamsSchema.extend({
@@ -43,6 +43,7 @@ export const createChannelSchema = z.strictObject({
   type: channelTypeSchema,
   accessMode: channelAccessSchema.default('WORKSPACE'),
   requestId: requestIdSchema,
+  replayOnly: z.literal(true).optional(),
 });
 // Type/accessMode are immutable; OWNER cannot be assigned through the role endpoint.
 export const renameChannelSchema = mutationInputSchema.extend({ name: channelNameSchema });
