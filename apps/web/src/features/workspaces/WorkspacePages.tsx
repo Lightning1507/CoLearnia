@@ -1,6 +1,6 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
-import type { FormEvent } from 'react';
+import type { FormEvent, ReactNode } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { workspaceNameSchema } from '@colearnia/contracts';
 import type { AuthenticatedData } from '@colearnia/contracts';
@@ -25,7 +25,13 @@ const issueMessages: Record<CreateIssue, string> = {
   'replay-unavailable': 'Không thể đối chiếu yêu cầu cũ. Hãy kiểm tra danh sách trước khi tạo mới.',
 };
 
-export function WorkspacePicker({ session }: { session: AuthenticatedData }) {
+export function WorkspacePicker({
+  session,
+  account,
+}: {
+  session: AuthenticatedData;
+  account: ReactNode;
+}) {
   const client = useQueryClient();
   const navigate = useNavigate();
   const [formOpen, setFormOpen] = useState(false);
@@ -153,6 +159,7 @@ export function WorkspacePicker({ session }: { session: AuthenticatedData }) {
       <header className="workspace-picker-header">
         <strong>CoLearnia</strong>
         <span>{session.user.displayName}</span>
+        {account}
       </header>
       <div className="workspace-picker-content">
         <div className="workspace-picker-heading">
@@ -298,7 +305,7 @@ export function WorkspacePicker({ session }: { session: AuthenticatedData }) {
   );
 }
 
-export function WorkspaceOpen({ userId }: { userId: string }) {
+export function WorkspaceOpen({ userId, account }: { userId: string; account: ReactNode }) {
   const { workspaceId = '' } = useParams();
   const client = useQueryClient();
   const result = useQuery({
@@ -343,6 +350,7 @@ export function WorkspaceOpen({ userId }: { userId: string }) {
     <main className="workspace-picker">
       <header className="workspace-picker-header">
         <Link to="/workspaces">Workspace của bạn</Link>
+        {account}
       </header>
       <section className="workspace-picker-content">
         <h1>{result.data.name}</h1>

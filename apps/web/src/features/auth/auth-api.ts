@@ -1,6 +1,7 @@
 import {
   apiErrorSchema,
   authenticatedResponseSchema,
+  authMutationResponseSchema,
   csrfResponseSchema,
 } from '@colearnia/contracts';
 import type { AuthenticatedData, LoginInput, RegisterInput } from '@colearnia/contracts';
@@ -137,5 +138,9 @@ export function createAuthApi(base: string, transport: typeof fetch = fetch) {
     }
     throw new Error('Unreachable authentication attempt');
   }
-  return { me, authenticate };
+  async function logout(csrfToken: string, signal: AbortSignal) {
+    // A refreshed proof could belong to a different browser session.
+    authMutationResponseSchema.parse(await request('/auth/logout', signal, {}, csrfToken));
+  }
+  return { me, authenticate, logout };
 }
