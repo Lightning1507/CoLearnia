@@ -18,22 +18,28 @@ const channelIconPaths = {
 };
 
 function ChannelIcon({ channel }: { channel: ChannelSummary }) {
-  const icon =
-    channel.type === 'LIVE' ? 'phone' : channel.accessMode === 'PRIVATE' ? 'lock' : 'hash';
+  const icons = [
+    ...(channel.accessMode === 'PRIVATE' ? (['lock'] as const) : []),
+    channel.type === 'LIVE' ? ('phone' as const) : ('hash' as const),
+  ];
   return (
-    <svg
-      className="size-[18px] shrink-0"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.7"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-      data-channel-icon={icon}
-    >
-      {channelIconPaths[icon]}
-    </svg>
+    <span className="inline-flex shrink-0 items-center gap-1" aria-hidden="true">
+      {icons.map((icon) => (
+        <svg
+          key={icon}
+          className="size-[18px] shrink-0"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.7"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          data-channel-icon={icon}
+        >
+          {channelIconPaths[icon]}
+        </svg>
+      ))}
+    </span>
   );
 }
 
@@ -167,6 +173,8 @@ function ChannelGroup({
               <button
                 type="button"
                 className={`workspace-channel flex h-[34px] w-full items-center gap-[9px] rounded-md px-2.5 text-left text-[13px] ${selected ? 'bg-[var(--workspace-channel-selected-bg)] font-semibold text-[color:var(--workspace-channel-selected-text)]' : 'text-[color:var(--workspace-text)] hover:bg-[var(--workspace-channel-hover-bg)]'}`}
+                title={channel.name}
+                aria-label={`${channel.name} · ${channel.type === 'TEXT' ? 'Kênh trò chuyện' : 'Phòng trực tiếp'}${channel.accessMode === 'PRIVATE' ? ' · Riêng tư' : ''}`}
                 aria-current={selected ? 'page' : undefined}
                 onClick={() => onSelect(channel)}
               >
@@ -191,6 +199,9 @@ export function WorkspaceShell({
   chatPanel,
   callPanel,
   persistentCallControls,
+  sidebarControls,
+  sidebarStatus,
+  contentOverride,
 }: WorkspaceShellProps) {
   const readable = readableSidebarChannels(channels, workspace.id);
   const selected = resolvePanelChannel(channels, workspace.id, panel);
@@ -212,7 +223,8 @@ export function WorkspaceShell({
           triggerRef={workspaceMenuTriggerRef}
         />
 
-        {readable.length === 0 ? (
+        {sidebarControls}
+        {readable.length === 0 && !sidebarStatus ? (
           <p className="px-4 py-6 text-sm text-[color:var(--workspace-muted)]">
             Bạn chưa có kênh nào có thể truy cập.
           </p>
@@ -237,6 +249,7 @@ export function WorkspaceShell({
             />
           </nav>
         )}
+        {sidebarStatus}
       </aside>
 
       <main className="workspace-main flex min-w-0 flex-col bg-[var(--workspace-content-bg)]">
@@ -260,28 +273,29 @@ export function WorkspaceShell({
         </header>
 
         <section className="workspace-panel-host flex min-w-0 flex-1 flex-col" aria-live="polite">
-          {panel.kind === 'empty' ? (
-            <div className="grid min-h-80 flex-1 content-center gap-2 px-5 py-6 text-center">
-              <h2 className="text-lg font-semibold">Chọn một kênh để bắt đầu</h2>
-              <p className="text-sm text-[color:var(--workspace-muted)]">
-                Chat và phòng học trực tiếp sẽ mở tại đây.
-              </p>
-            </div>
-          ) : !selected ? (
-            <div
-              className="grid min-h-80 flex-1 content-center gap-2 px-5 py-6 text-center"
-              role="status"
-            >
-              <h2 className="text-lg font-semibold">Kênh không còn khả dụng</h2>
-              <p className="text-sm text-[color:var(--workspace-muted)]">
-                Quyền truy cập hoặc dữ liệu kênh đã thay đổi. Nội dung cũ đã được đóng.
-              </p>
-            </div>
-          ) : (
-            <Fragment key={`${workspace.id}:${selected.channel.id}`}>
-              {panel.kind === 'text' ? chatPanel : callPanel}
-            </Fragment>
-          )}
+          {contentOverride ??
+            (panel.kind === 'empty' ? (
+              <div className="grid min-h-80 flex-1 content-center gap-2 px-5 py-6 text-center">
+                <h2 className="text-lg font-semibold">Chọn một kênh để bắt đầu</h2>
+                <p className="text-sm text-[color:var(--workspace-muted)]">
+                  Chat và phòng học trực tiếp sẽ mở tại đây.
+                </p>
+              </div>
+            ) : !selected ? (
+              <div
+                className="grid min-h-80 flex-1 content-center gap-2 px-5 py-6 text-center"
+                role="status"
+              >
+                <h2 className="text-lg font-semibold">Kênh không còn khả dụng</h2>
+                <p className="text-sm text-[color:var(--workspace-muted)]">
+                  Quyền truy cập hoặc dữ liệu kênh đã thay đổi. Nội dung cũ đã được đóng.
+                </p>
+              </div>
+            ) : (
+              <Fragment key={`${workspace.id}:${selected.channel.id}`}>
+                {panel.kind === 'text' ? chatPanel : callPanel}
+              </Fragment>
+            ))}
         </section>
       </main>
     </div>

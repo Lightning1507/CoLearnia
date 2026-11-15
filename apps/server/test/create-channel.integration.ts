@@ -314,20 +314,26 @@ it('deduplicates concurrent requests and rejects payload changes, but allows dup
 });
 it('does not create a new channel when a replay entry was lost, expired or capacity is exhausted', async () => {
   const f = await fixture();
-  const creator = createChannelCreator({ ...options, replay: { ttlMs: 100, maxEntries: 1 } });
-  await creator(f.input, f.workspace.id, f.identity);
-  await expect(
-    creator({ ...f.input, requestId: randomUUID() }, f.workspace.id, f.identity),
-  ).rejects.toEqual(denied('SERVER_BUSY'));
-  await new Promise((done) => setTimeout(done, 110));
-  await expect(
-    creator({ ...f.input, replayOnly: true }, f.workspace.id, f.identity),
-  ).rejects.toEqual(denied('CHANNEL_REPLAY_UNAVAILABLE'));
-  const restarted = createChannelCreator(options);
-  await expect(
-    restarted({ ...f.input, replayOnly: true }, f.workspace.id, f.identity),
-  ).rejects.toEqual(denied('CHANNEL_REPLAY_UNAVAILABLE'));
-  expect(await graph(f.workspace.id)).toEqual([2, 2, 1]);
+  // Freeze only the ledger's monotonic clock; MongoDB/socket timers remain real.
+  const clock = vi.spyOn(performance, 'now').mockReturnValue(1000);
+  try {
+    const creator = createChannelCreator({ ...options, replay: { ttlMs: 100, maxEntries: 1 } });
+    await creator(f.input, f.workspace.id, f.identity);
+    await expect(
+      creator({ ...f.input, requestId: randomUUID() }, f.workspace.id, f.identity),
+    ).rejects.toEqual(denied('SERVER_BUSY'));
+    clock.mockReturnValue(1100);
+    await expect(
+      creator({ ...f.input, replayOnly: true }, f.workspace.id, f.identity),
+    ).rejects.toEqual(denied('CHANNEL_REPLAY_UNAVAILABLE'));
+    const restarted = createChannelCreator(options);
+    await expect(
+      restarted({ ...f.input, replayOnly: true }, f.workspace.id, f.identity),
+    ).rejects.toEqual(denied('CHANNEL_REPLAY_UNAVAILABLE'));
+    expect(await graph(f.workspace.id)).toEqual([2, 2, 1]);
+  } finally {
+    clock.mockRestore();
+  }
 });
 it('reconciles a lost commit acknowledgement without running M2 twice', async () => {
   const f = await fixture();

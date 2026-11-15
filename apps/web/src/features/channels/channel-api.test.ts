@@ -68,3 +68,37 @@ it('rejects malformed success instead of reporting a channel that was not confir
     name: 'ZodError',
   });
 });
+
+it('loads each paginated channel list with cookie, no-store and cancellation', async () => {
+  const { listChannels } = await import('./channel-api');
+  const fetcher = vi
+    .fn()
+    .mockResolvedValue(
+      new Response(
+        JSON.stringify({ data: { items: [], nextCursor: 'next.position' }, requestId }),
+        { status: 200 },
+      ),
+    );
+  vi.stubGlobal('fetch', fetcher);
+  const signal = new AbortController().signal;
+  expect(await listChannels(workspaceId, 'content', null, signal)).toEqual({
+    items: [],
+    nextCursor: 'next.position',
+  });
+  expect(fetcher.mock.calls[0]?.[0]).toBe('/api/v1/workspaces/' + workspaceId + '/channels');
+  fetcher.mockResolvedValueOnce(
+    new Response(
+      JSON.stringify({
+        data: { items: [], nextCursor: null },
+        requestId,
+      }),
+      { status: 200 },
+    ),
+  );
+  await listChannels(workspaceId, 'manage', 'next.position', signal);
+  expect(fetcher.mock.calls[1]?.[0]).toBe(
+    '/api/v1/workspaces/' + workspaceId + '/channels/manage?after=next.position',
+  );
+  expect(fetcher.mock.calls[1]?.[1]).toMatchObject({ credentials: 'include', cache: 'no-store' });
+  expect(fetcher.mock.calls[1]?.[1].signal).toBeInstanceOf(AbortSignal);
+});

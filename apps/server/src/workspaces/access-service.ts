@@ -1,3 +1,5 @@
+import { createChannelListCursor } from './channel-list-cursor.js';
+import type { ChannelListQuery } from '@colearnia/contracts';
 import { Types } from 'mongoose';
 import {
   authenticatedContextSchema,
@@ -26,7 +28,8 @@ export const workspaceAccessIndexRequirements = [
 
 export class WorkspaceAccessError extends Error {
   constructor(
-    public readonly code: 'AUTH_REQUIRED' | 'NOT_FOUND' | 'FORBIDDEN' | 'DEPENDENCY_UNAVAILABLE',
+    public readonly code:
+      'AUTH_REQUIRED' | 'NOT_FOUND' | 'FORBIDDEN' | 'VALIDATION_ERROR' | 'DEPENDENCY_UNAVAILABLE',
   ) {
     super(code);
     this.name = 'WorkspaceAccessError';
@@ -49,6 +52,7 @@ export function createWorkspaceAccessService(
   coordinator: OperationCoordinator,
   indexesReady: () => boolean,
   barrier: AccessRevocationBarrier,
+  cursorSecret?: string,
 ) {
   const { Workspace, Membership } = workspaceModels(database.connection);
   const { Channel, ChannelAccessGrant } = channelModels(database.connection);
@@ -304,7 +308,154 @@ export function createWorkspaceAccessService(
       });
     });
   }
+  async function listChannels(
+    identityInput: AuthenticatedContext,
+    workspaceInput: string,
+    query: ChannelListQuery,
+    mode: 'content' | 'manage',
+  ) {
+    const actor = identity(identityInput);
+    const workspaceId = id(workspaceInput);
+    if (!cursorSecret) throw new WorkspaceAccessError('DEPENDENCY_UNAVAILABLE');
+    const cursorCodec = createChannelListCursor(cursorSecret);
+    return coordinator.run({ userId: actor.userId, workspaceId }, async (held) => {
+      const page = await read(actor, async (session) => {
+        const state = await readState(actor, workspaceId, session);
+        checkBarrier(actor, state, held);
+        if (!hasWorkspaceAccess(state, actor.userId)) throw new WorkspaceAccessError('NOT_FOUND');
+        if (mode === 'manage' && !allowsWorkspaceAction(state, actor.userId, 'createChannel'))
+          throw new WorkspaceAccessError('FORBIDDEN');
+        const membership = state.membership!;
+        const scope = {
+          workspaceId,
+          userId: actor.userId,
+          membershipId: membership.id,
+          incarnation: membership.incarnation,
+          mode,
+        };
+        let cursor;
+        try {
+          cursor = query.after ? cursorCodec.decode(query.after, scope) : undefined;
+        } catch {
+          throw new WorkspaceAccessError('VALIDATION_ERROR');
+        }
+        const rows = await Channel.find({
+          workspaceId,
+          deletedAt: null,
+          ...(cursor
+            ? {
+                $or: [
+                  { order: { $gt: cursor.order } },
+                  { order: cursor.order, _id: { $gt: new Types.ObjectId(cursor.id) } },
+                ],
+              }
+            : {}),
+        })
+          .select('_id workspaceId name type accessMode revision order')
+          .sort({ order: 1, _id: 1 })
+          .limit(query.limit + 1)
+          .session(session)
+          .maxTimeMS(maxTimeMS)
+          .lean();
+        const candidates = rows.slice(0, query.limit);
+        const grants = await ChannelAccessGrant.find({
+          workspaceId,
+          membershipId: membership.id,
+          membershipIncarnation: membership.incarnation,
+          revokedAt: null,
+          channelId: {
+            $in: candidates.filter((row) => row.accessMode === 'PRIVATE').map((row) => row._id),
+          },
+        })
+          .select('channelId')
+          .session(session)
+          .maxTimeMS(maxTimeMS)
+          .lean();
+        const granted = new Set(grants.map((grant) => grant.channelId.toHexString()));
+        const items = candidates.map((row) => {
+          const channelId = row._id.toHexString();
+          const channelState: ChannelAccessState = {
+            ...state,
+            channel: {
+              id: channelId,
+              workspaceId,
+              type: row.type,
+              accessMode: row.accessMode,
+              revision: row.revision,
+              deleted: false,
+            },
+            grant: granted.has(channelId)
+              ? {
+                  workspaceId,
+                  channelId,
+                  membershipId: membership.id,
+                  membershipIncarnation: membership.incarnation,
+                  revoked: false,
+                }
+              : null,
+          };
+          const permissions = channelPermissions(channelState, actor.userId);
+          return {
+            state: channelState,
+            value: {
+              id: channelId,
+              workspaceId,
+              name: row.name,
+              type: row.type,
+              accessMode: row.accessMode,
+              revision: row.revision,
+              canReadContent: permissions.canReadContent,
+            },
+            visible: mode === 'manage' ? permissions.canManageChannel : permissions.canReadContent,
+          };
+        });
+        const last = candidates.at(-1);
+        return {
+          state,
+          items,
+          nextCursor:
+            rows.length > query.limit && last
+              ? cursorCodec.encode({ ...scope, order: last.order, id: last._id.toHexString() })
+              : null,
+        };
+      });
+      // Denies can be installed while the transaction is committing.
+      checkBarrier(actor, page.state, held);
+      return {
+        items: page.items
+          .filter((item) => {
+            if (!item.visible) return false;
+            try {
+              checkBarrier(actor, item.state, held);
+              return true;
+            } catch (error) {
+              if (error instanceof WorkspaceAccessError && error.code === 'NOT_FOUND') return false;
+              throw error;
+            }
+          })
+          .map((item) => item.value),
+        nextCursor: page.nextCursor,
+      };
+    });
+  }
   return {
+    async listChannels(actor: AuthenticatedContext, workspaceId: string, query: ChannelListQuery) {
+      const page = await listChannels(actor, workspaceId, query, 'content');
+      return {
+        ...page,
+        items: page.items.map(({ id, workspaceId, name, type, accessMode, revision }) => ({
+          id,
+          workspaceId,
+          name,
+          type,
+          accessMode,
+          revision,
+        })),
+      };
+    },
+    listManagedChannels(actor: AuthenticatedContext, workspaceId: string, query: ChannelListQuery) {
+      return listChannels(actor, workspaceId, query, 'manage');
+    },
     async openWorkspace(identityInput: AuthenticatedContext, workspaceId: string) {
       const actor = identity(identityInput);
       const workspace = id(workspaceId);
