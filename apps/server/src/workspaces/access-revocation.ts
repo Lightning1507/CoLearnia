@@ -46,6 +46,8 @@ const revocationAccessSchema = z.union([
 ]);
 export type RevocationAccess = z.infer<typeof revocationAccessSchema>;
 export interface AccessRevocationBarrier {
+  // Final deny snapshot for rows already checked under each Workspace gate.
+  workspaceDeletionDenies(userId: string, held: CoordinationContext): ReadonlySet<string>;
   // Freshness only, not an ACL grant. Called under the same shared gate as the consumer.
   isCurrent(
     auth: AuthenticatedContext,
@@ -54,6 +56,8 @@ export interface AccessRevocationBarrier {
   ): boolean;
 }
 export type RevocationPersistence = {
+  // Only single-session revocation has a durable denial and an absolute expiry.
+  authSessionExpiresAt?: number;
   // Trusted business service: authorize actor, verify current target/revision and capture
   // the exact ACTIVE auth-session cohort. No external cleanup or transaction kept open.
   prepareHeld(held: CoordinationContext): Promise<{ authSessionIds: readonly string[] }>;
@@ -174,6 +178,15 @@ export function createAccessRevocationCoordinator(options: {
     }
   }
   const barrier: AccessRevocationBarrier = {
+    workspaceDeletionDenies(userId, held) {
+      held.assertHeld({ userId: objectId(userId) });
+      const denied = new Set<string>();
+      for (const record of records.values()) {
+        if (record.installed && record.event.kind === 'WORKSPACE_DELETED')
+          denied.add(record.event.workspaceId);
+      }
+      return denied;
+    },
     isCurrent(auth, access, held) {
       const principal = revocationPrincipalSchema.safeParse(auth);
       const parsedAccess =
@@ -340,7 +353,7 @@ export function createAccessRevocationCoordinator(options: {
           );
           if (reply.operationId !== record.event.operationId) return false;
           record.cleanupPending = reply.cleanupPending;
-          return reply.permissionRevoked && reply.pendingInvalidated;
+          return reply.permissionRevoked && reply.pendingInvalidated && !reply.cleanupPending;
         });
         if (pending) record.livePending = pending;
       }
@@ -378,6 +391,9 @@ export function createAccessRevocationCoordinator(options: {
   }
   return {
     barrier,
+    isSessionDenied(auth: AuthenticatedContext) {
+      return [...records.values()].some((record) => matches(record, auth));
+    },
     bindCleanupAdapters(adapters: AccessCleanupAdapters) {
       if (cleanupAdapters) throw new Error('Cleanup adapters are already bound');
       if (
@@ -418,11 +434,22 @@ export function createAccessRevocationCoordinator(options: {
       if ('userId' in event && event.userId !== userId)
         throw new TypeError('Affected User gate required');
       const command = JSON.stringify({ event, userId });
+      let occupied = 0;
+      for (const [id, existing] of records) {
+        const expiresAt = existing.persistence.authSessionExpiresAt;
+        if (
+          existing.event.kind === 'AUTH_SESSION' &&
+          existing.committed &&
+          expiresAt !== undefined
+        ) {
+          if (expiresAt <= Date.now() && !existing.active) records.delete(id);
+        } else occupied++;
+      }
       let record = records.get(event.operationId);
       if (record && record.command !== command) return fail('CONFLICT');
       if (!record && activeOperations >= maxConcurrentOperations) return fail('SERVER_BUSY');
       if (!record) {
-        if (records.size >= maxOperations) return fail('SERVER_BUSY');
+        if (occupied >= maxOperations) return fail('SERVER_BUSY');
         record = {
           event,
           userId,

@@ -1,6 +1,6 @@
 # CoLearnia — Frontend Design & Development Standards
 
-**Ngày soạn: 07/11/2026 · Trạng thái: đề xuất để team review.** Bộ tài liệu thống nhất cách thiết kế UI, tổ chức frontend và bàn giao giữa các miền M1–M5. Chưa triển khai component/token hoặc nghiệm thu accessibility từ việc tạo tài liệu này.
+**Ngày soạn: 07/11/2026 · Trạng thái: đề xuất để team review.** Bộ tài liệu thống nhất cách thiết kế UI, tổ chức frontend và bàn giao giữa các miền M1–M5. Bộ chuẩn đầy đủ vẫn là đề xuất; SCRUM-25 đã triển khai tập token/form auth tối thiểu theo [bằng chứng](../../test-evidence/2026-11-12-scrum-25-auth-ui.md). Việc tạo tài liệu không là nghiệm thu accessibility.
 
 ## Vừa nhận task FE thì bắt đầu ở đây
 
