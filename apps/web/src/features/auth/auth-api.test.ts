@@ -186,3 +186,14 @@ describe('auth browser HTTP contract', () => {
     ]);
   });
 });
+
+it('does not bootstrap or replay logout after CSRF rejection on a changed session', async () => {
+  const { api, fetcher, signal } = setup(fail('CSRF_INVALID', 403), ok(identity));
+  await expect(api.logout('stale-proof', signal)).rejects.toMatchObject({ code: 'CSRF_INVALID' });
+  expect(fetcher.mock.calls.map(([url]) => url)).toEqual(['/api/v1/auth/logout']);
+  await expect(api.me(signal)).resolves.toEqual(identity);
+  expect(fetcher.mock.calls.map(([url]) => url)).toEqual([
+    '/api/v1/auth/logout',
+    '/api/v1/auth/me',
+  ]);
+});

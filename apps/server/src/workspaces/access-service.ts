@@ -1,7 +1,9 @@
+import { Types } from 'mongoose';
 import {
   authenticatedContextSchema,
   channelAccessSnapshotSchema,
   workspaceDocumentIdSchema,
+  workspaceSelectionSchema,
 } from '@colearnia/contracts';
 import type { AuthenticatedContext } from '@colearnia/contracts';
 import type { ClientSession } from 'mongoose';
@@ -86,9 +88,9 @@ export function createWorkspaceAccessService(
     actor: AuthenticatedContext,
     workspaceId: string,
     session: ClientSession,
-  ): Promise<ChannelAccessState> {
+  ) {
     const workspace = await Workspace.findOne({ _id: workspaceId, deletedAt: null })
-      .select('_id ownerId deletedAt')
+      .select('_id name ownerId revision deletedAt')
       .session(session)
       .maxTimeMS(maxTimeMS)
       .lean();
@@ -104,7 +106,7 @@ export function createWorkspaceAccessService(
         .session(session)
         .maxTimeMS(maxTimeMS)
         .lean());
-    return {
+    const state: ChannelAccessState = {
       workspace: workspace
         ? {
             id: workspace._id.toHexString(),
@@ -126,6 +128,7 @@ export function createWorkspaceAccessService(
       channel: null,
       grant: null,
     };
+    return { ...state, summary: workspace };
   }
   async function read<T>(
     actor: AuthenticatedContext,
@@ -281,7 +284,81 @@ export function createWorkspaceAccessService(
       (context) => resolveChannelAccessHeld(input, context),
     );
   };
+  async function readSelection(
+    actor: AuthenticatedContext,
+    workspaceId: string,
+    held: CoordinationContext,
+  ) {
+    held.assertHeld({ userId: actor.userId, workspaceId });
+    return read(actor, async (session) => {
+      const state = await readState(actor, workspaceId, session);
+      checkBarrier(actor, state, held);
+      if (!hasWorkspaceAccess(state, actor.userId) || !state.summary || !state.membership)
+        throw new WorkspaceAccessError('NOT_FOUND');
+      return workspaceSelectionSchema.parse({
+        id: workspaceId,
+        name: state.summary.name,
+        ownerId: state.summary.ownerId.toHexString(),
+        revision: state.summary.revision,
+        role: state.membership.role,
+      });
+    });
+  }
   return {
+    async openWorkspace(identityInput: AuthenticatedContext, workspaceId: string) {
+      const actor = identity(identityInput);
+      const workspace = id(workspaceId);
+      return coordinator.run({ userId: actor.userId, workspaceId: workspace }, (held) =>
+        readSelection(actor, workspace, held),
+      );
+    },
+    async listWorkspaces(
+      identityInput: AuthenticatedContext,
+      query: { after?: string | undefined; limit?: number | undefined },
+    ) {
+      const actor = identity(identityInput);
+      const limit = query.limit ?? 10;
+      return coordinator.run({ userId: actor.userId }, async (held) => {
+        if (!barrier.isCurrent(actor, undefined, held))
+          throw new WorkspaceAccessError('AUTH_REQUIRED');
+        const candidates = await read(actor, (session) =>
+          Membership.find({
+            userId: actor.userId,
+            status: 'ACTIVE',
+            removedAt: null,
+            ...(query.after ? { workspaceId: { $gt: new Types.ObjectId(query.after) } } : {}),
+          })
+            .select('workspaceId')
+            .sort({ workspaceId: 1 })
+            .limit(limit + 1)
+            .session(session)
+            .maxTimeMS(maxTimeMS)
+            .lean()
+            .exec(),
+        );
+        const items = [];
+        for (const candidate of candidates.slice(0, limit)) {
+          const workspaceId = candidate.workspaceId.toHexString();
+          try {
+            items.push(
+              await held.withWorkspace(workspaceId, (scope) =>
+                readSelection(actor, workspaceId, scope),
+              ),
+            );
+          } catch (error) {
+            if (!(error instanceof WorkspaceAccessError && error.code === 'NOT_FOUND')) throw error;
+          }
+        }
+        if (Date.parse(actor.expiresAt) <= Date.now() || !barrier.isCurrent(actor, undefined, held))
+          throw new WorkspaceAccessError('AUTH_REQUIRED');
+        const denied = barrier.workspaceDeletionDenies(actor.userId, held);
+        return {
+          items: items.filter((item) => !denied.has(item.id)),
+          nextCursor:
+            candidates.length > limit ? candidates[limit - 1]!.workspaceId.toHexString() : null,
+        };
+      });
+    },
     resolveChannelAccess,
     resolveChannelAccessHeld,
     requireWorkspacePermissionHeld,
