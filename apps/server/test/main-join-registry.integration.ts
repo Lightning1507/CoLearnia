@@ -990,6 +990,164 @@ describe('MAIN registry with real MongoDB and mediasoup Router', () => {
     ).toBe(1);
     expect(f.registry.stats().ownerships).toBe(2);
   });
+  it.each([false, true])(
+    'confirms old-generation cleanup after overlapping revocation removes ownership, delayed native=%s',
+    async (delayed) => {
+      const media = vi.fn((request: SessionCleanupRequest) => transportService.cleanup(request));
+      media.mockImplementationOnce(() => {
+        throw new Error('Injected synchronous media failure');
+      });
+      const f = setup(repository, {
+        media: { revoke: media },
+        messaging: endCleanup,
+        board: endCleanup,
+      });
+      const user = f.auth(),
+        peer = f.auth();
+      const socket = f.binding(user);
+      const ticket = await f.registry.issue(user, f.target, { requestId: randomUUID() });
+      const joined = await f.registry.join(socket, {
+        ticket: ticket.ticket,
+        requestId: randomUUID(),
+      });
+      const peerTicket = await f.registry.issue(peer, f.target, { requestId: randomUUID() });
+      const peerJoin = await f.registry.join(f.binding(peer), {
+        ticket: peerTicket.ticket,
+        requestId: randomUUID(),
+      });
+      let release!: () => void;
+      let entered!: () => void;
+      const pending = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const created = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+      const native: MediaTypes.WebRtcTransport[] = [];
+      const transportService = createTransportSignaling({
+        withContext: f.registry.withContext,
+        createTransport: async (router) => {
+          const transport = await router.createWebRtcTransport({
+            listenInfos: [{ protocol: 'udp', ip: '127.0.0.1' }],
+          });
+          native.push(transport);
+          if (native.length === 1) {
+            entered();
+            if (delayed) await pending;
+          }
+          return transport;
+        },
+      });
+      const createFor = (
+        binding: ReturnType<typeof f.binding>,
+        destination: typeof ticket,
+        generation: number,
+        policyRevision: number,
+      ) => {
+        const handlers = new Map<string, (raw: unknown, ack?: (value: unknown) => void) => void>();
+        transportService.attach({
+          id: binding.socketId,
+          on: (name, listener) => handlers.set(name, listener),
+          once: () => {},
+        });
+        return new Promise<unknown>((resolve) =>
+          handlers.get('media.transport.create')!(
+            {
+              requestId: randomUUID(),
+              sessionId: destination.sessionId,
+              epoch: destination.epoch,
+              callGeneration: generation,
+              expectedPolicyRevision: policyRevision,
+              payload: { direction: 'SEND' },
+            },
+            resolve,
+          ),
+        );
+      };
+      const oldResponse = createFor(
+        socket,
+        ticket,
+        joined.ack.data.result.callGeneration,
+        peerJoin.parts[0]!.policyRevision,
+      );
+      try {
+        await created;
+        if (!delayed)
+          expect(mediaTransportCreateAckSchema.parse(await oldResponse)).toHaveProperty('data');
+        const a = {
+          operationId: randomUUID(),
+          kind: 'AUTH_SESSION' as const,
+          authSessionId: user.authSessionId,
+          revision: 1,
+        };
+        const b = { ...a, operationId: randomUUID() };
+        expect(await f.registry.revoke(a)).toMatchObject({
+          permissionRevoked: false,
+          cleanupPending: true,
+        });
+        expect(native[0]!.closed).toBe(false);
+        expect(await f.registry.revoke(b)).toMatchObject({ permissionRevoked: true });
+        expect(f.registry.stats().ownerships).toBe(1);
+
+        const login = { ...user, authSessionId: id() };
+        const freshSocket = f.binding(login);
+        const freshTicket = await f.registry.issue(login, f.target, { requestId: randomUUID() });
+        const fresh = await f.registry.join(freshSocket, {
+          ticket: freshTicket.ticket,
+          requestId: randomUUID(),
+        });
+        const newGeneration = fresh.ack.data.result.callGeneration;
+        expect(newGeneration).toBeGreaterThan(joined.ack.data.result.callGeneration);
+        expect(
+          mediaTransportCreateAckSchema.parse(
+            await createFor(
+              freshSocket,
+              freshTicket,
+              newGeneration,
+              fresh.parts[0]!.policyRevision,
+            ),
+          ),
+        ).toHaveProperty('data');
+        const revision = (await models.LiveSession.findById(ticket.sessionId).lean().orFail())
+          .revision;
+        const [retry, concurrent] = await Promise.all([f.registry.revoke(a), f.registry.revoke(a)]);
+        expect(retry).toMatchObject({
+          permissionRevoked: true,
+          pendingInvalidated: true,
+          cleanupPending: delayed,
+        });
+        expect(concurrent).toEqual(retry);
+        expect(media).toHaveBeenCalledTimes(3);
+        expect(media.mock.calls[2]![0]).toEqual(media.mock.calls[0]![0]);
+        expect(media.mock.calls[1]![0].operationId).toBe(b.operationId);
+        expect(native[1]!.closed).toBe(false);
+        release();
+        if (delayed)
+          expect(mediaTransportCreateAckSchema.parse(await oldResponse)).toHaveProperty('error');
+        await vi.waitFor(() => expect(native[0]!.closed).toBe(true));
+        expect(await f.registry.revoke(a)).toMatchObject({
+          permissionRevoked: true,
+          cleanupPending: false,
+        });
+        expect(native[1]!.closed).toBe(false);
+        expect(f.routers[0]!.closed).toBe(false);
+        expect(f.registry.stats().ownerships).toBe(2);
+        expect(
+          await f.registry.withContext(
+            freshSocket.socketId,
+            { ...freshTicket, callGeneration: newGeneration },
+            (result) => result.ok,
+          ),
+        ).toBe(true);
+        expect((await models.LiveSession.findById(ticket.sessionId).lean().orFail()).revision).toBe(
+          revision,
+        );
+      } finally {
+        release();
+      }
+    },
+  );
+
   it.each([
     { delayed: false, shared: false },
     { delayed: true, shared: false },

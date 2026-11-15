@@ -136,6 +136,9 @@ Barrier không bảo vệ writer ghi DB ngoài giao thức.
   Nếu adapter đã thu quyền nhưng còn `cleanupPending:true`, retry gọi lại đúng request
   cũ để kiểm/dọn phần còn lại. Native create đang chạy được theo dõi đến khi callback
   dọn xong; record chưa bắt đầu TTL replay cho tới khi không còn cleanup pending.
+  Khi operation B xóa cùng ownership trước khi A retry, A vẫn hỏi adapter bằng request
+  cũ. Không coi owner đã biến mất hoặc ACK của generation khác là bằng chứng cleanup;
+  ACK phải khớp operation/token/session/epoch/target/generation của A.
   Operation đang chạy dùng chung promise, hoàn tất thì replay; cùng ID khác payload
   trả CONFLICT. Record incomplete không hết hạn/không bị evict để né deny. Không quét
   lại cohort/đổi target sang login, incarnation hoặc generation mới để làm retry thành công.

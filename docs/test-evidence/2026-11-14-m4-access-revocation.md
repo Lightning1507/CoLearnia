@@ -69,3 +69,23 @@ server/web build đạt; toàn bộ DB suite 233 đạt/1 bỏ qua (failpoint ch
 MAIN MongoDB/native 30/30. Media smoke đạt. Web build vẫn có cảnh báo bundle lớn.
 Các ca giữ generation mới dùng thêm một peer để không kích hoạt kết thúc phòng rỗng
 của #92; không giảm kiểm request cleanup, số lần gọi adapter hoặc quyền của generation mới.
+
+## Regression hai operation thu cùng ownership
+
+Theo góp ý chung ở PR #107, bổ sung A lỗi synchronous media cleanup → B dọn cùng
+ownership thành công và gỡ owner → login mới tạo ownership/generation mới → retry A.
+Head `aa23d2d` đã gọi `retryMediaHeld()` cho captured request trước nhánh kiểm owner
+còn tồn tại; lượt này bổ sung bằng chứng cho nhánh đó, không thay thuật toán thu quyền.
+
+- Ba ca unit: adapter xác nhận đúng, trả nhầm generation mới, hoặc vẫn lỗi. A chỉ hoàn
+  tất sau ACK đúng request cũ; B xóa owner không tự làm A thành công. Retry đồng thời
+  dùng chung kết quả; messaging/board đã xong không gọi lại; ownership mới vẫn dùng được.
+- Hai ca MongoDB/mediasoup thật: native transport cũ đã tạo xong hoặc còn chờ callback.
+  Transport của generation mới được tạo trước retry A; retry và callback trễ chỉ đóng
+  transport cũ. Router dùng chung, transport mới và revision DB sau login mới giữ nguyên.
+- Tạm chạy ba unit regression với guard yêu cầu owner còn tồn tại: cả ba tái hiện A
+  pending. Khôi phục source nguyên byte sau phép kiểm; guard hiện tại chạy qua cả ba.
+- Riêng MAIN registry: 123 unit test và 32 test MongoDB/native đạt. Authority,
+  messaging/board vẫn là fixture; không coi đây là nghiệm thu browser/staging đầy đủ.
+- Toàn bộ unit repo 864/864; format, lint, typecheck, server/web build, harness
+  source/link check và `git diff --check` đạt. Web build giữ cảnh báo bundle lớn.

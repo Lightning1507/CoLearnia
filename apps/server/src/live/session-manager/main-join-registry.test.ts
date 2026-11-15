@@ -663,6 +663,81 @@ describe('SCRUM-86 session end', () => {
 });
 
 describe('SCRUM-83 MAIN revocation', () => {
+  it.each(['confirmed', 'wrong generation', 'provider unavailable'] as const)(
+    'retries overlapping revocation after another operation removes its ownership: %s',
+    async (proof) => {
+      const f = await revokeFixture();
+      const peer = f.principal();
+      const peerTicket = await f.issue(peer);
+      await f.registry.join(f.binding(peer), {
+        ticket: peerTicket.ticket,
+        requestId: randomUUID(),
+      });
+      const a = f.event;
+      const b = { ...a, operationId: randomUUID() };
+      f.media.mockImplementationOnce(() => {
+        throw new Error('Synchronous media cleanup failed');
+      });
+      expect(await f.registry.revoke(a)).toMatchObject({
+        permissionRevoked: false,
+        cleanupPending: true,
+      });
+      const originalRequest = f.media.mock.calls[0]![0];
+      expect(await f.registry.revoke(b)).toMatchObject({
+        permissionRevoked: true,
+        cleanupPending: false,
+      });
+      expect(f.registry.stats().ownerships).toBe(1);
+
+      const login = { ...f.auth, authSessionId: id() };
+      const freshTicket = await f.issue(login);
+      const freshSocket = f.binding(login);
+      const fresh = await f.registry.join(freshSocket, {
+        ticket: freshTicket.ticket,
+        requestId: randomUUID(),
+      });
+      const newGeneration = fresh.ack.data.result.callGeneration;
+      expect(newGeneration).toBeGreaterThan(f.joined.ack.data.result.callGeneration);
+      if (proof !== 'confirmed') {
+        f.media.mockImplementationOnce((request) => {
+          if (proof === 'provider unavailable') throw new Error('Media cleanup still unavailable');
+          return { ...cleanupAck(request), callGeneration: newGeneration };
+        });
+        expect(await f.registry.revoke(a)).toMatchObject({
+          permissionRevoked: false,
+          cleanupPending: true,
+        });
+      }
+      const [retry, concurrent] = await Promise.all([f.registry.revoke(a), f.registry.revoke(a)]);
+      expect(retry).toMatchObject({
+        permissionRevoked: true,
+        pendingInvalidated: true,
+        cleanupPending: false,
+      });
+      expect(concurrent).toEqual(retry);
+      const aRequests = f.media.mock.calls
+        .map(([request]) => request)
+        .filter((request) => request.operationId === a.operationId);
+      expect(aRequests).toHaveLength(proof === 'confirmed' ? 2 : 3);
+      for (const request of aRequests) expect(request).toEqual(originalRequest);
+      expect(f.messaging).toHaveBeenCalledTimes(2);
+      expect(f.board).toHaveBeenCalledTimes(2);
+      expect(f.registry.stats().ownerships).toBe(2);
+      expect(
+        await f.registry.withContext(
+          freshSocket.socketId,
+          {
+            ...freshTicket,
+            callGeneration: newGeneration,
+          },
+          (result) => result.ok,
+        ),
+      ).toBe(true);
+      expect(await f.registry.revoke(a)).toEqual(retry);
+      expect(f.media).toHaveBeenCalledTimes(proof === 'confirmed' ? 3 : 4);
+    },
+  );
+
   it('polls byte cleanup after permission revocation without expiring or retargeting the operation', async () => {
     const f = await revokeFixture();
     const peer = f.principal();
