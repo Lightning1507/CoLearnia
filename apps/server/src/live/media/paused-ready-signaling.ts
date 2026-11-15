@@ -1,4 +1,6 @@
 import {
+  mediaConsumerCloseAckSchema,
+  mediaConsumerCloseInputSchema,
   mediaConsumerCreateAckSchema,
   mediaConsumerCreateInputSchema,
   mediaConsumerReadyAckSchema,
@@ -36,6 +38,7 @@ type ScreenPublication = {
 type Produce = z.infer<typeof mediaProducerCreateInputSchema>;
 type Consume = z.infer<typeof mediaConsumerCreateInputSchema>;
 type Ready = z.infer<typeof mediaConsumerReadyInputSchema>;
+type Close = z.infer<typeof mediaConsumerCloseInputSchema>;
 type Binding = Ready['payload'];
 type TransportService = Pick<
   ReturnType<typeof createTransportSignaling>,
@@ -80,7 +83,11 @@ type Receiver = {
   ready: boolean;
   timer: ReturnType<typeof setTimeout>;
 };
-type Event = 'media.producer.create' | 'media.consumer.create' | 'media.consumer.ready';
+type Event =
+  | 'media.producer.create'
+  | 'media.consumer.create'
+  | 'media.consumer.ready'
+  | 'media.consumer.close';
 type SocketPort = {
   id: string;
   on(event: Event, listener: (raw: unknown, ack?: (value: unknown) => void) => void): unknown;
@@ -683,6 +690,38 @@ export function createPausedReadySignaling({
     return prepared;
   }
 
+  async function closeConsumer(socketId: string, input: Close) {
+    const { transportId, consumerId, sourceId, sourceGeneration } = input.payload;
+    return withTransport(
+      socketId,
+      input,
+      transportId,
+      'RECV',
+      (current) => {
+        const receiver = receivers.get(consumerId);
+        if (receiver) {
+          if (
+            receiver.socketId !== socketId ||
+            receiver.transportId !== transportId ||
+            !sameReceiver(receiver.owner, current) ||
+            receiver.source.descriptor.sourceId !== sourceId ||
+            receiver.source.descriptor.sourceGeneration !== sourceGeneration
+          ) {
+            return fail('NOT_FOUND');
+          }
+          receiver.native.close();
+        }
+        return {
+          payload: { consumerId, closed: true },
+          transportId,
+          direction: 'RECV',
+          validate: () => undefined,
+        } satisfies Grant;
+      },
+      'cleanup',
+    );
+  }
+
   return {
     visibleSources(policy: SessionPolicyInput, share?: HeldShareLease) {
       return [...sources.values()]
@@ -726,7 +765,7 @@ export function createPausedReadySignaling({
       };
     },
     attach(socket: SocketPort) {
-      function register<T extends Produce | Consume | Ready>(
+      function register<T extends Produce | Consume | Ready | Close>(
         event: Event,
         input: z.ZodType<T>,
         ackSchema: z.ZodType,
@@ -774,6 +813,7 @@ export function createPausedReadySignaling({
                     resourceGrants.acknowledge(socket.id, current, result.resource);
                   reply(response);
                 },
+                event === 'media.consumer.close' ? 'cleanup' : 'mutation',
               );
               if (error) reject(error.errorCode);
             })
@@ -797,6 +837,12 @@ export function createPausedReadySignaling({
         mediaConsumerReadyInputSchema,
         mediaConsumerReadyAckSchema,
         ready,
+      );
+      register(
+        'media.consumer.close',
+        mediaConsumerCloseInputSchema,
+        mediaConsumerCloseAckSchema,
+        closeConsumer,
       );
     },
   };

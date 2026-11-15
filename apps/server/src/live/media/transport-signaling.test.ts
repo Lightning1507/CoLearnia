@@ -141,6 +141,39 @@ function fixture(contextForSocket?: (socketId: string, context: LiveContext) => 
 afterEach(() => vi.useRealTimers());
 
 describe('SCRUM-60 transport signaling', () => {
+  it('allows stale revisions only for cleanup on the same transport ownership', async () => {
+    const f = fixture();
+    const ack = await f.socket('owner').emit('media.transport.create', {
+      ...f.createInput,
+      payload: { direction: 'RECV' },
+    });
+    expect(ack).toMatchObject({ data: { result: { transportId: f.native.id } } });
+    const stale = { ...f.envelope, expectedPolicyRevision: 2 };
+    const use = vi.fn();
+    await expect(
+      f.service.withMediaTransport('owner', stale, f.native.id, 'RECV', use),
+    ).resolves.toEqual({ errorCode: 'CONFLICT' });
+    await expect(
+      f.service.withMediaTransport('other', stale, f.native.id, 'RECV', use, 'cleanup'),
+    ).resolves.toEqual({ errorCode: 'CONFLICT' });
+    await expect(
+      f.service.withMediaTransport(
+        'owner',
+        { ...f.envelope, expectedPolicyRevision: 4 },
+        f.native.id,
+        'RECV',
+        use,
+        'cleanup',
+      ),
+    ).resolves.toEqual({ errorCode: 'CONFLICT' });
+    // The minimal fixture has no media policy or consume port. Reaching that guard
+    // proves cleanup passed revision and transport ownership validation.
+    await expect(
+      f.service.withMediaTransport('owner', stale, f.native.id, 'RECV', use, 'cleanup'),
+    ).resolves.toEqual({ errorCode: 'DEPENDENCY_UNAVAILABLE' });
+    expect(use).not.toHaveBeenCalled();
+  });
+
   it('publishes close for a Transport acknowledged after snapshot on the same socket only', async () => {
     const f = fixture();
     const sync = createMediaSourceSync({
