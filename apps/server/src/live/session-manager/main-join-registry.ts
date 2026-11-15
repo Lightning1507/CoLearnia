@@ -46,6 +46,8 @@ import type { SessionTransitionAdapters, SessionTransitionTiming } from './sessi
 import { matchesMainRevocation, mayMatchMainRevocation } from './main-revocation.js';
 import { createSessionMetadataWrite } from './session-metadata-write.js';
 import type { SessionMutationRepository } from './session-metadata-write.js';
+import { createShareLeaseRegistry } from './share-lease.js';
+import type { HeldShareContext } from './share-lease.js';
 
 type Target = { workspaceId: string; channelId: string };
 type Authority = { auth: AuthenticatedContext; access: ChannelAccessStamp; displayName: string };
@@ -58,6 +60,7 @@ type Repository = SessionMutationRepository;
 type Room = {
   state: SessionPolicyState;
   router: MediaTypes.Router;
+  shareLeases: ReturnType<typeof createShareLeaseRegistry>;
   revision: number;
   hostUserId: string;
   hostParticipantId: string;
@@ -878,6 +881,15 @@ export function createMainJoinRegistry(options: {
                     room.state.state !== 'ACTIVE'
                   )
                     fail('CONFLICT');
+                  room.shareLeases.cancelPendingFor(
+                    {
+                      session: room.state,
+                      nowMs: clock(),
+                      assertHeld: () => held.assertHeld({ workspaceId: room.state.workspaceId }),
+                    },
+                    participant.participantId,
+                    record.generation,
+                  );
                   record.handle = beginSessionTransition(
                     request,
                     {
@@ -1161,6 +1173,7 @@ export function createMainJoinRegistry(options: {
               if (!sameStamp(current.access, afterRouter.access)) fail('CONFLICT');
               room = {
                 router,
+                shareLeases: createShareLeaseRegistry(sessionId.toHexString(), epoch),
                 revision: 0,
                 hostUserId: auth.userId,
                 hostParticipantId: participantId.toHexString(),
@@ -1522,6 +1535,15 @@ export function createMainJoinRegistry(options: {
                   )
                     continue;
                   participant.blocked = true;
+                  room.shareLeases.cancelPendingFor(
+                    {
+                      session: room.state,
+                      nowMs: clock(),
+                      assertHeld: () => held.assertHeld({ workspaceId }),
+                    },
+                    participant.participantId,
+                    participant.callGeneration,
+                  );
                   participant.currentAccess = {
                     ...participant.currentAccess,
                     canReadContent: false,
@@ -1735,6 +1757,7 @@ export function createMainJoinRegistry(options: {
         resolved: LiveContextResult,
         router?: MediaTypes.Router,
         policy?: SessionPolicyInput,
+        share?: { leases: Room['shareLeases']; held: HeldShareContext },
       ) => T,
     ): Promise<T> {
       const owner = [...ownerships.values()].find((value) => value.binding.socketId === socketId);
@@ -1765,6 +1788,16 @@ export function createMainJoinRegistry(options: {
             resolved,
             resolved.ok ? owner.room.router : undefined,
             resolved.ok ? policy : undefined,
+            resolved.ok
+              ? {
+                  leases: owner.room.shareLeases,
+                  held: {
+                    ...policy,
+                    assertHeld: () =>
+                      held.assertHeld({ workspaceId: owner.room.state.workspaceId }),
+                  },
+                }
+              : undefined,
           );
           if (result && typeof (result as { then?: unknown }).then === 'function')
             throw new TypeError('Context use must be synchronous');

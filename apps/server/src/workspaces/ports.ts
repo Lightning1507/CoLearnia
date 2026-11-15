@@ -1,7 +1,8 @@
 import type { AuthenticatedContext, ChannelAccessSnapshot } from '@colearnia/contracts';
 import type { ClientSession } from 'mongoose';
 
-// Internal function signatures for consumer review; no implementation or network endpoint.
+// Shared internal ports; SCRUM-27 supplies ResolveChannelAccess in access-service.ts.
+// Not a network endpoint or a client-supplied permission assertion.
 export type ResolveChannelAccess = (input: {
   identity: AuthenticatedContext;
   workspaceId: string;

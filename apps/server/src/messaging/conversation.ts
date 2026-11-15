@@ -46,6 +46,7 @@ const conversationSchema = new Schema(
     scope: { type: scopeSchema, required: true },
     closedAt: { type: Date, default: null },
     purgeAt: { type: Date, default: null },
+    lastMessageCommitSeq: { type: Number, min: 0, max: Number.MAX_SAFE_INTEGER },
   },
   {
     collection: channelConversationIndex.collection,

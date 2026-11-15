@@ -35,7 +35,11 @@ function CallControls() {
   const call = useCallSnapshot();
   const [muted, setMuted] = useState(false);
   return (
-    <button className="workspace-call-badge" type="button" onClick={() => setMuted(!muted)}>
+    <button
+      className="rounded-full border border-[color:var(--workspace-border)] px-3 py-1.5 text-xs"
+      type="button"
+      onClick={() => setMuted(!muted)}
+    >
       {call.status === 'active' && (muted ? 'Bật mic cuộc gọi' : 'Tắt mic cuộc gọi')}
     </button>
   );
@@ -43,12 +47,20 @@ function CallControls() {
 
 export function WorkspaceShellFixture() {
   const [channelId, setChannelId] = useState(channelB.channel.id);
+  const [listOpen, setListOpen] = useState(false);
+  if (listOpen)
+    return (
+      <button type="button" onClick={() => setListOpen(false)}>
+        Danh sách Workspace fixture · Quay lại
+      </button>
+    );
   return (
     <WorkspaceShell
       workspace={workspaceFixture}
       channels={channels}
       panel={{ kind: 'text', channelId }}
       onSelectChannel={(channel) => setChannelId(channel.id)}
+      onOpenWorkspaceList={() => setListOpen(true)}
       chatPanel={<DraftComposer />}
       callPanel={null}
       persistentCallControls={<CallControls />}

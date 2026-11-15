@@ -91,6 +91,42 @@ function setup(
 }
 
 describe('lobby preview ownership and browser devices', () => {
+  it.each([
+    ['camera', 'video', 'cam1', 'cam2'],
+    ['microphone', 'audio', 'mic1', 'mic2'],
+  ] as const)(
+    'keeps %s active while switching and clears it when the old track ends',
+    async (kind, trackKind, firstId, nextId) => {
+      const { preview, getUserMedia } = setup();
+      await preview.refreshDevices();
+      const first = media(trackKind, firstId);
+      const replacement = media(trackKind, nextId);
+      const pending = deferred<MediaStream>();
+      getUserMedia.mockResolvedValueOnce(first.stream).mockReturnValueOnce(pending.promise);
+      preview.select(kind, firstId);
+      await preview.open(kind);
+      preview.select(kind, nextId);
+      expect(first.track.readyState).toBe('live');
+      expect(preview.getSnapshot()[kind]).toMatchObject({
+        status: 'requesting',
+        isActive: true,
+        openedId: firstId,
+        message: 'Đang đổi thiết bị…',
+      });
+      first.end();
+      expect(preview.getSnapshot()[kind]).toMatchObject({
+        status: 'requesting',
+        isActive: false,
+        openedId: null,
+      });
+      pending.resolve(replacement.stream);
+      await vi.waitFor(() => expect(preview.getSnapshot()[kind].status).toBe('ready'));
+      expect(preview.getSnapshot()[kind]).toMatchObject({ isActive: true, openedId: nextId });
+      preview.stop(kind);
+      expect(preview.getSnapshot()[kind]).toMatchObject({ status: 'off', isActive: false });
+    },
+  );
+
   it('enumerates input devices and fallback labels without requesting permission', async () => {
     const { preview, getUserMedia } = setup();
     await vi.waitFor(() => expect(preview.getSnapshot().enumerating).toBe(false));

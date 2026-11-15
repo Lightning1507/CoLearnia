@@ -17,7 +17,22 @@ Module [share-lease](../../apps/server/src/live/session-manager/share-lease.ts) 
 | `revokeHeld(held, cleanupRequest)`                                | Thu quyền pending/ownership theo target SCRUM-23. Kiểm session/epoch, participant/generation hoặc scope/audience. Trả lease reference bị ảnh hưởng để M3 đóng nguồn.                                        |
 | `releaseHeld(held, leaseRef)`                                     | Xóa slot RELEASING sau khi adapter xác nhận đã đóng cả SCREEN và SCREEN_AUDIO. Handle cũ không xóa slot mới.                                                                                                |
 
-Các mã lỗi ở bảng là kết quả nội bộ. Handler SCRUM-74 sẽ định nghĩa schema command/ack, kiểm expected revision và ánh xạ lỗi riêng theo quy ước API khi nối luồng browser picker.
+## Socket và browser picker — SCRUM-74
+
+[Schema dùng chung](../../packages/contracts/src/screen-share.ts) dùng envelope strict gồm `requestId`, `sessionId`, `epoch`, `callGeneration`, `expectedPolicyRevision` và `payload`. [Socket adapter](../../apps/server/src/live/session-manager/screen-share-signaling.ts) nhận actor từ auth M1 và chạy mutation đồng bộ dưới gate của registry phiên.
+
+| Lệnh             | Payload                        | Kết quả trong ACK `completed`             |
+| ---------------- | ------------------------------ | ----------------------------------------- |
+| `screen.acquire` | `{ scope }`                    | `{ leaseId, leaseGeneration, expiresAt }` |
+| `screen.release` | `{ leaseId, leaseGeneration }` | `{ released }`                            |
+
+Acquire kiểm revision, scope hiện hành và policy M4. Slot bận trả `SHARE_BUSY`. Scope/revision hoặc đời call lệch trả `CONFLICT` khi kiểm context cho phép. Release chỉ hủy reservation đúng lease của owner hiện hành. Revision thay đổi không tự ngăn release nếu owner và lease vẫn khớp; lease hết hạn, đã release hoặc đã publish trả `released: false`. Request ID ghép ACK với lệnh. Mất ACK acquire thì FE không tự gửi lại lệnh; reservation chưa nhận được sẽ hết hạn theo đồng hồ server.
+
+Composition gắn `attachScreenShareSocket(registry, socket, readAuth)` cạnh adapter join, trên cùng registry. Mỗi room sở hữu registry lease của mình. Disconnect và access revocation dọn reservation của đúng participant/generation dưới Workspace gate. Việc ghép scope-transition của M4 tiếp tục dùng cổng `revokeHeld`; TTL là giới hạn dự phòng nếu release không tới server.
+
+FE gọi `bindScreenShareSocket` trong adapter của call, truyền signal lifetime từ CallController. Adapter phiên đưa snapshot hoặc event đã xác nhận (cursor kèm projection) vào `picker.updateContext` và truyền picker cho `ScreenShareControls` ở toolbar. Picker đọc mode và `permissions.publishScreen` từ projection: DISCUSSION ẩn các nút chia sẻ, còn mất quyền ở scope khác khóa thao tác và dọn lượt đang chờ. Nút **Chia sẻ** ở toolbar xin slot. Khi được cấp lease, FE mở hộp thoại **Chọn màn hình để chia sẻ**. Nút **Bắt đầu chia sẻ** gọi trực tiếp `getDisplayMedia()` để người dùng chọn nguồn thật trong trình duyệt. Picker đếm hạn bảo thủ từ lúc gửi lệnh bằng đồng hồ monotonic, nên không cần đồng bộ đồng hồ máy khách với server. Hủy, hết hạn, mất context hoặc hết đời call dừng mọi track đã nhận và trả lease gốc nếu kết nối còn dùng được. Nếu browser trả stream sau khi lượt đó đã bị hủy, picker chỉ dừng stream trả muộn. Browser có thể tiếp tục hiện picker đã mở cho tới khi người dùng đóng.
+
+`getSelection()` cho adapter mượn stream, lease và tín hiệu hủy của đúng lượt. SCRUM-74 giữ stream ở trạng thái đã chọn, chưa tạo Producer; timer vẫn có hiệu lực. SCRUM-75 nối bước publish/Stop và chuyển reservation thành ownership. Adapter MAIN và auth/cleanup thật vẫn cần được ghép trong composition của app.
 
 ## Generation và lượt tạo SCREEN
 
@@ -41,4 +56,8 @@ Khi revision quyền thay đổi, policy chặn đến khi coordinator xác nh�
 
 ## Kiểm chứng
 
-[Test](../../apps/server/src/live/session-manager/share-lease.test.ts) kiểm slot bận, phạm vi độc lập, biên 30 giây, publish sau await, stale lease/call generation/audience/round/access, thu quyền, giữ slot khi chờ cleanup, callback cũ và gate Producer/Consumer dùng policy thực. Dùng fixture runtime và clock có kiểm soát. Luồng browser picker/SCREEN Producer nằm ở SCRUM-74 và bước pause/ready media tích hợp của M3. Chưa kiểm chia sẻ màn hình trên trình duyệt hoặc mạng thật từ module này.
+[Test registry M4](../../apps/server/src/live/session-manager/share-lease.test.ts) kiểm slot bận, phạm vi độc lập, biên 30 giây, publish sau await, stale lease/call generation/audience/round/access, thu quyền, giữ slot khi chờ cleanup, callback cũ và gate Producer/Consumer dùng policy thực.
+
+SCRUM-74 kiểm [socket qua registry MAIN](../../apps/server/src/live/session-manager/main-join-registry.test.ts) và [vòng đời picker FE](../../apps/web/src/features/live/runtime/screenSharePicker.test.ts). Các ca bao phủ revision cũ, slot bận, release cũ sau khi cấp lease mới, hủy picker, expiry, ACK/stream muộn và dừng cả track video lẫn audio. Chạy ba suite liên quan đạt 141 test trên Windows. Native media smoke khởi tạo worker và Router Opus/VP8 thành công.
+
+Kiểm cục bộ bằng Chrome headless với hai click thật trên nút và capture port mô phỏng. Lượt đầu chỉ acquire. Lượt thứ hai gọi capture khi `navigator.userActivation.isActive` là `true`. Hủy dừng track tổng hợp và trả đúng lease. Chưa chạy hộp thoại chọn màn hình native hoặc app MAIN nối provider thật.

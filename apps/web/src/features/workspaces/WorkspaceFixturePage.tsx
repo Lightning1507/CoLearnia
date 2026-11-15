@@ -1,11 +1,6 @@
-import { useState } from 'react';
-import type {
-  ChannelAccessSnapshot,
-  ChannelSummary,
-  LiveContext,
-  OwnUser,
-} from '@colearnia/contracts';
-import { useCallSnapshot } from '../live/runtime/callControllerContext';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import type { ChannelAccessSnapshot, ChannelSummary, OwnUser } from '@colearnia/contracts';
+import { RoomShell, useCallSnapshot } from '../live';
 import { WorkspaceShell } from './WorkspaceShell';
 import type { WorkspacePanel } from './shell-contract';
 import {
@@ -26,12 +21,11 @@ function ChatPanel({
   access: ChannelAccessSnapshot;
 }) {
   return (
-    <article className="workspace-fixture-panel" aria-label={`Chat ${channel.name}`}>
-      <header>
-        <h2>#{channel.name}</h2>
-        <p>Panel fixture M2 · {identity.displayName}</p>
-      </header>
-      <section>
+    <article className="flex min-w-0 flex-1 flex-col" aria-label={`Chat ${channel.name}`}>
+      <section className="grid content-start gap-3 px-5 py-6">
+        <p className="text-sm text-[color:var(--workspace-muted)]">
+          Panel fixture M2 · {identity.displayName}
+        </p>
         <strong>Chào mừng đến kênh học tập chung.</strong>
         <p>
           Slot này chỉ nhận projection có quyền đọc ở revision {access.channelRevision}. Timeline,
@@ -42,37 +36,79 @@ function ChatPanel({
   );
 }
 
-function CallPanel({ context }: { context: LiveContext }) {
-  const call = useCallSnapshot();
-  return (
-    <article className="workspace-fixture-panel" aria-label="Panel phòng trực tiếp">
-      <header>
-        <h2>Phòng học trực tiếp</h2>
-        <p>Panel fixture M3/M4 · phạm vi {context.scope.type}</p>
-      </header>
-      <section>
-        <strong>Call runtime: {call.status === 'idle' ? 'chưa tham gia' : call.status}</strong>
-        <p>
-          Chuyển panel chỉ đổi UI consumer. Join, thiết bị, signaling và kết thúc cuộc gọi không
-          được kích hoạt tại đây.
-        </p>
-      </section>
-    </article>
-  );
-}
-
 function PersistentCallStatus() {
   const call = useCallSnapshot();
   return (
-    <output className="workspace-call-badge" aria-label="Trạng thái cuộc gọi">
+    <output
+      className="inline-flex max-w-full items-center gap-2 rounded-full border border-[color:var(--workspace-border)] px-3 py-1.5 text-xs text-[color:var(--workspace-muted)]"
+      aria-label="Trạng thái cuộc gọi"
+    >
       <span aria-hidden="true">●</span>
       {call.status === 'idle' ? 'Chưa tham gia cuộc gọi' : 'Cuộc gọi đang hoạt động'}
     </output>
   );
 }
 
+function FixtureRoom({ channel }: { channel: ChannelSummary }) {
+  const [participantsOpen, setParticipantsOpen] = useState(true);
+  const participantsButton = useRef<HTMLButtonElement>(null);
+
+  return (
+    <RoomShell
+      channelName={channel.name}
+      useWorkspaceWidth
+      sessionId={
+        channel.id === liveContextFixture.access.channelId
+          ? liveContextFixture.sessionId
+          : undefined
+      }
+      sidePanel={
+        participantsOpen
+          ? {
+              label: 'Người tham gia',
+              content: <p className="text-stone-600">Chưa có danh sách người tham gia.</p>,
+              onBackToStage: () => {
+                setParticipantsOpen(false);
+                participantsButton.current?.focus();
+              },
+            }
+          : undefined
+      }
+      controls={
+        <button
+          type="button"
+          className="rounded-lg border border-stone-200 px-3 py-2"
+          ref={participantsButton}
+          aria-expanded={participantsOpen}
+          onClick={() => setParticipantsOpen(!participantsOpen)}
+        >
+          Người tham gia
+        </button>
+      }
+    />
+  );
+}
+
 export function WorkspaceFixturePage() {
   const [panel, setPanel] = useState<WorkspacePanel>({ kind: 'empty' });
+  const [showWorkspaceList, setShowWorkspaceList] = useState(false);
+  const workspaceListHeading = useRef<HTMLHeadingElement>(null);
+  const workspaceMenuTrigger = useRef<HTMLButtonElement>(null);
+  const restoreWorkspaceFocus = useRef(false);
+  useLayoutEffect(() => {
+    if (showWorkspaceList) {
+      workspaceListHeading.current?.focus({ preventScroll: true });
+    }
+  }, [showWorkspaceList]);
+  useEffect(() => {
+    if (showWorkspaceList || !restoreWorkspaceFocus.current) return;
+    // Restore navigation focus after the remounted LIVE panel's StrictMode effects.
+    const frame = requestAnimationFrame(() => {
+      restoreWorkspaceFocus.current = false;
+      workspaceMenuTrigger.current?.focus({ preventScroll: true });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [showWorkspaceList]);
   const selected =
     panel.kind === 'empty'
       ? undefined
@@ -81,11 +117,40 @@ export function WorkspaceFixturePage() {
     ? accessFixture.find(({ channelId }) => channelId === selected.id)
     : undefined;
 
+  if (showWorkspaceList) {
+    return (
+      <main className="grid content-start gap-4 p-5" aria-label="Danh sách Workspace fixture">
+        <h1
+          className="m-0 text-xl font-semibold tracking-normal"
+          ref={workspaceListHeading}
+          tabIndex={-1}
+        >
+          Danh sách Workspace
+        </h1>
+        <p className="text-sm text-[color:var(--workspace-muted)]">
+          Dữ liệu minh họa · Chọn Workspace để tiếp tục.
+        </p>
+        <button
+          type="button"
+          className="justify-self-start rounded-lg border border-[color:var(--workspace-border)] px-4 py-3 text-sm"
+          onClick={() => {
+            restoreWorkspaceFocus.current = true;
+            setShowWorkspaceList(false);
+          }}
+        >
+          {workspaceFixture.name}
+        </button>
+      </main>
+    );
+  }
+
   return (
     <WorkspaceShell
       workspace={workspaceFixture}
       channels={sidebarFixture}
       panel={panel}
+      onOpenWorkspaceList={() => setShowWorkspaceList(true)}
+      workspaceMenuTriggerRef={workspaceMenuTrigger}
       onSelectChannel={(channel) =>
         setPanel({ kind: channel.type === 'TEXT' ? 'text' : 'live', channelId: channel.id })
       }
@@ -94,7 +159,7 @@ export function WorkspaceFixturePage() {
           <ChatPanel channel={selected} identity={currentUserFixture} access={selectedAccess} />
         ) : null
       }
-      callPanel={<CallPanel context={liveContextFixture} />}
+      callPanel={selected?.type === 'LIVE' ? <FixtureRoom channel={selected} /> : null}
       persistentCallControls={<PersistentCallStatus />}
     />
   );
