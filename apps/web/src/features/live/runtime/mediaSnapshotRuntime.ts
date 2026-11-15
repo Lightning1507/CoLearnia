@@ -12,6 +12,7 @@ import type {
   SessionProjectionCursor,
 } from '@colearnia/contracts';
 import type { CallIdentity } from './callController';
+import type { AudioGraph } from '../../audio';
 import { joinMediaSnapshot, sameSourceBinding } from './mediaSnapshot';
 import type { ConsumerBinding, MediaSnapshot, MediaSnapshotPayload } from './mediaSnapshot';
 import { OwnMediaResources } from './ownMediaResources';
@@ -33,10 +34,16 @@ type SnapshotResult =
   | { status: 'denied'; code: string };
 type ConsumerHandle = {
   attach: () => void;
+  // Borrowed remote track. The adapter keeps audio out of its visual attachment.
+  audioTrack?: MediaStreamTrack;
   // Idempotently detaches audio/video and closes exactly this local Consumer without throwing.
   close: () => void;
 };
-type LocalConsumer = { binding: ConsumerBinding; handle: ConsumerHandle };
+type LocalConsumer = {
+  binding: ConsumerBinding;
+  handle: ConsumerHandle;
+  detachAudio?: () => void;
+};
 type OwnProducer = MediaSnapshotPayload['ownProducers'][number];
 type OwnTransport = MediaSnapshotPayload['ownTransports'][number];
 
@@ -95,6 +102,7 @@ export class MediaSnapshotRuntime {
   constructor(
     private readonly identity: CallIdentity,
     private readonly signal: AbortSignal,
+    private readonly audio?: Pick<AudioGraph, 'attach'>,
   ) {
     signal.addEventListener('abort', () => this.updateContext(null), { once: true });
   }
@@ -413,15 +421,48 @@ export class MediaSnapshotRuntime {
       return false;
     }
 
-    this.#consumers.set(binding.sourceId, { binding: own ?? { ...binding }, handle });
+    const local: LocalConsumer = { binding: own ?? { ...binding }, handle };
+    this.#consumers.set(binding.sourceId, local);
     try {
       handle.attach();
+      if (this.#consumers.get(binding.sourceId) !== local) return false;
+      if (
+        handle.audioTrack &&
+        this.audio &&
+        this.#context?.scope.type === 'MAIN' &&
+        source.scope.type === 'MAIN' &&
+        source.ownerParticipantId !== this.identity.participantId &&
+        (source.sourceKind === 'MIC' || source.sourceKind === 'SCREEN_AUDIO')
+      ) {
+        const detach = this.audio.attach(handle.audioTrack);
+        if (this.#consumers.get(binding.sourceId) !== local) {
+          detach();
+          return false;
+        }
+        local.detachAudio = detach;
+      }
       return true;
     } catch (error) {
-      this.#consumers.delete(binding.sourceId);
-      handle.close();
+      if (this.#consumers.get(binding.sourceId) === local) {
+        this.#consumers.delete(binding.sourceId);
+        this.#closeConsumer(local);
+      }
       throw error;
     }
+  }
+
+  detachConsumer(binding: ConsumerBinding, handle: ConsumerHandle) {
+    const local = this.#consumers.get(binding.sourceId);
+    if (local?.handle !== handle) return;
+    this.#consumers.delete(binding.sourceId);
+    this.#closeConsumer(local);
+  }
+
+  confirmConsumerReady(snapshot: MediaSnapshot, binding: ConsumerBinding, handle: ConsumerHandle) {
+    const local = this.#consumers.get(binding.sourceId);
+    if (local?.handle !== handle || !this.attachConsumer(snapshot, binding, handle)) return false;
+    local.binding = { ...local.binding, ready: true, paused: false };
+    return true;
   }
 
   trackOwnProducer(
@@ -605,7 +646,7 @@ export class MediaSnapshotRuntime {
         (!local.binding.ready && source.sourceRevision !== local.binding.sourceRevision)
       ) {
         this.#consumers.delete(sourceId);
-        local.handle.close();
+        this.#closeConsumer(local);
       } else {
         local.binding = { ...local.binding, sourceRevision: source.sourceRevision };
       }
@@ -639,8 +680,13 @@ export class MediaSnapshotRuntime {
         local.binding = next;
       } else {
         this.#consumers.delete(sourceId);
-        local.handle.close();
+        this.#closeConsumer(local);
       }
     }
+  }
+
+  #closeConsumer(local: LocalConsumer) {
+    local.detachAudio?.();
+    local.handle.close();
   }
 }

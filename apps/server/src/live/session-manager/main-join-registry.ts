@@ -47,7 +47,8 @@ import { matchesMainRevocation, mayMatchMainRevocation } from './main-revocation
 import { createSessionMetadataWrite } from './session-metadata-write.js';
 import type { SessionMutationRepository } from './session-metadata-write.js';
 import { createShareLeaseRegistry } from './share-lease.js';
-import type { HeldShareContext } from './share-lease.js';
+import type { HeldShareLease } from './share-lease.js';
+import { outsideCoordination } from '../../lib/operation-coordinator.js';
 
 type Target = { workspaceId: string; channelId: string };
 type Authority = { auth: AuthenticatedContext; access: ChannelAccessStamp; displayName: string };
@@ -676,6 +677,16 @@ export function createMainJoinRegistry(options: {
     for (const value of owners) value.participant.blocked = true;
     for (const intent of [...intents.values()]) if (intent.room === currentRoom) forget(intent);
     currentRoom.router.close();
+    for (const owner of owners)
+      currentRoom.shareLeases.closeFor(
+        {
+          session: currentRoom.state,
+          nowMs: clock(),
+          assertHeld: () => held.assertHeld({ workspaceId: destination.workspaceId }),
+        },
+        owner.participant.participantId,
+        owner.participant.callGeneration,
+      );
     const isCurrent = () =>
       !closed &&
       rooms.get(destination.channelId) === currentRoom &&
@@ -891,7 +902,7 @@ export function createMainJoinRegistry(options: {
                     room.state.state !== 'ACTIVE'
                   )
                     fail('CONFLICT');
-                  room.shareLeases.cancelPendingFor(
+                  room.shareLeases.closeFor(
                     {
                       session: room.state,
                       nowMs: clock(),
@@ -1572,7 +1583,7 @@ export function createMainJoinRegistry(options: {
                   const existing = captured.find((value) => value.owner === owner);
                   if (existing) continue;
                   participant.blocked = true;
-                  room.shareLeases.cancelPendingFor(
+                  room.shareLeases.closeFor(
                     {
                       session: room.state,
                       nowMs: clock(),
@@ -1801,7 +1812,7 @@ export function createMainJoinRegistry(options: {
         resolved: LiveContextResult,
         router?: MediaTypes.Router,
         policy?: SessionPolicyInput,
-        share?: { leases: Room['shareLeases']; held: HeldShareContext },
+        share?: HeldShareLease,
       ) => T,
     ): Promise<T> {
       const owner = [...ownerships.values()].find((value) => value.binding.socketId === socketId);
@@ -1835,6 +1846,24 @@ export function createMainJoinRegistry(options: {
             resolved.ok
               ? {
                   leases: owner.room.shareLeases,
+                  retire: (ref) =>
+                    outsideCoordination(() =>
+                      options.coordinator.run(
+                        { workspaceId: owner.room.state.workspaceId },
+                        async (gate) => {
+                          if (rooms.get(owner.room.state.channelId) !== owner.room) return;
+                          owner.room.shareLeases.retireHeld(
+                            {
+                              session: owner.room.state,
+                              nowMs: clock(),
+                              assertHeld: () =>
+                                gate.assertHeld({ workspaceId: owner.room.state.workspaceId }),
+                            },
+                            ref,
+                          );
+                        },
+                      ),
+                    ),
                   held: {
                     ...policy,
                     assertHeld: () =>

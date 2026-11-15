@@ -8,6 +8,7 @@ import { resolveSessionPolicyContext } from '../policy/session-policy.js';
 import { CleanupAdmission } from '../session-manager/cleanup-admission.js';
 import { createPausedReadySignaling } from './paused-ready-signaling.js';
 import { createTransportSignaling } from './transport-signaling.js';
+import { createShareLeaseRegistry } from '../session-manager/share-lease.js';
 import { createMediaSourceSync } from './media-source-sync.js';
 
 type SocketPort = Parameters<ReturnType<typeof createPausedReadySignaling>['attach']>[0];
@@ -84,6 +85,7 @@ function fixture() {
         producer.closed = true;
         onClose?.();
       }),
+      resume: vi.fn(async () => {}),
       observer: {
         once: (_event: string, close: () => void) => {
           onClose = close;
@@ -93,7 +95,7 @@ function fixture() {
     closeProducer = producer.close;
     return producer;
   }
-  const produce = vi.fn(async () => makeProducer());
+  const produce = vi.fn(async (_options: MediaTypes.ProducerOptions) => makeProducer());
   let closeObserver: (() => void) | undefined;
   const native = {
     id: 'consumer',
@@ -147,6 +149,17 @@ function fixture() {
       },
     };
   }
+  const leases = createShareLeaseRegistry(sessionId, epoch);
+  const shareFor = (context: LiveContext) => {
+    const held = { ...policyFor(context), assertHeld() {} };
+    return {
+      leases,
+      held,
+      async retire(ref: { leaseId: string; leaseGeneration: number }) {
+        leases.retireHeld(held, ref);
+      },
+    };
+  };
   let nextGate: Promise<void> | undefined;
   let afterSettle: (() => void) | undefined;
   const service = createPausedReadySignaling({
@@ -163,7 +176,7 @@ function fixture() {
         };
       },
     },
-    async withMediaTransport(socket, input, transport, direction, use) {
+    async withMediaTransport(socket, input, transport, direction, use, mode) {
       const gate = nextGate;
       nextGate = undefined;
       if (gate) await gate;
@@ -171,16 +184,23 @@ function fixture() {
       if (
         !context ||
         ![direction, `${direction}-new`].includes(transport) ||
-        input.callGeneration !== context.callGeneration
+        input.callGeneration !== context.callGeneration ||
+        (mode !== 'cleanup' && input.expectedPolicyRevision !== context.policyRevision)
       ) {
         return { errorCode: 'CONFLICT' };
       }
       const policy = policyFor(context);
-      return use(context, { canConsume } as unknown as MediaTypes.Router, policy, {
-        id: transport,
-        produce: produce as unknown as MediaTypes.WebRtcTransport['produce'],
-        consume: consume as unknown as MediaTypes.WebRtcTransport['consume'],
-      });
+      return use(
+        context,
+        { canConsume } as unknown as MediaTypes.Router,
+        policy,
+        {
+          id: transport,
+          produce: produce as unknown as MediaTypes.WebRtcTransport['produce'],
+          consume: consume as unknown as MediaTypes.WebRtcTransport['consume'],
+        },
+        shareFor(context),
+      );
     },
   });
   function cleanup(user: 'a' | 'b', callGeneration = 1, audienceEpoch?: number) {
@@ -223,6 +243,29 @@ function fixture() {
   }
   const send = attach('a');
   const receive = attach('b');
+  const screen = {
+    acquire: () => leases.acquireHeld(shareFor(contexts.get('a')!).held),
+    stop: (lease: { leaseId: string; leaseGeneration: number }) =>
+      leases.stopHeld(shareFor(contexts.get('a')!).held, lease),
+    publish: (
+      lease: { leaseId: string; leaseGeneration: number },
+      sourceKind: 'SCREEN' | 'SCREEN_AUDIO',
+      requestId = randomUUID(),
+    ) =>
+      send(
+        'media.producer.create',
+        {
+          transportId: 'SEND',
+          sourceKind,
+          lease: { leaseId: lease.leaseId, leaseGeneration: lease.leaseGeneration },
+          rtpParameters:
+            sourceKind === 'SCREEN'
+              ? { codecs: [{ mimeType: 'video/VP8', payloadType: 96, clockRate: 90000 }] }
+              : rtpParameters,
+        },
+        requestId,
+      ),
+  };
   const publish = (requestId?: string, transportId = 'SEND') =>
     send('media.producer.create', { transportId, sourceKind: 'MIC', rtpParameters }, requestId);
   async function consumerPayload() {
@@ -310,6 +353,7 @@ function fixture() {
   }
   return {
     createPaused,
+    screen,
     receive,
     native,
     canConsume,
@@ -318,6 +362,11 @@ function fixture() {
     makeProducer,
     cleanup,
     admission,
+    advanceReceiverRevision() {
+      const context = contexts.get('b');
+      if (!context) throw new Error('Missing fixture receiver');
+      contexts.set('b', { ...context, policyRevision: context.policyRevision + 1 });
+    },
     advanceAudience() {
       const context = contexts.get('a');
       const participant = participants.get('a'.repeat(24));
@@ -633,6 +682,35 @@ describe('paused-ready media signaling', () => {
     expect(native.resume).toHaveBeenCalledTimes(1);
   });
 
+  it('replays a lost ready ACK and closes only the matching Consumer', async () => {
+    const { createPaused, receive, native, advanceReceiverRevision } = fixture();
+    const binding = await createPaused();
+    const readyId = randomUUID();
+    const ready = await receive('media.consumer.ready', binding, readyId);
+    expect(await receive('media.consumer.ready', binding, readyId)).toEqual(ready);
+    expect(native.resume).toHaveBeenCalledOnce();
+    advanceReceiverRevision();
+    expect(await receive('media.consumer.ready', binding, readyId)).toMatchObject({
+      error: { code: 'CONFLICT' },
+    });
+
+    const close = {
+      consumerId: binding.consumerId,
+      sourceId: binding.sourceId,
+      sourceGeneration: binding.sourceGeneration,
+      transportId: 'RECV',
+    };
+    expect(await receive('media.consumer.close', { ...close, sourceGeneration: 2 })).toMatchObject({
+      error: { code: 'NOT_FOUND' },
+    });
+    expect(native.close).not.toHaveBeenCalled();
+    const closeId = randomUUID();
+    const closed = await receive('media.consumer.close', close, closeId);
+    expect(closed).toMatchObject({ data: { result: { closed: true } } });
+    expect(await receive('media.consumer.close', close, closeId)).toEqual(closed);
+    expect(native.close).toHaveBeenCalledOnce();
+  });
+
   it('closes the paused Consumer without resuming if the publisher loses permission', async () => {
     const { createPaused, receive, native, blockPublisher } = fixture();
     const binding = await createPaused();
@@ -675,5 +753,69 @@ describe('paused-ready media signaling', () => {
       error: { code: 'FORBIDDEN' },
     });
     expect(native.close).toHaveBeenCalledOnce();
+  });
+});
+
+describe('SCRUM-75 screen publication', () => {
+  it('publishes the exact lease pair and closes both on stop', async () => {
+    const f = fixture();
+    const result = f.screen.acquire();
+    if (!result.ok) throw new Error(result.errorCode);
+    const lease = result.value;
+    expect(await f.screen.publish(lease, 'SCREEN_AUDIO')).toMatchObject({
+      error: { code: 'FORBIDDEN' },
+    });
+    const requestId = randomUUID();
+    const video = await f.screen.publish(lease, 'SCREEN', requestId);
+    expect(video).toMatchObject({ data: { result: { source: { sourceKind: 'SCREEN' } } } });
+    expect(await f.screen.publish(lease, 'SCREEN', requestId)).toEqual(video);
+    expect(await f.screen.publish(lease, 'SCREEN_AUDIO')).toMatchObject({
+      data: { result: { source: { sourceKind: 'SCREEN_AUDIO' } } },
+    });
+    expect(f.produce).toHaveBeenCalledTimes(2);
+    const videoProducer = await f.produce.mock.results[0]!.value;
+    const audioProducer = await f.produce.mock.results[1]!.value;
+    expect(f.produce).toHaveBeenCalledWith(expect.objectContaining({ paused: true }));
+    expect(videoProducer.resume).toHaveBeenCalledOnce();
+    expect(audioProducer.resume).toHaveBeenCalledOnce();
+    expect(f.screen.stop(lease)).toBe(true);
+    expect(videoProducer.closed).toBe(true);
+    expect(audioProducer.closed).toBe(true);
+    expect(f.screen.acquire()).toMatchObject({ ok: true });
+    expect(f.screen.stop(lease)).toBe(false);
+    expect(f.screen.acquire()).toMatchObject({ ok: false, errorCode: 'SHARE_BUSY' });
+  });
+
+  it('retires a video-only publication when the native Producer closes', async () => {
+    const f = fixture();
+    const result = f.screen.acquire();
+    if (!result.ok) throw new Error(result.errorCode);
+    expect(await f.screen.publish(result.value, 'SCREEN')).toMatchObject({
+      data: { result: { source: { sourceKind: 'SCREEN' } } },
+    });
+    expect(f.produce).toHaveBeenCalledOnce();
+    const video = await f.produce.mock.results[0]!.value;
+    video.close();
+    expect(f.screen.acquire()).toMatchObject({ ok: true });
+  });
+
+  it('keeps the slot until a late SCREEN_AUDIO producer is closed', async () => {
+    const f = fixture();
+    const result = f.screen.acquire();
+    if (!result.ok) throw new Error(result.errorCode);
+    const lease = result.value;
+    await f.screen.publish(lease, 'SCREEN');
+    const pending = deferred<ReturnType<typeof f.makeProducer>>();
+    f.produce.mockReturnValueOnce(pending.promise);
+    const audio = f.screen.publish(lease, 'SCREEN_AUDIO');
+    await vi.waitFor(() => expect(f.produce).toHaveBeenCalledTimes(2));
+    expect(f.screen.stop(lease)).toBe(true);
+    expect(f.screen.acquire()).toMatchObject({ ok: false, errorCode: 'SHARE_BUSY' });
+    const late = f.makeProducer();
+    pending.resolve(late);
+    expect(await audio).toMatchObject({ error: { code: 'CONFLICT' } });
+    expect(late.closed).toBe(true);
+    expect(late.resume).not.toHaveBeenCalled();
+    expect(f.screen.acquire()).toMatchObject({ ok: true });
   });
 });
