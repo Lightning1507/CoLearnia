@@ -12,6 +12,7 @@ import { screenAcquireAckSchema, sessionJoinAckSchema } from '@colearnia/contrac
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CoordinationError, createOperationCoordinator } from '../../lib/operation-coordinator.js';
 import { createMainJoinRegistry, MainJoinError } from './main-join-registry.js';
+import { createAccessRevocationCoordinator } from '../../workspaces/access-revocation.js';
 import { attachScreenShareSocket } from './screen-share-signaling.js';
 import { canReceiveMedia } from '../policy/session-policy.js';
 import type { PolicyParticipant, SessionPolicyState } from '../policy/session-policy.js';
@@ -33,7 +34,9 @@ function deferred<T>() {
 function setup(
   limits: Parameters<typeof createMainJoinRegistry>[0]['limits'] = {},
   revocationCleanup?: Parameters<typeof createMainJoinRegistry>[0]['revocationCleanup'],
-  revokedAuthSessions?: Parameters<typeof createMainJoinRegistry>[0]['revokedAuthSessions'],
+  revokedAuthSessions?: Parameters<
+    typeof createMainJoinRegistry
+  >[0]['accessRevocations']['revokedAuthSessions'],
   endCleanup?: Parameters<typeof createMainJoinRegistry>[0]['endCleanup'] | null,
   reconnectCleanup?: Parameters<typeof createMainJoinRegistry>[0]['reconnectCleanup'],
 ) {
@@ -98,8 +101,15 @@ function setup(
     })),
   };
   const coordinator = createOperationCoordinator();
+  const revocations = createAccessRevocationCoordinator({ coordinator });
+  const revocationCohort = vi.fn(revokedAuthSessions ?? (() => [auth.authSessionId]));
   const registry = createMainJoinRegistry({
     coordinator,
+    accessRevocations: {
+      ...revocations,
+      // Isolated legacy notification fixtures supply an already-captured M1 cohort.
+      revokedAuthSessions: revocationCohort,
+    },
     repository,
     resolveAuthority,
     isAuthorityCurrent,
@@ -117,8 +127,6 @@ function setup(
           },
         }),
     ...(reconnectCleanup ? { reconnectCleanup } : {}),
-    // Fixture M1 records the cohort when committing logout-all, not on delivery.
-    revokedAuthSessions: revokedAuthSessions ?? (() => [auth.authSessionId]),
   });
   registries.push(registry);
   const binding = (identity = auth) => ({
@@ -131,6 +139,8 @@ function setup(
   return {
     registry,
     coordinator,
+    revocations,
+    revocationCohort,
     auth,
     target,
     principal,
@@ -653,6 +663,270 @@ describe('SCRUM-86 session end', () => {
 });
 
 describe('SCRUM-83 MAIN revocation', () => {
+  it.each(['confirmed', 'wrong generation', 'provider unavailable'] as const)(
+    'retries overlapping revocation after another operation removes its ownership: %s',
+    async (proof) => {
+      const f = await revokeFixture();
+      const peer = f.principal();
+      const peerTicket = await f.issue(peer);
+      await f.registry.join(f.binding(peer), {
+        ticket: peerTicket.ticket,
+        requestId: randomUUID(),
+      });
+      const a = f.event;
+      const b = { ...a, operationId: randomUUID() };
+      f.media.mockImplementationOnce(() => {
+        throw new Error('Synchronous media cleanup failed');
+      });
+      expect(await f.registry.revoke(a)).toMatchObject({
+        permissionRevoked: false,
+        cleanupPending: true,
+      });
+      const originalRequest = f.media.mock.calls[0]![0];
+      expect(await f.registry.revoke(b)).toMatchObject({
+        permissionRevoked: true,
+        cleanupPending: false,
+      });
+      expect(f.registry.stats().ownerships).toBe(1);
+
+      const login = { ...f.auth, authSessionId: id() };
+      const freshTicket = await f.issue(login);
+      const freshSocket = f.binding(login);
+      const fresh = await f.registry.join(freshSocket, {
+        ticket: freshTicket.ticket,
+        requestId: randomUUID(),
+      });
+      const newGeneration = fresh.ack.data.result.callGeneration;
+      expect(newGeneration).toBeGreaterThan(f.joined.ack.data.result.callGeneration);
+      if (proof !== 'confirmed') {
+        f.media.mockImplementationOnce((request) => {
+          if (proof === 'provider unavailable') throw new Error('Media cleanup still unavailable');
+          return { ...cleanupAck(request), callGeneration: newGeneration };
+        });
+        expect(await f.registry.revoke(a)).toMatchObject({
+          permissionRevoked: false,
+          cleanupPending: true,
+        });
+      }
+      const [retry, concurrent] = await Promise.all([f.registry.revoke(a), f.registry.revoke(a)]);
+      expect(retry).toMatchObject({
+        permissionRevoked: true,
+        pendingInvalidated: true,
+        cleanupPending: false,
+      });
+      expect(concurrent).toEqual(retry);
+      const aRequests = f.media.mock.calls
+        .map(([request]) => request)
+        .filter((request) => request.operationId === a.operationId);
+      expect(aRequests).toHaveLength(proof === 'confirmed' ? 2 : 3);
+      for (const request of aRequests) expect(request).toEqual(originalRequest);
+      expect(f.messaging).toHaveBeenCalledTimes(2);
+      expect(f.board).toHaveBeenCalledTimes(2);
+      expect(f.registry.stats().ownerships).toBe(2);
+      expect(
+        await f.registry.withContext(
+          freshSocket.socketId,
+          {
+            ...freshTicket,
+            callGeneration: newGeneration,
+          },
+          (result) => result.ok,
+        ),
+      ).toBe(true);
+      expect(await f.registry.revoke(a)).toEqual(retry);
+      expect(f.media).toHaveBeenCalledTimes(proof === 'confirmed' ? 3 : 4);
+    },
+  );
+
+  it('polls byte cleanup after permission revocation without expiring or retargeting the operation', async () => {
+    const f = await revokeFixture();
+    const peer = f.principal();
+    const peerTicket = await f.issue(peer);
+    await f.registry.join(f.binding(peer), { ticket: peerTicket.ticket, requestId: randomUUID() });
+    f.board.mockImplementationOnce(async (request) => ({
+      ...cleanupAck(request),
+      outcome: { permissionRevoked: true, pendingInvalidated: true, cleanupPending: true },
+    }));
+    expect(await f.registry.revoke(f.event)).toMatchObject({
+      permissionRevoked: true,
+      cleanupPending: true,
+    });
+    expect(f.registry.stats().ownerships).toBe(1);
+    const login = { ...f.auth, authSessionId: id() };
+    const ticket = await f.issue(login);
+    await f.registry.join(f.binding(login), { ticket: ticket.ticket, requestId: randomUUID() });
+    f.advance(61_000);
+    expect(await f.registry.revoke(f.event)).toMatchObject({
+      permissionRevoked: true,
+      cleanupPending: false,
+    });
+    expect(f.board).toHaveBeenCalledTimes(2);
+    expect(f.board.mock.calls[1]![0]).toEqual(f.board.mock.calls[0]![0]);
+    expect(f.media).toHaveBeenCalledTimes(1);
+    expect(f.registry.stats().ownerships).toBe(2);
+  });
+
+  it('rejects composition with a separate M1 coordinator', () => {
+    const f = setup();
+    expect(() =>
+      createMainJoinRegistry({
+        coordinator: f.coordinator,
+        accessRevocations: createAccessRevocationCoordinator({
+          coordinator: createOperationCoordinator(),
+        }),
+        repository: f.repository,
+        resolveAuthority: f.resolveAuthority,
+        isAuthorityCurrent: f.isAuthorityCurrent,
+        createRouter: f.createRouter,
+      }),
+    ).toThrow('same coordinator');
+  });
+
+  it('continues preparation after a Workspace gate failure without changing operation identity', async () => {
+    const f = await revokeFixture();
+    const run = vi.spyOn(f.coordinator, 'run');
+    run.mockRejectedValueOnce(new CoordinationError('BUSY'));
+    expect(await f.registry.revoke(f.event)).toMatchObject({ permissionRevoked: false });
+    expect(f.media).not.toHaveBeenCalled();
+    expect(await f.registry.revoke(f.event)).toMatchObject({ permissionRevoked: true });
+    expect(f.media).toHaveBeenCalledTimes(1);
+    expect(f.media.mock.calls[0]![0].operationId).toBe(f.event.operationId);
+    expect(f.registry.stats().ownerships).toBe(0);
+    run.mockRestore();
+  });
+
+  it('retries synchronous media failure under the gate while preserving successful domains', async () => {
+    const f = await revokeFixture();
+    f.media.mockImplementationOnce(() => {
+      throw new Error('native cleanup unavailable');
+    });
+    expect(await f.registry.revoke(f.event)).toMatchObject({ permissionRevoked: false });
+    expect(await f.registry.revoke(f.event)).toMatchObject({ permissionRevoked: true });
+    expect(f.media).toHaveBeenCalledTimes(2);
+    expect(f.media.mock.calls[1]![0]).toEqual(f.media.mock.calls[0]![0]);
+    expect(f.messaging).toHaveBeenCalledTimes(1);
+    expect(f.board).toHaveBeenCalledTimes(1);
+  });
+
+  it('resumes failed cleanup, coalesces concurrent retries and replays completion', async () => {
+    const f = await revokeFixture();
+    const peer = f.principal();
+    const peerTicket = await f.issue(peer);
+    await f.registry.join(f.binding(peer), { ticket: peerTicket.ticket, requestId: randomUUID() });
+    f.board.mockImplementationOnce(async (request) => ({
+      ...cleanupAck(request),
+      outcome: {
+        permissionRevoked: false,
+        pendingInvalidated: false,
+        cleanupPending: true,
+        errorCode: 'DEPENDENCY_UNAVAILABLE',
+        retryable: false,
+      },
+    }));
+    expect(await f.registry.revoke(f.event)).toMatchObject({ permissionRevoked: false });
+    const pending = deferred<SessionCleanupResult>();
+    f.board.mockImplementationOnce(() => pending.promise);
+    const retry = f.registry.revoke(f.event);
+    const concurrent = f.registry.revoke(f.event);
+    await vi.waitFor(() => expect(f.board).toHaveBeenCalledTimes(2));
+    await expect(f.registry.revoke({ ...f.event, revision: 2 })).rejects.toMatchObject({
+      code: 'CONFLICT',
+    });
+    expect(f.media).toHaveBeenCalledTimes(1);
+    expect(f.messaging).toHaveBeenCalledTimes(1);
+    expect(f.board.mock.calls[1]![0]).toEqual(f.board.mock.calls[0]![0]);
+    pending.resolve(cleanupAck(f.board.mock.calls[0]![0]));
+    const result = await retry;
+    expect(result).toMatchObject({ permissionRevoked: true, pendingInvalidated: true });
+    expect(await concurrent).toEqual(result);
+    expect(f.registry.stats().ownerships).toBe(1);
+    const login = { ...f.auth, authSessionId: id() };
+    const ticket = await f.issue(login);
+    const socket = f.binding(login);
+    const joined = await f.registry.join(socket, {
+      ticket: ticket.ticket,
+      requestId: randomUUID(),
+    });
+    expect(joined.ack.data.result.callGeneration).toBeGreaterThan(
+      f.joined.ack.data.result.callGeneration,
+    );
+    expect(await f.registry.revoke(f.event)).toEqual(result);
+    expect(f.registry.stats().ownerships).toBe(2);
+    expect(f.media).toHaveBeenCalledTimes(1);
+  });
+
+  it('reuses pending cleanup I/O across retry after timeout', async () => {
+    const f = await revokeFixture();
+    const pending = deferred<SessionCleanupResult>();
+    f.board.mockImplementation(() => pending.promise);
+    expect(await f.registry.revoke(f.event)).toMatchObject({ permissionRevoked: false });
+    const retry = f.registry.revoke(f.event);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(f.board).toHaveBeenCalledTimes(1);
+    pending.resolve(cleanupAck(f.board.mock.calls[0]![0]));
+    expect(await retry).toMatchObject({ permissionRevoked: true });
+    expect(f.media).toHaveBeenCalledTimes(1);
+    expect(f.registry.stats().ownerships).toBe(0);
+  }, 15_000);
+
+  it('denies an issued ticket after M1 installs its shared barrier without LIVE notification', async () => {
+    const f = setup();
+    const ticket = await f.issue();
+    await f.revocations.revoke({
+      event: {
+        operationId: randomUUID(),
+        kind: 'AUTH_SESSION',
+        authSessionId: f.auth.authSessionId,
+        revision: 1,
+      },
+      userId: f.auth.userId,
+      persistence: {
+        prepareHeld: async () => ({ authSessionIds: [] }),
+        commitHeld: async () => 'committed',
+        reconcileHeld: async () => 'not_committed',
+      },
+    });
+    expect(f.registry.stats().revocations).toBe(0);
+    await expect(
+      f.registry.join(f.binding(), { ticket: ticket.ticket, requestId: randomUUID() }),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    expect(f.repository.join).not.toHaveBeenCalled();
+    expect(f.registry.stats().ownerships).toBe(0);
+  });
+
+  it('uses the cohort captured by M1 and preserves a login created before delayed LIVE delivery', async () => {
+    const cleanup = async (request: SessionCleanupRequest) => cleanupAck(request);
+    const f = setup({}, { media: cleanup, messaging: cleanup, board: cleanup });
+    f.revocationCohort.mockImplementation(f.revocations.revokedAuthSessions);
+    const event = {
+      operationId: randomUUID(),
+      kind: 'USER_AUTH_SESSIONS' as const,
+      userId: f.auth.userId,
+      revision: 1,
+    };
+    const prepareHeld = vi.fn(async () => ({ authSessionIds: [f.auth.authSessionId] }));
+    await f.revocations.revoke({
+      event,
+      userId: f.auth.userId,
+      persistence: {
+        prepareHeld,
+        commitHeld: async () => 'committed',
+        reconcileHeld: async () => 'not_committed',
+      },
+    });
+    const login = { ...f.auth, authSessionId: id() };
+    const ticket = await f.issue(login);
+    const socket = f.binding(login);
+    const command = { ticket: ticket.ticket, requestId: randomUUID() };
+    await f.registry.join(socket, command);
+    expect(await f.registry.revoke(event)).toMatchObject({ permissionRevoked: true });
+    expect(f.registry.stats().ownerships).toBe(1);
+    expect((await f.registry.join(socket, command)).ack.data.status).toBe('completed');
+    expect(prepareHeld).toHaveBeenCalledTimes(1);
+    expect(f.revocationCohort).toHaveBeenCalledTimes(1);
+    await expect(f.issue()).rejects.toMatchObject({ code: 'FORBIDDEN' });
+  });
+
   it.each(['new login', 'fence before write', 'fence after write'] as const)(
     'does not grant a stale host reservation on delayed revoke: %s',
     async (kind) => {
@@ -1072,7 +1346,7 @@ describe('SCRUM-83 MAIN revocation', () => {
     expect(result).toMatchObject({ permissionRevoked: false, cleanupPending: true });
     expect(await f.registry.revoke(f.event)).toEqual(result);
     expect(f.registry.stats().ownerships).toBe(1);
-    expect(f.board).toHaveBeenCalledTimes(1);
+    expect(f.board).toHaveBeenCalledTimes(2);
     await expect(f.issue()).rejects.toThrow();
   });
   it('does not grant a join whose metadata acknowledgement arrives after auth revocation', async () => {

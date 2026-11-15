@@ -14,6 +14,7 @@ import { createDatabase } from '../src/lib/database.js';
 import { createOperationCoordinator } from '../src/lib/operation-coordinator.js';
 import { mediaCodecs } from '../src/live/media/runtime.js';
 import { createMainJoinRegistry } from '../src/live/session-manager/main-join-registry.js';
+import { createAccessRevocationCoordinator } from '../src/workspaces/access-revocation.js';
 import { canReceiveMedia } from '../src/live/policy/session-policy.js';
 import { createSessionRepository } from '../src/live/session-manager/session-repository.js';
 import {
@@ -105,6 +106,7 @@ function setup(
   coordinator = createOperationCoordinator(),
 ) {
   let time = Date.now();
+  const accessRevocations = createAccessRevocationCoordinator({ coordinator });
   const target = { workspaceId: id(), channelId: id() };
   const auth = (): AuthenticatedContext => ({
     userId: id(),
@@ -116,6 +118,7 @@ function setup(
   const fenced = new Set<string>();
   const registry = createMainJoinRegistry({
     coordinator,
+    accessRevocations,
     ...(revocationCleanup ? { revocationCleanup } : {}),
     endCleanup: endCleanup ?? {
       media: { revoke: cleanupResult },
@@ -159,6 +162,7 @@ function setup(
   });
   return {
     registry,
+    accessRevocations,
     coordinator,
     revoked,
     fenced,
@@ -987,8 +991,171 @@ describe('MAIN registry with real MongoDB and mediasoup Router', () => {
     expect(f.registry.stats().ownerships).toBe(2);
   });
   it.each([false, true])(
-    'revokes real M3 transport resources with native creation delayed=%s',
+    'confirms old-generation cleanup after overlapping revocation removes ownership, delayed native=%s',
     async (delayed) => {
+      const media = vi.fn((request: SessionCleanupRequest) => transportService.cleanup(request));
+      media.mockImplementationOnce(() => {
+        throw new Error('Injected synchronous media failure');
+      });
+      const f = setup(repository, {
+        media: { revoke: media },
+        messaging: endCleanup,
+        board: endCleanup,
+      });
+      const user = f.auth(),
+        peer = f.auth();
+      const socket = f.binding(user);
+      const ticket = await f.registry.issue(user, f.target, { requestId: randomUUID() });
+      const joined = await f.registry.join(socket, {
+        ticket: ticket.ticket,
+        requestId: randomUUID(),
+      });
+      const peerTicket = await f.registry.issue(peer, f.target, { requestId: randomUUID() });
+      const peerJoin = await f.registry.join(f.binding(peer), {
+        ticket: peerTicket.ticket,
+        requestId: randomUUID(),
+      });
+      let release!: () => void;
+      let entered!: () => void;
+      const pending = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const created = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+      const native: MediaTypes.WebRtcTransport[] = [];
+      const transportService = createTransportSignaling({
+        withContext: f.registry.withContext,
+        createTransport: async (router) => {
+          const transport = await router.createWebRtcTransport({
+            listenInfos: [{ protocol: 'udp', ip: '127.0.0.1' }],
+          });
+          native.push(transport);
+          if (native.length === 1) {
+            entered();
+            if (delayed) await pending;
+          }
+          return transport;
+        },
+      });
+      const createFor = (
+        binding: ReturnType<typeof f.binding>,
+        destination: typeof ticket,
+        generation: number,
+        policyRevision: number,
+      ) => {
+        const handlers = new Map<string, (raw: unknown, ack?: (value: unknown) => void) => void>();
+        transportService.attach({
+          id: binding.socketId,
+          on: (name, listener) => handlers.set(name, listener),
+          once: () => {},
+        });
+        return new Promise<unknown>((resolve) =>
+          handlers.get('media.transport.create')!(
+            {
+              requestId: randomUUID(),
+              sessionId: destination.sessionId,
+              epoch: destination.epoch,
+              callGeneration: generation,
+              expectedPolicyRevision: policyRevision,
+              payload: { direction: 'SEND' },
+            },
+            resolve,
+          ),
+        );
+      };
+      const oldResponse = createFor(
+        socket,
+        ticket,
+        joined.ack.data.result.callGeneration,
+        peerJoin.parts[0]!.policyRevision,
+      );
+      try {
+        await created;
+        if (!delayed)
+          expect(mediaTransportCreateAckSchema.parse(await oldResponse)).toHaveProperty('data');
+        const a = {
+          operationId: randomUUID(),
+          kind: 'AUTH_SESSION' as const,
+          authSessionId: user.authSessionId,
+          revision: 1,
+        };
+        const b = { ...a, operationId: randomUUID() };
+        expect(await f.registry.revoke(a)).toMatchObject({
+          permissionRevoked: false,
+          cleanupPending: true,
+        });
+        expect(native[0]!.closed).toBe(false);
+        expect(await f.registry.revoke(b)).toMatchObject({ permissionRevoked: true });
+        expect(f.registry.stats().ownerships).toBe(1);
+
+        const login = { ...user, authSessionId: id() };
+        const freshSocket = f.binding(login);
+        const freshTicket = await f.registry.issue(login, f.target, { requestId: randomUUID() });
+        const fresh = await f.registry.join(freshSocket, {
+          ticket: freshTicket.ticket,
+          requestId: randomUUID(),
+        });
+        const newGeneration = fresh.ack.data.result.callGeneration;
+        expect(newGeneration).toBeGreaterThan(joined.ack.data.result.callGeneration);
+        expect(
+          mediaTransportCreateAckSchema.parse(
+            await createFor(
+              freshSocket,
+              freshTicket,
+              newGeneration,
+              fresh.parts[0]!.policyRevision,
+            ),
+          ),
+        ).toHaveProperty('data');
+        const revision = (await models.LiveSession.findById(ticket.sessionId).lean().orFail())
+          .revision;
+        const [retry, concurrent] = await Promise.all([f.registry.revoke(a), f.registry.revoke(a)]);
+        expect(retry).toMatchObject({
+          permissionRevoked: true,
+          pendingInvalidated: true,
+          cleanupPending: delayed,
+        });
+        expect(concurrent).toEqual(retry);
+        expect(media).toHaveBeenCalledTimes(3);
+        expect(media.mock.calls[2]![0]).toEqual(media.mock.calls[0]![0]);
+        expect(media.mock.calls[1]![0].operationId).toBe(b.operationId);
+        expect(native[1]!.closed).toBe(false);
+        release();
+        if (delayed)
+          expect(mediaTransportCreateAckSchema.parse(await oldResponse)).toHaveProperty('error');
+        await vi.waitFor(() => expect(native[0]!.closed).toBe(true));
+        expect(await f.registry.revoke(a)).toMatchObject({
+          permissionRevoked: true,
+          cleanupPending: false,
+        });
+        expect(native[1]!.closed).toBe(false);
+        expect(f.routers[0]!.closed).toBe(false);
+        expect(f.registry.stats().ownerships).toBe(2);
+        expect(
+          await f.registry.withContext(
+            freshSocket.socketId,
+            { ...freshTicket, callGeneration: newGeneration },
+            (result) => result.ok,
+          ),
+        ).toBe(true);
+        expect((await models.LiveSession.findById(ticket.sessionId).lean().orFail()).revision).toBe(
+          revision,
+        );
+      } finally {
+        release();
+      }
+    },
+  );
+
+  it.each([
+    { delayed: false, shared: false },
+    { delayed: true, shared: false },
+    { delayed: false, shared: true },
+    { delayed: true, shared: true },
+  ])(
+    'revokes native M3 transports with shared M1=$shared and delayed create=$delayed',
+    async ({ delayed, shared }) => {
       const confirmed = async (value: SessionCleanupRequest): Promise<SessionCleanupResult> => {
         const { reason, ...identity } = value;
         void reason;
@@ -997,10 +1164,23 @@ describe('MAIN registry with real MongoDB and mediasoup Router', () => {
           outcome: { permissionRevoked: true, pendingInvalidated: true, cleanupPending: false },
         };
       };
+      const mediaCleanup = vi.fn((value: SessionCleanupRequest) => transportService.cleanup(value));
+      const board = vi.fn(confirmed);
+      if (shared)
+        board.mockImplementationOnce(async (value) => ({
+          ...(await confirmed(value)),
+          outcome: {
+            permissionRevoked: false,
+            pendingInvalidated: false,
+            cleanupPending: true,
+            retryable: false,
+            errorCode: 'DEPENDENCY_UNAVAILABLE',
+          },
+        }));
       const f = setup(repository, {
-        media: { revoke: (value) => transportService.cleanup(value) },
+        media: { revoke: mediaCleanup },
         messaging: confirmed,
-        board: confirmed,
+        board,
       });
       const host = f.auth();
       const peer = f.auth();
@@ -1033,7 +1213,7 @@ describe('MAIN registry with real MongoDB and mediasoup Router', () => {
           });
           native.push(transport);
           entered();
-          if (delayed) await waiting;
+          if (delayed && native.length === 1) await waiting;
           return transport;
         },
       });
@@ -1060,21 +1240,87 @@ describe('MAIN registry with real MongoDB and mediasoup Router', () => {
         await created;
         if (!delayed)
           expect(mediaTransportCreateAckSchema.parse(await response)).toHaveProperty('data');
-        const result = await f.registry.revoke({
+        const event = {
           operationId: randomUUID(),
-          kind: 'AUTH_SESSION',
+          kind: 'AUTH_SESSION' as const,
           authSessionId: host.authSessionId,
           revision: 1,
-        });
+        };
+        const commitHeld = vi.fn(async () => 'committed' as const);
+        const persistence = {
+          prepareHeld: async () => ({ authSessionIds: [] }),
+          commitHeld,
+          reconcileHeld: async () => 'not_committed' as const,
+        };
+        if (shared)
+          f.accessRevocations.bindCleanupAdapters({
+            messaging: {
+              fence: () => ({ throughResourceGeneration: 0 }),
+              revoke: async ({ revocationId }) => ({ revocationId, status: 'completed' }),
+            },
+            live: f.registry,
+          });
+        const revoke = () =>
+          shared
+            ? f.accessRevocations.revoke({ event, userId: host.userId, persistence })
+            : f.registry.revoke(event);
+        if (shared) {
+          expect(await revoke()).toMatchObject({ permissionRevoked: false });
+          expect(commitHeld).not.toHaveBeenCalled();
+          if (!delayed) expect(native[0]!.closed).toBe(true);
+        }
+        const result = await revoke();
         expect(result).toMatchObject({
-          permissionRevoked: true,
-          pendingInvalidated: true,
+          permissionRevoked: !(shared && delayed),
+          pendingInvalidated: !(shared && delayed),
           cleanupPending: delayed,
         });
+        if (shared) {
+          const login = { ...host, authSessionId: id() };
+          const freshTicket = await f.registry.issue(login, f.target, { requestId: randomUUID() });
+          const freshSocket = f.binding(login);
+          const fresh = await f.registry.join(freshSocket, {
+            ticket: freshTicket.ticket,
+            requestId: randomUUID(),
+          });
+          expect(fresh.ack.data.result.callGeneration).toBeGreaterThan(
+            joined.ack.data.result.callGeneration,
+          );
+          const freshHandlers = new Map<
+            string,
+            (raw: unknown, ack?: (value: unknown) => void) => void
+          >();
+          transportService.attach({
+            id: freshSocket.socketId,
+            on: (name, listener) => freshHandlers.set(name, listener),
+            once: () => {},
+          });
+          const reply = await new Promise<unknown>((resolve) =>
+            freshHandlers.get('media.transport.create')!(
+              {
+                requestId: randomUUID(),
+                sessionId: freshTicket.sessionId,
+                epoch: freshTicket.epoch,
+                callGeneration: fresh.ack.data.result.callGeneration,
+                expectedPolicyRevision: fresh.parts[0]!.policyRevision,
+                payload: { direction: 'SEND' },
+              },
+              resolve,
+            ),
+          );
+          expect(mediaTransportCreateAckSchema.parse(reply)).toHaveProperty('data');
+          expect(native[1]!.closed).toBe(false);
+          expect(await revoke()).toEqual(result);
+        }
         release();
         if (delayed)
           expect(mediaTransportCreateAckSchema.parse(await response)).toHaveProperty('error');
         await vi.waitFor(() => expect(native[0]!.closed).toBe(true));
+        expect(await revoke()).toMatchObject({
+          permissionRevoked: true,
+          pendingInvalidated: true,
+          cleanupPending: false,
+        });
         expect(f.routers[0]!.closed).toBe(false);
         expect(
           await f.registry.withContext(
@@ -1083,7 +1329,20 @@ describe('MAIN registry with real MongoDB and mediasoup Router', () => {
             (result) => result.ok,
           ),
         ).toBe(true);
-        expect(f.registry.stats().ownerships).toBe(1);
+        expect(f.registry.stats().ownerships).toBe(shared ? 2 : 1);
+        if (shared) expect(native[1]!.closed).toBe(false);
+        if (!delayed) expect(mediaCleanup).toHaveBeenCalledTimes(1);
+        for (const [request] of mediaCleanup.mock.calls) {
+          expect(request).toEqual(mediaCleanup.mock.calls[0]![0]);
+          expect('callGeneration' in request && request.callGeneration).toBe(
+            joined.ack.data.result.callGeneration,
+          );
+        }
+        if (shared) {
+          expect(board).toHaveBeenCalledTimes(2);
+          expect(commitHeld).toHaveBeenCalledTimes(1);
+          expect(board.mock.calls[1]![0]).toEqual(board.mock.calls[0]![0]);
+        }
       } finally {
         release();
       }
