@@ -419,6 +419,7 @@ it('reconciles a write when commit succeeded but the application lost the acknow
       await original.apply(this, args);
       if (++commits === 2)
         throw new mongo.MongoWriteConcernError({
+          ok: 1,
           writeConcernError: { code: 64, errmsg: 'fixture lost ACK' },
         });
     });
