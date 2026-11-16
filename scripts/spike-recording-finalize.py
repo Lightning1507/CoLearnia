@@ -109,7 +109,10 @@ def rtp_pipeline(descriptor):
     return Gst.parse_launch(" ".join(parts))
 
 
-def record(output, pipeline, fixture=None):
+CANCEL_MESSAGE = "spike-recording-cancel"
+
+
+def record(output, pipeline, fixture=None, cancel_during_capture=False):
     counts = dict.fromkeys(SOURCES, 0)
 
     def count_buffer(_pad, _info, source):
@@ -138,11 +141,18 @@ def record(output, pipeline, fixture=None):
             raise RuntimeError(error.parse_error()[0].message if error else "Pipeline failed to reach PLAYING")
         started = time.monotonic()
         terminal_events = Gst.MessageType.ERROR | Gst.MessageType.EOS
-        early = bus.timed_pop_filtered((3 if fixture else 4) * Gst.SECOND, terminal_events)
+        capture_events = terminal_events
+        if cancel_during_capture:
+            capture_events |= Gst.MessageType.APPLICATION
+        early = bus.timed_pop_filtered((3 if fixture else 4) * Gst.SECOND, capture_events)
         if early is not None:
             if early.type == Gst.MessageType.ERROR:
                 raise RuntimeError(early.parse_error()[0].message)
+            if early.type == Gst.MessageType.APPLICATION and early.get_structure().get_name() == CANCEL_MESSAGE:
+                return {"cancelled": True}
             raise RuntimeError("Pipeline terminated before Stop")
+        if cancel_during_capture:
+            raise RuntimeError("Cancel trigger was not reached during capture")
         stop_position = pipeline.query_position(Gst.Format.TIME)
         stopped = time.monotonic()
         if not pipeline.send_event(Gst.Event.new_eos()):
