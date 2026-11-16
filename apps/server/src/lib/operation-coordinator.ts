@@ -53,7 +53,15 @@ function keys(scope: CoordinationScope): string[] {
   ];
 }
 
-export function createOperationCoordinator(options = defaultCoordinatorOptions) {
+export type GateTrace = (
+  event: 'waiting' | 'acquired' | 'released',
+  kind: 'user' | 'workspace',
+) => void;
+
+export function createOperationCoordinator(
+  options = defaultCoordinatorOptions,
+  observe?: GateTrace,
+) {
   for (const value of Object.values(options)) {
     if (!Number.isSafeInteger(value) || value < 1) throw new TypeError('Invalid coordinator limit');
   }
@@ -70,6 +78,14 @@ export function createOperationCoordinator(options = defaultCoordinatorOptions) 
     workspaceWaitMs: 0,
     workspaceHoldMs: 0,
   };
+
+  function trace(event: Parameters<GateTrace>[0], kind: Parameters<GateTrace>[1]) {
+    try {
+      observe?.(event, kind);
+    } catch {
+      // Diagnostics must not delay or interrupt gate release.
+    }
+  }
 
   function waitBudget(input: CoordinationInput): number {
     const timeout = input.waitTimeoutMs ?? limits.waitTimeoutMs;
@@ -258,8 +274,16 @@ export function createOperationCoordinator(options = defaultCoordinatorOptions) 
         },
       });
       try {
-        for (const key of requested)
-          releases.push(await acquire(key, signal, deadline, input.noWait));
+        for (const [index, key] of requested.entries()) {
+          const kind = scope.userId && index === 0 ? 'user' : 'workspace';
+          trace('waiting', kind);
+          const release = await acquire(key, signal, deadline, input.noWait);
+          releases.push(() => {
+            release();
+            trace('released', kind);
+          });
+          trace('acquired', kind);
+        }
         // Cancellation/deadline can happen after the final handoff and before this continuation.
         if (signal.aborted) throw new CoordinationError('ABORTED');
         if (performance.now() >= deadline) throw new CoordinationError('TIMEOUT');

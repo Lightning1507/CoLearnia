@@ -6,6 +6,10 @@ export type DatabaseOptions = {
   serverSelectionTimeoutMS: number;
   waitQueueTimeoutMS: number;
   socketTimeoutMS: number;
+  connectTimeoutMS?: number;
+  maxAdaptiveRetries?: number;
+  monitorCommands?: boolean;
+  deadlineTransactionAttempts?: 1 | 2;
 };
 
 export const defaultDatabaseOptions: Readonly<DatabaseOptions> = {
@@ -97,6 +101,7 @@ export function createDatabase(uri: string, options: DatabaseOptions = defaultDa
     limits.serverSelectionTimeoutMS,
     limits.waitQueueTimeoutMS,
     limits.socketTimeoutMS,
+    limits.connectTimeoutMS ?? 5000,
   ]) {
     if (!Number.isSafeInteger(value) || value <= 0) throw new Error('Invalid database limits');
   }
@@ -114,7 +119,13 @@ export function createDatabase(uri: string, options: DatabaseOptions = defaultDa
     connection,
     async connect() {
       await connection.openUri(uri, {
-        connectTimeoutMS: 5000,
+        connectTimeoutMS: limits.connectTimeoutMS ?? 5000,
+        ...(limits.maxAdaptiveRetries === undefined
+          ? {}
+          : { maxAdaptiveRetries: limits.maxAdaptiveRetries }),
+        ...(limits.monitorCommands === undefined
+          ? {}
+          : { monitorCommands: limits.monitorCommands }),
         maxPoolSize: limits.maxPoolSize,
         minPoolSize: 0,
         serverSelectionTimeoutMS: limits.serverSelectionTimeoutMS,
@@ -174,7 +185,10 @@ export function createDatabase(uri: string, options: DatabaseOptions = defaultDa
               return result;
             } catch (error) {
               if (
-                attempt >= maxTransactionAttempts ||
+                attempt >=
+                  (remaining
+                    ? (limits.deadlineTransactionAttempts ?? maxTransactionAttempts)
+                    : maxTransactionAttempts) ||
                 hasLabel(error, 'UnknownTransactionCommitResult') ||
                 !hasLabel(error, 'TransientTransactionError')
               ) {

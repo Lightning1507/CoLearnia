@@ -1,3 +1,4 @@
+import { setTimeout as delay } from 'node:timers/promises';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
 import { mongo } from 'mongoose';
@@ -9,10 +10,11 @@ import { createApp } from '../src/app.js';
 import { csrfCookie } from '../src/auth/csrf.js';
 import { createHttpAuth } from '../src/auth/http-auth.js';
 import { authModels } from '../src/auth/models.js';
+import { createSessionRevocation } from '../src/auth/session-revocation.js';
 import { createSessionReader } from '../src/auth/read-session.js';
 import { authCookie, hashAuthToken } from '../src/auth/session-credentials.js';
 import { loadConfig } from '../src/config/env.js';
-import { createDatabase } from '../src/lib/database.js';
+import { createProfiledDatabase, scrum42Trial } from './scrum42-db-profile.js';
 import { createOperationCoordinator } from '../src/lib/operation-coordinator.js';
 import { conversationModel } from '../src/messaging/conversation.js';
 import { textMessageModel } from '../src/messaging/text-message.js';
@@ -26,14 +28,22 @@ import { workspaceModels } from '../src/workspaces/workspace-models.js';
 import { testReplicaUri } from './replica-uri.js';
 
 const name = 'colearnia_test_scrum42_' + randomUUID().replaceAll('-', '');
-const database = createDatabase(testReplicaUri(name));
+const database = createProfiledDatabase(testReplicaUri(name), 2);
 const { User, AuthSession } = authModels(database.connection);
 const { Workspace, Membership } = workspaceModels(database.connection);
 const { Channel, ChannelAccessGrant } = channelModels(database.connection);
 const Conversation = conversationModel(database.connection);
 const Message = textMessageModel(database.connection);
-const coordinator = createOperationCoordinator();
-const { barrier } = createAccessRevocationCoordinator({ coordinator });
+const trace: { event: string; ms: number }[] = [];
+let tracing = false;
+function mark(event: string) {
+  if (tracing) trace.push({ event, ms: Math.round(performance.now() * 10) / 10 });
+}
+const coordinator = createOperationCoordinator(undefined, (event, kind) =>
+  mark(kind + ':' + event),
+);
+const revocation = createAccessRevocationCoordinator({ coordinator });
+const { barrier } = revocation;
 const handler = {
   processInFlight: 4,
   processQueued: 0,
@@ -82,6 +92,15 @@ beforeAll(async () => {
   await database.connect();
   expect(database.connection.name).toBe(name);
   ownsDatabase = true;
+  if (scrum42Trial) {
+    const client = database.connection.getClient();
+    client.on('commandStarted', (event) => mark('start:' + event.commandName));
+    client.on('commandSucceeded', (event) => mark('ok:' + event.commandName));
+    client.on('commandFailed', (event) => mark('fail:' + event.commandName));
+    client.on('connectionCheckOutStarted', () => mark('checkout:start'));
+    client.on('connectionCheckedOut', () => mark('checkout:ok'));
+    client.on('connectionCheckOutFailed', () => mark('checkout:failed'));
+  }
   for (const model of [
     User,
     AuthSession,
@@ -283,7 +302,7 @@ it('reserves history page bytes before queueing another read and frees them afte
   expect((await bounded.history(identity(member), channel.id, { limit: 2 })).items).toHaveLength(2);
 });
 
-it.runIf(process.env.COLEARNIA_TEST_DB_FAILPOINTS === '1')(
+it.runIf(!scrum42Trial && process.env.COLEARNIA_TEST_DB_FAILPOINTS === '1')(
   'releases the Workspace gate after a slow Mongo ACL read within the request budget',
   async () => {
     const { owner, workspace, channel } = await textChannel();
@@ -323,7 +342,7 @@ it.runIf(process.env.COLEARNIA_TEST_DB_FAILPOINTS === '1')(
   },
 );
 
-it.runIf(process.env.COLEARNIA_TEST_DB_FAILPOINTS === '1')(
+it.runIf(!scrum42Trial && process.env.COLEARNIA_TEST_DB_FAILPOINTS === '1')(
   'characterizes the deadline overrun and preserves the gate, slot and message retry',
   async () => {
     const { owner, workspace, channel, conversation } = await textChannel();
@@ -436,3 +455,247 @@ it('reconciles a write when commit succeeded but the application lost the acknow
   expect(replay).toMatchObject({ outcome: 'existing', message: { commitSeq: 1 } });
   expect(await Message.countDocuments({ conversationId: conversation._id })).toBe(1);
 });
+
+const trialWithFaults = scrum42Trial && process.env.COLEARNIA_TEST_DB_FAILPOINTS === '1';
+const trialService = createTextService(
+  database,
+  coordinator,
+  access,
+  () => true,
+  secret,
+  {
+    ...budget,
+    handlers: { text: { ...handler, executionMs: 650, processInFlight: 1 } },
+  },
+  mark,
+);
+
+function beginTrace() {
+  trace.length = 0;
+  tracing = true;
+  const t0 = performance.now();
+  return (label: string) => {
+    tracing = false;
+    console.info(
+      'SCRUM42_TRACE %s %s',
+      label,
+      JSON.stringify(trace.map(({ event, ms }) => [event, Math.round((ms - t0) * 10) / 10])),
+    );
+  };
+}
+
+it.runIf(trialWithFaults)(
+  'measures commit and cleanup with the shared trial pool',
+  async () => {
+    const { owner, workspace, channel, conversation } = await textChannel();
+    const admin = database.connection.db!.admin();
+    const originalEnd = mongo.ClientSession.prototype.endSession;
+    const sessionSpy = vi
+      .spyOn(mongo.ClientSession.prototype, 'endSession')
+      .mockImplementation(async function (this: mongo.ClientSession, ...args) {
+        mark('endSession:start');
+        try {
+          await originalEnd.apply(this, args);
+        } finally {
+          mark('endSession:done');
+        }
+      });
+    try {
+      for (const phase of ['commitTransaction', 'abortTransaction'] as const) {
+        const payload = { clientMessageId: randomUUID(), text: phase };
+        const insert =
+          phase === 'abortTransaction'
+            ? vi
+                .spyOn(Message.collection, 'insertOne')
+                .mockRejectedValueOnce(new Error('fixture insert failure'))
+            : undefined;
+        await admin.command({
+          configureFailPoint: 'failCommand',
+          mode: phase === 'commitTransaction' ? { skip: 1 } : { times: 1 },
+          data: { failCommands: [phase], blockConnection: true, blockTimeMS: 2000 },
+        });
+        const finishTrace = beginTrace();
+        try {
+          await expect(trialService.send(identity(owner), channel.id, payload)).rejects.toThrow();
+        } finally {
+          finishTrace(phase);
+          insert?.mockRestore();
+          // A local socket timeout can happen while the synthetic server delay is
+          // still active. Let the fault drain before touching the test harness.
+          await delay(2100);
+          await admin.command({ configureFailPoint: 'failCommand', mode: 'off' });
+        }
+        const commandCount = trace.filter(({ event }) => event === 'start:' + phase).length;
+        expect(commandCount).toBeGreaterThanOrEqual(phase === 'commitTransaction' ? 2 : 1);
+        await coordinator.run({ workspaceId: workspace.id }, () => undefined, { noWait: true });
+        expect(coordinator.stats().operations).toBe(0);
+        expect(trace.at(-1)?.event).toBe('slot-released');
+        const key = { conversationId: conversation._id, clientMessageId: payload.clientMessageId };
+        const retryAt = performance.now();
+        let transientFailures = 0;
+        let reply: Awaited<ReturnType<typeof trialService.send>> | undefined;
+        for (let attempt = 0; attempt < 16; attempt++) {
+          try {
+            reply = await trialService.send(identity(owner), channel.id, payload);
+            break;
+          } catch (error) {
+            if (textErrorCode(error) !== 'DEPENDENCY_UNAVAILABLE') throw error;
+            transientFailures++;
+            await delay(750);
+          }
+        }
+        console.info(
+          'SCRUM42_RETRY %s failures=%d settled=%dms outcome=%s',
+          phase,
+          transientFailures,
+          Math.round(performance.now() - retryAt),
+          reply?.outcome,
+        );
+        expect(reply).toBeDefined();
+        expect(await trialService.send(identity(owner), channel.id, payload)).toEqual({
+          outcome: 'existing',
+          message: reply?.message,
+        });
+        expect(await Message.countDocuments(key)).toBe(1);
+      }
+      expect(await Message.countDocuments({ conversationId: conversation._id })).toBe(2);
+      expect((await Conversation.findById(conversation._id).orFail()).lastMessageCommitSeq).toBe(2);
+    } finally {
+      sessionSpy.mockRestore();
+    }
+  },
+  45_000,
+);
+
+it.runIf(trialWithFaults)('measures pool saturation without holding a Workspace gate', async () => {
+  const { owner, channel } = await textChannel();
+  const admin = database.connection.db!.admin();
+  await admin.command({
+    configureFailPoint: 'failCommand',
+    mode: { times: 2 },
+    data: { failCommands: ['find'], blockConnection: true, blockTimeMS: 1000 },
+  });
+  const finishTrace = beginTrace();
+  const fillers = Promise.allSettled([User.findOne().exec(), User.findOne().exec()]);
+  try {
+    await vi.waitFor(
+      () => expect(trace.filter(({ event }) => event === 'start:find')).toHaveLength(2),
+      { interval: 5 },
+    );
+    const failure = await trialService
+      .send(identity(owner), channel.id, {
+        clientMessageId: randomUUID(),
+        text: 'pool fixture',
+      })
+      .catch((error: unknown) => error);
+    expect(textErrorCode(failure)).toBe('DEPENDENCY_UNAVAILABLE');
+    expect(trace.some(({ event }) => event === 'checkout:failed')).toBe(true);
+    expect(trace.some(({ event }) => event === 'workspace:acquired')).toBe(false);
+    expect(trace.at(-1)?.event).toBe('slot-released');
+  } finally {
+    finishTrace('checkout');
+    await fillers;
+    await delay(1100);
+    await admin.command({ configureFailPoint: 'failCommand', mode: 'off' });
+  }
+  expect(
+    await trialService.send(identity(owner), channel.id, {
+      clientMessageId: randomUUID(),
+      text: 'pool recovered',
+    }),
+  ).toMatchObject({ outcome: 'created' });
+});
+
+it.runIf(scrum42Trial)(
+  'measures real session deny behind FIFO work while requests continue arriving',
+  async () => {
+    const { owner, workspace, channel } = await textChannel();
+    const actor = identity(owner);
+    const revoke = createSessionRevocation(
+      database,
+      () => true,
+      revocation,
+      () => undefined,
+    );
+    const scope = { userId: owner.user.id, workspaceId: workspace.id };
+    const order: string[] = [];
+    const finishTrace = beginTrace();
+    let unblock!: () => void;
+    let entered!: () => void;
+    const entry = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const blocker = coordinator.run(scope, async () => {
+      entered();
+      await new Promise<void>((resolve) => {
+        unblock = resolve;
+      });
+    });
+    await entry;
+    const queued = [1, 2, 3].map((i) =>
+      coordinator.run(scope, async () => {
+        await User.exists({ _id: owner.user._id });
+        await delay(60);
+        order.push('before-' + i);
+      }),
+    );
+    const allQueued = Promise.allSettled(queued);
+    let request: Promise<unknown> | undefined;
+    let arrivalsSettled: Promise<unknown> | undefined;
+    try {
+      await vi.waitFor(() => expect(coordinator.stats().pending).toBe(3), { interval: 5 });
+      const requestedAt = performance.now();
+      mark('revoke:requested');
+      request = revoke.revoke(actor).catch((error: unknown) => error);
+      await vi.waitFor(() => expect(coordinator.stats().pending).toBe(4), { interval: 5 });
+      const queuedService = createTextService(
+        database,
+        coordinator,
+        access,
+        () => true,
+        secret,
+        {
+          ...budget,
+          process: { ...budget.process, queued: 3 },
+          handlers: { text: { ...handler, processQueued: 3, perUserInFlight: 3 } },
+        },
+        mark,
+      );
+      const allArrivals = Promise.allSettled(
+        [1, 2, 3].map((i) =>
+          delay(20 * i).then(async () => {
+            await expect(
+              queuedService.send(actor, channel.id, {
+                clientMessageId: randomUUID(),
+                text: 'arriving during revoke',
+              }),
+            ).rejects.toMatchObject({ code: 'AUTH_REQUIRED' });
+            order.push('after-' + i);
+          }),
+        ),
+      );
+      arrivalsSettled = allArrivals;
+      unblock();
+      await vi.waitFor(() => expect(revocation.isSessionDenied(actor)).toBe(true), { interval: 5 });
+      mark('revoke:deny-observed');
+      console.info('SCRUM42_DENY after %d ms', Math.round(performance.now() - requestedAt));
+      expect((await allArrivals).map(({ status }) => status)).toEqual([
+        'fulfilled',
+        'fulfilled',
+        'fulfilled',
+      ]);
+      expect(order).toEqual(['before-1', 'before-2', 'before-3', 'after-1', 'after-2', 'after-3']);
+      await expect(
+        trialService.send(actor, channel.id, { clientMessageId: randomUUID(), text: 'denied' }),
+      ).rejects.toMatchObject({ code: 'AUTH_REQUIRED' });
+    } finally {
+      unblock();
+      await blocker;
+      await allQueued;
+      await request;
+      await arrivalsSettled;
+      finishTrace('revoke-fifo');
+    }
+    expect(coordinator.stats().operations).toBe(0);
+  },
+);

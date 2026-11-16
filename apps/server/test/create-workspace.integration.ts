@@ -15,7 +15,7 @@ import { createHttpAuth } from '../src/auth/http-auth.js';
 import { createSessionReader } from '../src/auth/read-session.js';
 import { authCookie, hashAuthToken } from '../src/auth/session-credentials.js';
 import { csrfCookie } from '../src/auth/csrf.js';
-import { createDatabase } from '../src/lib/database.js';
+import { createProfiledDatabase } from './scrum42-db-profile.js';
 import { createOperationCoordinator } from '../src/lib/operation-coordinator.js';
 import {
   conversationModel,
@@ -37,7 +37,7 @@ import { createWorkspaceAccessService } from '../src/workspaces/access-service.j
 import { testReplicaUri } from './replica-uri.js';
 
 const databaseName = `colearnia_test_scrum32_${randomUUID().replaceAll('-', '')}`;
-const database = createDatabase(testReplicaUri(databaseName));
+const database = createProfiledDatabase(testReplicaUri(databaseName));
 const { User, AuthSession } = authModels(database.connection);
 const { Workspace, Membership } = workspaceModels(database.connection);
 const { Channel } = channelModels(database.connection);

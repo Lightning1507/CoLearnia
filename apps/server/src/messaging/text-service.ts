@@ -53,6 +53,7 @@ export function createTextService(
   indexesReady: () => boolean,
   secret: string,
   budget: MessagingBudget | undefined,
+  observe?: (event: 'slot-acquired' | 'lookup-done' | 'slot-released') => void,
 ) {
   const { Channel } = channelModels(database.connection);
   const Conversation = conversationModel(database.connection);
@@ -153,10 +154,12 @@ export function createTextService(
       return Math.min(ms, budget.database.queryTimeoutMs);
     };
     try {
+      observe?.('slot-acquired');
       const channel = await Channel.findOne({ _id: channelId, deletedAt: null })
         .select('workspaceId')
         .setOptions(databaseQueryOptions(remaining))
         .lean();
+      observe?.('lookup-done');
       if (!channel) throw new TextError('NOT_FOUND');
       const workspaceId = channel.workspaceId.toHexString();
       const others = [...active].filter((item) => item !== slot && item.handler === handler);
@@ -207,6 +210,7 @@ export function createTextService(
     } finally {
       waiting.delete(slot);
       active.delete(slot);
+      observe?.('slot-released');
     }
   }
 
