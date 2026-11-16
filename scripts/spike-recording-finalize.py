@@ -134,10 +134,14 @@ def record(output, pipeline, fixture=None):
             fixture.stdin.flush()
         _, state, _ = pipeline.get_state(5 * Gst.SECOND)
         if state != Gst.State.PLAYING:
-            raise RuntimeError("Pipeline failed to reach PLAYING")
+            error = bus.pop_filtered(Gst.MessageType.ERROR)
+            raise RuntimeError(error.parse_error()[0].message if error else "Pipeline failed to reach PLAYING")
         started = time.monotonic()
         terminal_events = Gst.MessageType.ERROR | Gst.MessageType.EOS
-        if bus.timed_pop_filtered((3 if fixture else 4) * Gst.SECOND, terminal_events) is not None:
+        early = bus.timed_pop_filtered((3 if fixture else 4) * Gst.SECOND, terminal_events)
+        if early is not None:
+            if early.type == Gst.MessageType.ERROR:
+                raise RuntimeError(early.parse_error()[0].message)
             raise RuntimeError("Pipeline terminated before Stop")
         stop_position = pipeline.query_position(Gst.Format.TIME)
         stopped = time.monotonic()
@@ -169,8 +173,10 @@ def inspect(output, stop_position, rtp=False):
     ))
     duration = float(metadata["format"]["duration"])
     codecs = {stream["codec_type"]: stream["codec_name"] for stream in metadata["streams"]}
-    if codecs != {"video": "vp8", "audio": "opus"} or abs(duration - stop_position) > 0.25:
-        raise RuntimeError(f"Unexpected codecs or missing tail near Stop: {codecs}, {duration}")
+    if codecs != {"video": "vp8", "audio": "opus"}:
+        raise RuntimeError(f"Unexpected codecs: {codecs}")
+    if abs(duration - stop_position) > 0.25:
+        raise RuntimeError(f"Duration {duration:.3f}s differs from Stop position {stop_position:.3f}s")
 
     decoded = {}
     warnings = []
