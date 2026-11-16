@@ -101,6 +101,7 @@ const workspaceRouter = httpAuth
         operationCoordinator,
         () => canUseAuthIndexes() && workspaceIndexesReady,
         accessRevocations.barrier,
+        config.SESSION_SECRET,
       ),
       createChannelCreator({
         database,

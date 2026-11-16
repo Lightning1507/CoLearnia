@@ -84,6 +84,36 @@ export const channelSummarySchema = z.strictObject({
   accessMode: channelAccessSchema,
   revision: accessRevisionSchema,
 });
+const channelCursorSchema = z
+  .string()
+  .min(1)
+  .max(1024)
+  .regex(/^[A-Za-z0-9_.-]+$/);
+export const channelListQuerySchema = z.strictObject({
+  after: channelCursorSchema.optional(),
+  limit: z
+    .string()
+    .regex(/^(?:[1-9]|[1-4][0-9]|50)$/)
+    .transform(Number)
+    .default(20),
+});
+export const managedChannelSchema = channelSummarySchema.extend({ canReadContent: z.boolean() });
+export const channelListResponseSchema = apiResponseSchema(
+  z.strictObject({
+    items: z.array(channelSummarySchema).max(50),
+    nextCursor: channelCursorSchema.nullable(),
+  }),
+);
+export const managedChannelListResponseSchema = apiResponseSchema(
+  z.strictObject({
+    items: z.array(managedChannelSchema).max(50),
+    nextCursor: channelCursorSchema.nullable(),
+  }),
+);
+export type ChannelListQuery = z.infer<typeof channelListQuerySchema>;
+export type ChannelListPage = z.infer<typeof channelListResponseSchema>['data'];
+export type ManagedChannelListPage = z.infer<typeof managedChannelListResponseSchema>['data'];
+
 export const workspaceResponseSchema = apiResponseSchema(workspaceSummarySchema);
 export const channelResponseSchema = apiResponseSchema(channelSummarySchema);
 export const workspaceMutationResponseSchema = apiResponseSchema(z.null());

@@ -48,7 +48,7 @@ Nguồn: [proposal M1](../proposals/m1-workspace-auth.md), [quyền Workspace/k�
 
 Service kiểm CAS trong lần ghi và tăng đúng bộ đếm theo lifecycle; revision cũ trả CONFLICT. Ví dụ kênh revision=3, membership revision=8: gỡ PRIVATE gửi expectedRevision=3; loại thành viên gửi 8. Không tráo hai số dù cùng là số nguyên. Tạo Workspace/kênh mới chưa có revision để đối chiếu. DTO roster và endpoint quản lý thành viên cần cung cấp revision của membership trước khi consumer thực hiện mutation; Workspace/Channel DTO không thay dữ liệu này.
 
-Workspace DTO chỉ có id/name/ownerId/revision. Channel DTO chỉ có id/workspaceId/name/type/accessMode/revision. Không trả document DB nguyên bản. GET list, pagination, invitation và roster DTO chưa được định nghĩa trong lượt này; endpoint owner chốt cùng task implementation, không dùng các DTO trên làm toàn bộ contract danh sách.
+Workspace DTO chỉ có id/name/ownerId/revision. Channel DTO chỉ có id/workspaceId/name/type/accessMode/revision. Không trả document DB nguyên bản. Schema list Workspace và kênh được bổ sung trong SCRUM-34/36. Invitation và roster DTO chưa được định nghĩa trong lượt này; endpoint owner chốt cùng task implementation, không dùng các DTO trên làm toàn bộ contract danh sách.
 
 Ví dụ tạo kênh hợp lệ (requestId minh họa):
 
@@ -174,3 +174,24 @@ lỗi. Chưa thay provider DM hoặc policy runtime phiên/nhóm, chưa là deny
 POST `/workspaces/:workspaceId/channels` đã nối service và form trong Workspace thật. OWNER/ADMIN hiện hành mới được tạo, MEMBER trả FORBIDDEN; Workspace ngoài quyền/đã xóa trả NOT_FOUND. TEXT tạo cùng conversation M2 và audit trong transaction chung; LIVE không gọi factory TEXT. PRIVATE chưa cấp grant cho ai, kể cả người tạo; quản lý danh sách PRIVATE thuộc T13.
 
 Body tạo kênh bổ sung `replayOnly: true` tùy chọn. Khóa actor + Workspace + CHANNEL_CREATE + requestId (chữ thường) giữ trong process 10 phút sau xác nhận, tối đa 10.000 entry; cùng khóa khác name/type/accessMode trả CONFLICT. Replay kiểm quyền hiện hành, không phục hồi kênh đã xóa. Commit chưa rõ giữ IDs để reconcile, không evict theo TTL. Khi replayOnly không còn entry, trả CHANNEL_REPLAY_UNAVAILABLE (410), không tạo kênh mới. Response vẫn HTTP 201 với Channel DTO hiện hành. Không bảo đảm dedupe xuyên restart/quá TTL; xem [runbook tạo kênh](../runbooks/channel-creation.md).
+
+## SCRUM-36 — danh sách nội dung và quản trị kênh
+
+Hai GET dưới Workspace dùng cookie phiên, `Cache-Control: no-store` và envelope `{ data: { items, nextCursor }, requestId }`.
+
+| Endpoint                                   | Điều kiện                                      | Item                              |
+| ------------------------------------------ | ---------------------------------------------- | --------------------------------- |
+| `/workspaces/:workspaceId/channels`        | Membership ACTIVE, policy và barrier hiện hành | Channel DTO cho kênh có quyền đọc |
+| `/workspaces/:workspaceId/channels/manage` | OWNER/ADMIN hiện hành                          | Channel DTO và `canReadContent`   |
+
+OWNER/ADMIN chưa có grant PRIVATE chỉ thấy metadata trong danh sách quản trị. DTO quản trị chỉ có ID, Workspace ID, tên, type, accessMode, revision và cờ quyền đọc. M2/M4 tiếp tục xác thực tại API nội dung hoặc join. Các list không trả conversation, tin nhắn, file hay participant.
+
+Query strict `limit` từ 1–50, mặc định 20; `after` lấy từ `nextCursor` của trang trước. Thứ tự tăng dần theo `(order, _id)`, dùng index `ix_channel_workspace`. Một trang duyệt tối đa `limit` ứng viên và lấy thêm một bản ghi để xác định còn trang. Lọc quyền có thể tạo trang rỗng nhưng còn cursor; client tiếp tục tải tới khi cursor null. Dữ liệu thêm/xóa giữa các request được đọc theo trạng thái hiện tại, không giữ snapshot xuyên các trang.
+
+Cursor dùng AES-256-GCM với khóa dẫn xuất từ SESSION_SECRET để bảo vệ cả vị trí của ứng viên bị lọc. Cursor gắn Workspace, người dùng, membership/incarnation và loại danh sách. Cursor sai, bị sửa, dùng chéo phạm vi hoặc sau rejoin trả 400 VALIDATION_ERROR; client tải lại từ trang đầu. Đổi SESSION_SECRET làm cursor cũ mất hiệu lực.
+
+Thiếu/hết/thu phiên trả 401; ngoài Workspace hoặc Workspace đã xóa trả 404; MEMBER gọi quản trị trả 403; thiếu DB/index hoặc hết chỗ điều phối trả 503. Không thêm index, collection hay biến môi trường. Khóa User → Workspace, cùng transaction reader và policy SCRUM-27; đọc grant theo lô và kiểm barrier sau transaction trước khi trả DTO.
+
+Web dùng WorkspaceShell, hai cache riêng theo người dùng/Workspace/đời phiên/loại list và nút tải thêm. Refresh lỗi rút projection cũ; đổi Workspace/unmount hủy request và dọn cache. CSRF refresh trong cùng phiên không thay đời cache. Kênh mới làm invalidation cả hai list; PRIVATE chưa có grant chỉ có trong quản trị. Khi chọn kênh, hiện tên/type/accessMode theo danh sách nội dung. Panel chat/LIVE thật còn cần consumer M2/M3/M4; đường `/workspace` fixture vẫn phục vụ kiểm shell riêng. Quản lý grant, đổi tên và xóa kênh theo các task tương ứng.
+
+Bằng chứng và lệnh kiểm tại [SCRUM-36](../test-evidence/2026-11-15-scrum-36-channel-lists.md).

@@ -7,7 +7,7 @@ import type { AuthenticatedData } from '@colearnia/contracts';
 import { authApi, sessionKey } from '../auth/session';
 import { WorkspaceApiError, workspaceApi } from './workspace-api';
 import './workspace-picker.css';
-import { CreateChannelForm } from '../channels/CreateChannelForm';
+import { ChannelWorkspace } from '../channels/ChannelWorkspace';
 
 const roles = { OWNER: 'Chủ Workspace', ADMIN: 'Quản trị viên', MEMBER: 'Thành viên' };
 const listKey = (userId: string) => ['workspaces', userId, 'list'] as const;
@@ -306,9 +306,16 @@ export function WorkspacePicker({
   );
 }
 
-export function WorkspaceOpen({ userId, account }: { userId: string; account: ReactNode }) {
+export function WorkspaceOpen({
+  userId,
+  expiresAt,
+  account,
+}: {
+  userId: string;
+  expiresAt: string;
+  account: ReactNode;
+}) {
   const { workspaceId = '' } = useParams();
-  const [accessIssue, setAccessIssue] = useState<{ workspaceId: string; message: string }>();
   const client = useQueryClient();
   const result = useQuery({
     queryKey: ['workspaces', userId, 'open', workspaceId],
@@ -349,28 +356,15 @@ export function WorkspaceOpen({ userId, account }: { userId: string; account: Re
     );
   }
   return (
-    <main className="workspace-picker">
-      <header className="workspace-picker-header">
-        <Link to="/workspaces">Workspace của bạn</Link>
-        {account}
-      </header>
-      <section className="workspace-picker-content">
-        <h1>{result.data.name}</h1>
-        <p>{roles[result.data.role]}</p>
-        {accessIssue?.workspaceId === workspaceId && <p role="alert">{accessIssue.message}</p>}
-        {(result.data.role === 'OWNER' || result.data.role === 'ADMIN') && (
-          <CreateChannelForm
-            key={`${userId}:${workspaceId}`}
-            workspaceId={workspaceId}
-            userId={userId}
-            onAccessLost={(message) => {
-              setAccessIssue({ workspaceId, message });
-              client.removeQueries({ queryKey: ['channels', userId, workspaceId] });
-              void result.refetch();
-            }}
-          />
-        )}
-      </section>
-    </main>
+    <ChannelWorkspace
+      key={`${userId}:${expiresAt}:${workspaceId}`}
+      workspace={result.data}
+      userId={userId}
+      expiresAt={expiresAt}
+      account={account}
+      onAccessLost={() => {
+        void result.refetch();
+      }}
+    />
   );
 }

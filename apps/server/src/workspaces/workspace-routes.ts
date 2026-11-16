@@ -1,5 +1,8 @@
 import { Router } from 'express';
 import {
+  channelListQuerySchema,
+  channelListResponseSchema,
+  managedChannelListResponseSchema,
   createWorkspaceSchema,
   workspaceResponseSchema,
   workspaceParamsSchema,
@@ -39,7 +42,10 @@ export function createWorkspaceRouter(
   access?: Pick<
     ReturnType<typeof createWorkspaceAccessService>,
     'listWorkspaces' | 'openWorkspace'
-  >,
+  > &
+    Partial<
+      Pick<ReturnType<typeof createWorkspaceAccessService>, 'listChannels' | 'listManagedChannels'>
+    >,
   createChannel?: ReturnType<typeof createChannelCreator>,
 ) {
   const router = Router();
@@ -48,6 +54,40 @@ export function createWorkspaceRouter(
     next();
   });
   if (createChannel) installChannelCreationRoute(router, auth, createChannel);
+  for (const mode of ['content', 'manage'] as const) {
+    const list = mode === 'content' ? access?.listChannels : access?.listManagedChannels;
+    if (!list) continue;
+    const path = mode === 'content' ? '/:workspaceId/channels' : '/:workspaceId/channels/manage';
+    router.get(path, auth.requireAuth, async (req, res, next) => {
+      const verified = requireVerifiedSession(res);
+      if (!verified) return;
+      const params = workspaceParamsSchema.safeParse(req.params);
+      if (!params.success) return authFailure(res, 'NOT_FOUND', 'Không tìm thấy Workspace.');
+      const query = channelListQuerySchema.safeParse(req.query);
+      if (!query.success)
+        return authFailure(res, 'VALIDATION_ERROR', 'Tham số danh sách không hợp lệ.');
+      try {
+        const data = await list(verified.context, params.data.workspaceId, query.data);
+        const schema =
+          mode === 'content' ? channelListResponseSchema : managedChannelListResponseSchema;
+        res.json(schema.parse({ data, requestId: res.locals.requestId }));
+      } catch (error) {
+        if (error instanceof WorkspaceAccessError && error.code === 'FORBIDDEN')
+          return authFailure(
+            res,
+            'FORBIDDEN',
+            'Chỉ chủ Workspace hoặc quản trị viên được xem danh sách quản trị.',
+          );
+        if (error instanceof WorkspaceAccessError && error.code === 'VALIDATION_ERROR')
+          return authFailure(
+            res,
+            'VALIDATION_ERROR',
+            'Vị trí trang không hợp lệ. Hãy tải lại danh sách.',
+          );
+        handleReadError(error, res, next);
+      }
+    });
+  }
   if (access) {
     router.get('/', auth.requireAuth, async (req, res, next) => {
       const verified = requireVerifiedSession(res);
