@@ -525,9 +525,9 @@ function beginTrace() {
 
 type MongoErrorEvidence = {
   name: string;
-  code?: string | number;
-  labels?: string[];
-  cause?: MongoErrorEvidence;
+  code?: string | number | undefined;
+  labels?: string[] | undefined;
+  cause?: MongoErrorEvidence | undefined;
 };
 
 function mongoErrorEvidence(error: unknown): MongoErrorEvidence {
