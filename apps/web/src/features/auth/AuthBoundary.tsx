@@ -27,6 +27,7 @@ export function AuthBoundary() {
     await client.cancelQueries({ queryKey: sessionKey, exact: true });
     client.setQueryData(sessionKey, null);
     client.removeQueries({ queryKey: ['workspaces'] });
+    client.removeQueries({ queryKey: ['channels'] });
   }, [client]);
 
   useEffect(() => {
@@ -63,6 +64,7 @@ export function AuthBoundary() {
         const current = await authApi.me(new AbortController().signal);
         if (current) {
           client.removeQueries({ queryKey: ['workspaces'] });
+          client.removeQueries({ queryKey: ['channels'] });
           client.setQueryData(sessionKey, current);
           setLogoutError('active');
         } else setLogoutError('denied');
@@ -132,7 +134,14 @@ export function AuthBoundary() {
     if (pathname === '/workspaces')
       return <WorkspacePicker key={data.user.id} session={data} account={account} />;
     if (pathname.startsWith('/workspaces/'))
-      return <WorkspaceOpen key={data.user.id} userId={data.user.id} account={account} />;
+      return (
+        <WorkspaceOpen
+          key={`${data.user.id}:${data.expiresAt}`}
+          userId={data.user.id}
+          expiresAt={data.expiresAt}
+          account={account}
+        />
+      );
     return <Navigate to="/workspaces" replace />;
   }
   if (pathname !== '/login' && pathname !== '/register') return <Navigate to="/login" replace />;

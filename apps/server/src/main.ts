@@ -95,6 +95,7 @@ const workspaceAccess = createWorkspaceAccessService(
   operationCoordinator,
   () => canUseAuthIndexes() && workspaceIndexesReady,
   accessRevocations.barrier,
+  config.SESSION_SECRET,
 );
 const textService = config.SESSION_SECRET
   ? createTextService(
