@@ -80,3 +80,11 @@ Phạm vi SCRUM-42 là tin gốc và lịch sử thường. Feed realtime, subsc
 Budget của history giữ chỗ theo số dòng yêu cầu, gồm một dòng đọc thêm để xác định trang kế. Ước lượng bao gồm BSON, DTO và JSON, nên một trang lớn có thể trả `SERVER_BUSY` nếu không đủ byte. Giảm `limit` hoặc cân lại `handlers.history.processBytes` và `process.bytes` khi review cấu hình. Budget test dùng trang mặc định 30 dòng.
 
 Các truy vấn TEXT dùng phần thời gian còn lại và tín hiệu hủy của driver. Transaction chừa trước thời gian cho commit và kiểm đủ phần đó trước khi gửi commit. Driver hiện dùng giới hạn mạng chung cho commit và cleanup, nên mất kết nối vẫn có thể kéo dài hơn deadline dự kiến. Khi kết quả commit chưa rõ, giữ nguyên mã gửi và nội dung khi retry.
+
+#### Kiểm commit và cleanup chậm của SCRUM-42
+
+Trên MongoDB 8.0.16 replica set test riêng, bật `enableTestCommands=1`, đặt `COLEARNIA_TEST_DB_FAILPOINTS=1` rồi chạy `pnpm exec vitest run --reporter=verbose --config vitest.database.config.ts apps/server/test/text-transport.integration.ts`. Không bật failpoint trên DB dùng chung.
+
+Với `executionMs=650`, hai ca giữ lệnh commit hoặc abort 2.000 ms xác nhận khóa Workspace và slot vẫn bận tại mốc 900 ms. Đây là phép đo giới hạn hiện tại, chưa đạt điều kiện nghiệm thu deadline. Sau khi thao tác kết thúc, khóa và slot được trả, retry cùng `clientMessageId` chỉ có một tin. Ca riêng mô phỏng mất ACK sau khi MongoDB đã commit kiểm rằng retry trả `existing` với cùng sequence.
+
+M1 và M2 cần chốt hỗ trợ timeout mạng cho commit và abort/endSession, hoặc thống nhất budget riêng cho giai đoạn xác minh commit và thu hồi quyền. Driver MongoDB 7.8.0 ghi `timeoutMS` của commit/abort/withTransaction không có hiệu lực. Số đo trên chưa cho phép coi tổng thời gian giữ khóa là 650 ms. Giữ khóa và slot đến khi lệnh kết thúc để thao tác cũ không vượt qua bước thu quyền.

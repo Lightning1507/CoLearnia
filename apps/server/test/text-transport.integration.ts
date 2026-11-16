@@ -1,5 +1,6 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
+import { mongo } from 'mongoose';
 import { io as connect } from 'socket.io-client';
 import { afterAll, beforeAll, expect, it, vi } from 'vitest';
 import request from 'supertest';
@@ -321,3 +322,116 @@ it.runIf(process.env.COLEARNIA_TEST_DB_FAILPOINTS === '1')(
     expect((await timed.history(identity(owner), channel.id, { limit: 1 })).items).toEqual([]);
   },
 );
+
+it.runIf(process.env.COLEARNIA_TEST_DB_FAILPOINTS === '1')(
+  'characterizes the deadline overrun and preserves the gate, slot and message retry',
+  async () => {
+    const { owner, workspace, channel, conversation } = await textChannel();
+    const other = await textChannel();
+    const deadlineMs = 650;
+    const timed = createTextService(database, coordinator, access, () => true, secret, {
+      ...budget,
+      handlers: {
+        text: {
+          ...handler,
+          executionMs: deadlineMs,
+          processInFlight: 1,
+          perUserInFlight: 1,
+          perScopeInFlight: 1,
+        },
+      },
+    });
+    const admin = database.connection.db!.admin();
+
+    for (const phase of ['commitTransaction', 'abortTransaction'] as const) {
+      const payload = { clientMessageId: randomUUID(), text: phase };
+      // Force a write failure after the conversation counter update, so endSession
+      // needs to abort an active transaction. Do not modify the Mongo collection.
+      const insert =
+        phase === 'abortTransaction'
+          ? vi
+              .spyOn(Message.collection, 'insertOne')
+              .mockRejectedValueOnce(new Error('fixture insert failure'))
+          : undefined;
+      const fault = await admin.command({
+        configureFailPoint: 'failCommand',
+        mode: phase === 'commitTransaction' ? { skip: 1 } : { times: 1 },
+        data: { failCommands: [phase], blockConnection: true, blockTimeMS: 2000 },
+      });
+      const t0 = performance.now();
+      const pending = timed.send(identity(owner), channel.id, payload).then(
+        (result) => ({ result, elapsed: performance.now() - t0 }),
+        (error: unknown) => ({ error, elapsed: performance.now() - t0 }),
+      );
+      try {
+        // The first commit belongs to ACL. Synchronize on the delayed command itself.
+        await admin.command({
+          waitForFailPoint: 'failCommand',
+          timesEntered: Number(fault.count) + 1,
+          maxTimeMS: 1500,
+        });
+        await new Promise((resolve) => setTimeout(resolve, 900));
+        await expect(
+          coordinator.run({ workspaceId: workspace.id }, () => undefined, { noWait: true }),
+        ).rejects.toMatchObject({ code: 'BUSY' });
+        await expect(
+          timed.send(identity(other.owner), other.channel.id, payload),
+        ).rejects.toMatchObject({ code: 'SERVER_BUSY' });
+        const settled = await pending;
+        expect(settled.elapsed).toBeGreaterThan(deadlineMs);
+        expect(settled).toHaveProperty('error');
+        if (phase === 'commitTransaction' && 'error' in settled) {
+          expect(textErrorCode(settled.error)).toBe('DEPENDENCY_UNAVAILABLE');
+        }
+        console.info('%s fault: TEXT settled after %d ms', phase, Math.round(settled.elapsed));
+      } finally {
+        await pending;
+        insert?.mockRestore();
+        await admin.command({ configureFailPoint: 'failCommand', mode: 'off' });
+      }
+
+      await coordinator.run({ workspaceId: workspace.id }, () => undefined, { noWait: true });
+      const key = { conversationId: conversation._id, clientMessageId: payload.clientMessageId };
+      const stored = await Message.exists(key);
+      if (phase === 'abortTransaction') expect(stored).toBeNull();
+      const retry = await timed.send(identity(owner), channel.id, payload);
+      expect(retry.outcome).toBe(stored ? 'existing' : 'created');
+      expect((await timed.send(identity(owner), channel.id, payload)).outcome).toBe('existing');
+      expect(
+        await Message.countDocuments({
+          conversationId: conversation._id,
+          clientMessageId: payload.clientMessageId,
+        }),
+      ).toBe(1);
+    }
+    expect((await Conversation.findById(conversation._id).orFail()).lastMessageCommitSeq).toBe(2);
+  },
+);
+
+it('reconciles a write when commit succeeded but the application lost the acknowledgement', async () => {
+  const { owner, channel, conversation } = await textChannel();
+  const payload = { clientMessageId: randomUUID(), text: 'lost acknowledgement' };
+  const original = mongo.ClientSession.prototype.commitTransaction;
+  let commits = 0;
+  const spy = vi
+    .spyOn(mongo.ClientSession.prototype, 'commitTransaction')
+    .mockImplementation(async function (this: mongo.ClientSession, ...args) {
+      await original.apply(this, args);
+      if (++commits === 2)
+        throw new mongo.MongoWriteConcernError({
+          writeConcernError: { code: 64, errmsg: 'fixture lost ACK' },
+        });
+    });
+  try {
+    const failure = await service.send(identity(owner), channel.id, payload).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    expect(textErrorCode(failure)).toBe('DEPENDENCY_UNAVAILABLE');
+  } finally {
+    spy.mockRestore();
+  }
+  const replay = await service.send(identity(owner), channel.id, payload);
+  expect(replay).toMatchObject({ outcome: 'existing', message: { commitSeq: 1 } });
+  expect(await Message.countDocuments({ conversationId: conversation._id })).toBe(1);
+});

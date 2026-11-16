@@ -22,18 +22,21 @@ function hasLabel(error: unknown, label: string): boolean {
   return error instanceof mongoose.mongo.MongoError && error.hasErrorLabel(label);
 }
 
+// The driver can exhaust its retry budget before attaching the commit label.
+function markAmbiguousCommit(error: unknown) {
+  if (
+    error instanceof mongoose.mongo.MongoNetworkError ||
+    error instanceof mongoose.mongo.MongoWriteConcernError
+  ) {
+    error.addErrorLabel('UnknownTransactionCommitResult');
+  }
+}
+
 async function commitTransaction(session: ClientSession): Promise<void> {
   try {
     await session.commitTransaction();
   } catch (error) {
-    // The driver can exhaust its retry budget before attaching the commit label.
-    // A dropped acknowledgement is ambiguous only after entering the commit phase.
-    if (
-      error instanceof mongoose.mongo.MongoNetworkError ||
-      error instanceof mongoose.mongo.MongoWriteConcernError
-    ) {
-      error.addErrorLabel('UnknownTransactionCommitResult');
-    }
+    markAmbiguousCommit(error);
     if (!hasLabel(error, 'UnknownTransactionCommitResult')) throw error;
     try {
       await session.commitTransaction();
@@ -159,7 +162,12 @@ export function createDatabase(uri: string, options: DatabaseOptions = defaultDa
                 if (remaining() < commitBudget) throw new DatabaseDeadlineError();
                 // Let the driver classify ambiguous commits. Avoid another application retry
                 // after the reserved window. The client can retry the same message key.
-                await session.commitTransaction();
+                try {
+                  await session.commitTransaction();
+                } catch (error) {
+                  markAmbiguousCommit(error);
+                  throw error;
+                }
               } else {
                 await commitTransaction(session);
               }
