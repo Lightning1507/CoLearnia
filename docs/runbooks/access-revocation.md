@@ -164,3 +164,7 @@ kết hợp 25/50; adapter thật, business CRUD và recovery thuộc phần tí
   `COLEARNIA_DB_TEST_PORT=27228 pnpm exec vitest run --config vitest.database.config.ts apps/server/test/workspace-access.integration.ts`.
 - [Kết quả SCRUM-28](../test-evidence/2026-11-13-scrum-28-access-revocation.md).
 - [Tích hợp deny/cohort và retry của M4](../test-evidence/2026-11-14-m4-access-revocation.md).
+
+### Bản thử AUTH_SESSION của SCRUM-42
+
+Giữ prepare → pending deny/fence dưới gate → cleanup ngoài gate → ghi revoke majority dưới gate → hoàn tất. Thêm điều kiện thứ tự DB cho lượt gửi đang dở bằng cập nhật trên cùng AuthSession. Nếu marker chưa thấy, chỉ được thử lại CAS có cùng operation ID sau khi đã xác nhận cleanup, và giữ pending deny trong lúc chưa rõ. Revoke mới khi hết cap trả SERVER_BUSY. Registry test ở RAM, chưa có recovery qua restart. [Bản thử và bằng chứng](local-development.md#bản-thử-authsession-của-scrum-42)

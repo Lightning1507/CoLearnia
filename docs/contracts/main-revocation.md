@@ -65,3 +65,7 @@ Thiếu adapter bị từ chối trước khi đăng ký record hoặc hủy tic
 - Integration dùng MongoDB/native mediasoup Router, registry và M3 transport service thật: đóng transport hiện có, invalidate allocation đang chờ và đóng native transport trả muộn, giữ Router/context của peer khác. M1 authority và M2/M5 cleanup vẫn là fixture; chưa kiểm browser audio, TURN hay hai mạng.
 
 Nguồn: [MAIN registry](main-join-registry.md), [cleanup coordinator](session-transitions.md), [M1 Workspace/access](workspace-channels.md), [policy](session-policy.md).
+
+### Ngoại lệ thử nghiệm AUTH_SESSION của SCRUM-42
+
+Đoạn thứ tự ở trên mô tả contract hiện hành. Trong bản thử AUTH_SESSION, M1 cài deny và fence trước khi gọi cleanup ngoài gate, sau đó mới ghi revokedAt và marker majority. M4 vẫn nhận cùng event và cleanup chỉ đúng authSessionId, cohort và đời resource đã chụp. Callback muộn không mở quyền, đóng phiên mới hay áp kết quả cho generation mới. M1 chỉ công bố operation hoàn tất sau khi cả cleanup và DB đã xác nhận. LIVE runtime và các scope khác giữ quy tắc hiện hành. [Bản thử AUTH_SESSION](../runbooks/local-development.md#bản-thử-authsession-của-scrum-42)

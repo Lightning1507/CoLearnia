@@ -54,6 +54,7 @@ export function createTextService(
   secret: string,
   budget: MessagingBudget | undefined,
   observe?: (event: 'slot-acquired' | 'lookup-done' | 'slot-released') => void,
+  authSessionFenceTrial = false,
 ) {
   const { Channel } = channelModels(database.connection);
   const Conversation = conversationModel(database.connection);
@@ -255,9 +256,11 @@ export function createTextService(
               clientMessageId: input.clientMessageId,
               text: input.text,
               createdAt: new Date(),
+              ...(authSessionFenceTrial ? { fenceAuthSessionId: actor.authSessionId } : {}),
             },
             remaining,
           );
+          if (result.outcome === 'session-denied') throw new TextError('AUTH_REQUIRED');
           if (result.outcome === 'not-found') throw new TextError('NOT_FOUND');
           if (result.outcome === 'conflict') throw new TextError('CONFLICT');
           return { outcome: result.outcome, message: toDto(scope, result.message) };

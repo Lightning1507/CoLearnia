@@ -17,7 +17,7 @@ import { loadConfig } from '../src/config/env.js';
 import { createProfiledDatabase, scrum42Trial } from './scrum42-db-profile.js';
 import { createOperationCoordinator } from '../src/lib/operation-coordinator.js';
 import { conversationModel } from '../src/messaging/conversation.js';
-import { textMessageModel } from '../src/messaging/text-message.js';
+import { createTextMessageRepository, textMessageModel } from '../src/messaging/text-message.js';
 import { createTextService, textErrorCode } from '../src/messaging/text-service.js';
 import { createTextRouter, createTextSocketSend } from '../src/messaging/text-transport.js';
 import { createRealtime } from '../src/realtime/server.js';
@@ -142,6 +142,7 @@ async function account() {
     user,
     session,
     token: csrf.token,
+    authToken: token,
     cookie: authCookie + '=' + token + '; ' + csrfCookie + '=' + csrf.cookie,
   };
 }
@@ -822,4 +823,314 @@ it.runIf(trialWithFaults && process.env.COLEARNIA_TEST_REVOKE_COMMIT_RACE === '1
     console.info('SCRUM42_REVOKE_COMMIT %s', JSON.stringify(summaries));
   },
   85_000,
+);
+
+const fenceTrial = trialWithFaults && process.env.COLEARNIA_TEST_AUTH_SESSION_FENCE === '1';
+
+function fencedSessionTrial(cleanupTimeoutMs = 500) {
+  const control = createAccessRevocationCoordinator({
+    coordinator,
+    cleanupTimeoutMs,
+    maxOperations: 1,
+  });
+  const policy = createWorkspaceAccessService(database, coordinator, () => true, control.barrier);
+  const closed = vi.fn();
+  const revoke = createSessionRevocation(database, () => true, control, closed, true);
+  const send = createTextService(
+    database,
+    coordinator,
+    policy,
+    () => true,
+    secret,
+    {
+      ...budget,
+      database: { ...budget.database, queryTimeoutMs: 5000 },
+    },
+    mark,
+    true,
+  );
+  return { control, closed, revoke, send };
+}
+
+function confirmedCleanup(operationId: string) {
+  return { operationId, permissionRevoked: true, pendingInvalidated: true, cleanupPending: false };
+}
+
+it.runIf(fenceTrial)(
+  'serializes an unacknowledged send before majority-confirmed session revoke',
+  async () => {
+    const { owner, channel, conversation } = await textChannel();
+    const actor = identity(owner);
+    const trial = fencedSessionTrial();
+    trial.control.bindCleanupAdapters({
+      messaging: {
+        fence: () => ({ throughResourceGeneration: 1 }),
+        revoke: async ({ revocationId }) => ({ status: 'completed', revocationId }),
+      },
+      live: { revoke: async (event) => confirmedCleanup(event.operationId) },
+    });
+    const admin = database.connection.db!.admin();
+    const lifetime = await admin.command({ getParameter: 1, transactionLifetimeLimitSeconds: 1 });
+    expect(lifetime.transactionLifetimeLimitSeconds).toBe(60);
+    const payload = { clientMessageId: randomUUID(), text: 'send wins' };
+    const key = { conversationId: conversation._id, clientMessageId: payload.clientMessageId };
+    await admin.command({
+      configureFailPoint: 'failCommand',
+      mode: { skip: 1 },
+      data: { failCommands: ['commitTransaction'], blockConnection: true, blockTimeMS: 1000 },
+    });
+    const finish = beginTrace();
+    const started = performance.now();
+    const send = trial.send.send(actor, channel.id, payload).catch((error: unknown) => error);
+    let revoking: Promise<boolean> | undefined;
+    try {
+      await vi.waitFor(
+        () =>
+          expect(trace.filter(({ event }) => event === 'start:commitTransaction')).toHaveLength(2),
+        { interval: 5 },
+      );
+      mark('fence-revoke:requested');
+      revoking = trial.revoke.revoke(actor);
+      await vi.waitFor(() => expect(trial.control.isSessionDenied(actor)).toBe(true), {
+        interval: 5,
+      });
+      mark('fence-revoke:pending-deny');
+      expect(textErrorCode(await send)).toBe('DEPENDENCY_UNAVAILABLE');
+      const completed = await revoking;
+      if (completed) {
+        // This observation is made at the first successful response, before polling for the old write.
+        expect(await Message.countDocuments(key).readConcern('majority')).toBe(1);
+      }
+      await vi.waitFor(
+        async () => expect(await Message.countDocuments(key).readConcern('majority')).toBe(1),
+        { interval: 100, timeout: 4500 },
+      );
+      expect(await trial.revoke.revoke(actor)).toBe(true);
+      mark('fence-revoke:completed-observed');
+      expect(
+        await AuthSession.findById(owner.session._id)
+          .select('+textWriteSerial +textRevokeOperationId')
+          .readConcern('majority')
+          .lean(),
+      ).toMatchObject({
+        textWriteSerial: 1,
+        textRevokeOperationId: expect.any(String),
+        revokedAt: expect.any(Date),
+      });
+      await expect(trial.send.send(actor, channel.id, payload)).rejects.toMatchObject({
+        code: 'AUTH_REQUIRED',
+      });
+      expect(
+        (await Conversation.findById(conversation._id).readConcern('majority').lean())
+          ?.lastMessageCommitSeq,
+      ).toBe(1);
+      expect(coordinator.stats().operations).toBe(0);
+      console.info(
+        'SCRUM42_FENCE_SEND_WINS firstRevoke=%s final=%dms pending=%d',
+        completed,
+        Math.round(performance.now() - started),
+        trial.control.metrics().pending,
+      );
+    } finally {
+      await send;
+      await revoking?.catch(() => false);
+      await delay(1100);
+      await admin.command({ configureFailPoint: 'failCommand', mode: 'off' });
+      finish('session-fence-send-wins');
+    }
+  },
+);
+
+it.runIf(fenceTrial)(
+  'keeps deny during cleanup and lost revoke ACK, then blocks stale DB sends',
+  async () => {
+    const { owner, member, channel, conversation } = await textChannel();
+    const actor = identity(owner);
+    const trial = fencedSessionTrial(90);
+    const resources = new Map([
+      [actor.authSessionId, 1],
+      [member.session.id, 1],
+    ]);
+    let releaseOld!: () => void;
+    let startedOld!: () => void;
+    const entered = new Promise<void>((resolve) => {
+      startedOld = resolve;
+    });
+    const old = new Promise<void>((resolve) => {
+      releaseOld = resolve;
+    });
+    const fence = vi.fn(() => ({ throughResourceGeneration: 1 }));
+    const live = vi.fn(async (event: { operationId: string }) => {
+      startedOld();
+      await old;
+      return confirmedCleanup(event.operationId);
+    });
+    trial.control.bindCleanupAdapters({
+      messaging: {
+        fence,
+        revoke: async ({ revocationId, target, throughResourceGeneration }) => {
+          await old;
+          if (
+            target.kind === 'AUTH_SESSION' &&
+            (resources.get(target.authSessionId) ?? Infinity) <= throughResourceGeneration
+          )
+            resources.delete(target.authSessionId);
+          return { status: 'completed', revocationId };
+        },
+      },
+      live: { revoke: live },
+    });
+    const first = trial.revoke.revoke(actor);
+    try {
+      await entered;
+      expect(await first).toBe(false);
+      expect(trial.control.isSessionDenied(actor)).toBe(true);
+      expect(trial.control.metrics().pending).toBe(1);
+      await expect(trial.revoke.revoke(identity(member))).rejects.toMatchObject({
+        code: 'SERVER_BUSY',
+      });
+      expect(trial.control.isSessionDenied(identity(member))).toBe(false);
+      expect(
+        await AuthSession.findById(owner.session._id).readConcern('majority').lean(),
+      ).toMatchObject({ revokedAt: null });
+      const replacement = await AuthSession.create({
+        userId: owner.user._id,
+        tokenHash: hashAuthToken(randomBytes(32).toString('base64url')),
+        expiresAt: new Date(Date.now() + 60_000),
+      });
+      resources.set(replacement.id, 2);
+      releaseOld();
+      const update = AuthSession.collection.updateOne.bind(AuthSession.collection);
+      const fault = vi
+        .spyOn(AuthSession.collection, 'updateOne')
+        .mockImplementationOnce(async (...args) => {
+          await update(...args);
+          throw new mongo.MongoNetworkError('fixture lost revoke ACK');
+        });
+      try {
+        expect(await trial.revoke.logout(owner.authToken)).toBe(false);
+      } finally {
+        fault.mockRestore();
+      }
+      const durable = await AuthSession.findById(owner.session._id)
+        .select('+textRevokeOperationId')
+        .readConcern('majority')
+        .lean();
+      expect(durable).toMatchObject({
+        revokedAt: expect.any(Date),
+        textRevokeOperationId: expect.any(String),
+      });
+      expect(await trial.revoke.logout(owner.authToken)).toBe(true);
+      expect(fence).toHaveBeenCalledTimes(1);
+      expect(live).toHaveBeenCalledTimes(1);
+      expect(trial.control.metrics().pending).toBe(0);
+      expect(resources.has(actor.authSessionId)).toBe(false);
+      expect(resources.has(replacement.id)).toBe(true);
+      expect(resources.has(member.session.id)).toBe(true);
+      expect(trial.closed.mock.calls.every(([id]) => id === actor.authSessionId)).toBe(true);
+      const payload = { clientMessageId: randomUUID(), text: 'revoke wins' };
+      await expect(trial.send.send(actor, channel.id, payload)).rejects.toMatchObject({
+        code: 'AUTH_REQUIRED',
+      });
+      // Probe the DB fence using a stale admission snapshot, without a second client.
+      const repo = createTextMessageRepository(database);
+      expect(
+        await repo.append({
+          ...payload,
+          conversationId: conversation._id,
+          senderId: owner.user._id,
+          createdAt: new Date(),
+          fenceAuthSessionId: actor.authSessionId,
+        }),
+      ).toEqual({ outcome: 'session-denied' });
+      expect(
+        await Message.countDocuments({ conversationId: conversation._id }).readConcern('majority'),
+      ).toBe(0);
+      expect(
+        (await Conversation.findById(conversation._id).readConcern('majority').lean())
+          ?.lastMessageCommitSeq,
+      ).toBeUndefined();
+      const newActor = {
+        ...actor,
+        authSessionId: replacement.id,
+        expiresAt: replacement.expiresAt.toISOString(),
+      };
+      expect(await trial.send.send(newActor, channel.id, payload)).toMatchObject({
+        outcome: 'created',
+        message: { commitSeq: 1 },
+      });
+      expect(await trial.send.send(newActor, channel.id, payload)).toMatchObject({
+        outcome: 'existing',
+        message: { commitSeq: 1 },
+      });
+    } finally {
+      releaseOld();
+      await first.catch(() => false);
+    }
+  },
+);
+
+it.runIf(fenceTrial)(
+  'measures fenced sends alongside shared auth and Workspace reads',
+  async () => {
+    const { owner, member, workspace, channel, conversation } = await textChannel();
+    const measured = (fence: boolean) =>
+      createTextService(
+        database,
+        coordinator,
+        access,
+        () => true,
+        secret,
+        {
+          ...budget,
+          process: { ...budget.process, queued: 4 },
+          handlers: { text: { ...handler, processQueued: 4 } },
+        },
+        mark,
+        fence,
+      );
+    for (const [fenced, actors] of [
+      [false, [owner, owner]],
+      [true, [owner, owner]],
+      [false, [owner, member]],
+      [true, [owner, member]],
+    ] as const) {
+      const service = measured(fenced);
+      const finish = beginTrace();
+      const started = performance.now();
+      try {
+        const [first, second, session, selection] = await Promise.all([
+          ...actors.map((actor) =>
+            service.send(identity(actor), channel.id, {
+              clientMessageId: randomUUID(),
+              text: 'shared pool sample',
+            }),
+          ),
+          readSession(owner.authToken),
+          access.openWorkspace(identity(member), workspace.id),
+        ] as const);
+        expect(first).toMatchObject({ outcome: 'created' });
+        expect(second).toMatchObject({ outcome: 'created' });
+        expect(session).toMatchObject({ context: { authSessionId: owner.session.id } });
+        expect(selection).toMatchObject({ id: workspace.id });
+        console.info(
+          'SCRUM42_FENCE_LOAD fenced=%s sameSession=%s elapsed=%dms updates=%d',
+          fenced,
+          actors[0] === actors[1],
+          Math.round(performance.now() - started),
+          trace.filter(({ event }) => event === 'start:update').length,
+        );
+      } finally {
+        finish('session-fence-load');
+      }
+    }
+    expect(
+      await Message.countDocuments({ conversationId: conversation._id }).readConcern('majority'),
+    ).toBe(8);
+    expect(
+      (await Conversation.findById(conversation._id).readConcern('majority').lean())
+        ?.lastMessageCommitSeq,
+    ).toBe(8);
+    expect(coordinator.stats().operations).toBe(0);
+  },
 );

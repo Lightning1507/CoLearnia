@@ -2,6 +2,7 @@ import { Schema, Types } from 'mongoose';
 import type { Connection } from 'mongoose';
 import { textHistoryMaxLimit, textMessageSendBodySchema } from '@colearnia/contracts';
 import type { IndexRequirement } from '../lib/database-preflight.js';
+import { authModels } from '../auth/models.js';
 import { databaseQueryOptions } from '../lib/database.js';
 import type { createDatabase, DatabaseDeadline } from '../lib/database.js';
 import { conversationModel } from './conversation.js';
@@ -76,6 +77,7 @@ export type TextRootCursor = {
 export function createTextMessageRepository(database: ReturnType<typeof createDatabase>) {
   const Message = textMessageModel(database.connection);
   const Conversation = conversationModel(database.connection);
+  const { AuthSession } = authModels(database.connection);
 
   return {
     async append(
@@ -85,6 +87,7 @@ export function createTextMessageRepository(database: ReturnType<typeof createDa
         clientMessageId: string;
         text: string;
         createdAt: Date;
+        fenceAuthSessionId?: string;
       },
       remaining?: DatabaseDeadline,
     ) {
@@ -114,6 +117,23 @@ export function createTextMessageRepository(database: ReturnType<typeof createDa
         }
         if ((conversation.lastMessageCommitSeq ?? 0) >= Number.MAX_SAFE_INTEGER) {
           throw new Error('Conversation commit sequence exhausted');
+        }
+        if (input.fenceAuthSessionId !== undefined) {
+          const match = await AuthSession.updateOne(
+            {
+              _id: input.fenceAuthSessionId,
+              userId: senderId,
+              revokedAt: null,
+              $expr: { $gt: ['$expiresAt', '$$NOW'] },
+              $or: [
+                { textWriteSerial: { $exists: false } },
+                { textWriteSerial: { $gte: 0, $lt: Number.MAX_SAFE_INTEGER } },
+              ],
+            },
+            { $inc: { textWriteSerial: 1 } },
+            { session, timestamps: false, ...databaseQueryOptions(queryTime) },
+          );
+          if (match.matchedCount !== 1) return { outcome: 'session-denied' } as const;
         }
         const updated = await Conversation.findOneAndUpdate(
           scope,
