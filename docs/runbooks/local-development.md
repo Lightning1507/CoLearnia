@@ -208,4 +208,19 @@ Một lượt đo MongoDB 8.0.16, lifetime mặc định 60 giây, profile socke
 | Lượt gửi cũ sau durable revoke                  | Gọi repository bằng thông tin admission cũ bị chặn ngay bởi matched-count của hàng rào. Majority read thấy 0 tin và sequence chưa cấp. Phiên thay thế vẫn gửi được và retry trả đúng sequence 1. Phiên khác và tài nguyên mô phỏng của nó còn nguyên.                                                                                                                 |
 | Chi phí trên cùng pool                          | Hai lượt gửi kèm đọc auth/Workspace. Cùng phiên mất 120 ms baseline, 119 ms khi bật fence. Khác phiên 107/117 ms. Có đúng hai update AuthSession bổ sung mỗi lượt đo bật fence. Sau bốn đợt có tám tin, sequence 8 và không còn operation giữ gate. Một mẫu nhỏ chưa đủ chốt budget hoặc throughput.                                                                  |
 
-Bốn ca chọn chạy đạt. Ca mất ACK do lệnh đã commit nhưng lỗi được đưa vào giữa ứng dụng và driver cũng nằm trong lượt kiểm. Chưa kiểm tải hỗn hợp tạo Workspace/kênh đồng thời với bản thử. Các suite hồi quy auth/Workspace/kênh chạy riêng ở cấu hình mặc định. P2 còn mở để M1/M4 review field, adapter LIVE thật, recovery và các scope ngoài AUTH_SESSION.
+Bốn ca chọn chạy đạt. Ca mất ACK do lệnh đã commit nhưng lỗi được đưa vào giữa ứng dụng và driver cũng nằm trong lượt kiểm. Bảng trên ghi lượt thử ban đầu. Lượt kiểm tải ghép và native LIVE tiếp theo được ghi bên dưới.
+
+#### Regression LIVE ghép với AUTH_SESSION
+
+Hai ca shared dùng MongoDB 8.0.16 replica set disposable với lifetime mặc định 60 giây, cùng MongoClient cho AuthSession và LIVE, `createSessionRevocation(..., true)`, coordinator/barrier và `live: registry` thật. mediasoup Worker, Router và WebRTC transport chạy native. Authority xác thực và thao tác tạo phiên mới là fixture lưu AuthSession vào MongoDB. Port messaging/board và callback đóng socket là fixture.
+
+Hai biến thể kiểm transport trả ngay và trả muộn, board cleanup lỗi rồi retry. Pending deny có hiệu lực trong lúc majority read còn thấy phiên cũ chưa có revokedAt và marker. Khi retry hoàn tất, majority read xác nhận revokedAt và marker trùng operation ID ban đầu. Transport cũ đóng, phản hồi cấp transport đến muộn trả lỗi. Transport và ownership của phiên thay thế còn hoạt động, peer vẫn truy cập registry, hai AuthSession mới/peer còn hiệu lực.
+
+```powershell
+pnpm exec vitest run --pool=threads --config vitest.database.config.ts apps/server/test/main-join-registry.integration.ts
+pnpm exec vitest run --pool=threads --config vitest.database.config.ts apps/server/test/text-transport.integration.ts
+```
+
+Cùng cấu hình trial ở trên, mỗi đợt tải ghép chạy hai lượt gửi TEXT song song với đọc phiên, mở Workspace và tạo Workspace/kênh TEXT trên cùng pool. Một lượt đo cục bộ với pool 2 cho kết quả cùng phiên 224/175 ms và khác phiên 174/151 ms (tắt/bật fence). Hai đợt bật fence có đúng hai update AuthSession mỗi đợt. Cả bốn đợt có tám tin và sequence cuối 8. Mẫu này kiểm các đường chạy đồng thời và đếm update. Cần mẫu tải lớn hơn để chốt budget hoặc capacity.
+
+P2 tiếp tục mở. Runtime mặc định vẫn dùng đường hiện hành. Recovery qua restart, deadline và các scope ngoài AUTH_SESSION cần được chốt trước quyết định merge.

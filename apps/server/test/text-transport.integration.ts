@@ -16,7 +16,10 @@ import { authCookie, hashAuthToken } from '../src/auth/session-credentials.js';
 import { loadConfig } from '../src/config/env.js';
 import { createProfiledDatabase, scrum42Trial } from './scrum42-db-profile.js';
 import { createOperationCoordinator } from '../src/lib/operation-coordinator.js';
-import { conversationModel } from '../src/messaging/conversation.js';
+import {
+  conversationModel,
+  createChannelConversationFactory,
+} from '../src/messaging/conversation.js';
 import { createTextMessageRepository, textMessageModel } from '../src/messaging/text-message.js';
 import { createTextService, textErrorCode } from '../src/messaging/text-service.js';
 import { createTextRouter, createTextSocketSend } from '../src/messaging/text-transport.js';
@@ -25,6 +28,9 @@ import { createAccessRevocationCoordinator } from '../src/workspaces/access-revo
 import { createWorkspaceAccessService } from '../src/workspaces/access-service.js';
 import { channelModels } from '../src/workspaces/channel-models.js';
 import { workspaceModels } from '../src/workspaces/workspace-models.js';
+import { createWorkspaceCreator } from '../src/workspaces/create-workspace.js';
+import { createChannelCreator } from '../src/workspaces/create-channel.js';
+import { auditModel } from '../src/workspaces/workspace-audit.js';
 import { testReplicaUri } from './replica-uri.js';
 
 const name = 'colearnia_test_scrum42_' + randomUUID().replaceAll('-', '');
@@ -110,6 +116,7 @@ beforeAll(async () => {
     ChannelAccessGrant,
     Conversation,
     Message,
+    auditModel(database.connection),
   ]) {
     await model.createCollection();
     await model.createIndexes();
@@ -1074,6 +1081,16 @@ it.runIf(fenceTrial)(
   'measures fenced sends alongside shared auth and Workspace reads',
   async () => {
     const { owner, member, workspace, channel, conversation } = await textChannel();
+    const setupCreator = {
+      database,
+      coordinator,
+      barrier,
+      indexesReady: () => true,
+      createConversation: createChannelConversationFactory(database.connection).create,
+    };
+    const createWorkspace = createWorkspaceCreator(setupCreator);
+    const createChannel = createChannelCreator(setupCreator);
+    const creator = await account();
     const measured = (fence: boolean) =>
       createTextService(
         database,
@@ -1099,18 +1116,36 @@ it.runIf(fenceTrial)(
       const finish = beginTrace();
       const started = performance.now();
       try {
-        const [first, second, session, selection] = await Promise.all([
-          ...actors.map((actor) =>
-            service.send(identity(actor), channel.id, {
-              clientMessageId: randomUUID(),
-              text: 'shared pool sample',
-            }),
+        const [messages, session, selection, createdChannel] = await Promise.all([
+          Promise.all(
+            actors.map((actor) =>
+              service.send(identity(actor), channel.id, {
+                clientMessageId: randomUUID(),
+                text: 'shared pool sample',
+              }),
+            ),
           ),
           readSession(owner.authToken),
           access.openWorkspace(identity(member), workspace.id),
+          (async () => {
+            const created = await createWorkspace(
+              { name: 'Mixed workload', requestId: randomUUID() },
+              identity(creator),
+            );
+            return createChannel(
+              {
+                name: 'Mixed TEXT',
+                type: 'TEXT',
+                accessMode: 'WORKSPACE',
+                requestId: randomUUID(),
+              },
+              created.id,
+              identity(creator),
+            );
+          })(),
         ] as const);
-        expect(first).toMatchObject({ outcome: 'created' });
-        expect(second).toMatchObject({ outcome: 'created' });
+        expect(messages).toMatchObject([{ outcome: 'created' }, { outcome: 'created' }]);
+        expect(createdChannel).toMatchObject({ name: 'Mixed TEXT', type: 'TEXT' });
         expect(session).toMatchObject({ context: { authSessionId: owner.session.id } });
         expect(selection).toMatchObject({ id: workspace.id });
         console.info(
