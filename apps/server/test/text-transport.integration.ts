@@ -699,3 +699,127 @@ it.runIf(scrum42Trial)(
     expect(coordinator.stats().operations).toBe(0);
   },
 );
+
+// Characterization only: observing an old send after deny confirms the open P2.
+it.runIf(trialWithFaults && process.env.COLEARNIA_TEST_REVOKE_COMMIT_RACE === '1')(
+  'reproduces a write appearing after session deny when commit loses its ACK',
+  async () => {
+    const admin = database.connection.db!.admin();
+    const summaries = [];
+    const { transactionLifetimeLimitSeconds } = await admin.command({
+      getParameter: 1,
+      transactionLifetimeLimitSeconds: 1,
+    });
+    expect(transactionLifetimeLimitSeconds).toBe(60);
+    {
+      const blockTimeMS = 900;
+      const executionMs = 5000;
+      const queryTimeoutMs = 5000;
+      const { owner, channel, conversation } = await textChannel();
+      const actor = identity(owner);
+      const revoke = createSessionRevocation(
+        database,
+        () => true,
+        revocation,
+        () => undefined,
+      );
+      const sends = createTextService(
+        database,
+        coordinator,
+        access,
+        () => true,
+        secret,
+        {
+          ...budget,
+          database: { ...budget.database, queryTimeoutMs },
+          handlers: { text: { ...handler, executionMs } },
+        },
+        mark,
+      );
+      const payload = { clientMessageId: randomUUID(), text: 'revoke during pending commit' };
+      const key = { conversationId: conversation._id, clientMessageId: payload.clientMessageId };
+      await admin.command({
+        configureFailPoint: 'failCommand',
+        mode: { skip: 1 },
+        data: { failCommands: ['commitTransaction'], blockConnection: true, blockTimeMS },
+      });
+      const finish = beginTrace();
+      const started = performance.now();
+      const elapsed = () => Math.round(performance.now() - started);
+      const send = sends.send(actor, channel.id, payload).then(
+        (result) => ({ result, ms: elapsed() }),
+        (error: unknown) => ({ code: textErrorCode(error), ms: elapsed() }),
+      );
+      let revokeTask: Promise<unknown> | undefined;
+      try {
+        await vi.waitFor(
+          () =>
+            expect(trace.filter(({ event }) => event === 'start:commitTransaction')).toHaveLength(
+              2,
+            ),
+          { interval: 5 },
+        );
+        const revokeRequestedMs = elapsed();
+        mark('revoke:requested');
+        revokeTask = revoke.revoke(actor).catch((error: unknown) => error);
+        await vi.waitFor(() => expect(revocation.isSessionDenied(actor)).toBe(true), {
+          interval: 5,
+        });
+        const denyObservedMs = elapsed();
+        mark('revoke:deny-observed');
+        const original = await send;
+        expect(original).toMatchObject({ code: 'DEPENDENCY_UNAVAILABLE' });
+        const atDeny = await Message.findOne(key).readConcern('majority').lean();
+        await expect(sends.send(actor, channel.id, payload)).rejects.toMatchObject({
+          code: 'AUTH_REQUIRED',
+        });
+        await expect(
+          sends.send(actor, channel.id, { ...payload, clientMessageId: randomUUID() }),
+        ).rejects.toMatchObject({ code: 'AUTH_REQUIRED' });
+        const observations = [{ ms: elapsed(), visible: Boolean(atDeny) }];
+        // Observe the majority-visible result, then check count/sequence again
+        // after the default transaction lifetime has elapsed.
+        for (let i = 0; i < 16 && !observations.at(-1)?.visible; i++) {
+          await delay(250);
+          observations.push({
+            ms: elapsed(),
+            visible: Boolean(await Message.findOne(key).readConcern('majority').lean()),
+          });
+        }
+        const firstVisible = observations.find(({ visible }) => visible);
+        await delay(Math.max(0, transactionLifetimeLimitSeconds * 1000 + 5000 - elapsed()));
+        const count = await Message.countDocuments(key).readConcern('majority');
+        const seq =
+          (await Conversation.findById(conversation._id).readConcern('majority').lean())
+            ?.lastMessageCommitSeq ?? 0;
+        expect(atDeny).toBeNull();
+        expect(firstVisible?.ms).toBeGreaterThan(denyObservedMs);
+        expect(count).toBe(1);
+        expect(seq).toBe(1);
+        expect(coordinator.stats().operations).toBe(0);
+        summaries.push({
+          blockTimeMS,
+          executionMs,
+          queryTimeoutMs,
+          revokeRequestedMs,
+          denyObservedMs,
+          original,
+          visibleAtDeny: Boolean(atDeny),
+          count,
+          seq,
+          observations,
+          finalReadMs: elapsed(),
+          transactionLifetimeLimitSeconds,
+        });
+      } finally {
+        await send;
+        await revokeTask;
+        await delay(blockTimeMS + 100);
+        await admin.command({ configureFailPoint: 'failCommand', mode: 'off' });
+        finish('revoke-during-commit-' + blockTimeMS);
+      }
+    }
+    console.info('SCRUM42_REVOKE_COMMIT %s', JSON.stringify(summaries));
+  },
+  85_000,
+);

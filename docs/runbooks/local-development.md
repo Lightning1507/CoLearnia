@@ -137,3 +137,35 @@ Dùng replica set tạm và chỉ bind cổng host trên loopback. `transactionL
 Kết quả profile thử là 108 test đạt trên 5 suite, 3 skip. Hai ca skip là phép đo baseline của cấu hình cũ. Ca failpoint Workspace còn lại dùng cờ opt-in riêng chưa bật ở lượt này. Suite kiểm auth, tạo Workspace/kênh, phát lại yêu cầu, rollback và luồng Workspace/kênh hỗn hợp. Lượt thăm dò đầu với lifetime mặc định gặp `WriteConflict` khi retry ngay và timeout ở thao tác dọn DB test. Với lifetime fixture 5 giây, sau khi chờ failpoint tắt, cùng mã gửi gặp 5 lần lỗi tạm rồi ghi được sau khoảng 4.019 ms kể từ lúc bắt đầu thử lại. Lượt abort cho phép ghi lại sau 59 ms. Cả hai cuối cùng có đúng một bản ghi cho mỗi mã và `commitSeq` tăng đúng hai lần.
 
 **P2 còn mở.** Timeout của client đã giảm thời gian giữ gate/slot trong các mẫu đã đo, nhưng trace ghi nhận MongoDB vẫn giữ transaction sau khi app trả timeout. Chưa xác nhận mốc cứng hoặc tính an toàn cho thu quyền đồng thời với commit chưa rõ. M1/M4 cần quyết định tiếp tục thử cơ chế liên kết revision quyền với thao tác ghi và thu hồi, hoặc thử driver có API deadline phù hợp. Trước khi chốt, phải chạy ca revoke cạnh tranh ngay trong lúc commit mất phản hồi, kết hợp tải auth/Workspace/kênh trong cùng tiến trình và kiểm môi trường nhiều node. Các số trên là bằng chứng đo cấu hình thử, chưa là nghiệm thu.
+
+#### SCRUM-42 — Tái hiện ghi sau deny với lifetime mặc định
+
+Ca opt-in dưới đây ghi lại lỗi hiện tại. Test đạt khi tái hiện được ghi xuất hiện sau deny. Chỉ bật failpoint trên replica set test riêng.
+
+```powershell
+docker run --rm -d --name colearnia-pr117-default-race -p 127.0.0.1:27242:27017 mongo:8.0.16 --replSet rs0 --bind_ip_all --setParameter enableTestCommands=1
+docker exec colearnia-pr117-default-race mongosh --quiet --eval 'rs.initiate()'
+$env:COLEARNIA_DB_TEST_PORT = '27242'
+$env:COLEARNIA_TEST_DB_FAILPOINTS = '1'
+$env:COLEARNIA_TEST_DB_PROFILE = 'scrum42'
+$env:COLEARNIA_TEST_REVOKE_COMMIT_RACE = '1'
+pnpm --filter @colearnia/contracts build
+pnpm exec vitest run --pool=threads --reporter=verbose --config vitest.database.config.ts apps/server/test/text-transport.integration.ts -t 'reproduces a write appearing'
+docker stop colearnia-pr117-default-race
+```
+
+Test xác nhận lifetime là 60 giây, chặn lệnh commit ghi 900 ms sau khi ACL đã commit và gọi service revoke M1 khi lệnh ghi đang chờ. Profile thử có socket timeout 400 ms. Trace ghi thời điểm gửi commit, nhả gate/slot và quan sát deny. Test đọc majority ngay sau deny, đọc lại đến khi thấy tin rồi xác nhận số bản ghi và sequence lần cuối sau khoảng 65 giây. Retry cùng mã và gửi mã mới sau deny đều phải bị từ chối. Deny trong fixture là barrier của service M1. Fixture chưa gắn adapter cleanup M2/M4. Kết quả này tách khỏi ca chẩn đoán lifetime 5 giây phía trên.
+
+Lượt chạy lifetime 60 giây: commit ghi bắt đầu ở 85,3 ms, yêu cầu revoke ở 100,4 ms, socket trả lỗi ở 508,9 ms, gate và slot được nhả ở 510,0 ms. Deny được quan sát ở 511 ms. Đọc majority ở 554 và 808 ms chưa thấy tin. Lần đọc 1.073 ms thấy đúng một tin. Đọc cuối ở 65.023 ms vẫn là một tin và sequence 1. Hai lượt gửi sau deny đều trả lỗi xác thực. Ca opt-in này đạt 1/1 theo tiêu chí **tái hiện lỗi**. Lượt riêng trên mongod lifetime mặc định và cấu hình client mặc định có 27 test đạt, 4 skip (các ca chỉ bật khi dùng profile thử hoặc probe).
+
+#### Phương án bảo vệ để M1/M4 review
+
+Đề xuất hai mốc thu quyền. Khi tiếp nhận revoke, cài **deny đang xử lý** để từ chối lượt gửi/đọc mới và khởi động thu tài nguyên. Chỉ công bố **thu quyền hoàn tất** khi giao dịch đổi quyền và hàng rào ghi đã được xác nhận bằng majority, đồng thời các adapter đã xác nhận phần thu tài nguyên. Với thao tác gửi đã bắt đầu trước pending deny, cần M1/M4 chốt việc dùng mốc durable này làm điểm phân thứ tự. Nếu yêu cầu nghiệp vụ là cấm mọi commit kể từ lúc barrier trong RAM được cài, phương án hai mốc chưa đáp ứng yêu cầu đó.
+
+Đường gửi ghi có điều kiện lên cùng bản ghi hàng rào mà đường revoke sẽ cập nhật. Giao dịch gửi kiểm trạng thái active/revision và **thực sự thay đổi** hàng rào trước khi ghi tin và tăng sequence trong cùng transaction. Revoke chuyển trạng thái hoặc tăng revision trên những hàng rào liên quan, đồng thời ghi thay đổi quyền và ID thao tác trong cùng transaction. Với session revoke, hai đường phải chạm cùng hàng rào của AuthSession. Với Workspace, membership hay channel revoke, M1/M4 cần chốt tài liệu nào là hàng rào cho từng phạm vi và thứ tự chạm chúng. Kiểm revision bằng thao tác đọc hoặc ghi không làm thay đổi dữ liệu không tạo bảo đảm xung đột cần thiết.
+
+Nếu giao dịch gửi lấy được thứ tự trước, tin có thể xuất hiện trước khi revoke được xác nhận. Nếu revoke lấy thứ tự trước, lượt ghi dựa trên quyền cũ phải gặp xung đột hoặc điều kiện ghi không còn khớp, rồi bị từ chối khi kiểm quyền mới. Cần kiểm thêm chi phí tranh ghi trên các hàng rào Workspace/kênh dùng chung trước khi quyết định phạm vi.
+
+Khi commit của send chưa rõ, vẫn trả `DEPENDENCY_UNAVAILABLE` và đối chiếu bằng đúng `clientMessageId`. Khi commit của revoke chưa rõ, giữ deny đang xử lý và dùng cùng ID thao tác để tra dấu ghi durable bằng majority. Kết quả chưa tìm thấy dấu ghi chưa đủ để kết luận rollback. Không báo hoàn tất hay phát lại với ID mới khi chưa xác minh được. Theo dõi và giới hạn số thao tác chưa phân giải riêng. Khi hết dung lượng, từ chối yêu cầu mới rõ ràng. Cần review cách tính gate/slot, ngân sách fence, phục hồi sau restart và ưu tiên thu quyền trước khi đổi runtime. Không thêm client/pool hoặc thay FIFO trong lượt này.
+
+**Ca nghiệm thu sau khi chốt thiết kế:** Giữ probe ở trên làm bằng chứng lỗi cũ. Ca nghiệm thu dùng đường revoke có persistence và cleanup đã review, quan sát pending và durable deny riêng, rồi yêu cầu số tin và sequence không tăng từ lượt cũ sau durable deny. Chạy cả thứ tự send thắng/revoke thắng, commit mất ACK, abort chậm, hàng đợi revoke và tải auth/Workspace/kênh trong cùng tiến trình/pool với lifetime mặc định. Đối chiếu thời gian giữ gate/slot và mức chờ thu quyền với budget được chốt. P2 còn mở cho tới khi ca nghiệm thu này đạt.
