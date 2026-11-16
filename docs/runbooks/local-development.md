@@ -221,6 +221,21 @@ pnpm exec vitest run --pool=threads --config vitest.database.config.ts apps/serv
 pnpm exec vitest run --pool=threads --config vitest.database.config.ts apps/server/test/text-transport.integration.ts
 ```
 
+#### Kết quả suite TEXT và probe commit/cleanup
+
+- **M2, MongoDB 8.0.16:** Suite TEXT với profile thử và ca tái hiện bật đạt 9, skip 2, lỗi 1. Probe `measures commit and cleanup with the shared trial pool` ghi 16 lần retry trong pha commit và sau khoảng 12.900 ms vẫn có `outcome=undefined`, fail tại `expect(reply).toBeDefined()`.
+- **M4, MongoDB 8.2.6:** Chạy riêng probe trên replica set với lifetime mặc định 60 giây tái hiện 16 lần retry và `outcome=undefined` sau khoảng 12.758 ms, fail cùng assertion. Log mongod ghi commit bị chặn khoảng 2 giây rồi `MaxTimeMSExpired`. Teardown còn gặp `MongoNetworkTimeoutError`. M4 chạy riêng 4/4 ca trial đạt và toàn bộ 32/32 ca MAIN native đạt tại `3ab70bc`. [Review độc lập của M4](https://github.com/Lightning1507/CoLearnia/pull/117#discussion_r4588531249)
+
+Dùng cấu hình profile thử ở trên để tái hiện riêng ca đo giới hạn:
+
+```powershell
+pnpm exec vitest run --pool=threads --reporter=verbose --config vitest.database.config.ts apps/server/test/text-transport.integration.ts -t 'measures commit and cleanup with the shared trial pool'
+```
+
+Probe đo giới hạn hiện tại và đang lỗi. Các ca trial chọn chạy kiểm hành vi của hàng rào AUTH_SESSION trong fixture. Suite TEXT chạy rộng chưa đạt, và các ca chọn chạy chưa nghiệm thu deadline. Mốc nhả gate/slot chỉ cho biết ứng dụng giải phóng tài nguyên cục bộ. Đọc DB sau đó chưa xác định được transaction đã phân giải lúc nào so với timeout và deny.
+
+Lượt xử lý tiếp cần đối chiếu trace từng retry (command, thời điểm, mã lỗi và kết quả), trạng thái transaction phía mongod, thời điểm gate/slot được nhả và kết quả abort/endSession cùng teardown. Giữ nguyên assertion, số lần thử và lifetime trong probe. Nếu tách probe khỏi suite nghiệm thu, giữ lệnh tái hiện và số đo lỗi. Trước khi đóng P2, M1/M4 cần review điều kiện nghiệm thu thay thế: evidence phân giải commit chưa rõ, thứ tự ghi so với deny, deadline đã thống nhất gồm cleanup và retry cùng `clientMessageId` không tạo trùng.
+
 Cùng cấu hình trial ở trên, mỗi đợt tải ghép chạy hai lượt gửi TEXT song song với đọc phiên, mở Workspace và tạo Workspace/kênh TEXT trên cùng pool. Một lượt đo cục bộ với pool 2 cho kết quả cùng phiên 224/175 ms và khác phiên 174/151 ms (tắt/bật fence). Hai đợt bật fence có đúng hai update AuthSession mỗi đợt. Cả bốn đợt có tám tin và sequence cuối 8. Mẫu này kiểm các đường chạy đồng thời và đếm update. Cần mẫu tải lớn hơn để chốt budget hoặc capacity.
 
 P2 tiếp tục mở. Runtime mặc định vẫn dùng đường hiện hành. Recovery qua restart, deadline và các scope ngoài AUTH_SESSION cần được chốt trước quyết định merge.
