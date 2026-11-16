@@ -42,6 +42,12 @@ const Conversation = conversationModel(database.connection);
 const Message = textMessageModel(database.connection);
 const trace: { event: string; ms: number }[] = [];
 let tracing = false;
+const transactionTrace: object[] = [];
+let tracingTransactions = false;
+let transactionTraceStarted = 0;
+let diagnosingTransactions = false;
+const transactionTraceMs = () =>
+  Math.round((performance.now() - transactionTraceStarted) * 10) / 10;
 function mark(event: string) {
   if (tracing) trace.push({ event, ms: Math.round(performance.now() * 10) / 10 });
 }
@@ -103,6 +109,26 @@ beforeAll(async () => {
     client.on('commandStarted', (event) => mark('start:' + event.commandName));
     client.on('commandSucceeded', (event) => mark('ok:' + event.commandName));
     client.on('commandFailed', (event) => mark('fail:' + event.commandName));
+    client.on('commandStarted', ({ command, commandName, requestId }) => {
+      if (!tracingTransactions || command.txnNumber === undefined) return;
+      transactionTrace.push({
+        ms: transactionTraceMs(),
+        commandName,
+        requestId,
+        lsid: command.lsid?.id?.toUUID().toString(),
+        txnNumber: command.txnNumber.toString(),
+        startTransaction: command.startTransaction === true,
+      });
+    });
+    client.on('commandFailed', ({ commandName, requestId, failure }) => {
+      if (!tracingTransactions) return;
+      transactionTrace.push({
+        ms: transactionTraceMs(),
+        commandName,
+        requestId,
+        error: mongoErrorEvidence(failure),
+      });
+    });
     client.on('connectionCheckOutStarted', () => mark('checkout:start'));
     client.on('connectionCheckedOut', () => mark('checkout:ok'));
     client.on('connectionCheckOutFailed', () => mark('checkout:failed'));
@@ -127,8 +153,13 @@ afterAll(async () => {
   try {
     await realtime.close();
     if (ownsDatabase && database.connection.name === name) await database.connection.dropDatabase();
+    if (diagnosingTransactions) console.info('SCRUM42_TEARDOWN drop complete');
+  } catch (error) {
+    if (diagnosingTransactions) console.info('SCRUM42_TEARDOWN drop', mongoErrorEvidence(error));
+    throw error;
   } finally {
     await database.close();
+    if (diagnosingTransactions) console.info('SCRUM42_TEARDOWN connection closed');
   }
 });
 
@@ -492,11 +523,64 @@ function beginTrace() {
   };
 }
 
+type MongoErrorEvidence = {
+  name: string;
+  code?: string | number;
+  labels?: string[];
+  cause?: MongoErrorEvidence;
+};
+
+function mongoErrorEvidence(error: unknown): MongoErrorEvidence {
+  if (!(error instanceof Error)) return { name: typeof error };
+  const mongoError = error instanceof mongo.MongoError ? error : undefined;
+  return {
+    name: error.name,
+    code: mongoError?.code,
+    labels: mongoError?.errorLabels,
+    cause: error.cause instanceof Error ? mongoErrorEvidence(error.cause) : undefined,
+  };
+}
+
 it.runIf(trialWithFaults)(
   'measures commit and cleanup with the shared trial pool',
   async () => {
     const { owner, workspace, channel, conversation } = await textChannel();
     const admin = database.connection.db!.admin();
+    diagnosingTransactions = true;
+    // A test-only observer stays independent of the application pool under fault.
+    const observer = new mongo.MongoClient(testReplicaUri(name), {
+      maxPoolSize: 1,
+      serverSelectionTimeoutMS: 1000,
+      socketTimeoutMS: 1000,
+    });
+    async function observe(point: string) {
+      try {
+        const operations = await observer
+          .db('admin')
+          .aggregate(
+            [
+              { $currentOp: { allUsers: true, idleSessions: true } },
+              { $match: { transaction: { $exists: true } } },
+              {
+                $project: {
+                  _id: 0,
+                  active: 1,
+                  waitingForLock: 1,
+                  lsid: 1,
+                  'transaction.parameters.txnNumber': 1,
+                  'transaction.timeOpenMicros': 1,
+                  'transaction.timeInactiveMicros': 1,
+                },
+              },
+            ],
+            { maxTimeMS: 700 },
+          )
+          .toArray();
+        console.info('SCRUM42_MONGOD %s %s', point, JSON.stringify(operations));
+      } catch (error) {
+        console.info('SCRUM42_MONGOD %s %s', point, JSON.stringify(mongoErrorEvidence(error)));
+      }
+    }
     const originalEnd = mongo.ClientSession.prototype.endSession;
     const sessionSpy = vi
       .spyOn(mongo.ClientSession.prototype, 'endSession')
@@ -504,6 +588,13 @@ it.runIf(trialWithFaults)(
         mark('endSession:start');
         try {
           await originalEnd.apply(this, args);
+        } catch (error) {
+          if (tracingTransactions)
+            transactionTrace.push({
+              ms: transactionTraceMs(),
+              endSession: mongoErrorEvidence(error),
+            });
+          throw error;
         } finally {
           mark('endSession:done');
         }
@@ -522,6 +613,9 @@ it.runIf(trialWithFaults)(
           mode: phase === 'commitTransaction' ? { skip: 1 } : { times: 1 },
           data: { failCommands: [phase], blockConnection: true, blockTimeMS: 2000 },
         });
+        transactionTrace.length = 0;
+        transactionTraceStarted = performance.now();
+        tracingTransactions = true;
         const finishTrace = beginTrace();
         try {
           await expect(trialService.send(identity(owner), channel.id, payload)).rejects.toThrow();
@@ -530,9 +624,11 @@ it.runIf(trialWithFaults)(
           insert?.mockRestore();
           // A local socket timeout can happen while the synthetic server delay is
           // still active. Let the fault drain before touching the test harness.
+          await observe(phase + ':local-settled');
           await delay(2100);
           await admin.command({ configureFailPoint: 'failCommand', mode: 'off' });
         }
+        await observe(phase + ':fault-off');
         const commandCount = trace.filter(({ event }) => event === 'start:' + phase).length;
         expect(commandCount).toBeGreaterThanOrEqual(phase === 'commitTransaction' ? 2 : 1);
         await coordinator.run({ workspaceId: workspace.id }, () => undefined, { noWait: true });
@@ -549,6 +645,12 @@ it.runIf(trialWithFaults)(
           } catch (error) {
             if (textErrorCode(error) !== 'DEPENDENCY_UNAVAILABLE') throw error;
             transientFailures++;
+            transactionTrace.push({
+              ms: transactionTraceMs(),
+              attempt: attempt + 1,
+              error: mongoErrorEvidence(error),
+            });
+            if (attempt === 0 || attempt === 15) await observe(phase + ':retry-' + (attempt + 1));
             await delay(750);
           }
         }
@@ -559,6 +661,8 @@ it.runIf(trialWithFaults)(
           Math.round(performance.now() - retryAt),
           reply?.outcome,
         );
+        console.info('SCRUM42_TRANSACTIONS %s %s', phase, JSON.stringify(transactionTrace));
+        tracingTransactions = false;
         expect(reply).toBeDefined();
         expect(await trialService.send(identity(owner), channel.id, payload)).toEqual({
           outcome: 'existing',
@@ -569,7 +673,9 @@ it.runIf(trialWithFaults)(
       expect(await Message.countDocuments({ conversationId: conversation._id })).toBe(2);
       expect((await Conversation.findById(conversation._id).orFail()).lastMessageCommitSeq).toBe(2);
     } finally {
+      tracingTransactions = false;
       sessionSpy.mockRestore();
+      await observer.close();
     }
   },
   45_000,
