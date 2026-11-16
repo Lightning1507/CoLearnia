@@ -251,6 +251,24 @@ Phương án đề xuất cho M1/M4 review trước khi đổi runtime:
 3. Tiêu chí nghiệm thu runtime gồm commit chậm/mất ACK và abort/cleanup chậm trên replica set lifetime mặc định, trace kết quả terminal hoặc pending bền, trần gate/slot và tài nguyên chờ, revoke cạnh tranh và không có ghi cũ xuất hiện sau deny hoàn tất, retry cùng ID chỉ có một tin/sequence. Giữ probe chẩn đoán và assertion hiện tại. M1/M4 cần chốt budget và chạy độc lập ca nghiệm thu trước khi bật đường mới.
 4. Bản thử chỉ bao phủ AUTH_SESSION. Recovery, membership/PRIVATE và xóa scope cần hàng rào/quy tắc thứ tự và ca nghiệm thu riêng. Runtime giữ một pool/FIFO và trial opt-in trong test cho đến khi các phần liên quan được review.
 
+##### Ứng viên đối soát commit trên cùng driver session
+
+Driver đang pin `mongodb@7.8.0`. `commitTransaction()` chuyển trạng thái **cục bộ** sang committed trong finally, kể cả khi lỗi mạng; `inTransaction()` có thể false trong lúc transaction còn mở ở mongod. Driver hỗ trợ gọi lại `commitTransaction()` trên cùng `ClientSession` chưa end, giữ nguyên lsid/txnNumber và dùng majority. `endSession()` trả session cho driver; không dùng session đã end để thử lại. Đối số `timeoutMS` của commit được driver đánh dấu deprecated và không có tác dụng; `maxCommitTimeMS` cấu hình trên transaction chỉ giới hạn phần server. Không dựa riêng vào nhãn UnknownTransactionCommitResult: profile `maxAdaptiveRetries=0` đã cho lỗi mạng không nhãn.
+
+Fixture ứng viên tạo lỗi đóng kết nối đúng một lần ở commit ghi. Lượt kiểm trên MongoDB 8.0.16, lifetime mặc định 60 giây, nhận ACK majority từ lần gọi lại sau 15 ms; hai command ghi dùng cùng lsid/txnNumber. Majority read thấy đúng một tin, replay cùng ID trả sequence 1. Ca abort tách riêng đạt, retry tạo tin sau 58 ms với 0 lỗi retry và teardown sạch trong lượt chạy chung hai ca. Lượt thử sớm hơn với delay 2 giây vẫn timeout khi gọi lại commit và timeout khi drop database. Chưa xác định lock cụ thể chặn drop trong lượt đó. Hai kết quả giới hạn phạm vi của ứng viên: tài nguyên driver còn sống và kết nối phục hồi đủ sớm. Probe commit chậm giữ assertion cũ, và pha abort chạy độc lập.
+
+```powershell
+pnpm exec vitest run --pool=threads --config vitest.database.config.ts apps/server/test/text-transport.integration.ts -t 'retries the original commit|shared trial pool: abortTransaction'
+pnpm exec vitest run --pool=threads --config vitest.database.config.ts apps/server/test/text-transport.integration.ts -t 'shared trial pool: commitTransaction'
+```
+
+Đề xuất runtime để M1/M4 review:
+
+- Admission lấy khóa theo scope/conversation, actor và `clientMessageId`, giữ fingerprint nội dung theo quy tắc idempotency hiện hành. Cùng ID và cùng payload nối vào operation gốc và đọc lại kết quả theo quyền hiện tại; payload khác trả conflict. Cùng ID còn pending trả `DEPENDENCY_UNAVAILABLE` để retry cùng ID. Yêu cầu khác có thể tiếp tục qua FIFO hiện tại nếu còn slot và không tranh tài nguyên pending; vượt trần trả `SERVER_BUSY`.
+- Dành cửa sổ kết thúc trong deadline tổng sau lookup/gate/pool/query. Chỉ thử lại commit cùng session khi còn đủ budget và driver có phép đo được trần thực tế; receipt majority chứng minh đã ghi, thiếu receipt giữ pending. Ứng viên chưa tìm được timeout API trên từng commit để cam kết trần đó. Không chuyển sang lệnh admin hoặc driver private API.
+- Đề xuất journal cần review trước khi triển khai: reserve operation trước transaction ghi, lưu scope/incarnation, actor, message ID, fingerprint, trạng thái và owner generation. Ghi terminal receipt cùng transaction với tin. Khi process restart, resume đối soát theo journal; không dựng lại lsid/txnNumber hay tự coi thiếu receipt là rollback. Nếu chưa đủ bằng chứng terminal, giữ pending và chặn ghi lại theo cùng ID. M1/M4 cần chốt cơ chế DB cho terminal/deny, cam kết giữ quota pending theo scope/toàn process, giá trị trần, thu hồi record sau terminal và deadline thực tế trước khi cho phép rollout.
+- Giữ một app/client/pool và FIFO. Phân biệt barrier pending deny, durable revoke và complete. Ghi đang dở có thể thắng thứ tự DB trước revoke; sau durable revoke phải chặn mọi ghi/sequence mới từ phiên cũ. Giữ cleanup ngoài gate, đúng session/generation cũ. Membership/PRIVATE/xóa scope và recovery production cần review riêng.
+
 Cùng cấu hình trial ở trên, mỗi đợt tải ghép chạy hai lượt gửi TEXT song song với đọc phiên, mở Workspace và tạo Workspace/kênh TEXT trên cùng pool. Một lượt đo cục bộ với pool 2 cho kết quả cùng phiên 224/175 ms và khác phiên 174/151 ms (tắt/bật fence). Hai đợt bật fence có đúng hai update AuthSession mỗi đợt. Cả bốn đợt có tám tin và sequence cuối 8. Mẫu này kiểm các đường chạy đồng thời và đếm update. Cần mẫu tải lớn hơn để chốt budget hoặc capacity.
 
 P2 tiếp tục mở. Runtime mặc định vẫn dùng đường hiện hành. Recovery qua restart, deadline và các scope ngoài AUTH_SESSION cần được chốt trước quyết định merge.

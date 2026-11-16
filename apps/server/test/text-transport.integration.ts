@@ -541,9 +541,9 @@ function mongoErrorEvidence(error: unknown): MongoErrorEvidence {
   };
 }
 
-it.runIf(trialWithFaults)(
-  'measures commit and cleanup with the shared trial pool',
-  async () => {
+it.runIf(trialWithFaults).each(['commitTransaction', 'abortTransaction'] as const)(
+  'measures commit and cleanup with the shared trial pool: %s',
+  async (phase) => {
     const { owner, workspace, channel, conversation } = await textChannel();
     const admin = database.connection.db!.admin();
     diagnosingTransactions = true;
@@ -600,78 +600,76 @@ it.runIf(trialWithFaults)(
         }
       });
     try {
-      for (const phase of ['commitTransaction', 'abortTransaction'] as const) {
-        const payload = { clientMessageId: randomUUID(), text: phase };
-        const insert =
-          phase === 'abortTransaction'
-            ? vi
-                .spyOn(Message.collection, 'insertOne')
-                .mockRejectedValueOnce(new Error('fixture insert failure'))
-            : undefined;
-        await admin.command({
-          configureFailPoint: 'failCommand',
-          mode: phase === 'commitTransaction' ? { skip: 1 } : { times: 1 },
-          data: { failCommands: [phase], blockConnection: true, blockTimeMS: 2000 },
-        });
-        transactionTrace.length = 0;
-        transactionTraceStarted = performance.now();
-        tracingTransactions = true;
-        const finishTrace = beginTrace();
-        try {
-          await expect(trialService.send(identity(owner), channel.id, payload)).rejects.toThrow();
-        } finally {
-          finishTrace(phase);
-          insert?.mockRestore();
-          // A local socket timeout can happen while the synthetic server delay is
-          // still active. Let the fault drain before touching the test harness.
-          await observe(phase + ':local-settled');
-          await delay(2100);
-          await admin.command({ configureFailPoint: 'failCommand', mode: 'off' });
-        }
-        await observe(phase + ':fault-off');
-        const commandCount = trace.filter(({ event }) => event === 'start:' + phase).length;
-        expect(commandCount).toBeGreaterThanOrEqual(phase === 'commitTransaction' ? 2 : 1);
-        await coordinator.run({ workspaceId: workspace.id }, () => undefined, { noWait: true });
-        expect(coordinator.stats().operations).toBe(0);
-        expect(trace.at(-1)?.event).toBe('slot-released');
-        const key = { conversationId: conversation._id, clientMessageId: payload.clientMessageId };
-        const retryAt = performance.now();
-        let transientFailures = 0;
-        let reply: Awaited<ReturnType<typeof trialService.send>> | undefined;
-        for (let attempt = 0; attempt < 16; attempt++) {
-          try {
-            reply = await trialService.send(identity(owner), channel.id, payload);
-            break;
-          } catch (error) {
-            if (textErrorCode(error) !== 'DEPENDENCY_UNAVAILABLE') throw error;
-            transientFailures++;
-            transactionTrace.push({
-              ms: transactionTraceMs(),
-              attempt: attempt + 1,
-              error: mongoErrorEvidence(error),
-            });
-            if (attempt === 0 || attempt === 15) await observe(phase + ':retry-' + (attempt + 1));
-            await delay(750);
-          }
-        }
-        console.info(
-          'SCRUM42_RETRY %s failures=%d settled=%dms outcome=%s',
-          phase,
-          transientFailures,
-          Math.round(performance.now() - retryAt),
-          reply?.outcome,
-        );
-        console.info('SCRUM42_TRANSACTIONS %s %s', phase, JSON.stringify(transactionTrace));
-        tracingTransactions = false;
-        expect(reply).toBeDefined();
-        expect(await trialService.send(identity(owner), channel.id, payload)).toEqual({
-          outcome: 'existing',
-          message: reply?.message,
-        });
-        expect(await Message.countDocuments(key)).toBe(1);
+      const payload = { clientMessageId: randomUUID(), text: phase };
+      const insert =
+        phase === 'abortTransaction'
+          ? vi
+              .spyOn(Message.collection, 'insertOne')
+              .mockRejectedValueOnce(new Error('fixture insert failure'))
+          : undefined;
+      await admin.command({
+        configureFailPoint: 'failCommand',
+        mode: phase === 'commitTransaction' ? { skip: 1 } : { times: 1 },
+        data: { failCommands: [phase], blockConnection: true, blockTimeMS: 2000 },
+      });
+      transactionTrace.length = 0;
+      transactionTraceStarted = performance.now();
+      tracingTransactions = true;
+      const finishTrace = beginTrace();
+      try {
+        await expect(trialService.send(identity(owner), channel.id, payload)).rejects.toThrow();
+      } finally {
+        finishTrace(phase);
+        insert?.mockRestore();
+        // A local socket timeout can happen while the synthetic server delay is
+        // still active. Let the fault drain before touching the test harness.
+        await observe(phase + ':local-settled');
+        await delay(2100);
+        await admin.command({ configureFailPoint: 'failCommand', mode: 'off' });
       }
-      expect(await Message.countDocuments({ conversationId: conversation._id })).toBe(2);
-      expect((await Conversation.findById(conversation._id).orFail()).lastMessageCommitSeq).toBe(2);
+      await observe(phase + ':fault-off');
+      const commandCount = trace.filter(({ event }) => event === 'start:' + phase).length;
+      expect(commandCount).toBeGreaterThanOrEqual(phase === 'commitTransaction' ? 2 : 1);
+      await coordinator.run({ workspaceId: workspace.id }, () => undefined, { noWait: true });
+      expect(coordinator.stats().operations).toBe(0);
+      expect(trace.at(-1)?.event).toBe('slot-released');
+      const key = { conversationId: conversation._id, clientMessageId: payload.clientMessageId };
+      const retryAt = performance.now();
+      let transientFailures = 0;
+      let reply: Awaited<ReturnType<typeof trialService.send>> | undefined;
+      for (let attempt = 0; attempt < 16; attempt++) {
+        try {
+          reply = await trialService.send(identity(owner), channel.id, payload);
+          break;
+        } catch (error) {
+          if (textErrorCode(error) !== 'DEPENDENCY_UNAVAILABLE') throw error;
+          transientFailures++;
+          transactionTrace.push({
+            ms: transactionTraceMs(),
+            attempt: attempt + 1,
+            error: mongoErrorEvidence(error),
+          });
+          if (attempt === 0 || attempt === 15) await observe(phase + ':retry-' + (attempt + 1));
+          await delay(750);
+        }
+      }
+      console.info(
+        'SCRUM42_RETRY %s failures=%d settled=%dms outcome=%s',
+        phase,
+        transientFailures,
+        Math.round(performance.now() - retryAt),
+        reply?.outcome,
+      );
+      console.info('SCRUM42_TRANSACTIONS %s %s', phase, JSON.stringify(transactionTrace));
+      tracingTransactions = false;
+      expect(reply).toBeDefined();
+      expect(await trialService.send(identity(owner), channel.id, payload)).toEqual({
+        outcome: 'existing',
+        message: reply?.message,
+      });
+      expect(await Message.countDocuments(key)).toBe(1);
+      expect(await Message.countDocuments({ conversationId: conversation._id })).toBe(1);
+      expect((await Conversation.findById(conversation._id).orFail()).lastMessageCommitSeq).toBe(1);
     } finally {
       tracingTransactions = false;
       sessionSpy.mockRestore();
@@ -679,6 +677,76 @@ it.runIf(trialWithFaults)(
     }
   },
   45_000,
+);
+
+it.runIf(trialWithFaults)(
+  'retries the original commit on the live driver session before ending it',
+  async () => {
+    const { owner, channel, conversation } = await textChannel();
+    const payload = { clientMessageId: randomUUID(), text: 'same transaction commit retry' };
+    const admin = database.connection.db!.admin();
+    const commit = mongo.ClientSession.prototype.commitTransaction;
+    const client = database.connection.getClient();
+    const commits: { session: string; transaction: string; majority: boolean }[] = [];
+    const recordCommit = ({ command, commandName }: mongo.CommandStartedEvent) => {
+      if (commandName !== 'commitTransaction') return;
+      commits.push({
+        session: command.lsid.id.toUUID().toString(),
+        transaction: command.txnNumber.toString(),
+        majority: command.writeConcern?.w === 'majority',
+      });
+    };
+    let retried = false;
+    let calls = 0;
+    const spy = vi
+      .spyOn(mongo.ClientSession.prototype, 'commitTransaction')
+      .mockImplementation(async function (this: mongo.ClientSession) {
+        if (++calls === 2) {
+          await admin.command({
+            configureFailPoint: 'failCommand',
+            mode: { times: 1 },
+            data: { failCommands: ['commitTransaction'], closeConnection: true },
+          });
+        }
+        try {
+          await commit.call(this);
+        } catch (error) {
+          expect(error).toBeInstanceOf(mongo.MongoNetworkError);
+          expect(this.hasEnded).toBe(false);
+          expect(this.inTransaction()).toBe(false);
+          expect(retried).toBe(false);
+          retried = true;
+          const started = performance.now();
+          await commit.call(this);
+          console.info(
+            'SCRUM42_SAME_COMMIT retry acknowledged in %d ms',
+            Math.round(performance.now() - started),
+          );
+        }
+      });
+    client.on('commandStarted', recordCommit);
+    try {
+      const sent = await trialService.send(identity(owner), channel.id, payload);
+      expect(retried).toBe(true);
+      expect(commits).toHaveLength(3);
+      expect(commits[1]).toEqual(commits[2]);
+      expect(commits[0]).not.toEqual(commits[1]);
+      expect(commits[2]?.majority).toBe(true);
+      expect(sent).toMatchObject({ outcome: 'created', message: { commitSeq: 1 } });
+      expect(
+        await Message.countDocuments({ conversationId: conversation._id }).readConcern('majority'),
+      ).toBe(1);
+      expect(await trialService.send(identity(owner), channel.id, payload)).toMatchObject({
+        outcome: 'existing',
+        message: { commitSeq: 1 },
+      });
+    } finally {
+      client.off('commandStarted', recordCommit);
+      spy.mockRestore();
+      await admin.command({ configureFailPoint: 'failCommand', mode: 'off' });
+    }
+  },
+  15_000,
 );
 
 it.runIf(trialWithFaults)('measures pool saturation without holding a Workspace gate', async () => {
