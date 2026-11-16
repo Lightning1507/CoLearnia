@@ -5,6 +5,8 @@ import {
   mediaConsumerCreateInputSchema,
   mediaConsumerReadyAckSchema,
   mediaConsumerReadyInputSchema,
+  mediaDeviceProducerCloseAckSchema,
+  mediaDeviceProducerCloseInputSchema,
   mediaProducerCreateAckSchema,
   mediaProducerCreateInputSchema,
   requestIdSchema,
@@ -36,6 +38,8 @@ type ScreenPublication = {
 };
 
 type Produce = z.infer<typeof mediaProducerCreateInputSchema>;
+type CloseDevice = z.infer<typeof mediaDeviceProducerCloseInputSchema>;
+type DeviceSourceChange = Pick<ScreenSourceChange, 'type' | 'source'>;
 type Consume = z.infer<typeof mediaConsumerCreateInputSchema>;
 type Ready = z.infer<typeof mediaConsumerReadyInputSchema>;
 type Close = z.infer<typeof mediaConsumerCloseInputSchema>;
@@ -66,9 +70,17 @@ type Bindings = readonly [owner: LiveContext, ...dependencies: LiveContext[]];
 type CreateIntent = {
   userId: string;
   sessionKey: string;
-} & ({ signature: string; result?: Grant } | { expiresAt: number });
+} & (
+  | {
+      signature: string;
+      result?: Grant;
+      device?: { owner: LiveContext; transportId: string; cancel(): void };
+    }
+  | { expiresAt: number }
+);
 type Source = {
   native: MediaTypes.Producer;
+  transportId: string;
   descriptor: MediaSourceDescriptor;
   owner: LiveContext;
   publication?: ScreenPublication;
@@ -85,6 +97,7 @@ type Receiver = {
 };
 type Event =
   | 'media.producer.create'
+  | 'media.producer.close'
   | 'media.consumer.create'
   | 'media.consumer.ready'
   | 'media.consumer.close';
@@ -155,6 +168,14 @@ export function createPausedReadySignaling({
 }) {
   const sources = new Map<string, Source>();
   const publications = new Map<string, ScreenPublication>();
+  const deviceSourceListeners = new Set<(change: DeviceSourceChange) => void>();
+  function notifyDeviceSource(change: DeviceSourceChange) {
+    queueMicrotask(() =>
+      outsideCoordination(() => {
+        for (const listener of deviceSourceListeners) listener(change);
+      }),
+    );
+  }
   function notifyScreen(change: ScreenSourceChange) {
     if (!onScreenSource) return;
     // A notification consumer can re-enter a recipient gate once this mutation yields.
@@ -195,7 +216,7 @@ export function createPausedReadySignaling({
     key: string,
     bindings: Bindings,
     task: (operation: Operation) => Promise<T | Failure>,
-  ): Work<T> | Failure {
+  ): (Work<T> & { cancel(): void }) | Failure {
     if (pending.has(key)) return fail('OPERATION_IN_PROGRESS');
     const [context] = bindings;
     const release = admission.tryAcquire(
@@ -240,7 +261,22 @@ export function createPausedReadySignaling({
         untrack();
         release();
       });
-    return { work: Promise.race([settled, cancellation]) };
+    return { work: Promise.race([settled, cancellation]), cancel: () => cancel('CONFLICT') };
+  }
+
+  function hasIntentCapacity(userId: string, sessionKey: string) {
+    const now = Date.now();
+    let userIntents = 0;
+    let sessionIntents = 0;
+    for (const [id, intent] of createIntents) {
+      if ('expiresAt' in intent && intent.expiresAt <= now) {
+        createIntents.delete(id);
+        continue;
+      }
+      if (intent.userId === userId) userIntents++;
+      if (intent.sessionKey === sessionKey) sessionIntents++;
+    }
+    return userIntents < 64 && sessionIntents < 1024 && createIntents.size < 4096;
   }
 
   function create(
@@ -253,22 +289,13 @@ export function createPausedReadySignaling({
       keep: (result: Grant) => void,
       retire: () => void,
     ) => Promise<Grant | Failure>,
+    deviceTransportId?: string,
   ): Work<Grant> | Failure {
     const { userId } = bindings[0].auth;
     const sessionKey = `${input.sessionId}:${input.epoch}`;
     const intentKey = JSON.stringify([event, userId, sessionKey, input.requestId]);
     const signature = JSON.stringify([key, input.payload]);
-    const now = Date.now();
-    let userIntents = 0;
-    let sessionIntents = 0;
-    for (const [id, intent] of createIntents) {
-      if ('expiresAt' in intent && intent.expiresAt <= now) {
-        createIntents.delete(id);
-        continue;
-      }
-      if (intent.userId === userId) userIntents++;
-      if (intent.sessionKey === sessionKey) sessionIntents++;
-    }
+    const capacity = hasIntentCapacity(userId, sessionKey);
     const previous = createIntents.get(intentKey);
     if (previous) {
       if ('expiresAt' in previous || previous.signature !== signature) return fail('CONFLICT');
@@ -277,10 +304,9 @@ export function createPausedReadySignaling({
         : fail('OPERATION_IN_PROGRESS');
     }
     if (reservedResources.has(key)) return fail('CONFLICT');
-    if (userIntents >= 64 || sessionIntents >= 1024 || createIntents.size >= 4096) {
-      return fail('SERVER_BUSY');
-    }
+    if (!capacity) return fail('SERVER_BUSY');
     const intent: CreateIntent = { userId, sessionKey, signature };
+    let deviceCancelled = false;
     const retire = () => {
       if (createIntents.get(intentKey) !== intent) return;
       // Keep only the closed intent's identity, with no source or transport metadata to replay.
@@ -301,13 +327,24 @@ export function createPausedReadySignaling({
           retire,
         );
       } finally {
-        if (!intent.result && createIntents.get(intentKey) === intent) {
+        if (deviceCancelled) retire();
+        else if (!intent.result && createIntents.get(intentKey) === intent) {
           createIntents.delete(intentKey);
           reservedResources.delete(key);
         }
       }
     });
     if ('work' in work) {
+      if (deviceTransportId !== undefined) {
+        intent.device = {
+          owner: bindings[0],
+          transportId: deviceTransportId,
+          cancel() {
+            deviceCancelled = true;
+            work.cancel();
+          },
+        };
+      }
       createIntents.set(intentKey, intent);
       reservedResources.add(key);
     }
@@ -341,188 +378,209 @@ export function createPausedReadySignaling({
         ) {
           return fail('VALIDATION_ERROR');
         }
-        return create(key, [owner], 'producer', input, async (operation, keep, retire) => {
-          if (sources.size + pending.size > maxActiveResources) return fail('SERVER_BUSY');
-          const publicationKey =
-            lease &&
-            JSON.stringify([input.sessionId, input.epoch, lease.leaseId, lease.leaseGeneration]);
-          let publication = publicationKey ? publications.get(publicationKey) : undefined;
-          if (sourceKind === 'SCREEN' && share && lease && publicationKey) {
-            const ref = { ...lease, publicationId: input.requestId };
-            const reserved = share.leases.reservePublishHeld(share.held, ref, ref.publicationId);
-            if (!reserved.ok) return fail(reserved.errorCode);
-            if (!share.leases.canPublishHeld(share.held, sourceKind, 'CREATE', ref))
-              return fail('FORBIDDEN');
-            const entry: ScreenPublication = { ref, stopped: false, inFlight: 0 };
-            if (
-              !share.leases.bindPublicationHeld(share.held, ref, {
-                isStopped: () => entry.stopped,
-                close() {
-                  entry.stopped = true;
-                  entry.video?.close();
-                  entry.audio?.close();
-                  if (entry.inFlight) return false;
-                  publications.delete(publicationKey);
-                  return true;
-                },
-              })
-            )
-              return fail('CONFLICT');
-            publication = entry;
-            publications.set(publicationKey, entry);
-          } else if (
-            screen &&
-            (!publication ||
-              publication.stopped ||
-              !publication.video ||
-              publication.video.closed ||
-              !share?.leases.canPublishHeld(share.held, sourceKind, 'CREATE', publication.ref))
-          ) {
-            return fail('FORBIDDEN');
-          }
-          const retireScreen = () => {
-            if (!publication || !share) return;
-            void share.retire(publication.ref).catch(() => {});
-          };
-          if (publication) publication.inFlight++;
-          let native: MediaTypes.Producer | undefined;
-          let published = false;
-          try {
-            const producer = await transport.produce({
-              kind,
-              rtpParameters: rtpParameters as MediaTypes.RtpParameters,
-              ...(screen && { paused: true }),
-            });
-            native = producer;
-            operation.bindResource(producer);
-            if (operation.isCancelled() || publication?.stopped) return fail('CONFLICT');
-            if (publication) {
-              if (sourceKind === 'SCREEN') publication.video = producer;
-              else publication.audio = producer;
-            }
-            const authorizePublish = (
-              current: LiveContext,
-              policyNow: SessionPolicyInput,
-              gate?: HeldShareLease,
-            ) =>
-              !operation.isCancelled() &&
-              !producer.closed &&
-              !publication?.stopped &&
-              sameReceiver(owner, current) &&
-              canPublishMedia(policyNow, sourceKind) &&
+        return create(
+          key,
+          [owner],
+          'producer',
+          input,
+          async (operation, keep, retire) => {
+            if (sources.size + pending.size > maxActiveResources) return fail('SERVER_BUSY');
+            const publicationKey =
+              lease &&
+              JSON.stringify([input.sessionId, input.epoch, lease.leaseId, lease.leaseGeneration]);
+            let publication = publicationKey ? publications.get(publicationKey) : undefined;
+            if (sourceKind === 'SCREEN' && share && lease && publicationKey) {
+              const ref = { ...lease, publicationId: input.requestId };
+              const reserved = share.leases.reservePublishHeld(share.held, ref, ref.publicationId);
+              if (!reserved.ok) return fail(reserved.errorCode);
+              if (!share.leases.canPublishHeld(share.held, sourceKind, 'CREATE', ref))
+                return fail('FORBIDDEN');
+              const entry: ScreenPublication = { ref, stopped: false, inFlight: 0 };
+              if (
+                !share.leases.bindPublicationHeld(share.held, ref, {
+                  isStopped: () => entry.stopped,
+                  close() {
+                    entry.stopped = true;
+                    entry.video?.close();
+                    entry.audio?.close();
+                    if (entry.inFlight) return false;
+                    publications.delete(publicationKey);
+                    return true;
+                  },
+                })
+              )
+                return fail('CONFLICT');
+              publication = entry;
+              publications.set(publicationKey, entry);
+            } else if (
+              screen &&
               (!publication ||
-                gate?.leases.canPublishHeld(gate.held, sourceKind, 'READY', publication.ref) ===
-                  true);
-            if (publication) {
-              const prepared = await withTransport(
+                publication.stopped ||
+                !publication.video ||
+                publication.video.closed ||
+                !share?.leases.canPublishHeld(share.held, sourceKind, 'CREATE', publication.ref))
+            ) {
+              return fail('FORBIDDEN');
+            }
+            const retireScreen = () => {
+              if (!publication || !share) return;
+              void share.retire(publication.ref).catch(() => {});
+            };
+            if (publication) publication.inFlight++;
+            let native: MediaTypes.Producer | undefined;
+            let published = false;
+            try {
+              const producer = await transport.produce({
+                kind,
+                rtpParameters: rtpParameters as MediaTypes.RtpParameters,
+                ...(screen && { paused: true }),
+              });
+              native = producer;
+              operation.bindResource(producer);
+              if (operation.isCancelled() || publication?.stopped) return fail('CONFLICT');
+              if (publication) {
+                if (sourceKind === 'SCREEN') publication.video = producer;
+                else publication.audio = producer;
+              }
+              const authorizePublish = (
+                current: LiveContext,
+                policyNow: SessionPolicyInput,
+                gate?: HeldShareLease,
+              ) =>
+                !operation.isCancelled() &&
+                !producer.closed &&
+                !publication?.stopped &&
+                sameReceiver(owner, current) &&
+                canPublishMedia(policyNow, sourceKind) &&
+                (!publication ||
+                  gate?.leases.canPublishHeld(gate.held, sourceKind, 'READY', publication.ref) ===
+                    true);
+              if (publication) {
+                const prepared = await withTransport(
+                  socketId,
+                  input,
+                  transportId,
+                  'SEND',
+                  (current, _, currentPolicy, _transport, gate) => {
+                    if (
+                      !gate ||
+                      operation.isCancelled() ||
+                      producer.closed ||
+                      publication.stopped ||
+                      !sameReceiver(owner, current)
+                    )
+                      return fail('CONFLICT');
+                    if (sourceKind === 'SCREEN') {
+                      const committed = gate.leases.commitHeld(gate.held, publication.ref);
+                      if (!committed.ok) return fail(committed.errorCode);
+                    }
+                    if (!authorizePublish(current, currentPolicy, gate)) return fail('FORBIDDEN');
+                    return { resumed: producer.resume() };
+                  },
+                );
+                if ('errorCode' in prepared) return prepared;
+                await prepared.resumed;
+              }
+              return await withTransport(
                 socketId,
                 input,
                 transportId,
                 'SEND',
                 (current, _, currentPolicy, _transport, gate) => {
-                  if (
-                    !gate ||
-                    operation.isCancelled() ||
-                    producer.closed ||
-                    publication.stopped ||
-                    !sameReceiver(owner, current)
-                  )
+                  if (operation.isCancelled() || producer.closed || !sameReceiver(owner, current))
                     return fail('CONFLICT');
-                  if (sourceKind === 'SCREEN') {
-                    const committed = gate.leases.commitHeld(gate.held, publication.ref);
-                    if (!committed.ok) return fail(committed.errorCode);
-                  }
                   if (!authorizePublish(current, currentPolicy, gate)) return fail('FORBIDDEN');
-                  return { resumed: producer.resume() };
-                },
-              );
-              if ('errorCode' in prepared) return prepared;
-              await prepared.resumed;
-            }
-            return await withTransport(
-              socketId,
-              input,
-              transportId,
-              'SEND',
-              (current, _, currentPolicy, _transport, gate) => {
-                if (operation.isCancelled() || producer.closed || !sameReceiver(owner, current))
-                  return fail('CONFLICT');
-                if (!authorizePublish(current, currentPolicy, gate)) return fail('FORBIDDEN');
-                const native = producer;
-                const descriptor: MediaSourceDescriptor = {
-                  producerId: native.id,
-                  sourceId: randomUUID(),
-                  sourceGeneration: 1,
-                  sourceRevision: 0,
-                  ownerParticipantId: current.participantId,
-                  scope:
-                    current.scope.type === 'MAIN'
-                      ? { type: 'MAIN' }
-                      : { type: 'GROUP', groupId: current.scope.groupId },
-                  sourceKind,
-                  kind,
-                  publicationState: 'PUBLISHING',
-                };
-                const source = {
-                  native,
-                  descriptor,
-                  owner: current,
-                  ...(publication && { publication }),
-                };
-                const result: Grant = {
-                  payload: { producerId: native.id, source: descriptor },
-                  transportId,
-                  direction: 'SEND',
-                  validate(latest, policy, gate) {
-                    if (
-                      native.closed ||
-                      sources.get(native.id) !== source ||
-                      !sameReceiver(source.owner, latest)
-                    )
-                      return fail('CONFLICT');
-                    if (!authorizePublish(latest, policy, gate)) {
-                      native.close();
-                      return fail('FORBIDDEN');
-                    }
-                    return undefined;
-                  },
-                };
-                sources.set(native.id, source);
-                published = true;
-                keep(result);
-                if (publication)
-                  notifyScreen({
-                    type: 'published',
-                    source: { ...descriptor },
+                  const native = producer;
+                  const descriptor: MediaSourceDescriptor = {
+                    producerId: native.id,
+                    sourceId: randomUUID(),
+                    sourceGeneration: 1,
+                    sourceRevision: 0,
+                    ownerParticipantId: current.participantId,
+                    scope:
+                      current.scope.type === 'MAIN'
+                        ? { type: 'MAIN' }
+                        : { type: 'GROUP', groupId: current.scope.groupId },
+                    sourceKind,
+                    kind,
+                    publicationState: 'PUBLISHING',
+                  };
+                  const source = {
+                    native,
+                    transportId,
+                    descriptor,
                     owner: current,
-                  });
-                native.observer.once('close', () => {
-                  sources.delete(native.id);
-                  retire();
+                    ...(publication && { publication }),
+                  };
+                  const result: Grant = {
+                    payload: { producerId: native.id, source: descriptor },
+                    transportId,
+                    direction: 'SEND',
+                    ...(!screen && {
+                      resource: {
+                        producerId: native.id,
+                        sourceId: descriptor.sourceId,
+                        sourceGeneration: descriptor.sourceGeneration,
+                      },
+                    }),
+                    validate(latest, policy, gate) {
+                      if (
+                        native.closed ||
+                        sources.get(native.id) !== source ||
+                        !sameReceiver(source.owner, latest)
+                      )
+                        return fail('CONFLICT');
+                      if (!authorizePublish(latest, policy, gate)) {
+                        native.close();
+                        return fail('FORBIDDEN');
+                      }
+                      return undefined;
+                    },
+                  };
+                  sources.set(native.id, source);
+                  published = true;
+                  keep(result);
                   if (publication)
                     notifyScreen({
-                      type: 'ended',
-                      source: { ...descriptor, sourceRevision: descriptor.sourceRevision + 1 },
+                      type: 'published',
+                      source: { ...descriptor },
                       owner: current,
                     });
-                  if (sourceKind === 'SCREEN' && publication && !publication.stopped) {
-                    publication.stopped = true;
-                    publication.audio?.close();
-                    retireScreen();
-                  }
-                });
-                return result;
-              },
-            );
-          } finally {
-            if (!published && native && !native.closed) native.close();
-            if (publication) {
-              publication.inFlight--;
-              if (!published && sourceKind === 'SCREEN') publication.stopped = true;
-              if (publication.stopped) retireScreen();
+                  if (!screen) notifyDeviceSource({ type: 'published', source: descriptor });
+                  native.observer.once('close', () => {
+                    sources.delete(native.id);
+                    retire();
+                    if (!screen)
+                      notifyDeviceSource({
+                        type: 'ended',
+                        source: { ...descriptor, sourceRevision: descriptor.sourceRevision + 1 },
+                      });
+                    if (publication)
+                      notifyScreen({
+                        type: 'ended',
+                        source: { ...descriptor, sourceRevision: descriptor.sourceRevision + 1 },
+                        owner: current,
+                      });
+                    if (sourceKind === 'SCREEN' && publication && !publication.stopped) {
+                      publication.stopped = true;
+                      publication.audio?.close();
+                      retireScreen();
+                    }
+                  });
+                  return result;
+                },
+              );
+            } finally {
+              if (!published && native && !native.closed) native.close();
+              if (publication) {
+                publication.inFlight--;
+                if (!published && sourceKind === 'SCREEN') publication.stopped = true;
+                if (publication.stopped) retireScreen();
+              }
             }
-          }
-        });
+          },
+          screen ? undefined : transportId,
+        );
       },
     );
     return 'work' in prepared ? prepared.work : prepared;
@@ -690,6 +748,59 @@ export function createPausedReadySignaling({
     return prepared;
   }
 
+  async function closeDevice(socketId: string, input: CloseDevice) {
+    const { transportId, target } = input.payload;
+    return withTransport(
+      socketId,
+      input,
+      transportId,
+      'SEND',
+      (current) => {
+        if ('producerId' in target) {
+          const source = sources.get(target.producerId);
+          if (source) {
+            if (
+              source.publication ||
+              source.transportId !== transportId ||
+              !sameReceiver(source.owner, current)
+            )
+              return fail('NOT_FOUND');
+            source.native.close();
+          }
+        } else {
+          const { userId } = current.auth;
+          const sessionKey = `${current.sessionId}:${current.epoch}`;
+          const id = JSON.stringify(['producer', userId, sessionKey, target.createRequestId]);
+          const capacity = hasIntentCapacity(userId, sessionKey);
+          const intent = createIntents.get(id);
+          if (!intent) {
+            if (!capacity) return fail('SERVER_BUSY');
+            createIntents.set(id, {
+              userId,
+              sessionKey,
+              expiresAt: Date.now() + closedIntentReplayMs,
+            });
+          } else if (!('expiresAt' in intent)) {
+            if (
+              !intent.device ||
+              intent.device.transportId !== transportId ||
+              !sameReceiver(intent.device.owner, current)
+            )
+              return fail('NOT_FOUND');
+            intent.device.cancel();
+          }
+        }
+        return {
+          payload: { target, closed: true },
+          transportId,
+          direction: 'SEND',
+          validate: () => undefined,
+        } satisfies Grant;
+      },
+      'cleanup',
+    );
+  }
+
   async function closeConsumer(socketId: string, input: Close) {
     const { transportId, consumerId, sourceId, sourceGeneration } = input.payload;
     return withTransport(
@@ -723,6 +834,10 @@ export function createPausedReadySignaling({
   }
 
   return {
+    subscribeDeviceSources(listener: (change: DeviceSourceChange) => void) {
+      deviceSourceListeners.add(listener);
+      return () => deviceSourceListeners.delete(listener);
+    },
     visibleSources(policy: SessionPolicyInput, share?: HeldShareLease) {
       return [...sources.values()]
         .filter((source) => mayReceive(policy, source, share))
@@ -765,7 +880,7 @@ export function createPausedReadySignaling({
       };
     },
     attach(socket: SocketPort) {
-      function register<T extends Produce | Consume | Ready | Close>(
+      function register<T extends Produce | Consume | Ready | Close | CloseDevice>(
         event: Event,
         input: z.ZodType<T>,
         ackSchema: z.ZodType,
@@ -813,7 +928,9 @@ export function createPausedReadySignaling({
                     resourceGrants.acknowledge(socket.id, current, result.resource);
                   reply(response);
                 },
-                event === 'media.consumer.close' ? 'cleanup' : 'mutation',
+                event === 'media.consumer.close' || event === 'media.producer.close'
+                  ? 'cleanup'
+                  : 'mutation',
               );
               if (error) reject(error.errorCode);
             })
@@ -825,6 +942,12 @@ export function createPausedReadySignaling({
         mediaProducerCreateInputSchema,
         mediaProducerCreateAckSchema,
         produce,
+      );
+      register(
+        'media.producer.close',
+        mediaDeviceProducerCloseInputSchema,
+        mediaDeviceProducerCloseAckSchema,
+        closeDevice,
       );
       register(
         'media.consumer.create',

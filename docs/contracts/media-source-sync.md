@@ -32,6 +32,8 @@ Schema kiểm phần riêng lẻ và giới hạn số part theo `sessionControl
 
 ## Event và ví dụ watermark
 
+SCRUM-71 dùng `media.producer.close` cho MIC/CAMERA với payload `{ transportId, target }`. Target strict là `{ producerId }` khi đã nhận ACK, hoặc `{ createRequestId }` để thu một create chưa xác định kết quả. Server kiểm ownership SEND transport và đời call/audience hiện hành, chấp nhận policy revision cũ cho cleanup. Create pending bị hủy vẫn chiếm slot tới khi native I/O hoàn tất và tài nguyên trả muộn được đóng. Target chưa có giữ tombstone 60 giây để create đến trễ không phát lại. ACK echo target với `closed: true`. Client giữ intent cleanup chưa xác nhận để thử lại trước khi bật lượt mới. Owner nhận event `media.producer.stateChanged` khi đóng nguồn đã cấp sau snapshot.
+
 `media.consumer.close` dùng command envelope và payload gồm `transportId`, `consumerId`, `sourceId` và `sourceGeneration`. Server kiểm quyền hiện hành và ownership của RECV transport, socket và đời context của Consumer, rồi đóng đúng binding. Riêng lệnh đóng chấp nhận `expectedPolicyRevision` cũ khi các kiểm tra ownership vẫn đạt; `create` và `ready` vẫn yêu cầu revision hiện hành. Nếu ID đã vắng mặt trên server, retry trên RECV còn hợp lệ trả `completed` với `{ consumerId, closed: true }`. Nếu ID vẫn tồn tại nhưng binding không khớp, trả `NOT_FOUND`. Client MAIN dùng lệnh này khi không xác nhận được ACK của `media.consumer.ready` sau khi thử lại cùng request ID. Nếu mất transport hoặc context thì việc dọn server đi theo lifecycle thu quyền, rời hoặc mất kết nối.
 
 Tên event đi riêng trong Socket.IO. Mỗi event chứa `sessionId`, `epoch`, `callGeneration` của **người nhận**, `audienceEpoch`, `policyRevision`, `mediaStreamId`, `mediaSequence` và `payload`.

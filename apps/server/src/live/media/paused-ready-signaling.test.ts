@@ -22,7 +22,7 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
-function fixture() {
+function fixture({ syncDeviceChanges = false } = {}) {
   const sessionId = '1'.repeat(24);
   const epoch = randomUUID();
   const access = {
@@ -302,7 +302,9 @@ function fixture() {
   let afterNextSyncContext: (() => void) | undefined;
   const sync = createMediaSourceSync({
     transports: transportService,
-    media: service,
+    media: syncDeviceChanges
+      ? service
+      : { readOwnSources: service.readOwnSources, visibleSources: service.visibleSources },
     async withContext(socketId, request, use) {
       const context = contexts.get(socketId);
       if (
@@ -353,6 +355,7 @@ function fixture() {
   }
   return {
     createPaused,
+    send,
     screen,
     receive,
     native,
@@ -399,6 +402,107 @@ function fixture() {
 }
 
 describe('paused-ready media signaling', () => {
+  it('cleans a committed create by request ID after its ACKs are lost', async () => {
+    const f = fixture({ syncDeviceChanges: true });
+    const owner = f.attachSync('a');
+    await owner.resync();
+    const createRequestId = randomUUID();
+    const started = mediaProducerCreateAckSchema.parse(await f.publish(createRequestId));
+    if ('error' in started) throw new Error(started.error.code);
+    expect(await f.publish(createRequestId)).toEqual(started);
+    const payload = { transportId: 'SEND', target: { createRequestId } };
+    // Unknown intents are opaque and idempotent for the other user, without closing ours.
+    await f.receive('media.producer.close', payload);
+    expect(await f.publish(createRequestId)).toEqual(started);
+    expect(await f.send('media.producer.close', payload)).toMatchObject({
+      data: { result: { closed: true } },
+    });
+    await vi.waitFor(() =>
+      expect(owner.emit).toHaveBeenCalledWith(
+        'media.producer.stateChanged',
+        expect.objectContaining({
+          payload: expect.objectContaining({
+            producerId: started.data.result.producerId,
+            state: 'CLOSED',
+          }),
+        }),
+      ),
+    );
+    expect(await f.publish(createRequestId)).toMatchObject({ error: { code: 'CONFLICT' } });
+    expect(await f.publish()).toHaveProperty('data');
+  });
+
+  it('fences a device create whose close arrives before the create command', async () => {
+    const f = fixture();
+    const createRequestId = randomUUID();
+    expect(
+      await f.send('media.producer.close', { transportId: 'SEND', target: { createRequestId } }),
+    ).toHaveProperty('data');
+    expect(await f.publish(createRequestId)).toMatchObject({ error: { code: 'CONFLICT' } });
+    expect(await f.publish()).toHaveProperty('data');
+  });
+
+  it('cancels pending native create and closes its late producer before reusing the slot', async () => {
+    const f = fixture();
+    let finish!: (producer: ReturnType<typeof f.makeProducer>) => void;
+    const waiting = new Promise<ReturnType<typeof f.makeProducer>>((resolve) => {
+      finish = resolve;
+    });
+    f.produce.mockImplementationOnce(() => waiting);
+    const createRequestId = randomUUID();
+    const pending = f.publish(createRequestId);
+    await vi.waitFor(() => expect(f.produce).toHaveBeenCalledOnce());
+    expect(
+      await f.send('media.producer.close', { transportId: 'SEND', target: { createRequestId } }),
+    ).toHaveProperty('data');
+    await expect(pending).resolves.toHaveProperty('error');
+    expect(await f.publish()).toHaveProperty('error');
+    const late = f.makeProducer();
+    finish(late);
+    await vi.waitFor(() => expect(late.close).toHaveBeenCalled());
+    await vi.waitFor(async () => expect(await f.publish()).toHaveProperty('data'));
+  });
+
+  it('closes only the current owner device producer and sends an end delta', async () => {
+    const f = fixture({ syncDeviceChanges: true });
+    const peer = f.attachSync('b');
+    await peer.resync();
+    const started = mediaProducerCreateAckSchema.parse(await f.publish());
+    if ('error' in started) throw new Error(started.error.code);
+    const { producerId, source } = started.data.result;
+
+    const payload = { transportId: 'SEND', target: { producerId } };
+    expect(await f.receive('media.producer.close', payload)).toMatchObject({
+      error: { code: 'NOT_FOUND' },
+    });
+    expect(
+      await f.send('media.producer.close', { ...payload, transportId: 'SEND-new' }),
+    ).toMatchObject({
+      error: { code: 'NOT_FOUND' },
+    });
+    expect(await f.send('media.producer.close', payload)).toMatchObject({
+      data: { result: { target: { producerId }, closed: true } },
+    });
+    expect(await f.send('media.producer.close', payload)).toMatchObject({
+      data: { result: { target: { producerId }, closed: true } },
+    });
+    await vi.waitFor(() => {
+      expect(peer.emit).toHaveBeenCalledWith(
+        'media.source.changed',
+        expect.objectContaining({
+          payload: { source },
+        }),
+      );
+      expect(peer.emit).toHaveBeenCalledWith(
+        'media.source.ended',
+        expect.objectContaining({
+          payload: expect.objectContaining({ sourceId: source.sourceId, reason: 'SOURCE_ENDED' }),
+        }),
+      );
+    });
+    expect(await f.publish()).toHaveProperty('data');
+  });
+
   it.each(['before create', 'after create', 'after close'] as const)(
     'publishes a Consumer close only to its owner after create ACK, resync %s',
     async (resyncAt) => {
