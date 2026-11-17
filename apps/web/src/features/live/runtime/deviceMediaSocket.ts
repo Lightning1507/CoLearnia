@@ -6,7 +6,7 @@ import {
 } from '@colearnia/contracts';
 import type { types as MediaTypes } from 'mediasoup-client';
 import type { Socket } from 'socket.io-client';
-import { DeviceMedia, sameDeviceBinding } from './deviceMedia';
+import { DeviceCleanupUnconfirmedError, DeviceMedia, sameDeviceBinding } from './deviceMedia';
 import type { DeviceMediaContext } from './deviceMedia';
 import type { LobbyDevicePreferences } from '../lobby/LobbyDeviceCheck';
 
@@ -32,12 +32,14 @@ export function createDeviceMediaSocket(
 ) {
   const intents = new Map<string, PublishIntent>();
   const pendingClose = new Map<string, PendingClose>();
-  async function emit(event: string, input: unknown) {
+  async function emit(event: string, input: unknown, signal?: AbortSignal) {
+    signal?.throwIfAborted();
     if (!socket.connected) throw new Error('Media signaling unavailable');
     // Replay the same request after an ambiguous acknowledgement.
     try {
       return await socket.volatile.timeout(5000).emitWithAck(event, input);
     } catch {
+      signal?.throwIfAborted();
       if (!socket.connected) throw new Error('Media signaling unavailable');
       return socket.volatile.timeout(5000).emitWithAck(event, input);
     }
@@ -49,13 +51,19 @@ export function createDeviceMediaSocket(
       ...envelope(context),
       payload: { transportId: send.id, target },
     });
-    const ack = mediaDeviceProducerCloseAckSchema.parse(await emit('media.producer.close', input));
-    if (
-      ack.requestId !== input.requestId ||
-      'error' in ack ||
-      JSON.stringify(ack.data.result.target) !== JSON.stringify(target)
-    ) {
-      throw new Error('Device producer close was not confirmed');
+    try {
+      const ack = mediaDeviceProducerCloseAckSchema.parse(
+        await emit('media.producer.close', input),
+      );
+      if (
+        ack.requestId !== input.requestId ||
+        'error' in ack ||
+        JSON.stringify(ack.data.result.target) !== JSON.stringify(target)
+      ) {
+        throw new Error('Unexpected device close acknowledgement');
+      }
+    } catch (error) {
+      throw new DeviceCleanupUnconfirmedError(error);
     }
     if (pendingClose.get(kind) === pending) pendingClose.delete(kind);
   }
@@ -88,8 +96,9 @@ export function createDeviceMediaSocket(
           },
         };
       } catch (error) {
+        track.stop();
         const unresolved = pendingClose.get(track.kind);
-        if (unresolved) await close(track.kind, unresolved).catch(() => undefined);
+        if (unresolved) await close(track.kind, unresolved);
         throw error;
       } finally {
         intents.delete(key);
@@ -128,7 +137,9 @@ export function createDeviceMediaSocket(
         context: intent.context,
         target: { createRequestId: input.requestId },
       });
-      const ack = mediaProducerCreateAckSchema.parse(await emit('media.producer.create', input));
+      const ack = mediaProducerCreateAckSchema.parse(
+        await emit('media.producer.create', input, intent.signal),
+      );
       if (
         ack.requestId !== input.requestId ||
         'error' in ack ||

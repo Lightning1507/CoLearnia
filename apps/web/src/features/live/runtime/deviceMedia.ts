@@ -28,6 +28,13 @@ type Attempt = {
 };
 
 const kinds = ['microphone', 'camera'] as const;
+const unconfirmedClose = 'Thiết bị đã tắt. Chưa xác nhận được việc đóng nguồn trên máy chủ.';
+
+export class DeviceCleanupUnconfirmedError extends Error {
+  constructor(cause: unknown) {
+    super(unconfirmedClose, { cause });
+  }
+}
 
 export class DeviceMedia {
   #context: DeviceMediaContext | null = null;
@@ -79,6 +86,7 @@ export class DeviceMedia {
     const attempt: Attempt = { abort: new AbortController() };
     this.#attempts[kind] = attempt;
     this.#set(kind, { phase: 'starting' });
+    let stopped: DeviceState = { phase: 'off' };
     try {
       const deviceId = this.#deviceIds[kind];
       const constraints = deviceId ? { deviceId: { exact: deviceId } } : true;
@@ -110,14 +118,20 @@ export class DeviceMedia {
       if (!current) throw new DOMException('Call unavailable', 'AbortError');
       const publication = await this.publish(track, current, attempt.abort.signal);
       if (attempt.abort.signal.aborted) {
-        await publication.close();
+        try {
+          await publication.close();
+        } catch (error) {
+          throw new DeviceCleanupUnconfirmedError(error);
+        }
         return;
       }
       attempt.publication = publication;
       track.enabled = true;
       this.#set(kind, { phase: 'on' });
     } catch (error) {
-      if (!attempt.abort.signal.aborted && this.#attempts[kind] === attempt) {
+      if (error instanceof DeviceCleanupUnconfirmedError) {
+        stopped = { phase: 'off', error: unconfirmedClose };
+      } else if (!attempt.abort.signal.aborted) {
         const message =
           error instanceof Error &&
           (error.name === 'NotAllowedError' || error.name === 'SecurityError')
@@ -126,14 +140,14 @@ export class DeviceMedia {
                 (error.name === 'NotFoundError' || error.name === 'OverconstrainedError')
               ? 'Không tìm thấy thiết bị đã chọn.'
               : 'Không thể bật thiết bị. Hãy thử lại.';
-        this.#set(kind, { phase: 'off', error: message });
+        stopped = { phase: 'off', error: message };
       }
     } finally {
       if (!attempt.publication) {
         attempt.track?.stop();
         if (this.#attempts[kind] === attempt) {
           delete this.#attempts[kind];
-          if (attempt.abort.signal.aborted) this.#set(kind, { phase: 'off' });
+          this.#set(kind, stopped);
         }
       }
     }
@@ -160,7 +174,7 @@ export class DeviceMedia {
     } catch {
       this.#set(kind, {
         phase: 'off',
-        error: 'Thiết bị đã tắt. Chưa xác nhận được việc đóng nguồn trên máy chủ.',
+        error: unconfirmedClose,
       });
     } finally {
       delete this.#attempts[kind];

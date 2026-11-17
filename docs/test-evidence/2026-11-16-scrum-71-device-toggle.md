@@ -32,6 +32,11 @@ Mở fixture ở `http://127.0.0.1:5191/test/browser/media-paused-ready/?browser
 - Owner đã snapshot trước khi tạo nguồn vẫn nhận event `CLOSED` đúng Producer. Source delta cập nhật own resources và ACK resource grant giữ bằng chứng cấp nguồn đúng binding.
 - `pnpm test`: 956 test đạt. `pnpm typecheck`, `pnpm build`, ESLint các file sửa, `git diff --check` và `pnpm media:smoke` đạt. Build web cảnh báo bundle trên 500 kB. `pnpm check` qua harness 54 PASS/1 skip Windows, dừng ở format hai file Markdown trong `.scrum75-worktree`; kiểm format các file SCRUM-71 riêng đạt.
 
+## Kiểm lại phản hồi sau hủy bật
+
+- Hủy khi đang chờ ACK create vẫn dừng track ngay. Nếu server chưa xác nhận cleanup, điều khiển hiển thị trạng thái tắt kèm cảnh báo. Nếu ACK create timeout sau khi người dùng đã hủy, client chuyển sang cleanup theo ID create và không gửi lại lệnh tạo.
+- Test controller kiểm publication trả muộn với cả hai kết quả cleanup. Test adapter kiểm ca ACK create bị mất, ca ACK đến sau thao tác hủy và ca timeout sau thao tác hủy. Cả ba xác nhận giữ intent để đối soát cleanup trước lần bật tiếp theo.
+
 ## Điểm tích hợp
 
 Đường LIVE của Workspace đang hiển thị panel kênh. Luồng MAIN có xác thực cần cung cấp SEND transport, context có quyền và vòng đời call cho adapter. Khi ghép với screen share trên cùng transport, dùng hàm `produce` của adapter làm `publishOther` để giữ một listener produce. Đưa đối tượng `devices` vào `RoomShell` và cập nhật context khi projection thay đổi hoặc quyền bị thu.

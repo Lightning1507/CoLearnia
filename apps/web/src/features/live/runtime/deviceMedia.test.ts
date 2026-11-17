@@ -74,22 +74,34 @@ describe('DeviceMedia', () => {
     expect(publish).not.toHaveBeenCalled();
   });
 
-  it('closes a late publication across lost permission and never enables its track', async () => {
-    const mic = media('audio');
-    const published = deferred<{ close(): Promise<void> }>();
-    const publish = vi.fn(() => published.promise);
-    const close = vi.fn(async () => {});
-    const devices = new DeviceMedia(async () => mic.stream, publish);
-    devices.updateContext(context);
-    const starting = devices.start('microphone');
-    await vi.waitFor(() => expect(publish).toHaveBeenCalled());
-    devices.updateContext(null);
-    published.resolve({ close });
-    await starting;
-    expect(devices.getSnapshot().microphone.phase).toBe('off');
-    expect(mic.track.enabled).toBe(false);
-    expect(close).toHaveBeenCalledOnce();
-  });
+  it.each([false, true])(
+    'closes a late publication across lost permission (cleanup fails: %s)',
+    async (cleanupFails) => {
+      const mic = media('audio');
+      const published = deferred<{ close(): Promise<void> }>();
+      const publish = vi.fn(() => published.promise);
+      const close = vi.fn(async () => {
+        if (cleanupFails) throw new Error('Close ACK lost');
+      });
+      const devices = new DeviceMedia(async () => mic.stream, publish);
+      devices.updateContext(context);
+      const starting = devices.start('microphone');
+      await vi.waitFor(() => expect(publish).toHaveBeenCalled());
+      devices.updateContext(null);
+      published.resolve({ close });
+      await starting;
+      expect(devices.getSnapshot().microphone.phase).toBe('off');
+      if (cleanupFails) {
+        expect(devices.getSnapshot().microphone.error).toContain(
+          'Chưa xác nhận được việc đóng nguồn',
+        );
+      } else {
+        expect(devices.getSnapshot().microphone.error).toBeUndefined();
+      }
+      expect(mic.track.enabled).toBe(false);
+      expect(close).toHaveBeenCalledOnce();
+    },
+  );
 
   it('reports browser permission denial and leaves the other device alone', async () => {
     const camera = media('video');
