@@ -142,6 +142,53 @@ test('gathered but unselected relay does not prove relay traffic', () => {
   assert.equal(summarizeMedia(before, after).transports[0].selectedRelayWithRtp, false);
 });
 
+test('remote relay with growing RTP does not prove local TURN use on SEND or RECV', () => {
+  for (const direction of ['inbound-rtp', 'outbound-rtp']) {
+    const before = stats(1000, 100, false);
+    const after = stats(6000, 500, false);
+    for (const [report, bytes] of [
+      [before, 100],
+      [after, 500],
+    ]) {
+      report.get('r').candidateType = 'relay';
+      if (direction === 'outbound-rtp') {
+        Object.assign(report.get('a'), {
+          type: direction,
+          bytesSent: bytes,
+          packetsSent: bytes / 10,
+        });
+      }
+    }
+    const transport = summarizeMedia(before, after).transports[0];
+    assert.equal(transport.localType, 'host');
+    assert.equal(transport.remoteType, 'relay');
+    assert.equal(transport.rtp[0].bytes, 400);
+    assert.equal(transport.rtp[0].packets, 40);
+    assert.equal(transport.selectedRelayWithRtp, false);
+  }
+});
+
+test('local selected relay with growing outbound RTP records SEND observation', () => {
+  const before = stats(1000, 100);
+  const after = stats(6000, 500);
+  for (const [report, bytes] of [
+    [before, 100],
+    [after, 500],
+  ]) {
+    Object.assign(report.get('a'), {
+      type: 'outbound-rtp',
+      bytesSent: bytes,
+      packetsSent: bytes / 10,
+    });
+  }
+  const transport = summarizeMedia(before, after).transports[0];
+  assert.equal(transport.localType, 'relay');
+  assert.equal(transport.remoteType, 'host');
+  assert.equal(transport.rtp[0].direction, 'send');
+  assert.equal(transport.rtp[0].bytes, 400);
+  assert.equal(transport.selectedRelayWithRtp, true);
+});
+
 test('pair traffic without RTP, remote-only RTP and unrelated transports do not prove media', () => {
   for (const change of [
     (report) => report.delete('a'),

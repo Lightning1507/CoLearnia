@@ -62,7 +62,7 @@ export function summarizeMedia(before, after) {
       selectedRelayWithRtp: Boolean(
         stable &&
         connected &&
-        (local?.candidateType === 'relay' || remote?.candidateType === 'relay') &&
+        local?.candidateType === 'relay' &&
         rtp.some((row) => row.bytes > 0 && row.packets > 0),
       ),
       rtp,
