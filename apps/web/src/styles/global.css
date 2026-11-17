@@ -22,6 +22,10 @@
   --cl-color-live-control-active-text: #126a53;
   --cl-color-live-control-disabled-bg: #242a28;
   --cl-color-live-control-disabled-text: #717c78;
+  --cl-color-camera-bg: #29302e;
+  --cl-color-camera-text: #ffffff;
+  --cl-color-camera-status-bg: rgb(19 24 23 / 0.75);
+  --cl-color-camera-status-text: #d5dcda;
   --cl-color-dialog-border: #d6dcda;
   --cl-color-dialog-divider: #e7ebe9;
   --cl-color-dialog-footer-bg: #fafbfb;
@@ -65,6 +69,32 @@ button:focus-visible {
 .live-toolbar-control {
   background: var(--cl-color-live-control-bg);
   color: var(--cl-color-live-control-text);
+}
+.live-camera-tile {
+  position: relative;
+  overflow: hidden;
+  border-radius: 7px;
+  background: var(--cl-color-camera-bg);
+  color: var(--cl-color-camera-text);
+}
+.live-camera-surface {
+  width: 100%;
+  background: var(--cl-color-camera-bg);
+}
+.live-camera-placeholder {
+  color: var(--cl-color-camera-status-text);
+}
+.live-camera-status {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  max-width: calc(100% - 14px);
+  margin: 0;
+  padding: 3px 5px;
+  border-radius: 4px;
+  background: var(--cl-color-camera-status-bg);
+  color: var(--cl-color-camera-status-text);
+  font-size: 12px;
 }
 .live-toolbar-control:hover {
   background: var(--cl-color-live-control-hover-bg);

@@ -4,6 +4,7 @@ import type {
   SessionProjectionCursor,
 } from '@colearnia/contracts';
 import type { MediaSnapshotRuntime } from '../../../src/features/live/runtime/mediaSnapshotRuntime';
+import type { ConsumerBinding } from '../../../src/features/live/runtime/mediaSnapshot';
 
 export const context: SessionProjectionCursor = {
   sessionId: '1'.repeat(24),
@@ -60,6 +61,7 @@ export async function applySnapshot(
   sources = [camera],
   own = false,
   mediaSequence = 0,
+  ownConsumers: ConsumerBinding[] = [],
 ) {
   const requestId = crypto.randomUUID();
   const snapshot: MediaSourcesSnapshot = {
@@ -73,7 +75,7 @@ export async function applySnapshot(
     payload: {
       sources,
       ownProducers: own ? sources.map((source) => ({ source, replacement: null })) : [],
-      ownConsumers: [],
+      ownConsumers,
       ownTransports: [],
     },
   };

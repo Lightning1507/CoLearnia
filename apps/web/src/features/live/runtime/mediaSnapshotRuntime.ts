@@ -516,7 +516,11 @@ export class MediaSnapshotRuntime {
   confirmConsumerReady(snapshot: MediaSnapshot, binding: ConsumerBinding, handle: ConsumerHandle) {
     const local = this.#consumers.get(binding.sourceId);
     if (local?.handle !== handle || !this.attachConsumer(snapshot, binding, handle)) return false;
-    local.binding = { ...local.binding, ready: true, paused: false };
+    // A ready ACK is relative to its initiating snapshot. A later full snapshot
+    // has already reconciled ready/paused and must not be overwritten by that ACK.
+    if (this.#snapshot?.requestId === snapshot.requestId) {
+      local.binding = { ...local.binding, ready: true, paused: false };
+    }
     this.#publishCameras();
     return true;
   }

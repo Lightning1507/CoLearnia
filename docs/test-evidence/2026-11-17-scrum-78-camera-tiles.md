@@ -59,3 +59,13 @@ Fixture trình duyệt: chạy `pnpm --filter @colearnia/web dev --port 5191 --s
 ## Giới hạn và bước sau
 
 SCRUM-88 / M4-T11.1 cần ghép join có xác thực, SEND/RECV, projection/context và lifecycle vào đường LIVE production. Camera tiles tái sử dụng cùng controller, source reconciler và toggle adapter; task này không tự ghép toàn bộ MAIN hoặc thêm orchestration pause backend. Trước gate MAIN cần kiểm native Producer pause/resume và frame remote qua luồng thật, physical camera và hai mạng/TURN. Chưa đánh dấu Jira Done hoặc nghiệm thu gate MAIN.
+
+## Kiểm lại ba góp ý trên PR #122 — 17/11/2026
+
+- Dùng worktree riêng của cùng nhánh để giữ tác vụ SCRUM-81 trong checkout gốc. Dependency cài bằng frozen lockfile từ cache; Node 26.12.1, pnpm 11.5.2, không thay dependency hoặc lockfile.
+- Trước sửa, regression mới tái hiện 3 lỗi: hai ca snapshot mới giữ Consumer paused (ready true hoặc false) bị ready ACK cũ ghi đè, và local track disabled vẫn có nhãn đang phát. Ca đối chứng snapshot ready true/paused false vẫn đạt.
+- Sau sửa, `confirmConsumerReady` không ghi đè binding đã đối soát bằng snapshot request mới hơn. Giữ nguyên cả `ready` và `paused`; callback cùng snapshot vẫn xác nhận readiness theo luồng cũ.
+- Local track chỉ được hiện hình và nhãn đang phát khi còn enabled. Vì browser không phát event khi thuộc tính enabled thay đổi, tile theo dõi frame video để cập nhật tắt/bật của cùng track mà không cần server delta/remount; cleanup hủy frame callback. Server PAUSED vẫn được ưu tiên.
+- Token camera trong global.css dùng nền #29302e cho tile/surface, nền nhãn rgb(19 24 23 / 0.75), chữ #d5dcda và vị trí góc trên phải theo export Figma. Giữ nguyên nhãn nghiệp vụ.
+- Regression camera có 26 test; camera + snapshot + audio có 58 test đạt. `pnpm.exe check` exit 0: harness 54 PASS/1 skip Windows, format/lint/typecheck và build ba package đạt, 985/985 test trên 70 file đạt. `pnpm.exe media:smoke` exit 0, native worker/Router Opus/VP8 đạt.
+- Chrome ở fixture cổng 5193 hiển thị PASS: attach Consumer → snapshot paused mới → ready ACK cũ không hiện video; snapshot resumed mới hiện video; local enabled → disabled → enabled đổi cả visibility và nhãn mà không đổi source; computed styles của tile/placeholder/nhãn khớp màu và vị trí Figma. Các ca pause/resume/ended/StrictMode/remount cũ vẫn đạt. Snapshot/event là fixture, canvas track thật; chưa mở rộng nghiệm thu server media thật.

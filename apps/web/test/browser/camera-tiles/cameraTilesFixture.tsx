@@ -4,8 +4,11 @@ import { RoomShell } from '../../../src/features/live/room/RoomShell';
 import { CallControllerProvider } from '../../../src/features/live/runtime/CallControllerProvider';
 import { CallControllerOwner } from '../../../src/features/live/runtime/callController';
 import type { MediaSnapshotRuntime } from '../../../src/features/live/runtime/mediaSnapshotRuntime';
+import type { MediaSnapshot } from '../../../src/features/live/runtime/mediaSnapshot';
 import { applySnapshot, binding, camera, context, event } from './fixtures';
 import '../../../src/styles/global.css';
+
+Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 function check(value: unknown, message: string): asserts value {
   if (!value) throw new Error(message);
@@ -62,14 +65,24 @@ async function verify() {
       </StrictMode>,
     );
   await act(render);
-  const snapshot = await applySnapshot(media);
+  let snapshot!: MediaSnapshot;
+  await act(async () => {
+    snapshot = await applySnapshot(media);
+  });
   await act(() => {
     media.attachConsumer(snapshot, binding, handle);
   });
   check(container.textContent?.includes('Đang chờ hình ảnh'), 'Consumer chưa ready phải chờ');
   check(!container.querySelector('video'), 'Không attach video trước ready');
+  await act(async () => {
+    await applySnapshot(media, [camera], false, 0, [{ ...binding, ready: true, paused: true }]);
+  });
   await act(() => {
     media.confirmConsumerReady(snapshot, binding, handle);
+  });
+  check(!container.querySelector('video'), 'Ready ACK cũ không ghi đè snapshot paused mới');
+  await act(async () => {
+    await applySnapshot(media, [camera], false, 0, [{ ...binding, ready: true, paused: false }]);
   });
   const waitVideo = async () => {
     for (let attempt = 0; attempt < 60; attempt++) {
@@ -162,6 +175,25 @@ async function verify() {
     container.textContent?.includes('Camera đang phát'),
     'Local preview chờ frame rồi mới phát',
   );
+  const localVideo = container.querySelector('video')!;
+  await act(async () => {
+    track.enabled = false;
+    for (let attempt = 0; attempt < 10; attempt++) await delay();
+  });
+  check(
+    container.textContent?.includes('Đang chờ hình ảnh'),
+    'Local disabled phải bỏ nhãn đang phát',
+  );
+  check(getComputedStyle(localVideo).visibility === 'hidden', 'Local disabled phải ẩn hình');
+  await act(async () => {
+    track.enabled = true;
+    for (let attempt = 0; attempt < 10; attempt++) await delay();
+  });
+  check(
+    container.textContent?.includes('Camera đang phát'),
+    'Local enabled lại phải cập nhật nhãn',
+  );
+  check(getComputedStyle(localVideo).visibility === 'visible', 'Local enabled lại phải hiện hình');
   await act(() => {
     media.acceptEvent(
       'media.producer.stateChanged',
@@ -190,6 +222,26 @@ async function verify() {
     'Remount không phục hồi publishing',
   );
   check(initializations === 1, 'Chỉ một controller');
+  const tile = container.querySelector<HTMLElement>('.live-camera-tile')!;
+  const surface = tile.querySelector<HTMLElement>('.live-camera-surface')!;
+  const status = tile.querySelector<HTMLElement>('[role="status"]')!;
+  check(
+    getComputedStyle(tile).backgroundColor === 'rgb(41, 48, 46)',
+    'Tile dùng màu Figma #29302e',
+  );
+  check(
+    getComputedStyle(surface).backgroundColor === 'rgb(41, 48, 46)',
+    'Placeholder dùng cùng token nền',
+  );
+  check(
+    getComputedStyle(status).backgroundColor === 'rgba(19, 24, 23, 0.75)',
+    'Nền nhãn theo Figma',
+  );
+  check(getComputedStyle(status).color === 'rgb(213, 220, 218)', 'Chữ nhãn theo Figma #d5dcda');
+  check(
+    getComputedStyle(status).top === '7px' && getComputedStyle(status).right === '7px',
+    'Nhãn ở góc trên phải',
+  );
   window.addEventListener(
     'pagehide',
     () => {
@@ -200,7 +252,7 @@ async function verify() {
     },
     { once: true },
   );
-  return 'PASS · ready → frame → pause → resume → remount → switching → ended; local enabled + server PAUSED; StrictMode; participant độc lập';
+  return 'PASS · snapshot paused → ready ACK cũ; local enabled → disabled → enabled; token Figma; ready → frame → pause → resume → remount → switching → ended; StrictMode; participant độc lập';
 }
 
 void verify().then(

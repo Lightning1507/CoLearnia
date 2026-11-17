@@ -6,10 +6,12 @@ function CameraVideo({
   track,
   onPlaying,
   visible,
+  local,
 }: {
   track: MediaStreamTrack;
   onPlaying: (value: boolean) => void;
   visible: boolean;
+  local: boolean;
 }) {
   const video = useRef<HTMLVideoElement>(null);
   useLayoutEffect(() => {
@@ -21,12 +23,22 @@ function CameraVideo({
       onPlaying(
         current &&
           track.readyState === 'live' &&
+          (!local || track.enabled) &&
           !track.muted &&
           !element.paused &&
           element.videoWidth > 0,
       );
     const stream = new MediaStream([track]);
     element.srcObject = stream;
+    // Track.enabled has no change event. Observe delivered frames so local
+    // disabling/enabling updates both the image and label without a server delta.
+    let frame: number;
+    const observeFrame = () => {
+      if (!current) return;
+      playing();
+      frame = element.requestVideoFrameCallback(observeFrame);
+    };
+    frame = element.requestVideoFrameCallback(observeFrame);
     element.addEventListener('playing', playing);
     for (const name of ['waiting', 'stalled', 'pause', 'emptied', 'error'])
       element.addEventListener(name, waiting);
@@ -38,6 +50,7 @@ function CameraVideo({
     });
     return () => {
       current = false;
+      element.cancelVideoFrameCallback(frame);
       element.removeEventListener('playing', playing);
       for (const name of ['waiting', 'stalled', 'pause', 'emptied', 'error'])
         element.removeEventListener(name, waiting);
@@ -47,7 +60,7 @@ function CameraVideo({
       element.srcObject = null;
       // Unmount only releases the DOM binding. The call still owns the track.
     };
-  }, [track, onPlaying]);
+  }, [track, onPlaying, local]);
   return (
     <video
       ref={video}
@@ -64,15 +77,20 @@ function CameraTile({ camera, synchronized }: { camera: CameraView; synchronized
   const [playing, setPlaying] = useState(false);
   return (
     <article
-      className="grid min-w-0 content-start gap-2 rounded-xl border border-[color:var(--workspace-border)] bg-[var(--workspace-content-bg)] p-3"
+      className="live-camera-tile min-w-0"
       aria-label={camera.local ? 'Camera của bạn' : 'Camera người tham gia'}
     >
       {camera.track && synchronized && camera.source.publicationState === 'PUBLISHING' ? (
-        <div className="relative rounded-lg bg-stone-100">
-          <CameraVideo track={camera.track} onPlaying={setPlaying} visible={playing} />
+        <div className="live-camera-surface relative">
+          <CameraVideo
+            track={camera.track}
+            onPlaying={setPlaying}
+            visible={playing && (!camera.local || camera.track.enabled)}
+            local={camera.local}
+          />
           {!playing && (
             <span
-              className="absolute inset-0 grid place-items-center text-stone-500"
+              className="live-camera-placeholder absolute inset-0 grid place-items-center"
               aria-hidden="true"
             >
               Camera
@@ -81,13 +99,13 @@ function CameraTile({ camera, synchronized }: { camera: CameraView; synchronized
         </div>
       ) : (
         <div
-          className="grid aspect-video place-items-center rounded-lg bg-stone-100 text-stone-500"
+          className="live-camera-surface live-camera-placeholder grid aspect-video place-items-center"
           aria-hidden="true"
         >
           Camera
         </div>
       )}
-      <p className="text-sm text-[color:var(--workspace-muted)]" role="status">
+      <p className="live-camera-status" role="status">
         {cameraStatus(camera, synchronized, playing)}
       </p>
     </article>

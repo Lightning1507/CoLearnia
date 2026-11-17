@@ -30,6 +30,36 @@ function setup() {
 const current = (media: MediaSnapshotRuntime) => media.getCameraSnapshot().cameras[0]!;
 
 describe('SCRUM-78 authoritative camera projection', () => {
+  it.each([
+    { ready: true, paused: true },
+    { ready: false, paused: true },
+    { ready: true, paused: false },
+  ])(
+    'keeps a newer snapshot Consumer state after an old ready ACK ($ready/$paused)',
+    async (state) => {
+      const { media, handle, track } = setup();
+      const original = await applySnapshot(media);
+      media.attachConsumer(original, binding, handle);
+      await applySnapshot(media, [camera], false, 0, [{ ...binding, ...state }]);
+      expect(media.confirmConsumerReady(original, binding, handle)).toBe(true);
+      expect(current(media).track).toBe(state.ready && !state.paused ? track : undefined);
+      expect(handle.close).not.toHaveBeenCalled();
+    },
+  );
+
+  it('requires enabled local track in both directions even after video reports playing', () => {
+    const { track } = setup();
+    const view = { source: camera, local: true, track };
+    expect(cameraStatus(view, true, true)).toBe('Camera đang phát · Bạn');
+    track.enabled = false;
+    expect(cameraStatus(view, true, true)).toBe('Đang chờ hình ảnh');
+    track.enabled = true;
+    expect(cameraStatus(view, true, true)).toBe('Camera đang phát · Bạn');
+    expect(
+      cameraStatus({ ...view, source: { ...camera, publicationState: 'PAUSED' } }, true, true),
+    ).toBe('Camera tạm dừng');
+  });
+
   it('waits for consumer ready and video playback separately', async () => {
     const { media, handle, track } = setup();
     const snapshot = await applySnapshot(media);

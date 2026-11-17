@@ -18,6 +18,12 @@ export function cameraStatus(camera: CameraView, synchronized: boolean, playing:
   if (!synchronized) return 'Đang đồng bộ camera';
   if (camera.source.publicationState === 'PAUSED') return 'Camera tạm dừng';
   if (camera.source.publicationState === 'SWITCHING') return 'Đang chuyển camera';
-  if (!camera.track || camera.track.readyState !== 'live' || !playing) return 'Đang chờ hình ảnh';
+  if (
+    !camera.track ||
+    camera.track.readyState !== 'live' ||
+    (camera.local && !camera.track.enabled) ||
+    !playing
+  )
+    return 'Đang chờ hình ảnh';
   return camera.local ? 'Camera đang phát · Bạn' : 'Đang nhận hình ảnh';
 }
