@@ -66,3 +66,11 @@ Xem [checklist cấu hình staging SCRUM-54](staging-configuration.md) để đ�
 ## Profile capacity
 
 Theo [capacity](../capacity.md), local start/health hoặc media smoke không chứng minh 25/50 người. Các profile cần DB test/dữ liệu cũ, config pool/queue/quota hữu hạn và media thật trên hạ tầng ghi rõ; không đo 50 tab trên một laptop rồi suy capacity server. Một VPS/DB node là phương án thử, chưa là HA. Đợt đồng bộ tài liệu không start/stop container hoặc chạy migration.
+
+### Timeline/composer TEXT fixture (SCRUM-46)
+
+Run the web development server, open /workspace and select the TEXT channel. The labelled fixture controls expose populated, empty and failing history, plus successful send, first-send failure and lost acknowledgement. Reloading the page resets the fixture.
+
+Retry resubmits the same clientMessageId, text and root intent. The action to compose a new message copies text into the draft and retains the failed row; submitting that draft creates a new clientMessageId. Enter inserts a newline; Ctrl/Cmd+Enter sends. The shared contract validates nonblank text and the 4000-code-point limit, preserving surrounding whitespace.
+
+Browser verification covered loading, empty and failed history with retry, sending, lost ACK with retry, and a separate edited draft. The fixture test verifies unchanged retry identity, conflict on a different payload, one merged committed message, empty/error history and cancellation. A channel/revision change remounts the panel and aborts its outstanding requests. Real REST/socket integration and server ACL verification are the consumer work in SCRUM-47.
