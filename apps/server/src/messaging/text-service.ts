@@ -183,6 +183,7 @@ export function createTextService(
             { identity: actor, channelId, workspaceId },
             held,
             remaining,
+            handler === 'history',
           );
           if (current.channelType !== 'TEXT') throw new TextError('NOT_FOUND');
           if (!current.canReadContent) throw new TextError('FORBIDDEN');

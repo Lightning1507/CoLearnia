@@ -97,6 +97,13 @@ const workspaceAccess = createWorkspaceAccessService(
   accessRevocations.barrier,
   config.SESSION_SECRET,
 );
+// This rollout serves history only. Send remains in isolated integration fixtures
+// until unresolved commits and revoke/recovery have passed M1/M4 review.
+const messagingBudget = config.MESSAGING_BUDGET_JSON;
+const historyBudget = messagingBudget && {
+  ...messagingBudget,
+  handlers: messagingBudget.handlers.history ? { history: messagingBudget.handlers.history } : {},
+};
 const textService = config.SESSION_SECRET
   ? createTextService(
       database,
@@ -104,7 +111,7 @@ const textService = config.SESSION_SECRET
       workspaceAccess,
       () => canUseAuthIndexes() && workspaceIndexesReady && textIndexesReady,
       config.SESSION_SECRET,
-      config.MESSAGING_BUDGET_JSON,
+      historyBudget,
     )
   : undefined;
 const textRouter = httpAuth && textService ? createTextRouter(httpAuth, textService) : undefined;

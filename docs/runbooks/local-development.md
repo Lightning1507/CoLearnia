@@ -69,17 +69,46 @@ Theo [capacity](../capacity.md), local start/health hoặc media smoke không ch
 
 ### Gửi và đọc tin nhắn TEXT (SCRUM-42)
 
-REST dùng `POST /api/v1/channels/:channelId/messages` để gửi và `GET` cùng đường dẫn để đọc lịch sử. Socket.IO dùng `message.send` với ACK theo contract. REST POST và kết nối socket cần CSRF gắn với phiên. Hai transport chia sẻ khóa retry và kiểm quyền nội dung TEXT qua cùng service.
+Đợt rollout của PR #117 chỉ bật `GET /api/v1/channels/:channelId/messages`. Wiring `main.ts` chỉ truyền budget history vào service; cả REST POST và Socket.IO `message.send` trả `DEPENDENCY_UNAVAILABLE` cho request hợp lệ, kể cả khi cấu hình cũ còn `handlers.text`. Các fixture tích hợp send được giữ để nghiên cứu và hồi quy.
 
 Để chạy trên môi trường riêng, cần `SESSION_SECRET`, các collection/index của auth/Workspace và hai index trong [manifest tin nhắn](../../apps/server/src/messaging/text-message.ts). Server chỉ kiểm index lúc khởi động. Tạo index theo [quy trình preflight](mongodb-transactions.md#kiểm-db-và-indexmigration-trên-môi-trường-riêng), rồi khởi động lại.
 
-`MESSAGING_BUDGET_JSON` nhận cấu hình theo [schema budget](../../apps/server/src/messaging/budget.ts). Điền `handlers.text` cho gửi và `handlers.history` cho đọc. Handler thiếu budget hoặc chưa qua preflight trả 503. Phần giới hạn pool và chờ kết nối do các biến `MONGO_*` của server quản lý. Dùng budget trong [fixture tích hợp](../../apps/server/test/text-transport.integration.ts) để tái lập kiểm thử trên DB riêng. Môi trường dùng chung cần budget được nhóm review cùng media và tải kết hợp trước khi bật. [Quy tắc budget](../contracts/messaging-access.md#7-giới-hạn-xử-lý-để-hệ-thống-không-bị-quá-tải)
+`MESSAGING_BUDGET_JSON` nhận cấu hình theo [schema budget](../../apps/server/src/messaging/budget.ts). Trên môi trường dùng chung, chỉ điền `handlers.history`, bỏ `handlers.text`. Handler thiếu budget hoặc chưa qua preflight trả 503. Compose local và staging chuyển biến này vào server. Phần giới hạn pool và chờ kết nối tiếp tục do `MONGO_*` quản lý. Các giá trị budget cần review cùng media và tải kết hợp trước rollout. [Quy tắc budget](../contracts/messaging-access.md#7-giới-hạn-xử-lý-để-hệ-thống-không-bị-quá-tải)
 
 Phạm vi SCRUM-42 là tin gốc và lịch sử thường. Feed realtime, subscribe và snapshot/catch-up thuộc SCRUM-43. Một timeout hoặc mất ACK có thể xảy ra sau commit. Client retry với cùng `clientMessageId` và nội dung để lấy kết quả đã lưu.
 
 Budget của history giữ chỗ theo số dòng yêu cầu, gồm một dòng đọc thêm để xác định trang kế. Ước lượng bao gồm BSON, DTO và JSON, nên một trang lớn có thể trả `SERVER_BUSY` nếu không đủ byte. Giảm `limit` hoặc cân lại `handlers.history.processBytes` và `process.bytes` khi review cấu hình. Budget test dùng trang mặc định 30 dòng.
 
-Các truy vấn TEXT dùng phần thời gian còn lại và tín hiệu hủy của driver. Transaction chừa trước thời gian cho commit và kiểm đủ phần đó trước khi gửi commit. Driver hiện dùng giới hạn mạng chung cho commit và cleanup, nên mất kết nối vẫn có thể kéo dài hơn deadline dự kiến. Khi kết quả commit chưa rõ, giữ nguyên mã gửi và nội dung khi retry.
+History kiểm ACL bằng snapshot session trên cùng pool, chia sẻ admission với transaction và giữ gate User/Workspace hiện hành. Các truy vấn ACL tuần tự dùng cùng timestamp majority-committed. Session chỉ đọc kết thúc mà không gửi commit/abort; đọc history giữ `Cache-Control: no-store`. Các truy vấn có signal hủy và maxTimeMS từ ngân sách còn lại. API [snapshot read của MongoDB](https://www.mongodb.com/docs/manual/reference/read-concern-snapshot/) hỗ trợ thao tác đọc ngoài transaction từ MongoDB 5.0.
+
+#### Phạm vi history-only và cấu hình triển khai
+
+PR #117 bàn giao phần đọc. Phần gửi tiếp tục thuộc [SCRUM-42](https://faker1652005.atlassian.net/browse/SCRUM-42) và giữ P2 mở tới khi M1/M4 chốt recovery và điều kiện bật. Chẩn đoán gửi dưới đây được giữ nguyên, gồm probe đang lỗi. Chưa chuyển tiêu chí hoặc đánh dấu send hoàn tất.
+
+Cấu hình triển khai chỉ chứa `handlers.history` với budget đã review. Với bản JSON đã được review trong môi trường hiện tại, có thể chuẩn hóa trước khi lưu vào cấu hình server:
+
+```powershell
+$historyBudget = $env:MESSAGING_BUDGET_JSON | ConvertFrom-Json -AsHashtable
+if (-not $historyBudget.handlers.history) { throw 'Missing reviewed history budget' }
+$historyBudget.handlers = @{ history = $historyBudget.handlers.history }
+$env:MESSAGING_BUDGET_JSON = $historyBudget | ConvertTo-Json -Depth 8 -Compress
+```
+
+Sau khi cập nhật file môi trường riêng, tạo lại container server theo runbook staging để nhận biến mới. Production preflight vẫn chỉ kiểm collections/index đã được provision theo quy trình. Cấu hình thiếu budget hoặc thiếu index giữ history chưa sẵn sàng.
+
+Test `boots history-only configuration` chạy process `src/main.ts` thật trên DB disposable, không giả preflight. Hai ca kiểm không có text budget và có text budget từ cấu hình cũ. GET history thành công, cursor sai bị từ chối, người ngoài Workspace và PRIVATE không grant bị từ chối, response history có no-store. POST và socket send hợp lệ đều báo dependency unavailable; Message count và sequence trước/sau giữ nguyên.
+
+```powershell
+$env:COLEARNIA_TEST_DB_FAILPOINTS = '1'
+$env:COLEARNIA_TEST_DB_PROFILE = ''
+pnpm exec vitest run --pool=threads --reporter=verbose --config vitest.database.config.ts apps/server/test/text-transport.integration.ts -t 'boots history-only|history snapshot|slow Mongo ACL|reserves history|shares REST'
+```
+
+Replica set test MongoDB 8.0.16 giữ lifetime mặc định 60 giây. Với execution fixture 650 ms và ngưỡng kiểm cũ 650 + 400 ms, ACL find bị block 2 giây trả lỗi và nhả gate ở khoảng 666 ms. Hai failpoint commit/abort block 2 giây không được gọi vào trên đường snapshot history: response và lấy gate Workspace kế tiếp mất 25/22 ms, session được end và operation về 0. Test so sánh count failpoint không tăng, không chỉ dựa vào thời gian. Test snapshot khác kiểm timestamp giữ nhất quán dù document thay đổi giữa hai lần đọc. Đây là số đo fixture local để M1/M4 review, chưa chốt SLA triển khai.
+
+Lượt hồi quy cùng head trên MongoDB 8.0.16 đạt 106 ca và skip 1 ca failpoint riêng trong bốn suite auth-models, workspace-access, create-workspace và main-join-registry; toàn bộ 32 ca native nằm trong lượt này. Bộ lọc history/transport ở trên đạt 8 ca, gồm hai cấu hình khởi động. `pnpm check` đạt 950 test và build. Kiểm `docker compose --profile app --env-file <fixture> -f <compose-file> config --format json` với cấu hình thử xác nhận cả compose local và staging truyền budget chỉ có history vào server.
+
+P2 gửi cần được giải quyết trước bật POST/socket: phân giải commit chậm/mất ACK, retry cùng ID không trùng, giới hạn tranh chấp giữa các ID trong một conversation, trần pending và thứ tự với durable revoke. Membership/PRIVATE/xóa scope và phục hồi sau restart cần review theo phạm vi liên quan.
 
 #### Kiểm commit và cleanup chậm của SCRUM-42
 

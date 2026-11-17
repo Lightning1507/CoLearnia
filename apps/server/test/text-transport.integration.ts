@@ -1,4 +1,7 @@
 import { setTimeout as delay } from 'node:timers/promises';
+import { spawn } from 'node:child_process';
+import { once } from 'node:events';
+import { fileURLToPath } from 'node:url';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
 import { mongo } from 'mongoose';
@@ -1343,3 +1346,199 @@ it.runIf(fenceTrial)(
     expect(coordinator.stats().operations).toBe(0);
   },
 );
+
+it.each([false, true])(
+  'boots history-only configuration and rejects both send transports (text budget supplied=%s)',
+  async (textBudgetSupplied) => {
+    const { owner, member, channel, conversation } = await textChannel();
+    const outsider = await account();
+    await Message.create({
+      conversationId: conversation._id,
+      senderId: owner.user._id,
+      clientMessageId: randomUUID(),
+      text: 'Existing history',
+      createdAt: new Date(),
+      commitSeq: 1,
+    });
+    await Conversation.updateOne({ _id: conversation._id }, { lastMessageCommitSeq: 1 });
+    const socketPort = createServer();
+    socketPort.listen(0, '127.0.0.1');
+    await once(socketPort, 'listening');
+    const address = socketPort.address();
+    if (!address || typeof address === 'string') throw new Error('Missing reserved port');
+    const port = address.port;
+    await new Promise<void>((done) => socketPort.close(() => done()));
+    const child = spawn(
+      process.execPath,
+      ['--import', 'tsx', fileURLToPath(new URL('../src/main.ts', import.meta.url))],
+      {
+        cwd: fileURLToPath(new URL('..', import.meta.url)),
+        env: {
+          ...process.env,
+          NODE_ENV: 'test',
+          HOST: '127.0.0.1',
+          PORT: String(port),
+          SESSION_SECRET: secret,
+          MONGO_URI: testReplicaUri(name),
+          MEDIA_ENABLED: 'false',
+          APP_ORIGIN: config.APP_ORIGIN,
+          MESSAGING_BUDGET_JSON: JSON.stringify({
+            ...budget,
+            handlers: {
+              history: budget.handlers.history,
+              ...(textBudgetSupplied ? { text: handler } : {}),
+            },
+          }),
+        },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      },
+    );
+    let startupError = '';
+    child.stderr.setEncoding('utf8').on('data', (chunk: string) => {
+      startupError += chunk;
+    });
+    const base = 'http://127.0.0.1:' + port;
+    const path = '/api/v1/channels/' + channel.id + '/messages';
+    const socket = connect(base, {
+      autoConnect: false,
+      transports: ['websocket'],
+      reconnection: false,
+      extraHeaders: { Origin: config.APP_ORIGIN, Cookie: member.cookie },
+      auth: { csrfToken: member.token },
+    });
+    const read = () => request(base).get(path).set('Cookie', member.cookie);
+    try {
+      await vi.waitFor(
+        async () => {
+          expect(child.exitCode, startupError).toBeNull();
+          const response = await read();
+          expect(response.status).toBe(200);
+        },
+        { timeout: 12_000, interval: 100 },
+      );
+      const page = await read().expect(200).expect('Cache-Control', 'no-store');
+      expect(page.body.data.items[0]?.text).toBe('Existing history');
+      await read().query({ cursor: 'tampered' }).expect(400).expect('Cache-Control', 'no-store');
+      await request(base).get(path).set('Cookie', outsider.cookie).expect(404);
+      const payload = { clientMessageId: randomUUID(), text: 'Must stay disabled' };
+      const post = await request(base)
+        .post(path)
+        .set('Cookie', member.cookie)
+        .set('Origin', config.APP_ORIGIN)
+        .set('X-CSRF-Token', member.token)
+        .send(payload)
+        .expect(503);
+      expect(post.body.error.code).toBe('DEPENDENCY_UNAVAILABLE');
+      const connected = new Promise<void>((resolve, reject) => {
+        socket.once('connect', resolve);
+        socket.once('connect_error', reject);
+      });
+      socket.connect();
+      await connected;
+      expect(
+        await socket.timeout(3000).emitWithAck('message.send', {
+          requestId: randomUUID(),
+          payload: { channelId: channel.id, ...payload },
+        }),
+      ).toMatchObject({ error: { code: 'DEPENDENCY_UNAVAILABLE' } });
+      expect(await Message.countDocuments({ conversationId: conversation._id })).toBe(1);
+      expect((await Conversation.findById(conversation._id).orFail()).lastMessageCommitSeq).toBe(1);
+      const privateChannel = await Channel.create({
+        workspaceId: channel.workspaceId,
+        name: 'Private history',
+        type: 'TEXT',
+        accessMode: 'PRIVATE',
+      });
+      await request(base)
+        .get('/api/v1/channels/' + privateChannel.id + '/messages')
+        .set('Cookie', owner.cookie)
+        .expect(403)
+        .expect('Cache-Control', 'no-store');
+    } finally {
+      socket.disconnect();
+      if (child.exitCode === null) {
+        const exited = once(child, 'exit');
+        child.kill('SIGTERM');
+        await exited;
+      }
+    }
+  },
+  20_000,
+);
+
+it
+  .runIf(!scrum42Trial && process.env.COLEARNIA_TEST_DB_FAILPOINTS === '1')
+  .each(['commitTransaction', 'abortTransaction'])(
+  'history snapshot avoids blocked %s and releases its gate',
+  async (command) => {
+    const { owner, workspace, channel } = await textChannel();
+    const executionMs = 650;
+    const historyOnly = createTextService(
+      database,
+      coordinator,
+      access,
+      () => true,
+      secret,
+      {
+        ...budget,
+        handlers: { history: { ...budget.handlers.history, executionMs } },
+      },
+      mark,
+    );
+    const admin = database.connection.db!.admin();
+    const fault = await admin.command({
+      configureFailPoint: 'failCommand',
+      mode: { times: 1 },
+      data: { failCommands: [command], blockConnection: true, blockTimeMS: 2000 },
+    });
+    const commit = vi.spyOn(mongo.ClientSession.prototype, 'commitTransaction');
+    const abort = vi.spyOn(mongo.ClientSession.prototype, 'abortTransaction');
+    const end = vi.spyOn(mongo.ClientSession.prototype, 'endSession');
+    const started = performance.now();
+    try {
+      expect((await historyOnly.history(identity(owner), channel.id, { limit: 1 })).items).toEqual(
+        [],
+      );
+      const finished = performance.now() - started;
+      await coordinator.run({ workspaceId: workspace.id }, () => undefined, { noWait: true });
+      const gate = performance.now() - started;
+      expect(gate).toBeLessThan(executionMs + 400);
+      expect(commit).not.toHaveBeenCalled();
+      expect(abort).not.toHaveBeenCalled();
+      expect(end).toHaveBeenCalled();
+      expect(coordinator.stats().operations).toBe(0);
+      const stopped = await admin.command({ configureFailPoint: 'failCommand', mode: 'off' });
+      expect(Number(stopped.count)).toBe(Number(fault.count));
+      console.info(
+        'HISTORY_SNAPSHOT %s response=%dms gate=%dms no transaction command',
+        command,
+        Math.round(finished),
+        Math.round(gate),
+      );
+    } finally {
+      commit.mockRestore();
+      abort.mockRestore();
+      end.mockRestore();
+      await admin.command({ configureFailPoint: 'failCommand', mode: 'off' });
+    }
+  },
+);
+
+it('history snapshot keeps one read timestamp across ACL document changes', async () => {
+  const { workspace } = await textChannel();
+  const expires = performance.now() + 1000;
+  await database.snapshotRead(
+    async (session) => {
+      const first = await Workspace.findById(workspace._id).session(session).lean().orFail();
+      await Workspace.updateOne(
+        { _id: workspace._id },
+        { name: 'Updated after snapshot' },
+        { writeConcern: { w: 'majority' } },
+      );
+      const second = await Workspace.findById(workspace._id).session(session).lean().orFail();
+      expect(second.name).toBe(first.name);
+    },
+    () => Math.max(1, expires - performance.now()),
+  );
+  expect((await Workspace.findById(workspace._id).orFail()).name).toBe('Updated after snapshot');
+});

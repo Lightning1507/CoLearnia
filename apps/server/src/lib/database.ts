@@ -81,6 +81,8 @@ export function isDatabaseUnavailableError(error: unknown): boolean {
     error instanceof DatabaseDeadlineError ||
     error instanceof mongoose.mongo.MongoNetworkError ||
     error instanceof mongoose.mongo.MongoServerSelectionError ||
+    (error instanceof mongoose.mongo.MongoServerError &&
+      (error.codeName === 'SnapshotTooOld' || error.codeName === 'SnapshotUnavailable')) ||
     (error instanceof mongoose.mongo.MongoError &&
       (error.name === 'MongoWaitQueueTimeoutError' ||
         error.hasErrorLabel('TransientTransactionError') ||
@@ -137,6 +139,27 @@ export function createDatabase(uri: string, options: DatabaseOptions = defaultDa
       });
     },
     isConnected: () => connection.readyState === 1,
+    // Snapshot reads need a stable read timestamp, not a commit acknowledgement.
+    // Share admission and pool with transactions; no write callback uses this path.
+    async snapshotRead<T>(
+      work: (session: ClientSession, beforeQuery: DatabaseDeadline) => Promise<T>,
+      remaining: DatabaseDeadline,
+    ): Promise<T> {
+      if (connection.readyState !== 1) throw new Error('Database is not connected');
+      if (activeTransactions >= limits.maxPoolSize) throw new DatabaseBusyError();
+      activeTransactions += 1;
+      try {
+        const session = await connection.startSession({ snapshot: true });
+        try {
+          remaining();
+          return await work(session, remaining);
+        } finally {
+          await session.endSession();
+        }
+      } finally {
+        activeTransactions -= 1;
+      }
+    },
     async transaction<T>(
       work: (session: ClientSession, beforeQuery?: DatabaseDeadline) => Promise<T>,
       remaining?: DatabaseDeadline,

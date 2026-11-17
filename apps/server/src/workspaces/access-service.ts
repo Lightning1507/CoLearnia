@@ -143,14 +143,19 @@ export function createWorkspaceAccessService(
     actor: AuthenticatedContext,
     work: (session: ClientSession, queryTime?: DatabaseDeadline) => Promise<T>,
     remaining?: DatabaseDeadline,
+    snapshotOnly = false,
   ): Promise<T> {
     if (!indexesReady() || !database.isConnected())
       throw new WorkspaceAccessError('DEPENDENCY_UNAVAILABLE');
     try {
-      const result = await database.transaction(async (session, queryTime) => {
+      const resolve = async (session: ClientSession, queryTime?: DatabaseDeadline) => {
         const expiresAt = await confirmSession(actor, session, queryTime);
         return { value: await work(session, queryTime), expiresAt };
-      }, remaining);
+      };
+      const result =
+        snapshotOnly && remaining
+          ? await database.snapshotRead(resolve, remaining)
+          : await database.transaction(resolve, remaining);
       if (Math.min(Date.parse(actor.expiresAt), result.expiresAt) <= Date.now())
         throw new WorkspaceAccessError('AUTH_REQUIRED');
       return result.value;
@@ -190,6 +195,7 @@ export function createWorkspaceAccessService(
     input: AccessInput,
     context: CoordinationContext,
     remaining?: DatabaseDeadline,
+    snapshotOnly = false,
   ) {
     const actor = identity(input.identity);
     const workspaceId = id(input.workspaceId);
@@ -252,6 +258,7 @@ export function createWorkspaceAccessService(
         });
       },
       remaining,
+      snapshotOnly,
     );
   }
   async function requireWorkspacePermissionHeld(

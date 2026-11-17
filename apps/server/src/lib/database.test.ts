@@ -1,6 +1,11 @@
 import mongoose from 'mongoose';
 import { describe, expect, it, vi } from 'vitest';
-import { createDatabase, DatabaseBusyError, defaultDatabaseOptions } from './database.js';
+import {
+  createDatabase,
+  DatabaseBusyError,
+  defaultDatabaseOptions,
+  isDatabaseUnavailableError,
+} from './database.js';
 import { loadConfig } from '../config/env.js';
 
 describe('database admission and configuration', () => {
@@ -137,3 +142,59 @@ describe('database admission and configuration', () => {
     }
   });
 });
+
+it('snapshot reads share transaction admission and release it after a failure', async () => {
+  const database = createDatabase('mongodb://127.0.0.1:27017/unused', {
+    ...defaultDatabaseOptions,
+    maxPoolSize: 1,
+  });
+  vi.spyOn(database.connection, 'readyState', 'get').mockReturnValue(1);
+  const client = new mongoose.mongo.MongoClient('mongodb://127.0.0.1:27017');
+  const start = vi
+    .spyOn(database.connection, 'startSession')
+    .mockImplementation(async (options) => client.startSession(options));
+  let release!: () => void;
+  const blocked = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const sessionEnd = vi.spyOn(mongoose.mongo.ClientSession.prototype, 'endSession');
+  const first = database.snapshotRead(
+    async () => {
+      await blocked;
+      throw new Error('snapshot fixture failure');
+    },
+    () => 500,
+  );
+  const failure = expect(first).rejects.toThrow('snapshot fixture failure');
+  try {
+    await expect(database.transaction(async () => undefined)).rejects.toBeInstanceOf(
+      DatabaseBusyError,
+    );
+    expect(start).toHaveBeenCalledWith({ snapshot: true });
+    release();
+    await failure;
+    expect(sessionEnd).toHaveBeenCalled();
+    expect(await database.transaction(async () => 'next')).toBe('next');
+  } finally {
+    release();
+    await failure;
+    vi.restoreAllMocks();
+    await database.close();
+    await client.close();
+  }
+});
+
+it.each(['SnapshotTooOld', 'SnapshotUnavailable'])(
+  'classifies %s as a retryable read dependency error',
+  (codeName) => {
+    expect(
+      isDatabaseUnavailableError(
+        new mongoose.mongo.MongoServerError({
+          ok: 0,
+          codeName,
+          errmsg: codeName,
+        }),
+      ),
+    ).toBe(true);
+  },
+);
