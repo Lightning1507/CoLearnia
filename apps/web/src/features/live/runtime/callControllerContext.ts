@@ -3,7 +3,7 @@ import type { CallControllerOwner } from './callController';
 
 type CallStateSource = Pick<
   CallControllerOwner,
-  'subscribe' | 'getSnapshot' | 'getAudioBlocked' | 'enableAudio'
+  'subscribe' | 'getSnapshot' | 'getAudioBlocked' | 'enableAudio' | 'getCameraSnapshot'
 >;
 
 export const CallControllerContext = createContext<CallStateSource | null>(null);
@@ -23,4 +23,9 @@ export function useCallAudio() {
   const source = useCallSource();
   const blocked = useSyncExternalStore(source.subscribe, source.getAudioBlocked);
   return { blocked, enable: source.enableAudio };
+}
+
+export function useCallCameras() {
+  const source = useCallSource();
+  return useSyncExternalStore(source.subscribe, source.getCameraSnapshot);
 }

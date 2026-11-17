@@ -3,7 +3,8 @@ import type { FocusEvent, ReactNode } from 'react';
 import type { CallHandle, CallIdentity, CallSnapshot } from '../runtime/callController';
 import { DeviceMediaControls } from './DeviceMediaControls';
 import type { DeviceMedia } from '../runtime/deviceMedia';
-import { useCallAudio, useCallSnapshot } from '../runtime/callControllerContext';
+import { useCallAudio, useCallCameras, useCallSnapshot } from '../runtime/callControllerContext';
+import { CameraTiles } from './CameraTiles';
 
 const statusLabels: Record<CallSnapshot['status'], string> = {
   idle: 'Chưa tham gia cuộc gọi',
@@ -62,6 +63,7 @@ export function RoomShell({
 }: RoomShellProps) {
   const call = useCallSnapshot();
   const audio = useCallAudio();
+  const cameras = useCallCameras();
   const titleId = useId();
   const panelId = useId();
   const panelHeading = useRef<HTMLHeadingElement>(null);
@@ -169,7 +171,16 @@ export function RoomShell({
               <p role="alert">{error}</p>
             ) : (
               (stage ??
-              (stream ? <StageVideo stream={stream} /> : <p>Chưa có hình ảnh sân khấu.</p>))
+              (stream ? (
+                <StageVideo stream={stream} />
+              ) : roomCall?.status === 'active' ? (
+                <CameraTiles snapshot={cameras} />
+              ) : (
+                <p>Chưa có hình ảnh sân khấu.</p>
+              )))
+            )}
+            {!error && roomCall?.status === 'active' && (stage || stream) && (
+              <CameraTiles snapshot={cameras} />
             )}
           </section>
           {sidePanel && (
