@@ -301,3 +301,17 @@ pnpm exec vitest run --pool=threads --config vitest.database.config.ts apps/serv
 Cùng cấu hình trial ở trên, mỗi đợt tải ghép chạy hai lượt gửi TEXT song song với đọc phiên, mở Workspace và tạo Workspace/kênh TEXT trên cùng pool. Một lượt đo cục bộ với pool 2 cho kết quả cùng phiên 224/175 ms và khác phiên 174/151 ms (tắt/bật fence). Hai đợt bật fence có đúng hai update AuthSession mỗi đợt. Cả bốn đợt có tám tin và sequence cuối 8. Mẫu này kiểm các đường chạy đồng thời và đếm update. Cần mẫu tải lớn hơn để chốt budget hoặc capacity.
 
 P2 tiếp tục mở. Runtime mặc định vẫn dùng đường hiện hành. Recovery qua restart, deadline và các scope ngoài AUTH_SESSION cần được chốt trước quyết định merge.
+
+### Private R2 (SCRUM-52)
+
+Use a team-provided private test bucket with both the R2.dev URL and public custom domains disabled. Issue an Object Read & Write token limited to that test bucket. Configure R2_ACCOUNT_ID, R2_BUCKET, R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY from the server-only secret store or a local ignored environment file. The adapter targets the standard R2 S3 endpoint.
+
+From the repository root, run:
+
+```powershell
+pnpm --filter @colearnia/server exec tsx --env-file-if-exists=../../.env scripts/r2-smoke.ts
+```
+
+The smoke writes a randomly named disposable object, compares downloaded bytes, checks that anonymous HEAD is denied while the object exists, deletes it and verifies that a signed read then reports not found. Check bucket-level public access in the Cloudflare dashboard as well. An anonymous request to the S3 endpoint cannot verify that separate public domains are disabled.
+
+Use one adapter instance for file and video consumers. Both use the same bucket and credentials, with server-generated object keys. Single PUT requires a known byte length. Reads stream into a caller-provided writable, and the adapter owns both supplied streams until the operation settles. R2_TIMEOUT_MS defaults to 15000 and bounds the complete operation, including streaming the response. Callers can supply an AbortSignal. Failed or aborted writes/deletes can have an unknown remote result, so follow-up consumers must reconcile the same key before publishing or releasing quota. Multipart lifecycle, video range reads and metadata/ACL integration belong to the consumer tasks.
