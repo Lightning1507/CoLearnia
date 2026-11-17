@@ -4,8 +4,11 @@ import { RoomShell } from '../../../src/features/live/room/RoomShell';
 import { CallControllerProvider } from '../../../src/features/live/runtime/CallControllerProvider';
 import { CallControllerOwner } from '../../../src/features/live/runtime/callController';
 import type { MediaSnapshotRuntime } from '../../../src/features/live/runtime/mediaSnapshotRuntime';
-import type { MediaSnapshot } from '../../../src/features/live/runtime/mediaSnapshot';
-import { applySnapshot, binding, camera, context, event } from './fixtures';
+import type {
+  ConsumerBinding,
+  MediaSnapshot,
+} from '../../../src/features/live/runtime/mediaSnapshot';
+import { applySnapshot, binding, camera, context, event, provideSnapshot } from './fixtures';
 import '../../../src/styles/global.css';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -81,9 +84,38 @@ async function verify() {
     media.confirmConsumerReady(snapshot, binding, handle);
   });
   check(!container.querySelector('video'), 'Ready ACK cũ không ghi đè snapshot paused mới');
-  await act(async () => {
-    await applySnapshot(media, [camera], false, 0, [{ ...binding, ready: true, paused: false }]);
+  const resyncResponses: ((consumers: ConsumerBinding[]) => void)[] = [];
+  let resyncRequests = 0;
+  const unbindResync = media.bindResync((input, receive) => {
+    resyncRequests++;
+    resyncResponses.push((consumers) =>
+      provideSnapshot(input.requestId, receive, [camera], false, 0, consumers),
+    );
   });
+  const waitResync = async () => {
+    for (let attempt = 0; attempt < 60; attempt++) {
+      if (resyncResponses.length) return;
+      await act(delay);
+    }
+    throw new Error('Thiếu yêu cầu resync Consumer');
+  };
+  await waitResync();
+  await act(() => {
+    resyncResponses.shift()!([{ ...binding, ready: false, paused: true }]);
+  });
+  await act(() => {
+    media.confirmConsumerReady(snapshot, binding, handle);
+  });
+  check(
+    !container.querySelector('video') && !media.getCameraSnapshot().synchronized,
+    'ACK sau snapshot pending phải chờ resync',
+  );
+  await waitResync();
+  await act(async () => {
+    resyncResponses.shift()!([{ ...binding, ready: true, paused: false }]);
+  });
+  check(resyncRequests === 2, 'ACK sau pending snapshot phải yêu cầu snapshot mới');
+  unbindResync();
   const waitVideo = async () => {
     for (let attempt = 0; attempt < 60; attempt++) {
       if (container.textContent?.includes('Đang nhận hình ảnh')) return;
@@ -252,7 +284,7 @@ async function verify() {
     },
     { once: true },
   );
-  return 'PASS · snapshot paused → ready ACK cũ; local enabled → disabled → enabled; token Figma; ready → frame → pause → resume → remount → switching → ended; StrictMode; participant độc lập';
+  return 'PASS · snapshot pending → ready ACK → resync → hình ảnh; snapshot paused → ACK cũ; local enabled → disabled → enabled; token Figma; ready → frame → pause → resume → remount → switching → ended; StrictMode; participant độc lập';
 }
 
 void verify().then(

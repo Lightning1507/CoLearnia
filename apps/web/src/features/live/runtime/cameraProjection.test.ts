@@ -5,12 +5,14 @@ import { MediaSnapshotRuntime } from './mediaSnapshotRuntime';
 import { CallControllerOwner } from './callController';
 import { cameraStatus } from './cameraProjection';
 import { CameraTiles } from '../room/CameraTiles';
+import type { ConsumerBinding } from './mediaSnapshot';
 import {
   applySnapshot,
   binding,
   camera,
   context,
   event,
+  provideSnapshot,
 } from '../../../../test/browser/camera-tiles/fixtures';
 
 function setup() {
@@ -30,6 +32,36 @@ function setup() {
 const current = (media: MediaSnapshotRuntime) => media.getCameraSnapshot().cameras[0]!;
 
 describe('SCRUM-78 authoritative camera projection', () => {
+  it.each([false, true])(
+    'resyncs a pending snapshot after ready ACK and honors the fresh paused=%s state',
+    async (paused) => {
+      const { media, handle, track } = setup();
+      const responses: ((consumers: ConsumerBinding[]) => void)[] = [];
+      const resync = vi.fn<Parameters<MediaSnapshotRuntime['bindResync']>[0]>((input, receive) => {
+        responses.push((consumers) =>
+          provideSnapshot(input.requestId, receive, [camera], false, 0, consumers),
+        );
+      });
+      const unbind = media.bindResync(resync);
+      await vi.waitFor(() => expect(resync).toHaveBeenCalledTimes(1));
+      responses.shift()!([]);
+      const original = media.getSnapshot()!;
+      media.attachConsumer(original, binding, handle);
+      await applySnapshot(media, [camera], false, 0, [{ ...binding, ready: false, paused: true }]);
+
+      expect(media.confirmConsumerReady(original, binding, handle)).toBe(true);
+      expect(current(media).track).toBeUndefined();
+      await vi.waitFor(() => expect(resync).toHaveBeenCalledTimes(2));
+      expect(media.getCameraSnapshot().synchronized).toBe(false);
+      responses.shift()!([{ ...binding, ready: true, paused }]);
+      expect(media.getCameraSnapshot().synchronized).toBe(true);
+      expect(current(media).track).toBe(paused ? undefined : track);
+      expect(handle.attach).toHaveBeenCalledOnce();
+      expect(handle.close).not.toHaveBeenCalled();
+      unbind();
+    },
+  );
+
   it.each([
     { ready: true, paused: true },
     { ready: false, paused: true },
@@ -43,6 +75,7 @@ describe('SCRUM-78 authoritative camera projection', () => {
       await applySnapshot(media, [camera], false, 0, [{ ...binding, ...state }]);
       expect(media.confirmConsumerReady(original, binding, handle)).toBe(true);
       expect(current(media).track).toBe(state.ready && !state.paused ? track : undefined);
+      expect(media.getCameraSnapshot().synchronized).toBe(state.ready);
       expect(handle.close).not.toHaveBeenCalled();
     },
   );

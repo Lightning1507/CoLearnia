@@ -56,14 +56,14 @@ export function event(payload: object, mediaSequence: number) {
     payload,
   };
 }
-export async function applySnapshot(
-  media: MediaSnapshotRuntime,
+export function provideSnapshot(
+  requestId: string,
+  receive: Pick<NonNullable<ReturnType<MediaSnapshotRuntime['begin']>>, 'acceptAck' | 'acceptPart'>,
   sources = [camera],
   own = false,
   mediaSequence = 0,
   ownConsumers: ConsumerBinding[] = [],
 ) {
-  const requestId = crypto.randomUUID();
   const snapshot: MediaSourcesSnapshot = {
     sessionId: context.sessionId,
     epoch: context.epoch,
@@ -79,13 +79,24 @@ export async function applySnapshot(
       ownTransports: [],
     },
   };
-  const request = media.begin(requestId);
-  if (!request) throw new Error('Missing fixture context');
-  request.acceptAck({
+  receive.acceptAck({
     requestId,
     data: { status: 'completed', result: { ...watermark, mediaSequence } },
   });
-  request.acceptPart(snapshot);
+  receive.acceptPart(snapshot);
+}
+
+export async function applySnapshot(
+  media: MediaSnapshotRuntime,
+  sources = [camera],
+  own = false,
+  mediaSequence = 0,
+  ownConsumers: ConsumerBinding[] = [],
+) {
+  const requestId = crypto.randomUUID();
+  const request = media.begin(requestId);
+  if (!request) throw new Error('Missing fixture context');
+  provideSnapshot(requestId, request, sources, own, mediaSequence, ownConsumers);
   const result = await request.result;
   if (result.status !== 'applied') throw new Error(`Fixture snapshot: ${result.status}`);
   return result.snapshot;

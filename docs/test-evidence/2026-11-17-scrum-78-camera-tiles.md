@@ -69,3 +69,12 @@ SCRUM-88 / M4-T11.1 cần ghép join có xác thực, SEND/RECV, projection/cont
 - Token camera trong global.css dùng nền #29302e cho tile/surface, nền nhãn rgb(19 24 23 / 0.75), chữ #d5dcda và vị trí góc trên phải theo export Figma. Giữ nguyên nhãn nghiệp vụ.
 - Regression camera có 26 test; camera + snapshot + audio có 58 test đạt. `pnpm.exe check` exit 0: harness 54 PASS/1 skip Windows, format/lint/typecheck và build ba package đạt, 985/985 test trên 70 file đạt. `pnpm.exe media:smoke` exit 0, native worker/Router Opus/VP8 đạt.
 - Chrome ở fixture cổng 5193 hiển thị PASS: attach Consumer → snapshot paused mới → ready ACK cũ không hiện video; snapshot resumed mới hiện video; local enabled → disabled → enabled đổi cả visibility và nhãn mà không đổi source; computed styles của tile/placeholder/nhãn khớp màu và vị trí Figma. Các ca pause/resume/ended/StrictMode/remount cũ vẫn đạt. Snapshot/event là fixture, canvas track thật; chưa mở rộng nghiệm thu server media thật.
+
+## Kiểm lại ready ACK sau snapshot pending — 17/11/2026
+
+- Review tại `5244fff` chỉ ra snapshot mới có thể được chụp trước khi server hoàn tất ready. Giữ binding pending mà không yêu cầu đọc lại sẽ làm tile chờ mãi dù ACK đã thành công.
+- Trước sửa, hai regression mới đều fail vì chỉ có lần resync khởi tạo, không có yêu cầu resync sau ready ACK. Sau sửa, khi snapshot mới hơn vẫn có `ready: false`, `confirmConsumerReady` dùng cơ chế resync/retry/budget hiện có. Không tự ghi đè ready/paused bằng ACK cũ, không tự tạo Consumer hoặc resume.
+- Ca pending snapshot → ready ACK → resync → snapshot `ready: true, paused: false` cung cấp lại đúng track, không nhân attachment. Ca snapshot trả về vẫn `paused: true` tiếp tục ẩn track. Trạng thái pause đã xác nhận ở snapshot mới vẫn không bị ACK cũ ghi đè; ca này giữ projection đồng bộ và không cần resync vì Consumer đã ready.
+- Camera có 28 test; camera + snapshot + audio có 60 test đạt. Typecheck web đạt.
+- Chrome fixture cổng 5193 hiển thị PASS cho đúng thứ tự pending snapshot → ready ACK → yêu cầu resync mới → snapshot ready/hết pause → nhận hình, cùng các ca pause cũ, local enabled hai chiều, token Figma và StrictMode/remount. Event/snapshot vẫn là fixture mô phỏng và video canvas thật; chưa bổ sung nghiệm thu server media thật.
+- `pnpm.exe check` exit 0: harness 54 PASS/1 skip Windows, format/lint/typecheck và build contracts/web/server đạt, 987/987 test trên 70 file đạt. `pnpm.exe media:smoke` exit 0, worker/Router Opus/VP8 đạt. Không thay config, dependency hoặc giới hạn retry để làm xanh kiểm tra.

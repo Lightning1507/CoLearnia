@@ -520,6 +520,10 @@ export class MediaSnapshotRuntime {
     // has already reconciled ready/paused and must not be overwritten by that ACK.
     if (this.#snapshot?.requestId === snapshot.requestId) {
       local.binding = { ...local.binding, ready: true, paused: false };
+    } else if (!local.binding.ready) {
+      // The newer snapshot may predate completion of this ready operation.
+      // Read again instead of guessing whether it is now resumed or still paused.
+      this.#requestResync();
     }
     this.#publishCameras();
     return true;
