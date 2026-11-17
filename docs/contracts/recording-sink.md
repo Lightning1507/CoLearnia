@@ -51,3 +51,7 @@ M4 chiếu trạng thái cho audience hiện hành. M2 kiểm membership và quy
 | Hai host dùng cùng request ID trước và sau chuyển quyền         | Hai khóa retry khác nhau theo actor. Khi còn attempt mở, host mới vẫn bị chặn tạo attempt thứ hai.                                      |
 
 Đây là tiêu chí kiểm thử để bàn giao. Bằng chứng chạy pipeline và storage sẽ được ghi ở SCRUM-51.
+
+[PR #121](https://github.com/Lightning1507/CoLearnia/pull/121) bàn giao PoC từng phần của M2-T9.1. [Evidence SCRUM-51](../test-evidence/2026-11-16-scrum-51-recording-sink.md) ghi ca hủy trong capture và finalize lặp sau khi caller mất receipt local. Kết quả local chưa xác nhận receipt bền, READY, quota, CAS hoặc điều phối quyền.
+
+M2 giữ các tiêu chí tích hợp trong SCRUM-51 đến khi các bên xác nhận task tiếp nhận. M2 kiểm mất ACK với port lưu trữ/DB khi có: đối soát cùng attempt và operation trả đúng receipt đã commit, không nhân artifact hay xóa byte còn cần đối soát; khi chưa biết kết quả vẫn pending. M3/M4 phối hợp kiểm thứ tự input/writer, callback muộn, end-call và chuyển host; M1/M2 phối hợp kiểm deny và transaction READY theo bảng. Bàn giao PoC chưa đóng các tiêu chí đó.
