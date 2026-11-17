@@ -66,3 +66,17 @@ Xem [checklist cấu hình staging SCRUM-54](staging-configuration.md) để đ�
 ## Profile capacity
 
 Theo [capacity](../capacity.md), local start/health hoặc media smoke không chứng minh 25/50 người. Các profile cần DB test/dữ liệu cũ, config pool/queue/quota hữu hạn và media thật trên hạ tầng ghi rõ; không đo 50 tab trên một laptop rồi suy capacity server. Một VPS/DB node là phương án thử, chưa là HA. Đợt đồng bộ tài liệu không start/stop container hoặc chạy migration.
+
+### Private R2 (SCRUM-52)
+
+Use a team-provided private test bucket with both the R2.dev URL and public custom domains disabled. Issue an Object Read & Write token limited to that test bucket. Configure R2_ACCOUNT_ID, R2_BUCKET, R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY from the server-only secret store or a local ignored environment file. The adapter targets the standard R2 S3 endpoint.
+
+From the repository root, run:
+
+```powershell
+pnpm --filter @colearnia/server exec tsx --env-file-if-exists=../../.env scripts/r2-smoke.ts
+```
+
+The smoke writes a randomly named disposable object, compares downloaded bytes, checks that anonymous HEAD is denied while the object exists, deletes it and verifies that a signed read then reports not found. Check bucket-level public access in the Cloudflare dashboard as well. An anonymous request to the S3 endpoint cannot verify that separate public domains are disabled.
+
+Use one adapter instance for file and video consumers. Both use the same bucket and credentials, with server-generated object keys. Single PUT requires a known byte length. Reads stream into a caller-provided writable, and the adapter owns both supplied streams until the operation settles. R2_TIMEOUT_MS defaults to 15000 and bounds the complete operation, including streaming the response. Callers can supply an AbortSignal. Failed or aborted writes/deletes can have an unknown remote result, so follow-up consumers must reconcile the same key before publishing or releasing quota. Multipart lifecycle, video range reads and metadata/ACL integration belong to the consumer tasks.
