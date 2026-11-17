@@ -64,6 +64,23 @@ export const mediaProducerCreateInputSchema = sessionCommandEnvelopeSchema({
     .strictObject({ leaseId: z.uuid(), leaseGeneration: z.number().int().positive() })
     .optional(),
 });
+export const mediaDeviceProducerCloseInputSchema = sessionCommandEnvelopeSchema({
+  transportId: resourceIdSchema,
+  target: z.union([
+    z.strictObject({ producerId: resourceIdSchema }),
+    z.strictObject({ createRequestId: z.uuid() }),
+  ]),
+});
+export const mediaDeviceProducerCloseAckSchema = commandAckSchema(
+  z.strictObject({
+    status: z.literal('completed'),
+    result: z.strictObject({
+      target: mediaDeviceProducerCloseInputSchema.shape.payload.shape.target,
+      closed: z.literal(true),
+    }),
+  }),
+);
+
 export const mediaConsumerCreateInputSchema = sessionCommandEnvelopeSchema({
   ...sourceBinding,
   transportId: resourceIdSchema,

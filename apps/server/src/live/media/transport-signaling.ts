@@ -60,7 +60,9 @@ type SocketPort = {
   once(event: 'disconnect', listener: () => void): unknown;
 };
 export type ResourceGrant =
-  { transportId: string } | { consumerId: string; sourceId: string; sourceGeneration: number };
+  | { transportId: string }
+  | { consumerId: string; sourceId: string; sourceGeneration: number }
+  | { producerId: string; sourceId: string; sourceGeneration: number };
 type GrantListener = (context: LiveContext, grant: ResourceGrant) => void;
 type Slot = {
   key: string;

@@ -71,14 +71,12 @@ function sameAudience(left: LiveContext, right: LiveContext) {
 }
 
 function grantKey(resource: ResourceGrant) {
-  return 'consumerId' in resource
-    ? JSON.stringify([
-        'consumer',
-        resource.consumerId,
-        resource.sourceId,
-        resource.sourceGeneration,
-      ])
-    : JSON.stringify(['transport', resource.transportId]);
+  if ('transportId' in resource) return JSON.stringify(['transport', resource.transportId]);
+  const identity =
+    'consumerId' in resource
+      ? ['consumer', resource.consumerId]
+      : ['producer', resource.producerId];
+  return JSON.stringify([...identity, resource.sourceId, resource.sourceGeneration]);
 }
 
 function pack(header: SnapshotHeader, projection: Payload) {
@@ -133,6 +131,7 @@ function isVisible(delta: Delta, current: Payload, { visible: sent, acknowledged
     case 'media.producer.stateChanged': {
       const { sourceId, sourceGeneration, sourceRevision, producerId, state } =
         delta.packet.payload;
+      if (state === 'CLOSED' && acknowledged.has(grantKey(delta.packet.payload))) return true;
       const sources = state === 'CLOSED' ? sent.ownProducers : current.ownProducers;
       return sources.some(
         ({ source }) =>
@@ -174,6 +173,15 @@ function recordDelta(delta: Delta, current: Payload, sent: Payload) {
         ...sent.sources.filter((value) => value.sourceId !== source.sourceId),
         source,
       ];
+      const owner = current.ownProducers.find(
+        ({ source: own }) => own.producerId === source.producerId,
+      );
+      if (owner) {
+        sent.ownProducers = [
+          ...sent.ownProducers.filter(({ source: own }) => own.producerId !== source.producerId),
+          owner,
+        ];
+      }
       break;
     }
     case 'media.source.ended': {
@@ -219,7 +227,8 @@ export function createMediaSourceSync({
     ReturnType<typeof createTransportSignaling>,
     'readOwnTransports' | 'resourceGrants'
   >;
-  media: Pick<ReturnType<typeof createPausedReadySignaling>, 'readOwnSources' | 'visibleSources'>;
+  media: Pick<ReturnType<typeof createPausedReadySignaling>, 'readOwnSources' | 'visibleSources'> &
+    Partial<Pick<ReturnType<typeof createPausedReadySignaling>, 'subscribeDeviceSources'>>;
 }) {
   let resyncsInFlight = 0;
   return {
@@ -271,6 +280,7 @@ export function createMediaSourceSync({
       });
       socket.once('disconnect', () => {
         unsubscribe();
+        unsubscribeDevices?.();
         stream = undefined;
       });
       socket.on('media.sources.resync', (raw, ack) => {
@@ -361,7 +371,7 @@ export function createMediaSourceSync({
 
       // Invoke after the resource mutation has committed. Re-enter the recipient gate
       // before allocating a sequence and enqueueing the recipient's packet.
-      return {
+      const binding = {
         async publish<Name extends MediaSourceEventName>(
           name: Name,
           payload: MediaSourceEvent<Name>['payload'],
@@ -408,13 +418,42 @@ export function createMediaSourceSync({
             }
             previous.sequence++;
             recordDelta(delta, projection, previous.visible);
-            if (delta.name === 'media.consumer.closed' || delta.name === 'media.transport.closed')
+            if (
+              delta.name === 'media.consumer.closed' ||
+              delta.name === 'media.transport.closed' ||
+              (delta.name === 'media.producer.stateChanged' &&
+                delta.packet.payload.state === 'CLOSED')
+            )
               previous.acknowledged.delete(grantKey(delta.packet.payload));
             socket.emit(name, result.data);
             return true;
           });
         },
       };
+      const unsubscribeDevices = media.subscribeDeviceSources?.(({ type, source }) => {
+        void (async () => {
+          if (type === 'published') {
+            await binding.publish('media.source.changed', { source });
+            return;
+          }
+          const { sourceId, sourceGeneration, sourceRevision, producerId } = source;
+          const version = {
+            sourceId,
+            sourceGeneration,
+            sourceRevision,
+            reason: 'SOURCE_ENDED' as const,
+          };
+          await binding.publish('media.source.ended', version);
+          await binding.publish('media.producer.stateChanged', {
+            ...version,
+            producerId,
+            state: 'CLOSED',
+          });
+        })().catch(() => {
+          if (stream) stream.requiresSnapshot = true;
+        });
+      });
+      return binding;
     },
   };
 }

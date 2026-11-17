@@ -9,6 +9,10 @@ import {
 import { Device } from 'mediasoup-client';
 import type { types as MediaTypes } from 'mediasoup-client';
 import { io } from 'socket.io-client';
+import { createElement } from 'react';
+import { createRoot } from 'react-dom/client';
+import { DeviceMediaControls } from '../../../src/features/live/room/DeviceMediaControls';
+import { createDeviceMediaSocket } from '../../../src/features/live/runtime/deviceMediaSocket';
 import { CallControllerOwner } from '../../../src/features/live/runtime/callController';
 import { receiveMainAudio } from '../../../src/features/live/runtime/receiveMainAudio';
 
@@ -78,6 +82,38 @@ async function verifyMedia(video: HTMLVideoElement) {
   }
 
   const send = await openTransport('SEND');
+  if (new URLSearchParams(location.search).has('device-toggle')) {
+    await import('../../../src/styles/global.css');
+    const lifetime = new AbortController();
+    const { devices, produce } = createDeviceMediaSocket(socket, send, lifetime.signal);
+    send.on('produce', produce);
+    devices.updateContext({
+      sessionId: context.sessionId,
+      epoch: context.epoch,
+      callGeneration: context.callGeneration,
+      audienceEpoch: 0,
+      policyRevision: context.expectedPolicyRevision,
+      scope: { type: 'MAIN' },
+    });
+    const container = document.createElement('div');
+    container.className = 'flex w-fit flex-wrap items-center gap-[7px] rounded-xl bg-stone-900 p-3';
+    container.setAttribute('role', 'toolbar');
+    container.setAttribute('aria-label', 'Điều khiển thiết bị');
+    video.before(container);
+    const root = createRoot(container);
+    root.render(createElement(DeviceMediaControls, { devices }));
+    window.addEventListener(
+      'pagehide',
+      () => {
+        lifetime.abort();
+        root.unmount();
+        send.close();
+        socket.close();
+      },
+      { once: true },
+    );
+    return 'SCRUM-71 · Kiểm thử nút mic và camera';
+  }
   const recv = await openTransport('RECV');
   const own = new Set<string>();
   send.on('produce', ({ kind, rtpParameters }, callback, errback) => {
