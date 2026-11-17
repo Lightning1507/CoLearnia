@@ -1,4 +1,4 @@
-import { Readable, type Writable } from 'node:stream';
+import { PassThrough, Readable, type Writable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import {
   DeleteObjectCommand,
@@ -37,6 +37,7 @@ export function createR2Storage(config: R2Config) {
       signal.throwIfAborted();
       return await action(signal);
     } catch (error) {
+      if (error instanceof ObjectStorageError) throw error;
       if (signal.aborted) {
         throw new ObjectStorageError(signal.reason === timeout.reason ? 'TIMEOUT' : 'ABORTED');
       }
@@ -63,15 +64,35 @@ export function createR2Storage(config: R2Config) {
       }
       try {
         await run(caller, async (signal) => {
-          await client.send(
+          const requestAbort = new AbortController();
+          const requestSignal = AbortSignal.any([signal, requestAbort.signal]);
+          const upload = body instanceof Readable ? new PassThrough() : body;
+          // pipeline propagates source errors and preserves bounded stream backpressure.
+          // Observe both promises immediately, then await both during failure cleanup.
+          const pumping =
+            body instanceof Readable
+              ? pipeline(body, upload as PassThrough, { signal: requestSignal })
+              : Promise.resolve();
+          const request = client.send(
             new PutObjectCommand({
               Bucket: config.bucket,
               Key: key,
-              Body: body,
+              Body: upload,
               ContentLength: contentLength,
             }),
-            { abortSignal: signal },
+            { abortSignal: requestSignal },
           );
+          try {
+            await Promise.all([pumping, request]);
+          } catch (error) {
+            const ioFailedFirst = !signal.aborted;
+            requestAbort.abort(error);
+            await Promise.allSettled([pumping, request]);
+            // Keep the original failure classification if cancellation arrives
+            // while waiting for the source and HTTP request to close.
+            if (ioFailedFirst) throw new ObjectStorageError('UNAVAILABLE');
+            throw error;
+          }
         });
       } finally {
         // The adapter owns the upload source for the duration of this call.

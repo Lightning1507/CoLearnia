@@ -1,4 +1,4 @@
-import { once } from 'node:events';
+import { EventEmitter, once } from 'node:events';
 import { createServer } from 'node:http';
 import { PassThrough, Readable, Writable } from 'node:stream';
 import { buffer } from 'node:stream/consumers';
@@ -8,9 +8,22 @@ import { createR2Storage } from './r2-storage.js';
 
 let endpoint: string;
 let stored: Buffer | undefined;
+const uploads = new EventEmitter();
 const server = createServer(async (request, response) => {
   const path = request.url?.split('?')[0];
-  if (path === '/test-bucket/slow-upload') {
+  if (path === '/test-bucket/slow-upload' || path === '/test-bucket/source-error') {
+    let bytes = 0;
+    request.on('data', (chunk: Buffer) => {
+      bytes += chunk.byteLength;
+      uploads.emit('data:' + path);
+    });
+    request.on('close', () =>
+      uploads.emit('closed:' + path, {
+        bytes,
+        complete: request.complete,
+        socketDestroyed: request.socket.destroyed,
+      }),
+    );
     request.on('error', () => undefined);
     request.resume();
     return;
@@ -151,6 +164,56 @@ it('times out a stalled upload and destroys its source', async () => {
     });
     expect(source.destroyed).toBe(true);
   } finally {
+    storage.close();
+  }
+});
+
+it('rejects and closes a partial HTTP upload when its encoder source emits an error', async () => {
+  const storage = fixture(2000);
+  const source = new PassThrough();
+  const dataReceived = once(uploads, 'data:/test-bucket/source-error');
+  const requestClosed = once(uploads, 'closed:/test-bucket/source-error');
+  source.write('partial encoder output');
+  const rejected = expect(storage.put('source-error', source, 1024)).rejects.toMatchObject({
+    code: 'UNAVAILABLE',
+  });
+  try {
+    await dataReceived;
+    source.destroy(new Error('fixture encoder failed'));
+    await rejected;
+    const [closed] = await requestClosed;
+    expect(closed).toMatchObject({ complete: false, socketDestroyed: true });
+    expect(closed.bytes).toBeGreaterThan(0);
+    expect(source.destroyed).toBe(true);
+    // A signed request still works after the source error in this process.
+    await storage.put('probe', Buffer.from('still alive'), 11);
+    await storage.delete('probe');
+  } finally {
+    source.destroy();
+    storage.close();
+  }
+});
+
+it('preserves ABORTED when a caller cancels a partial upload', async () => {
+  const storage = fixture(2000);
+  const source = new PassThrough();
+  const caller = new AbortController();
+  const dataReceived = once(uploads, 'data:/test-bucket/source-error');
+  const requestClosed = once(uploads, 'closed:/test-bucket/source-error');
+  source.write('partial cancelled output');
+  const rejected = expect(
+    storage.put('source-error', source, 1024, caller.signal),
+  ).rejects.toMatchObject({ code: 'ABORTED' });
+  try {
+    await dataReceived;
+    caller.abort();
+    await rejected;
+    const [closed] = await requestClosed;
+    expect(closed.complete).toBe(false);
+    expect(closed.bytes).toBeGreaterThan(0);
+    expect(source.destroyed).toBe(true);
+  } finally {
+    source.destroy();
     storage.close();
   }
 });
