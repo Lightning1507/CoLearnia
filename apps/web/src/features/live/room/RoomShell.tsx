@@ -1,6 +1,8 @@
 import { useId, useLayoutEffect, useRef } from 'react';
 import type { FocusEvent, ReactNode } from 'react';
 import type { CallHandle, CallIdentity, CallSnapshot } from '../runtime/callController';
+import { DeviceMediaControls } from './DeviceMediaControls';
+import type { DeviceMedia } from '../runtime/deviceMedia';
 import { useCallAudio, useCallSnapshot } from '../runtime/callControllerContext';
 
 const statusLabels: Record<CallSnapshot['status'], string> = {
@@ -17,6 +19,7 @@ type RoomShellProps = {
   stageMedia?: { call: CallHandle; stream: MediaStream } | undefined;
   sidePanel?: { label: string; content: ReactNode; onBackToStage: () => void } | undefined;
   controls?: ReactNode;
+  devices?: DeviceMedia;
   error?: string | undefined;
 };
 
@@ -54,6 +57,7 @@ export function RoomShell({
   stageMedia,
   sidePanel,
   controls,
+  devices,
   error,
 }: RoomShellProps) {
   const call = useCallSnapshot();
@@ -192,7 +196,8 @@ export function RoomShell({
           ref={toolbar}
           tabIndex={-1}
         >
-          {controls ?? <p>Chưa có điều khiển cuộc gọi khả dụng.</p>}
+          {roomCall?.status === 'active' && devices && <DeviceMediaControls devices={devices} />}
+          {controls ?? (!devices && <p>Chưa có điều khiển cuộc gọi khả dụng.</p>)}
           {showAudioRecovery && (
             <div className="flex flex-wrap items-center gap-2">
               <p className="text-sm text-[color:var(--workspace-muted)]" role="status">
