@@ -6,7 +6,15 @@ Source: `apps/server/src/live/session-manager/main-join-registry.ts`, `main-join
 
 Có registry một process, cấp/consume ticket, adapter socket `session.join`, quyền MAIN tối thiểu và `withContext` cho M3. Registry tạo một Router/phiên qua factory, ghi metadata qua repository MongoDB chung. Production inject đúng coordinator dùng chung của M1/M2, không tạo lock/connection riêng.
 
-Chưa mount REST hoặc socket vào app hiện hành: M1 cung cấp adapter auth/access thực tế trước composition. Factory không có chế độ bỏ qua auth. Test M1 dùng fixture kiểm context khóa; MongoDB/Router trong integration test là thật. Đây chưa là luồng đăng nhập–gọi trên trình duyệt hoặc kiểm TURN.
+Chưa mount REST hoặc socket MAIN vào entry point `main.ts`. Adapter `createMainAuthority` nối registry với session/ACL MongoDB của M1 đã có; factory không có chế độ bỏ qua auth. Bộ kiểm SCRUM-88 ghép auth/ACL, socket, registry, FE projection và media native trong harness riêng; cleanup M2/M5 vẫn dùng test double. Đây chưa là luồng đăng nhập–gọi trên trình duyệt hoặc kiểm TURN. Xem [bằng chứng SCRUM-88](../test-evidence/2026-11-18-scrum-88-main-auth-media.md).
+
+### Cổng đọc authority M1–M4
+
+`createMainAuthority(database, access, barrier)` cung cấp `resolveAuthority` và `isAuthorityCurrent` cho registry. Identity lấy từ auth transport; mỗi lần resolve đọc lại session, User ACTIVE, Workspace/membership, channel và PRIVATE grant, chỉ cho phép LIVE có quyền đọc nội dung. Display name đọc từ User; provider không lấy tên hoặc quyền từ payload client. Lỗi DB được chuyển thành `DEPENDENCY_UNAVAILABLE`, không coi là thu quyền nghiệp vụ.
+
+`access.resolvePeerChannelAccessHeld(input, held)` là cổng **chỉ đọc phía server** cho việc refresh những participant khác trong phòng. Caller giữ Workspace gate chung; không lấy thêm User gate của peer khi đang giữ Workspace. Cổng vẫn kiểm session/ACL thật và barrier gắn access stamp. `resolveChannelAccessHeld` hiện có tiếp tục yêu cầu cả User + Workspace; cổng peer không dùng để cho phép mutation thay người khác.
+
+Sau mỗi await, registry dùng `isAuthorityCurrent` để kiểm expiry và shared deny với stamp hiện tại lẫn stamp đã commit. Các miền thay đổi quyền phải đi qua coordinator/barrier chung; không dùng kết quả đọc ACL làm grant lâu dài.
 
 Revoke theo SCRUM-83, end phiên theo SCRUM-86, [reconnect/resync MAIN](main-reconnect.md) theo SCRUM-84, [đối chiếu/phiên rỗng](session-reconciliation.md) theo SCRUM-87 và [worker failure](worker-failure.md) theo SCRUM-91 đã có implementation trong registry. Kế vị host đầy đủ tiếp tục theo task riêng. Schema nhận cấu trúc xác nhận takeover của ví dụ M3 nhưng registry chưa chuyển ownership của call còn kết nối: vẫn trả CALL_ALREADY_ACTIVE, giữ call cũ và ticket mới chưa consume. Không tự tăng generation/chiếm call khi chưa cleanup đúng đời.
 
