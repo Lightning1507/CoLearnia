@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { origin } from '../../apps/server/test/main-auth-media-harness.js';
+import { User, Workspace } from '../../apps/server/test/main-auth-media-harness.js';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import {
   setup,
@@ -24,6 +25,48 @@ afterAll(closeDatabase);
 type ClientSocket = Awaited<ReturnType<Awaited<ReturnType<typeof setup>>['connect']>>;
 
 describe('SCRUM-88 MAIN with real M1 authentication/ACL and native M3 media', () => {
+  it.each(['acl', 'displayName'] as const)(
+    'releases the Workspace gate at the original MAIN deadline across slow %s queries',
+    async (phase) => {
+      const f = await setup();
+      const slowModels = phase === 'acl' ? [User, Workspace, Membership] : [User, Workspace];
+      const probes = slowModels.map((model) => {
+        const collection = model.collection;
+        const find = collection.findOne.bind(collection);
+        return vi
+          .spyOn(collection, 'findOne')
+          .mockImplementation((filter, options) =>
+            find({ ...filter, $where: 'function () { sleep(4000); return true; }' }, options),
+          );
+      });
+      const start = performance.now();
+      const request = f.registry.issue(f.host.auth, f.target, { requestId: randomUUID() }).then(
+        () => ({ code: 'UNEXPECTED_SUCCESS' }),
+        (error: unknown) => error,
+      );
+      // Attempt entry immediately after the 10s foreground deadline, while the
+      // old three independent 5s query budgets would still hold the gate.
+      const contender = new Promise<void>((resolve) => setTimeout(resolve, 10_100)).then(() =>
+        f.coordinator.run({ workspaceId: f.target.workspaceId }, async () => performance.now(), {
+          waitTimeoutMs: 500,
+        }),
+      );
+      try {
+        const [result, gate] = await Promise.allSettled([request, contender]);
+        expect(result).toMatchObject({
+          status: 'fulfilled',
+          value: { code: 'DEPENDENCY_UNAVAILABLE' },
+        });
+        expect(gate.status).toBe('fulfilled');
+        if (gate.status === 'fulfilled') expect(gate.value - start).toBeLessThan(11_000);
+        expect(performance.now() - start).toBeLessThan(11_000);
+        expect(f.registry.stats().rooms).toBe(0);
+      } finally {
+        for (const probe of probes) probe.mockRestore();
+      }
+    },
+    20_000,
+  );
   it('joins two authenticated users, replays once and reads peers through the shared Workspace gate', async () => {
     const f = await setup();
     const socket = await f.connect(f.host);

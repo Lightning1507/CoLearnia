@@ -547,8 +547,15 @@ export function createWorkspaceAccessService(
     // M4 refreshes peers while holding the room's Workspace gate. This read-only
     // port never acquires a peer User gate or authorizes a mutation for that peer.
     // Session, membership, PRIVATE grant and shared deny checks remain identical.
-    async resolvePeerChannelAccessHeld(input: AccessInput, context: CoordinationContext) {
-      const access = await readChannelAccessHeld(input, context, undefined, false, true);
+    async resolvePeerChannelAccessHeld(
+      input: AccessInput,
+      context: CoordinationContext,
+      remaining?: DatabaseDeadline,
+    ) {
+      // Read-only MAIN resolution uses a snapshot session and deadline-aware
+      // queries. It needs no transaction commit/abort I/O after the read budget.
+      const access = await readChannelAccessHeld(input, context, remaining, !!remaining, true);
+      remaining?.();
       // Auth denies use the peer's independent User gate and may be installed
       // while the snapshot transaction is completing under this Workspace gate.
       if (!barrier.isCurrent(identity(input.identity), access, context))

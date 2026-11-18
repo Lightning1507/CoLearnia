@@ -1,5 +1,6 @@
 import { authModels } from '../../auth/models.js';
 import type { Database } from '../../lib/database.js';
+import { databaseQueryOptions } from '../../lib/database.js';
 import { WorkspaceAccessError } from '../../workspaces/access-service.js';
 import type { createWorkspaceAccessService } from '../../workspaces/access-service.js';
 import type { AccessRevocationBarrier } from '../../workspaces/access-revocation.js';
@@ -29,19 +30,21 @@ export function createMainAuthority(
   };
   return {
     isAuthorityCurrent,
-    async resolveAuthority(auth, target, held) {
+    async resolveAuthority(auth, target, held, remaining) {
       held.assertHeld({ workspaceId: target.workspaceId });
       try {
         const stamp = await access.resolvePeerChannelAccessHeld(
           { identity: auth, ...target },
           held,
+          remaining,
         );
         if (stamp.channelType !== 'LIVE' || !stamp.canReadContent)
           throw new MainJoinError('FORBIDDEN');
         const user = await User.findOne({ _id: auth.userId, status: 'ACTIVE' })
           .select('displayName')
-          .maxTimeMS(5000)
+          .setOptions(databaseQueryOptions(remaining))
           .lean();
+        remaining();
         if (!user) throw new MainJoinError('AUTH_REQUIRED');
         const value = { auth: { ...auth }, access: stamp, displayName: user.displayName };
         if (!isAuthorityCurrent(value, held)) throw new MainJoinError('FORBIDDEN');

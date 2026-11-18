@@ -368,6 +368,8 @@ export async function setup() {
 }
 
 export {
+  User,
+  Workspace,
   AuthSession,
   Channel,
   Membership,

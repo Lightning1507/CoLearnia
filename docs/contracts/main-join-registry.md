@@ -16,6 +16,8 @@ Chưa mount REST hoặc socket MAIN vào entry point `main.ts`. Adapter `createM
 
 Sau mỗi await, registry dùng `isAuthorityCurrent` để kiểm expiry và shared deny với stamp hiện tại lẫn stamp đã commit. Các miền thay đổi quyền phải đi qua coordinator/barrier chung; không dùng kết quả đọc ACL làm grant lâu dài.
 
+Registry truyền `remaining()` vào tham số thứ tư của `resolveAuthority`. Hàm tính từ deadline foreground ban đầu (gồm thời gian chờ gate), không cấp lại 10 giây cho từng lượt đọc actor/peer; từng query có trần 5 giây và không được vượt phần ngân sách còn lại. `createMainAuthority` chuyển callback xuống `resolvePeerChannelAccessHeld` và query User. Cổng peer có ngân sách dùng snapshot session chỉ đọc, giữ cùng ảnh chụp ACL mà không phải đợi commit/abort transaction sau khi hết hạn. Tất cả query dùng `maxTimeMS` và abort signal theo ngân sách còn lại; hết hạn trả `DEPENDENCY_UNAVAILABLE`, không phát sinh room/grant mới.
+
 Revoke theo SCRUM-83, end phiên theo SCRUM-86, [reconnect/resync MAIN](main-reconnect.md) theo SCRUM-84, [đối chiếu/phiên rỗng](session-reconciliation.md) theo SCRUM-87 và [worker failure](worker-failure.md) theo SCRUM-91 đã có implementation trong registry. Kế vị host đầy đủ tiếp tục theo task riêng. Schema nhận cấu trúc xác nhận takeover của ví dụ M3 nhưng registry chưa chuyển ownership của call còn kết nối: vẫn trả CALL_ALREADY_ACTIVE, giữ call cũ và ticket mới chưa consume. Không tự tăng generation/chiếm call khi chưa cleanup đúng đời.
 
 ## API và socket
