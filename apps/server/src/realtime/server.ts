@@ -8,6 +8,7 @@ import { authCookie } from '../auth/session-credentials.js';
 import type { AppConfig } from '../config/env.js';
 import { logger } from '../lib/logger.js';
 
+import type { createTextSocketSend, TextSocketEvents } from '../messaging/text-transport.js';
 import type { createSessionConnections } from './session-connections.js';
 
 type SocketData = { auth: AuthenticatedContext };
@@ -23,8 +24,9 @@ export function createRealtime(
   readSession: ReturnType<typeof createSessionReader>,
   connections?: ReturnType<typeof createSessionConnections>,
   checkCurrent?: (auth: AuthenticatedContext) => boolean,
+  textSend?: ReturnType<typeof createTextSocketSend>,
 ) {
-  const io = new Server<never, never, never, SocketData>(httpServer, {
+  const io = new Server<TextSocketEvents, never, never, SocketData>(httpServer, {
     transports: ['websocket'],
     cors: { origin: config.APP_ORIGIN, credentials: true },
     allowRequest: (request, callback) =>
@@ -64,15 +66,16 @@ export function createRealtime(
     next();
   });
 
-  if (connections) {
+  if (connections || textSend) {
     io.on('connection', (socket) => {
       const auth = socket.data.auth;
       if (Date.parse(auth.expiresAt) <= Date.now() || checkCurrent?.(auth) === false) {
         socket.disconnect(true);
         return;
       }
-      const untrack = connections.track(auth, () => socket.disconnect(true));
-      socket.once('disconnect', untrack);
+      const untrack = connections?.track(auth, () => socket.disconnect(true));
+      if (untrack) socket.once('disconnect', untrack);
+      if (textSend) socket.on('message.send', textSend(auth));
     });
   }
   return io;
