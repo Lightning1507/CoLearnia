@@ -46,6 +46,7 @@ import type { SessionTransitionAdapters, SessionTransitionTiming } from './sessi
 import { matchesMainRevocation, mayMatchMainRevocation } from './main-revocation.js';
 import { createSessionMetadataWrite } from './session-metadata-write.js';
 import type { SessionMutationRepository } from './session-metadata-write.js';
+import type { DatabaseDeadline } from '../../lib/database.js';
 import { createShareLeaseRegistry } from './share-lease.js';
 import type { HeldShareLease } from './share-lease.js';
 import { outsideCoordination } from '../../lib/operation-coordinator.js';
@@ -160,6 +161,7 @@ export function createMainJoinRegistry(options: {
     auth: AuthenticatedContext,
     target: Target,
     held: CoordinationContext,
+    remaining: DatabaseDeadline,
   ): Promise<Authority>;
   // Synchronous M1 deny/version fence, including peers. Must not acquire another User gate.
   isAuthorityCurrent(
@@ -284,8 +286,16 @@ export function createMainJoinRegistry(options: {
       fail('DEPENDENCY_UNAVAILABLE');
     if (Date.parse(auth.expiresAt) <= clock()) fail('AUTH_REQUIRED');
     let result: Authority;
+    // Retain the original admission deadline across every peer/authority read.
+    // Maintenance contexts without an admitted request receive a bounded read budget.
+    const deadline = deadlines.get(held) ?? clock() + 10_000;
+    const remaining = () => {
+      const budget = Math.min(5000, Math.floor(deadline - clock()));
+      if (budget < 1) fail('DEPENDENCY_UNAVAILABLE');
+      return budget;
+    };
     try {
-      result = await options.resolveAuthority({ ...auth }, { ...destination }, held);
+      result = await options.resolveAuthority({ ...auth }, { ...destination }, held, remaining);
     } catch (error) {
       if (error instanceof MainJoinError) throw error;
       fail('DEPENDENCY_UNAVAILABLE');
