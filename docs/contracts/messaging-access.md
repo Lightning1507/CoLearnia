@@ -287,3 +287,9 @@ Với DM/TEXT, `perScope` tính theo Workspace; với cuộc họp tính theo se
 | Fanout / subscription            | Gửi tin mới đến các người nhận được phép; đăng ký tiếp tục nhận các tin đó.                                                |
 | Fixture / mock                   | Dữ liệu hoặc thành phần dựng sẵn cho kiểm tra; không thay bằng chứng chức năng thật đã chạy.                               |
 | STAGED / READY                   | Tệp đang chờ hoàn tất/gắn vào nội dung; tệp đã hoàn tất theo quy định và có thể được đọc nếu còn quyền.                    |
+
+### Bản thử AUTH_SESSION của SCRUM-42
+
+Trong bản thử riêng, pending deny tính từ lúc barrier được cài dưới User gate. Nó chặn yêu cầu mới, fanout và cấp resource mới. Lượt gửi đang dở có thể được lưu nếu thắng thứ tự ghi ở DB trước revoke. Sau majority-confirmed revoke, phiên cũ không được tạo tin hoặc tăng sequence. Chỉ trả operation hoàn tất khi cleanup bắt buộc và ghi revoke đều được xác nhận.
+
+Đường gửi ghi serial trên AuthSession đã được server xác minh trước khi ghi Conversation và Message, trong cùng transaction. Đường revoke ghi revokedAt và marker operation trên cùng document. Kết quả chưa rõ giữ deny, đối chiếu revoke bằng marker majority và send bằng clientMessageId. Serial không thay revision, epoch hay generation. Ca thử chỉ áp dụng cho AUTH_SESSION và mặc định runtime giữ nguyên. [Thứ tự và lệnh chạy bản thử](../runbooks/local-development.md#bản-thử-authsession-của-scrum-42)

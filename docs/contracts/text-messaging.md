@@ -1,5 +1,7 @@
 # Gửi tin, lịch sử và subscribe kênh TEXT (SCRUM-40)
 
+Phạm vi triển khai đợt PR #117 là history-only. `main.ts` chỉ bật budget history; REST POST và socket send giữ tắt kể cả khi biến cấu hình còn text budget. Thiết kế gửi/retry bên dưới tiếp tục là phần cần nghiệm thu của SCRUM-42. History đọc ACL bằng snapshot session trên pool chung, dưới gate User/Workspace hiện hành, không tạo transaction ghi hoặc chờ commit ACL.
+
 Contract dùng chung cho Web và API, ưu tiên tin văn bản trong kênh TEXT. Timeline và thread một cấp có cùng quy tắc quyền nhưng tải lịch sử riêng. DM, chat cuộc họp, đính kèm, avatar và recording có contract riêng. M2 cung cấp schema cho SCRUM-41/42/43/46 và M1 review cùng consumer trước khi tích hợp. Phạm vi truy vết CHAT-01 và phần văn bản của FR-13-01/02. [Nghiệp vụ](../product/messaging.md) · [FR](../product/functional-requirements.md) · [Schema](../../packages/contracts/src/text-messaging.ts)
 
 | Transport                                                         | Dữ liệu vào                                                                    | Kết quả                                                                                                  |

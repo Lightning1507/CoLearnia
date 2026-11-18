@@ -28,7 +28,7 @@ import {
   newSessionCredentials,
 } from '../src/auth/session-credentials.js';
 import { loadConfig } from '../src/config/env.js';
-import { createDatabase } from '../src/lib/database.js';
+import { createProfiledDatabase } from './scrum42-db-profile.js';
 import { preflightIndexes } from '../src/lib/database-preflight.js';
 import { createOperationCoordinator } from '../src/lib/operation-coordinator.js';
 import { createSessionRevocation } from '../src/auth/session-revocation.js';
@@ -41,7 +41,7 @@ if (!Number.isInteger(port) || port < 1024 || port > 65535) {
   throw new Error('Invalid COLEARNIA_DB_TEST_PORT');
 }
 const databaseName = `colearnia_test_scrum18_${randomUUID().replaceAll('-', '')}`;
-const database = createDatabase(
+const database = createProfiledDatabase(
   `mongodb://127.0.0.1:${port}/${databaseName}?replicaSet=rs0&directConnection=true`,
 );
 const { User, AuthSession } = authModels(database.connection);

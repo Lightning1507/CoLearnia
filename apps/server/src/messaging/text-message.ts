@@ -2,7 +2,9 @@ import { Schema, Types } from 'mongoose';
 import type { Connection } from 'mongoose';
 import { textHistoryMaxLimit, textMessageSendBodySchema } from '@colearnia/contracts';
 import type { IndexRequirement } from '../lib/database-preflight.js';
-import type { createDatabase } from '../lib/database.js';
+import { authModels } from '../auth/models.js';
+import { databaseQueryOptions } from '../lib/database.js';
+import type { createDatabase, DatabaseDeadline } from '../lib/database.js';
 import { conversationModel } from './conversation.js';
 
 export const textMessageIndexes = [
@@ -75,15 +77,20 @@ export type TextRootCursor = {
 export function createTextMessageRepository(database: ReturnType<typeof createDatabase>) {
   const Message = textMessageModel(database.connection);
   const Conversation = conversationModel(database.connection);
+  const { AuthSession } = authModels(database.connection);
 
   return {
-    async append(input: {
-      conversationId: Types.ObjectId;
-      senderId: Types.ObjectId;
-      clientMessageId: string;
-      text: string;
-      createdAt: Date;
-    }) {
+    async append(
+      input: {
+        conversationId: Types.ObjectId;
+        senderId: Types.ObjectId;
+        clientMessageId: string;
+        text: string;
+        createdAt: Date;
+        fenceAuthSessionId?: string;
+      },
+      remaining?: DatabaseDeadline,
+    ) {
       const { conversationId, senderId, createdAt } = input;
       const { clientMessageId, text } = bodySchema.parse({
         clientMessageId: input.clientMessageId,
@@ -91,11 +98,15 @@ export function createTextMessageRepository(database: ReturnType<typeof createDa
       });
       const id = new Types.ObjectId();
       const scope = { _id: conversationId, kind: 'CHANNEL', closedAt: null };
-      return database.transaction(async (session) => {
-        const conversation = await Conversation.findOne(scope).session(session).lean();
+      return database.transaction(async (session, queryTime = () => 5000) => {
+        const conversation = await Conversation.findOne(scope)
+          .session(session)
+          .setOptions(databaseQueryOptions(queryTime))
+          .lean();
         if (!conversation) return { outcome: 'not-found' } as const;
         const existing = await Message.findOne({ conversationId, senderId, clientMessageId })
           .session(session)
+          .setOptions(databaseQueryOptions(queryTime))
           .lean();
         if (existing) {
           return existing.rootMessageId == null &&
@@ -107,12 +118,34 @@ export function createTextMessageRepository(database: ReturnType<typeof createDa
         if ((conversation.lastMessageCommitSeq ?? 0) >= Number.MAX_SAFE_INTEGER) {
           throw new Error('Conversation commit sequence exhausted');
         }
+        if (input.fenceAuthSessionId !== undefined) {
+          const match = await AuthSession.updateOne(
+            {
+              _id: input.fenceAuthSessionId,
+              userId: senderId,
+              revokedAt: null,
+              $expr: { $gt: ['$expiresAt', '$$NOW'] },
+              $or: [
+                { textWriteSerial: { $exists: false } },
+                { textWriteSerial: { $gte: 0, $lt: Number.MAX_SAFE_INTEGER } },
+              ],
+            },
+            { $inc: { textWriteSerial: 1 } },
+            { session, timestamps: false, ...databaseQueryOptions(queryTime) },
+          );
+          if (match.matchedCount !== 1) return { outcome: 'session-denied' } as const;
+        }
         const updated = await Conversation.findOneAndUpdate(
           scope,
           { $inc: { lastMessageCommitSeq: 1 } },
-          { session, returnDocument: 'after', timestamps: false },
+          {
+            session,
+            returnDocument: 'after',
+            timestamps: false,
+            ...databaseQueryOptions(queryTime),
+          },
         ).orFail();
-        const message = await new Message({
+        const message = new Message({
           _id: id,
           conversationId,
           senderId,
@@ -120,11 +153,19 @@ export function createTextMessageRepository(database: ReturnType<typeof createDa
           text,
           createdAt,
           commitSeq: updated.lastMessageCommitSeq,
-        }).save({ session });
-        return { outcome: 'created', message: message.toObject() } as const;
-      });
+        });
+        await message.validate();
+        const row = message.toObject();
+        await Message.collection.insertOne(row, { session, ...databaseQueryOptions(queryTime) });
+        return { outcome: 'created', message: row } as const;
+      }, remaining);
     },
-    async listRoots(conversationId: Types.ObjectId, limit: number, cursor?: TextRootCursor) {
+    async listRoots(
+      conversationId: Types.ObjectId,
+      limit: number,
+      cursor?: TextRootCursor,
+      maxTimeMS = 5000,
+    ) {
       if (!Number.isInteger(limit) || limit < 1 || limit > textHistoryMaxLimit) {
         throw new RangeError('Invalid text history limit');
       }
@@ -145,8 +186,10 @@ export function createTextMessageRepository(database: ReturnType<typeof createDa
           ],
         }),
       })
+        .select('_id senderId clientMessageId text createdAt replyCount commitSeq')
         .sort({ createdAt: -1, _id: -1 })
         .limit(limit + 1)
+        .setOptions(databaseQueryOptions(() => maxTimeMS))
         .lean();
       const items = rows.slice(0, limit);
       const last = items.at(-1);

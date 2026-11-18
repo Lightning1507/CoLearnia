@@ -9,3 +9,8 @@ allowBuilds:
   mediasoup: true
   esbuild: true
   '@tailwindcss/oxide': true
+# Temporary risk acceptance authorized on 2026-11-18. Review by 2026-11-25.
+# Remove when patched: https://github.com/Lightning1507/CoLearnia/issues/127
+auditConfig:
+  ignoreGhsas:
+    - GHSA-fc5q-39xc-vjpf

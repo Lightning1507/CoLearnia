@@ -14,6 +14,7 @@ export function createApp(
   authRouter?: Router,
   workspaceRouter?: Router,
   mediaRouter?: Router,
+  textRouter?: Router,
 ) {
   const app = express();
   app.disable('x-powered-by');
@@ -37,6 +38,7 @@ export function createApp(
   }
   app.use(express.json({ limit: '32kb' }));
   if (authRouter) app.use('/api/v1/auth', authRouter);
+  if (textRouter) app.use('/api/v1/channels', textRouter);
   if (workspaceRouter) app.use('/api/v1/workspaces', workspaceRouter);
   if (mediaRouter) app.use('/api/v1/live-sessions', mediaRouter);
 
