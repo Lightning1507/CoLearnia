@@ -195,3 +195,7 @@ Thiếu/hết/thu phiên trả 401; ngoài Workspace hoặc Workspace đã xóa 
 Web dùng WorkspaceShell, hai cache riêng theo người dùng/Workspace/đời phiên/loại list và nút tải thêm. Refresh lỗi rút projection cũ; đổi Workspace/unmount hủy request và dọn cache. CSRF refresh trong cùng phiên không thay đời cache. Kênh mới làm invalidation cả hai list; PRIVATE chưa có grant chỉ có trong quản trị. Khi chọn kênh, hiện tên/type/accessMode theo danh sách nội dung. Panel chat/LIVE thật còn cần consumer M2/M3/M4; đường `/workspace` fixture vẫn phục vụ kiểm shell riêng. Quản lý grant, đổi tên và xóa kênh theo các task tương ứng.
 
 Bằng chứng và lệnh kiểm tại [SCRUM-36](../test-evidence/2026-11-15-scrum-36-channel-lists.md).
+
+### Thứ tự thu hồi phiên trong bản thử SCRUM-42
+
+Riêng bản thử AUTH_SESSION trên DB cô lập, M1 cài pending deny và chụp fence dưới User gate, nhả gate cho cleanup M2/M4, rồi lấy lại gate để ghi revokedAt và marker trên AuthSession với majority. Hoàn tất cần cả hai xác nhận. Lượt gửi đang dở có thể thắng thứ tự ghi vào AuthSession trước revoke. Phiên đăng nhập mới dùng ID khác. Retry thu quyền giữ nguyên operation ID và phạm vi cũ, kể cả khi ứng dụng đã đọc thấy revokedAt. [Contract M1/M2](messaging-access.md#bản-thử-auth_session-của-scrum-42)

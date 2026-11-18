@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import type { ChannelAccessSnapshot, ChannelSummary, OwnUser } from '@colearnia/contracts';
+import type { ChannelSummary } from '@colearnia/contracts';
+import { TextFixturePanel } from '../text/TextTimeline';
 import { RoomShell, useCallSnapshot } from '../live';
 import { WorkspaceShell } from './WorkspaceShell';
 import type { WorkspacePanel } from './shell-contract';
@@ -10,31 +11,6 @@ import {
   sidebarFixture,
   workspaceFixture,
 } from './workspace-fixture';
-
-function ChatPanel({
-  channel,
-  identity,
-  access,
-}: {
-  channel: ChannelSummary;
-  identity: OwnUser;
-  access: ChannelAccessSnapshot;
-}) {
-  return (
-    <article className="flex min-w-0 flex-1 flex-col" aria-label={`Chat ${channel.name}`}>
-      <section className="grid content-start gap-3 px-5 py-6">
-        <p className="text-sm text-[color:var(--workspace-muted)]">
-          Panel fixture M2 · {identity.displayName}
-        </p>
-        <strong>Chào mừng đến kênh học tập chung.</strong>
-        <p>
-          Slot này chỉ nhận projection có quyền đọc ở revision {access.channelRevision}. Timeline,
-          composer và realtime sẽ do M2 tích hợp sau.
-        </p>
-      </section>
-    </article>
-  );
-}
 
 function PersistentCallStatus() {
   const call = useCallSnapshot();
@@ -156,7 +132,12 @@ export function WorkspaceFixturePage() {
       }
       chatPanel={
         selected?.type === 'TEXT' && selectedAccess ? (
-          <ChatPanel channel={selected} identity={currentUserFixture} access={selectedAccess} />
+          <TextFixturePanel
+            key={selected.id + ':' + selectedAccess.channelRevision}
+            channelId={selected.id}
+            senderId={currentUserFixture.id}
+            displayName={currentUserFixture.displayName}
+          />
         ) : null
       }
       callPanel={selected?.type === 'LIVE' ? <FixtureRoom channel={selected} /> : null}

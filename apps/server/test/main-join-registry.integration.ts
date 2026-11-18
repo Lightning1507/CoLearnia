@@ -10,6 +10,9 @@ import type {
 } from '@colearnia/contracts';
 import { mediaTransportCreateAckSchema } from '@colearnia/contracts';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { authModels } from '../src/auth/models.js';
+import { hashAuthToken } from '../src/auth/session-credentials.js';
+import { createSessionRevocation } from '../src/auth/session-revocation.js';
 import { createDatabase } from '../src/lib/database.js';
 import { createOperationCoordinator } from '../src/lib/operation-coordinator.js';
 import { mediaCodecs } from '../src/live/media/runtime.js';
@@ -32,6 +35,7 @@ const databaseName = `colearnia_test_scrum82_${randomUUID().replaceAll('-', '')}
 const database = createDatabase(testReplicaUri(databaseName));
 const repository = createSessionRepository(database);
 const models = sessionModels(database.connection);
+const { AuthSession } = authModels(database.connection);
 const registries: ReturnType<typeof createMainJoinRegistry>[] = [];
 let worker: MediaTypes.Worker;
 let ownsDatabase = false;
@@ -79,6 +83,8 @@ beforeAll(async () => {
   });
   await models.LiveSession.createIndexes();
   await models.SessionParticipant.createIndexes();
+  await AuthSession.createCollection();
+  await AuthSession.createIndexes();
   worker = await createWorker({ logLevel: 'error' });
 });
 afterAll(async () => {
@@ -1184,6 +1190,17 @@ describe('MAIN registry with real MongoDB and mediasoup Router', () => {
       });
       const host = f.auth();
       const peer = f.auth();
+      const persist = (actor: AuthenticatedContext) =>
+        AuthSession.create({
+          _id: actor.authSessionId,
+          userId: actor.userId,
+          expiresAt: new Date(actor.expiresAt),
+          tokenHash: hashAuthToken(randomUUID()),
+        });
+      if (shared) {
+        await persist(host);
+        await persist(peer);
+      }
       const socket = f.binding(host);
       const peerSocket = f.binding(peer);
       const ticket = await f.registry.issue(host, f.target, { requestId: randomUUID() });
@@ -1246,27 +1263,45 @@ describe('MAIN registry with real MongoDB and mediasoup Router', () => {
           authSessionId: host.authSessionId,
           revision: 1,
         };
-        const commitHeld = vi.fn(async () => 'committed' as const);
-        const persistence = {
-          prepareHeld: async () => ({ authSessionIds: [] }),
-          commitHeld,
-          reconcileHeld: async () => 'not_committed' as const,
-        };
+        const fence = vi.fn((_input: { revocationId: string }) => ({
+          throughResourceGeneration: 0,
+        }));
+        const closeSession = vi.fn();
+        const revokeTrial = createSessionRevocation(
+          database,
+          () => true,
+          f.accessRevocations,
+          closeSession,
+          true,
+        );
+        const oldSession = () =>
+          AuthSession.findById(host.authSessionId)
+            .select('+textRevokeOperationId')
+            .readConcern('majority')
+            .lean()
+            .orFail();
         if (shared)
           f.accessRevocations.bindCleanupAdapters({
             messaging: {
-              fence: () => ({ throughResourceGeneration: 0 }),
+              fence,
               revoke: async ({ revocationId }) => ({ revocationId, status: 'completed' }),
             },
             live: f.registry,
           });
-        const revoke = () =>
-          shared
-            ? f.accessRevocations.revoke({ event, userId: host.userId, persistence })
-            : f.registry.revoke(event);
+        const revoke = async () => {
+          if (!shared) return f.registry.revoke(event);
+          const completed = await revokeTrial.revoke(host);
+          return {
+            permissionRevoked: completed,
+            pendingInvalidated: completed,
+            cleanupPending: !completed,
+          };
+        };
         if (shared) {
           expect(await revoke()).toMatchObject({ permissionRevoked: false });
-          expect(commitHeld).not.toHaveBeenCalled();
+          expect(f.accessRevocations.isSessionDenied(host)).toBe(true);
+          expect(await oldSession()).toMatchObject({ revokedAt: null });
+          expect((await oldSession()).textRevokeOperationId).toBeUndefined();
           if (!delayed) expect(native[0]!.closed).toBe(true);
         }
         const result = await revoke();
@@ -1275,8 +1310,11 @@ describe('MAIN registry with real MongoDB and mediasoup Router', () => {
           pendingInvalidated: !(shared && delayed),
           cleanupPending: delayed,
         });
+        let replacementSessionId: string | undefined;
         if (shared) {
           const login = { ...host, authSessionId: id() };
+          replacementSessionId = login.authSessionId;
+          await persist(login);
           const freshTicket = await f.registry.issue(login, f.target, { requestId: randomUUID() });
           const freshSocket = f.binding(login);
           const fresh = await f.registry.join(freshSocket, {
@@ -1311,6 +1349,10 @@ describe('MAIN registry with real MongoDB and mediasoup Router', () => {
           expect(mediaTransportCreateAckSchema.parse(reply)).toHaveProperty('data');
           expect(native[1]!.closed).toBe(false);
           expect(await revoke()).toEqual(result);
+          if (delayed) {
+            expect(await oldSession()).toMatchObject({ revokedAt: null });
+            expect((await oldSession()).textRevokeOperationId).toBeUndefined();
+          }
         }
         release();
         if (delayed)
@@ -1340,7 +1382,25 @@ describe('MAIN registry with real MongoDB and mediasoup Router', () => {
         }
         if (shared) {
           expect(board).toHaveBeenCalledTimes(2);
-          expect(commitHeld).toHaveBeenCalledTimes(1);
+          expect(fence).toHaveBeenCalledTimes(1);
+          const [{ revocationId }] = fence.mock.calls[0]!;
+          expect(await oldSession()).toMatchObject({
+            revokedAt: expect.any(Date),
+            textRevokeOperationId: revocationId,
+          });
+          expect(closeSession).toHaveBeenCalledWith(host.authSessionId);
+          expect(new Set(closeSession.mock.calls.map(([sessionId]) => sessionId))).toEqual(
+            new Set([host.authSessionId]),
+          );
+          for (const sessionId of [replacementSessionId, peer.authSessionId]) {
+            const active = await AuthSession.findById(sessionId)
+              .select('+textRevokeOperationId')
+              .readConcern('majority')
+              .lean()
+              .orFail();
+            expect(active.revokedAt).toBeNull();
+            expect(active.textRevokeOperationId).toBeUndefined();
+          }
           expect(board.mock.calls[1]![0]).toEqual(board.mock.calls[0]![0]);
         }
       } finally {

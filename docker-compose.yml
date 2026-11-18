@@ -37,6 +37,7 @@ services:
       APP_ORIGIN: http://localhost:8080
       MONGO_URI: mongodb://mongo:27017/colearnia?replicaSet=rs0&directConnection=true
       SESSION_SECRET: ${SESSION_SECRET:-}
+      MESSAGING_BUDGET_JSON: ${MESSAGING_BUDGET_JSON:-}
       AUTH_TTL_SECONDS: ${AUTH_TTL_SECONDS:-604800}
       AUTH_TRUST_PROXY: 'true'
       MEDIA_ENABLED: 'true'
