@@ -86,3 +86,23 @@ Upload nguồn Readable dùng pipeline qua PassThrough với backpressure, rồi
 Fixture local gồm bảy ca. Ca nguồn encoder phát một phần rồi lỗi xác nhận put reject, nguồn bị destroy và HTTP request đóng với complete=false, socketDestroyed=true, bytes>0. Cùng tiến trình tiếp tục upload/xóa thành công. Ca caller hủy upload xác nhận ABORTED và đóng request; các ca timeout upload/download vẫn kiểm TIMEOUT.
 
 Nghiệm thu R2 thật còn chờ người có quyền bucket. Lần chạy smoke sau sửa dừng trước I/O vì thiếu R2_ACCOUNT_ID, R2_BUCKET, R2_ACCESS_KEY_ID và R2_SECRET_ACCESS_KEY. Người có quyền cần chạy lệnh trên với cấu hình server-only, ghi lại kết quả đã lọc của upload/read/delete/not-found, rồi xác nhận trong dashboard rằng r2.dev và public custom domains đều tắt. Chưa có bằng chứng nghiệm thu dịch vụ thật trong lượt này.
+
+#### Bàn giao nghiệm thu dịch vụ thật sau review PR #123
+
+M1 đã xác nhận bản sửa lỗi nguồn upload ở `b2a9532` và adapter tại `4e2a041` phù hợp với phạm vi fixture. Chưa có bằng chứng nghiệm thu R2 thật; SCRUM-52 còn mở, không coi adapter/CI đạt là đủ đóng task. Nếu muốn merge riêng adapter trước, cần M1 chốt lại phạm vi bàn giao trên PR.
+
+Kiểm tra ngày 18/11/2026 tại `4e2a041`: chạy lại lệnh smoke ở trên, exit 1 trước I/O vì thiếu `R2_ACCOUNT_ID`, `R2_BUCKET`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`. Không có object thử được tạo trong lượt này. Chưa tìm thấy file cấu hình tại các checkout local/WSL đã kiểm; SSH tới staging timeout nên chưa kiểm được server. Các kết quả này không xác nhận bucket chưa tồn tại trong tài khoản Cloudflare.
+
+Người có quyền bucket thử nghiệm chạy smoke tại SHA đề nghị nghiệm thu và ghi kết quả đã lọc, không đưa credential vào log/PR. M2 tổng hợp evidence, M1 review. Giữ đủ các bước:
+
+1. Ghi SHA (`git rev-parse HEAD`), thời điểm, lệnh smoke và exit code.
+2. Upload object thử với key ngẫu nhiên; đọc có chữ ký và so sánh đúng byte.
+3. HEAD ẩn danh bị từ chối (401/403) khi object còn tồn tại.
+4. Delete rồi đọc có chữ ký trả `NOT_FOUND`; xác nhận object thử đã dọn. Nếu cleanup lỗi, dùng đúng key script báo để đối soát, không khẳng định đã xóa.
+5. Xác nhận riêng trên dashboard cùng bucket rằng r2.dev và public custom domains đều tắt. PASS tại endpoint S3 không thay bước này.
+
+Chỉ báo smoke đạt sau đầy đủ chuỗi I/O. Thiếu cấu hình hoặc chưa xác nhận dashboard thì giữ bước nghiệm thu mở. Multipart/Range và metadata/ACL consumer vẫn ngoài phạm vi PR này.
+
+#### Phạm vi ngoại lệ audit ở PR #123
+
+[Issue #127](https://github.com/Lightning1507/CoLearnia/issues/127) ban đầu ghi nhận ngoại lệ tạm thời cho [PR #117](https://github.com/Lightning1507/CoLearnia/pull/117). Người dùng cũng đã yêu cầu áp dụng cùng ngoại lệ cho [PR #123](https://github.com/Lightning1507/CoLearnia/pull/123); commit `4e2a041` chỉ thêm cùng `GHSA-fc5q-39xc-vjpf` vào `auditConfig.ignoreGhsas` của workspace, không thêm advisory khác. Mốc rà soát vẫn là 25/11/2026 và điều kiện gỡ vẫn theo issue #127. CI/audit đạt với ngoại lệ không có nghĩa advisory đã được vá. Nghiệm thu R2 và việc gỡ ngoại lệ là hai việc độc lập.
