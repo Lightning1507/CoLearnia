@@ -99,6 +99,8 @@ export class MediaSnapshotRuntime {
   #retryCount = 0;
   #resyncExhausted = false;
   #needsResync = false;
+  // Only ready ACKs for already-attached Consumers may share this reconciliation.
+  #readyResyncSnapshot: MediaSnapshot | undefined;
   #closedSources = new Map<string, number>();
   #consumerCallbackFloor = 0;
   #recvClosedAt = 0;
@@ -151,6 +153,7 @@ export class MediaSnapshotRuntime {
     this.#signalingAvailable = available;
     if (available) this.resync();
     else {
+      this.#readyResyncSnapshot = undefined;
       this.#needsResync = true;
       this.#cancel?.();
       this.#publishCameras();
@@ -166,12 +169,14 @@ export class MediaSnapshotRuntime {
     return () => {
       if (this.#resyncPort !== port) return;
       this.#resyncPort = undefined;
+      this.#readyResyncSnapshot = undefined;
       this.#resetRetry();
       this.#cancel?.();
     };
   }
 
   resync() {
+    this.#readyResyncSnapshot = undefined;
     this.#resetRetry();
     this.#needsResync = true;
     this.#publishCameras();
@@ -203,6 +208,8 @@ export class MediaSnapshotRuntime {
       if (previous && previous.fingerprint !== fingerprint) this.#requestResync();
       return;
     }
+    // New lifecycle information invalidates the retained ready-ACK baseline.
+    this.#readyResyncSnapshot = undefined;
     if (
       snapshot &&
       delta.name === 'media.transport.closed' &&
@@ -246,6 +253,7 @@ export class MediaSnapshotRuntime {
     const scopeChanged = !next || previous?.audienceEpoch !== next.audienceEpoch;
     const contextChanged = scopeChanged || previous?.policyRevision !== next?.policyRevision;
     if (contextChanged) {
+      this.#readyResyncSnapshot = undefined;
       this.#resetRetry();
       this.#cancel?.();
       this.#needsResync = true;
@@ -306,6 +314,7 @@ export class MediaSnapshotRuntime {
     const finish = (outcome: SnapshotResult) => {
       if (this.#cancel !== cancel) return;
       this.#cancel = undefined;
+      this.#readyResyncSnapshot = undefined;
       clearTimeout(timer);
       parts.clear();
       first = undefined;
@@ -431,8 +440,17 @@ export class MediaSnapshotRuntime {
   }
 
   attachConsumer(snapshot: MediaSnapshot, binding: ConsumerBinding, handle: ConsumerHandle) {
+    return this.#attachConsumer(snapshot, binding, handle);
+  }
+
+  #attachConsumer(
+    snapshot: MediaSnapshot,
+    binding: ConsumerBinding,
+    handle: ConsumerHandle,
+    readyAck = false,
+  ) {
     const existing = this.#consumers.get(binding.sourceId);
-    const current = this.#currentFor(snapshot);
+    const current = this.#currentFor(snapshot, readyAck);
     const original = snapshot.payload.sources.find(({ sourceId }) => sourceId === binding.sourceId);
     const source = current?.payload.sources.find(({ sourceId }) => sourceId === binding.sourceId);
     const originalOwn = snapshot.payload.ownConsumers.find(
@@ -515,15 +533,21 @@ export class MediaSnapshotRuntime {
 
   confirmConsumerReady(snapshot: MediaSnapshot, binding: ConsumerBinding, handle: ConsumerHandle) {
     const local = this.#consumers.get(binding.sourceId);
-    if (local?.handle !== handle || !this.attachConsumer(snapshot, binding, handle)) return false;
+    if (
+      local?.handle !== handle ||
+      local.binding.consumerId !== binding.consumerId ||
+      !sameSourceBinding(local.binding, binding) ||
+      !this.#attachConsumer(snapshot, binding, handle, true)
+    )
+      return false;
     // A ready ACK is relative to its initiating snapshot. A later full snapshot
     // has already reconciled ready/paused and must not be overwritten by that ACK.
-    if (this.#snapshot?.requestId === snapshot.requestId) {
+    if (!this.#readyResyncSnapshot && this.#snapshot?.requestId === snapshot.requestId) {
       local.binding = { ...local.binding, ready: true, paused: false };
-    } else if (!local.binding.ready) {
+    } else if (!local.binding.ready && !this.#readyResyncSnapshot) {
       // The newer snapshot may predate completion of this ready operation.
       // Read again instead of guessing whether it is now resumed or still paused.
-      this.#requestResync();
+      this.#requestResync(true);
     }
     this.#publishCameras();
     return true;
@@ -563,11 +587,15 @@ export class MediaSnapshotRuntime {
     return this.#own.trackReplacement(producer, replacement, cancel);
   }
 
-  #currentFor(snapshot: MediaSnapshot) {
+  #currentFor(snapshot: MediaSnapshot, readyAck = false) {
     const current = this.#snapshot;
     if (
       current &&
-      !this.#needsResync &&
+      (!this.#needsResync ||
+        (readyAck &&
+          this.#readyResyncSnapshot === current &&
+          this.#signalingAvailable &&
+          !this.signal.aborted)) &&
       this.#appliedSnapshots.has(snapshot) &&
       current.audienceEpoch === snapshot.audienceEpoch &&
       current.mediaStreamId === snapshot.mediaStreamId &&
@@ -589,11 +617,13 @@ export class MediaSnapshotRuntime {
     this.#resyncExhausted = false;
   }
 
-  #requestResync() {
+  #requestResync(readyAck = false) {
+    this.#readyResyncSnapshot = undefined;
     this.#needsResync = true;
-    this.#publishCameras();
     const active = Boolean(this.#cancel);
     this.#cancel?.();
+    if (readyAck) this.#readyResyncSnapshot = this.#snapshot;
+    this.#publishCameras();
     if (!active) this.#startResync();
   }
 

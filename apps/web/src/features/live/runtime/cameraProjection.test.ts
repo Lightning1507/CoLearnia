@@ -31,7 +31,145 @@ function setup() {
 }
 const current = (media: MediaSnapshotRuntime) => media.getCameraSnapshot().cameras[0]!;
 
+async function pendingCameraPair() {
+  const fixture = setup();
+  const { media, handle, track } = fixture;
+  const secondSource = {
+    ...camera,
+    sourceId: 'camera-B',
+    producerId: 'producer-B',
+    ownerParticipantId: '4'.repeat(24),
+  };
+  const secondBinding = {
+    ...binding,
+    sourceId: secondSource.sourceId,
+    producerId: secondSource.producerId,
+    consumerId: 'consumer-B',
+  };
+  const secondHandle = {
+    ...handle,
+    videoTrack: { ...track, id: 'video-B' } as MediaStreamTrack,
+    attach: vi.fn(),
+    close: vi.fn(),
+  };
+  const sources = [camera, secondSource];
+  const bindings = [binding, secondBinding];
+  const handles = [handle, secondHandle];
+  const responses: ((consumers: ConsumerBinding[]) => void)[] = [];
+  const resync = vi.fn<Parameters<MediaSnapshotRuntime['bindResync']>[0]>((input, receive) => {
+    responses.push((consumers) =>
+      provideSnapshot(input.requestId, receive, sources, false, 0, consumers),
+    );
+  });
+  const unbind = media.bindResync(resync);
+  await vi.waitFor(() => expect(resync).toHaveBeenCalledTimes(1));
+  responses.shift()!([]);
+  const original = media.getSnapshot()!;
+  for (const [index, entry] of bindings.entries())
+    expect(media.attachConsumer(original, entry, handles[index]!)).toBe(true);
+  await applySnapshot(media, sources, false, 0, bindings);
+  return { ...fixture, original, bindings, handles, sources, resync, responses, unbind };
+}
+
 describe('SCRUM-78 authoritative camera projection', () => {
+  it.each([
+    'audience',
+    'policy',
+    'disconnect',
+    'explicit resync',
+    'source replacement',
+    'consumer closed',
+    'sequence gap',
+  ] as const)('fences a grouped ready ACK after %s', async (change) => {
+    const { media, original, bindings, handles, sources, unbind, abort } =
+      await pendingCameraPair();
+    try {
+      expect(media.confirmConsumerReady(original, bindings[0]!, handles[0]!)).toBe(true);
+      if (change === 'audience')
+        media.updateContext({ ...context, audienceEpoch: 1, projectionSequence: 2 });
+      if (change === 'policy')
+        media.updateContext({ ...context, policyRevision: 1, projectionSequence: 2 });
+      if (change === 'disconnect') media.setSignalingAvailable(false);
+      if (change === 'explicit resync') media.resync();
+      if (change === 'source replacement')
+        media.acceptEvent(
+          'media.source.changed',
+          event({ source: { ...sources[1]!, sourceGeneration: 2, producerId: 'replacement' } }, 1),
+        );
+      if (change === 'consumer closed')
+        media.acceptEvent(
+          'media.consumer.closed',
+          event(
+            {
+              sourceId: bindings[1]!.sourceId,
+              sourceGeneration: 1,
+              consumerId: bindings[1]!.consumerId,
+              reason: 'SOURCE_ENDED',
+            },
+            1,
+          ),
+        );
+      if (change === 'sequence gap')
+        media.acceptEvent('media.source.changed', event({ source: camera }, 3));
+      expect(media.confirmConsumerReady(original, bindings[1]!, handles[1]!)).toBe(false);
+      expect(media.getCameraSnapshot().cameras.every((view) => !view.track)).toBe(true);
+    } finally {
+      unbind();
+      abort.abort();
+    }
+  });
+
+  it('does not admit new attachments or a different Consumer ID into a ready reconciliation', async () => {
+    const { media, original, bindings, handles, unbind, abort } = await pendingCameraPair();
+    try {
+      media.confirmConsumerReady(original, bindings[0]!, handles[0]!);
+      const extra = { ...handles[1]!, attach: vi.fn(), close: vi.fn() };
+      expect(media.attachConsumer(original, bindings[1]!, extra)).toBe(false);
+      expect(extra.attach).not.toHaveBeenCalled();
+      expect(extra.close).toHaveBeenCalledOnce();
+      expect(
+        media.confirmConsumerReady(
+          original,
+          { ...bindings[1]!, consumerId: 'different' },
+          handles[1]!,
+        ),
+      ).toBe(false);
+      expect(media.confirmConsumerReady(original, bindings[1]!, handles[1]!)).toBe(true);
+      expect(handles[1]!.close).not.toHaveBeenCalled();
+    } finally {
+      unbind();
+      abort.abort();
+    }
+  });
+
+  it.each(['same turn', 'resync in flight'] as const)(
+    'coalesces two valid ready ACKs (%s) without closing a Consumer',
+    async (timing) => {
+      const { media, original, bindings, handles, resync, responses, unbind, abort } =
+        await pendingCameraPair();
+      expect(media.confirmConsumerReady(original, bindings[0]!, handles[0]!)).toBe(true);
+      if (timing === 'resync in flight')
+        await vi.waitFor(() => expect(resync).toHaveBeenCalledTimes(2));
+      expect(media.confirmConsumerReady(original, bindings[1]!, handles[1]!)).toBe(true);
+      await vi.waitFor(() => expect(resync).toHaveBeenCalledTimes(2));
+      expect(media.getCameraSnapshot().cameras.every((view) => !view.track)).toBe(true);
+      expect(responses).toHaveLength(1);
+      responses.shift()!(
+        bindings.map((entry, index) => ({ ...entry, ready: true, paused: index === 1 })),
+      );
+      const views = media.getCameraSnapshot().cameras;
+      expect(media.getCameraSnapshot().synchronized).toBe(true);
+      expect(views[0]!.track).toBe(handles[0]!.videoTrack);
+      expect(views[1]!.track).toBeUndefined();
+      for (const handle of handles) {
+        expect(handle.close).not.toHaveBeenCalled();
+        expect(handle.attach).toHaveBeenCalledOnce();
+      }
+      unbind();
+      abort.abort();
+    },
+  );
+
   it.each([false, true])(
     'resyncs a pending snapshot after ready ACK and honors the fresh paused=%s state',
     async (paused) => {

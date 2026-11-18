@@ -1,5 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
 import { receiveMainAudio } from './receiveMainAudio';
+import { MediaSnapshotRuntime } from './mediaSnapshotRuntime';
+import type { ConsumerBinding } from './mediaSnapshot';
+import {
+  applySnapshot,
+  camera,
+  context,
+  provideSnapshot,
+} from '../../../../test/browser/camera-tiles/fixtures';
 
 type Input = Parameters<typeof receiveMainAudio>[0];
 
@@ -76,6 +84,127 @@ function fixture(replaySucceeds: boolean) {
 }
 
 describe('MAIN audio ready acknowledgement', () => {
+  it('keeps both real runtime bindings when ready ACKs share an in-flight resync', async () => {
+    const lifetime = new AbortController();
+    const media = new MediaSnapshotRuntime(context, lifetime.signal);
+    media.updateContext(context);
+    const sources: Input['source'][] = [
+      { ...camera, sourceId: 'mic-A', producerId: 'producer-A', kind: 'audio', sourceKind: 'MIC' },
+      { ...camera, sourceId: 'mic-B', producerId: 'producer-B', kind: 'audio', sourceKind: 'MIC' },
+    ];
+    const consumers = sources.map((source, index) => {
+      const consumer = {
+        id: `consumer-${index}`,
+        track: {} as MediaStreamTrack,
+        closed: false,
+        close: vi.fn(() => {
+          consumer.closed = true;
+        }),
+        observer: { once: vi.fn(), off: vi.fn() },
+      };
+      const binding: ConsumerBinding = {
+        sourceId: source.sourceId,
+        sourceGeneration: 1,
+        sourceRevision: 1,
+        producerId: source.producerId,
+        consumerId: consumer.id,
+        ready: false,
+        paused: true,
+      };
+      return { consumer, binding };
+    });
+    const responses: ((bindings: ConsumerBinding[]) => void)[] = [];
+    const resync = vi.fn<Parameters<MediaSnapshotRuntime['bindResync']>[0]>((input, receive) => {
+      responses.push((bindings) =>
+        provideSnapshot(input.requestId, receive, sources, false, 0, bindings),
+      );
+    });
+    const unbind = media.bindResync(resync);
+    try {
+      await vi.waitFor(() => expect(resync).toHaveBeenCalledTimes(1));
+      responses.shift()!([]);
+      const snapshot = media.getSnapshot()!;
+      const ready = new Map<string, () => void>();
+      const command = vi.fn<Input['command']>(async (event, input) => {
+        const payload = input.payload as { sourceId?: string; consumerId?: string };
+        if (event === 'media.consumer.ready')
+          return new Promise((resolve) => {
+            ready.set(payload.consumerId!, () =>
+              resolve({
+                requestId: input.requestId,
+                data: {
+                  status: 'completed',
+                  result: { consumerId: payload.consumerId, ready: true },
+                },
+              }),
+            );
+          });
+        const entry = consumers.find(({ binding }) => binding.sourceId === payload.sourceId)!;
+        const result =
+          event === 'media.consumer.close'
+            ? { consumerId: entry.consumer.id, closed: true }
+            : {
+                consumerId: entry.binding.consumerId,
+                producerId: entry.binding.producerId,
+                sourceId: entry.binding.sourceId,
+                sourceGeneration: entry.binding.sourceGeneration,
+                sourceRevision: entry.binding.sourceRevision,
+                kind: 'audio',
+                rtpParameters: {
+                  codecs: [{ mimeType: 'audio/opus', payloadType: 111, clockRate: 48000 }],
+                },
+              };
+        return { requestId: input.requestId, data: { status: 'completed', result } };
+      });
+      const transport = {
+        id: 'recv',
+        consume: vi.fn(
+          async ({ id }: { id: string }) =>
+            consumers.find((entry) => entry.consumer.id === id)!.consumer,
+        ),
+      } as unknown as Input['transport'];
+      const completed = Promise.allSettled(
+        sources.map((source) =>
+          receiveMainAudio({
+            media,
+            snapshot,
+            source,
+            transport,
+            command,
+            rtpCapabilities: {},
+            signal: lifetime.signal,
+          }),
+        ),
+      );
+      await vi.waitFor(() => expect(ready.size).toBe(2));
+      await applySnapshot(
+        media,
+        sources,
+        false,
+        0,
+        consumers.map((entry) => entry.binding),
+      );
+      ready.get(consumers[0]!.consumer.id)!();
+      await vi.waitFor(() => expect(resync).toHaveBeenCalledTimes(2));
+      ready.get(consumers[1]!.consumer.id)!();
+      const results = await completed;
+      expect(results.map((result) => result.status)).toEqual(['fulfilled', 'fulfilled']);
+      expect(command.mock.calls.map(([event]) => event)).not.toContain('media.consumer.close');
+      expect(responses).toHaveLength(1);
+      responses.shift()!(
+        consumers.map((entry, index) => ({ ...entry.binding, ready: true, paused: index === 1 })),
+      );
+      expect(media.getSnapshot()!.payload.ownConsumers.map((binding) => binding.paused)).toEqual([
+        false,
+        true,
+      ]);
+      for (const { consumer } of consumers) expect(consumer.close).not.toHaveBeenCalled();
+    } finally {
+      unbind();
+      lifetime.abort();
+    }
+  });
+
   it('recovers a lost ACK with the same ready request', async () => {
     const { input, readyIds, consumer, command } = fixture(true);
     await expect(receiveMainAudio(input)).resolves.toBe(consumer);

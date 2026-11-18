@@ -43,6 +43,32 @@ async function verify() {
   }, 40);
   const stream = canvas.captureStream(25);
   const track = stream.getVideoTracks()[0]!;
+  const secondTrack = track.clone();
+  const secondSource = {
+    ...camera,
+    sourceId: 'camera-B',
+    producerId: 'producer-B',
+    ownerParticipantId: '4'.repeat(24),
+  };
+  const secondBinding = {
+    ...binding,
+    sourceId: secondSource.sourceId,
+    producerId: secondSource.producerId,
+    consumerId: 'consumer-B',
+  };
+  const sources = [camera, secondSource];
+  let secondCloses = 0;
+  let secondAttachments = 0;
+  const secondHandle = {
+    videoTrack: secondTrack,
+    attach: () => {
+      secondAttachments++;
+    },
+    close: () => {
+      secondCloses++;
+      secondTrack.stop();
+    },
+  };
   let attachments = 0;
   let closes = 0;
   const handle = {
@@ -70,15 +96,19 @@ async function verify() {
   await act(render);
   let snapshot!: MediaSnapshot;
   await act(async () => {
-    snapshot = await applySnapshot(media);
+    snapshot = await applySnapshot(media, sources);
   });
   await act(() => {
     media.attachConsumer(snapshot, binding, handle);
+    media.attachConsumer(snapshot, secondBinding, secondHandle);
   });
   check(container.textContent?.includes('Đang chờ hình ảnh'), 'Consumer chưa ready phải chờ');
   check(!container.querySelector('video'), 'Không attach video trước ready');
   await act(async () => {
-    await applySnapshot(media, [camera], false, 0, [{ ...binding, ready: true, paused: true }]);
+    await applySnapshot(media, sources, false, 0, [
+      { ...binding, ready: true, paused: true },
+      secondBinding,
+    ]);
   });
   await act(() => {
     media.confirmConsumerReady(snapshot, binding, handle);
@@ -89,7 +119,7 @@ async function verify() {
   const unbindResync = media.bindResync((input, receive) => {
     resyncRequests++;
     resyncResponses.push((consumers) =>
-      provideSnapshot(input.requestId, receive, [camera], false, 0, consumers),
+      provideSnapshot(input.requestId, receive, sources, false, 0, consumers),
     );
   });
   const waitResync = async () => {
@@ -101,21 +131,44 @@ async function verify() {
   };
   await waitResync();
   await act(() => {
-    resyncResponses.shift()!([{ ...binding, ready: false, paused: true }]);
+    resyncResponses.shift()!([binding, secondBinding]);
   });
   await act(() => {
-    media.confirmConsumerReady(snapshot, binding, handle);
+    check(media.confirmConsumerReady(snapshot, binding, handle), 'ACK camera A hợp lệ');
   });
   check(
     !container.querySelector('video') && !media.getCameraSnapshot().synchronized,
     'ACK sau snapshot pending phải chờ resync',
   );
   await waitResync();
+  await act(() => {
+    check(
+      media.confirmConsumerReady(snapshot, secondBinding, secondHandle),
+      'ACK camera B cùng lượt resync phải hợp lệ',
+    );
+  });
+  check(secondCloses === 0 && closes === 0, 'Không đóng nhầm Consumer khi chờ snapshot');
+  check(!container.querySelector('video'), 'Hai ACK chưa thay snapshot xác nhận pause');
+  check(resyncResponses.length === 1, 'Hai ACK dùng chung một yêu cầu resync');
   await act(async () => {
-    resyncResponses.shift()!([{ ...binding, ready: true, paused: false }]);
+    resyncResponses.shift()!([
+      { ...binding, ready: true, paused: false },
+      { ...secondBinding, ready: true, paused: true },
+    ]);
   });
   check(resyncRequests === 2, 'ACK sau pending snapshot phải yêu cầu snapshot mới');
+  check(
+    container.querySelectorAll('video').length === 1,
+    'Snapshot vẫn pause camera B nên chỉ hiện camera A',
+  );
+  check(
+    secondAttachments === 1 && secondCloses === 0 && closes === 0,
+    'Giữ nguyên hai Consumer sau resync',
+  );
   unbindResync();
+  await act(async () => {
+    await applySnapshot(media, [camera], false, 0, [{ ...binding, ready: true, paused: false }]);
+  });
   const waitVideo = async () => {
     for (let attempt = 0; attempt < 60; attempt++) {
       if (container.textContent?.includes('Đang nhận hình ảnh')) return;
@@ -279,12 +332,13 @@ async function verify() {
     () => {
       clearInterval(timer);
       track.stop();
+      secondTrack.stop();
       root.unmount();
       owner.shutdown();
     },
     { once: true },
   );
-  return 'PASS · snapshot pending → ready ACK → resync → hình ảnh; snapshot paused → ACK cũ; local enabled → disabled → enabled; token Figma; ready → frame → pause → resume → remount → switching → ended; StrictMode; participant độc lập';
+  return 'PASS · 2 ready ACK → 1 resync, không đóng Consumer, snapshot vẫn pause camera B; snapshot paused → ACK cũ; local enabled → disabled → enabled; token Figma; ready → frame → pause → resume → remount → switching → ended; StrictMode; participant độc lập';
 }
 
 void verify().then(
