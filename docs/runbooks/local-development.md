@@ -345,3 +345,7 @@ pnpm exec vitest run --config vitest.database.config.ts apps/server/test/text-sy
 ```
 
 Lệnh tích hợp tự tạo và dọn DB tên ngẫu nhiên `colearnia_test_scrum43_*`, không chạy trên DB ứng dụng/staging. Test ghép cấp repo nối controller Web với HTTP/Socket.IO và ACL/Mongo thật; writer test dùng repository/gate thật, send runtime vẫn tắt. Adapter LIVE trong fixture là giả lập và không chứng minh LIVE production. Xem [bằng chứng và giới hạn](../test-evidence/2026-11-18-scrum-43-text-sync.md).
+
+#### Projection capacity sau review PR #129
+
+Controller dùng limit theo trần messages và thu nhỏ snapshot khi vướng byte budget, giữ token/H cố định cùng cursor của trang vừa budget. Nếu không chứa nổi một tin tối thiểu, trạng thái là `blocked / PROJECTION_CAPACITY`: lease đã hủy, checkpoint/cache đã xóa, không tự retry. Tạo controller mới với giới hạn đã review; không tăng trần mặc định hoặc coi blocked là live. Cấu hình bytes dưới kích thước JSON `[]` bị từ chối ngay. [Bằng chứng P2](../test-evidence/2026-11-18-scrum-43-text-sync.md#bổ-sung-sau-review-p2-projection-của-m1) phân biệt kết quả mới với ma trận tại c808723.

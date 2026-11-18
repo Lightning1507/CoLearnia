@@ -57,3 +57,31 @@ Lượt hồi quy auth/Workspace/kênh: **109 ca đạt, 1 ca baseline bỏ qua*
 Controller không lặp catch-up vô hạn khi backlog vượt trần projection: lượt đó báo resync, không nâng checkpoint; lượt tiếp theo lấy snapshot hữu hạn và giữ olderCursor cho phần cũ. Checkpoint H chỉ được công bố sau snapshot mới thành công. Thứ tự render theo thời gian/ID ổn định, độc lập checkpoint commit.
 
 Cổng trước publish: `pnpm check` exit 0, 72 file/981 test đạt; harness 54 pass/1 skip, format/lint/typecheck/build đạt. `git diff --check` sạch.
+
+## Bổ sung sau review P2 projection của M1
+
+M1 tái hiện đúng lỗi ở `c808723`: snapshot/catch-up luôn xin 50 tin dù projection cho phép ít hơn. Fixture unit cũ chỉ trả hai dòng nên ca fallback trước đó chưa chứng minh request thật phù hợp giới hạn. Các kết quả gốc phía trên là lịch sử tại head cũ, không dùng để bác bỏ lỗi này.
+
+Bản sửa chọn `min(textHistoryMaxLimit, limits.messages)` cho catch-up và cửa sổ snapshot. Nếu trang snapshot không vừa byte/row budget (tính cả event đang đệm), giảm limit và đọc lại **cùng token/H**; chỉ giữ cursor của trang cuối thực sự dùng. Limit đã học được giữ qua các lượt, nên cấu hình chỉ cho một request/trang mỗi lượt cũng tiến tới kết quả hữu hạn. Không tăng trần, không bỏ overflow guard. Accounting projection tính cả dấu phân cách của JSON array.
+
+Nếu page một tin vẫn không thể chứa chính tin đó trong byte budget, controller hủy lượt/lease, xóa cache/checkpoint, trả `phase: blocked, reason: PROJECTION_CAPACITY` và không tự retry hoặc gửi thêm I/O khi gọi reconcile lại. Consumer cần tạo controller với cấu hình phù hợp. Byte budget không chứa nổi `[]` bị từ chối ngay tại constructor. Áp lực do event pending khác với cấu hình không chứa được tin tối thiểu: trường hợp đó vẫn resync thay vì báo đã đồng bộ.
+
+Regression dùng fixture **trả đúng limit trong query**, không còn cap ngầm hai dòng:
+
+- 60 tin, messages=30: request snapshot/catch-up đều limit 30; khi response còn bị giữ thì chưa có checkpoint/live. Hoàn tất mới có checkpoint H=60, đúng 30 tin gần nhất và olderCursor cho phần còn lại.
+- Byte budget không đủ trang 50: giảm limit hữu hạn, mọi request dùng cùng token/H, projection cuối nằm trong trần byte và còn olderCursor.
+- Event trước ACK cùng cửa sổ 30: chừa chỗ cho event, không nâng checkpoint theo event sau H.
+- Không đủ một tin: cả pages=1 và pages=20 đều dừng blocked trong tối đa sáu request giảm dần đến limit 1. Advance timer và gọi reconcile tiếp không sinh request hoặc trạng thái live.
+- Giữ các ca backlog fallback, event/history trùng, nhiều trang, expiry, revoke, timeout và callback cũ; ca nhiều trang nay dùng 152 tin để thực sự đi qua bốn trang ở limit 50.
+
+Lệnh gần thay đổi:
+
+```powershell
+pnpm exec vitest run apps/web/src/features/text/text-sync.test.ts apps/server/src/messaging/text-sync.test.ts
+$env:COLEARNIA_DB_TEST_PORT='27143'
+pnpm exec vitest run --config vitest.database.config.ts test/text-sync.integration.mjs
+```
+
+Kết quả: **21/21 unit** và **2/2 native controller** đạt. Native mới xác nhận 60 tin/30 tin hiển thị, olderCursor đọc đúng 30 tin còn lại (tổng 60 ID duy nhất); cửa sổ theo byte thu về một tin trong budget, cursor đọc tiếp được 50 tin cũ. Đây là controller với transport/ACL/Mongo thật, chưa phải màn hình browser. Không đổi code server, composition LIVE, send, thread hoặc DM; không chạy lại toàn bộ ma trận DB chỉ cho bản sửa client này.
+
+Cổng sau bản sửa P2: `pnpm check` exit 0, 72 file/987 test đạt; format/lint/typecheck/build và `git diff --check` sạch. Ma trận DB 127/14 skip ở phần gốc là kết quả c808723, không phải lượt chạy lại độc lập cho bản sửa này.

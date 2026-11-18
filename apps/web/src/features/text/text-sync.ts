@@ -4,6 +4,7 @@ import {
   textMessageHistoryResponseSchema,
   textMessageCreatedEventSchema,
   textConversationInvalidatedEventSchema,
+  textHistoryMaxLimit,
   type TextHistoryMessage,
   type TextMessageHistoryQuery,
 } from '@colearnia/contracts';
@@ -22,12 +23,14 @@ export type TextSyncPort = {
   unsubscribe(subscriptionId: string): void;
 };
 export type TextSyncState = {
-  phase: 'idle' | 'syncing' | 'live' | 'resync' | 'revoked';
+  phase: 'idle' | 'syncing' | 'live' | 'resync' | 'revoked' | 'blocked';
+  reason?: 'PROJECTION_CAPACITY';
   messages: TextHistoryMessage[];
   checkpoint: string | undefined;
   olderCursor: string | null;
 };
 class SnapshotRequired extends Error {}
+class ProjectionCapacityError extends Error {}
 
 type Limits = {
   events: number;
@@ -48,6 +51,10 @@ export function createTextSynchronizer(
   for (const value of Object.values(limits))
     if (!Number.isSafeInteger(value) || value < 1 || value > 2_147_483_647)
       throw new Error('Invalid sync limits');
+  if (limits.bytes < 2) throw new Error('Sync byte budget cannot contain an empty projection');
+  const pageLimit = Math.min(textHistoryMaxLimit, limits.messages);
+  // Learn a smaller snapshot window across rounds, including pages=1 configurations.
+  let snapshotLimit = pageLimit;
   let state: TextSyncState = {
     phase: 'idle',
     messages: [],
@@ -89,9 +96,10 @@ export function createTextSynchronizer(
     let completed = false;
     let olderCursor = state.olderCursor;
     let unlisten = () => {};
-    function invalidate(revoked: boolean, forgetCheckpoint = false) {
+    function invalidate(revoked: boolean, forgetCheckpoint = false, capacityBlocked = false) {
       if (!valid()) return;
       clearTimeout(timer);
+      clearTimeout(deadline);
       controller.abort();
       buffered = [];
       bufferBytes = 0;
@@ -99,10 +107,22 @@ export function createTextSynchronizer(
       if (subscriptionId) port.unsubscribe(subscriptionId);
       if (revoked)
         state = { phase: 'revoked', messages: [], checkpoint: undefined, olderCursor: null };
+      else if (capacityBlocked)
+        state = {
+          phase: 'blocked',
+          reason: 'PROJECTION_CAPACITY',
+          messages: [],
+          checkpoint: undefined,
+          olderCursor: null,
+        };
       else
-        state = { ...state, phase: 'resync', ...(forgetCheckpoint && { checkpoint: undefined }) };
+        state = {
+          ...state,
+          phase: 'resync',
+          ...(forgetCheckpoint && { checkpoint: undefined, messages: [], olderCursor: null }),
+        };
       notify();
-      if (!revoked)
+      if (!revoked && !capacityBlocked)
         timer = setTimeout(() => {
           void reconcile();
         }, limits.reconcileMs);
@@ -116,7 +136,7 @@ export function createTextSynchronizer(
       )
         throw new Error('Scope or sequence mismatch');
       if (rows.has(message.id)) return;
-      const cost = bytes(message);
+      const cost = bytes(message) + (rows.size > 0 ? 1 : 0);
       if (rows.size >= limits.messages || rowBytes + bufferBytes + cost > limits.bytes)
         throw new SnapshotRequired('Cache overflow');
       rows.set(message.id, message);
@@ -164,12 +184,12 @@ export function createTextSynchronizer(
         }
       }
     }
+    const deadline = setTimeout(() => invalidate(false), limits.roundMs);
     unlisten = port.listen(
       (value) => event(value, false),
       (value) => event(value, true),
       () => invalidate(false),
     );
-    const deadline = setTimeout(() => invalidate(false), limits.roundMs);
     cleanup = () => {
       clearTimeout(deadline);
       controller.abort();
@@ -217,14 +237,14 @@ export function createTextSynchronizer(
               afterCheckpoint: after,
               throughCheckpoint: through,
               syncToken: ack.data.syncToken,
-              limit: 50,
+              limit: pageLimit,
               ...(cursor && { cursor }),
             }
           : {
               mode: 'snapshot',
               throughCheckpoint: through,
               syncToken: ack.data.syncToken,
-              limit: 50,
+              limit: snapshotLimit,
             };
         const raw = await port.history(channelId, query, controller.signal);
         if (!valid()) return;
@@ -242,7 +262,30 @@ export function createTextSynchronizer(
           JSON.stringify(page.scope) !== JSON.stringify(scope)
         )
           throw new Error('Wrong page scope or turn');
-        for (const message of page.items) merge(message);
+        if (page.items.length > query.limit) throw new Error('Server exceeded requested limit');
+        try {
+          if (!after) {
+            const projectedIds = new Set(page.items.map((message) => message.id));
+            for (const item of buffered as { value: unknown }[]) {
+              projectedIds.add(textMessageCreatedEventSchema.parse(item.value).message.id);
+            }
+            if (projectedIds.size > limits.messages)
+              throw new SnapshotRequired('Snapshot and events exceed row budget');
+          }
+          for (const message of page.items) merge(message);
+        } catch (error) {
+          if (after || !(error instanceof SnapshotRequired)) throw error;
+          rows.clear();
+          rowBytes = 2;
+          if (query.limit === 1) {
+            if (page.items.some((message) => 2 + bytes(message) > limits.bytes))
+              throw new ProjectionCapacityError();
+            // Pending live events, rather than the minimum page itself, exhausted capacity.
+            throw error;
+          }
+          snapshotLimit = Math.max(1, Math.floor(query.limit / 2));
+          continue;
+        }
         if (!after) {
           olderCursor = page.nextCursor;
           break;
@@ -273,6 +316,10 @@ export function createTextSynchronizer(
         void reconcile();
       }, limits.reconcileMs);
     } catch (error) {
+      if (error instanceof ProjectionCapacityError) {
+        invalidate(false, true, true);
+        return;
+      }
       const code = error && typeof error === 'object' && 'code' in error ? error.code : undefined;
       invalidate(
         ['AUTH_REQUIRED', 'FORBIDDEN', 'NOT_FOUND'].includes(String(code)),
@@ -281,6 +328,7 @@ export function createTextSynchronizer(
     }
   }
   function reconcile() {
+    if (state.phase === 'blocked') return Promise.resolve();
     if (inFlight) return inFlight;
     const pending = run();
     inFlight = pending;

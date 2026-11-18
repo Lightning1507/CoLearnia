@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { afterEach, expect, it, vi } from 'vitest';
 import type { TextHistoryMessage, TextMessageHistoryQuery } from '@colearnia/contracts';
-import { createTextSynchronizer, type TextSyncPort } from './text-sync';
+import { createTextSynchronizer, type TextSyncPort, type TextSyncState } from './text-sync';
 
 const channelId = '100000000000000000000001';
 const scope = { channelId, conversationId: '100000000000000000000002', rootMessageId: null };
@@ -77,7 +77,7 @@ function fixture() {
       const offset = 'cursor' in query && query.cursor ? Number(query.cursor.split('.')[1]) : 0;
       const eligible = rows.filter((row) => row.commitSeq! > lower && row.commitSeq! <= high);
       if (query.mode === 'snapshot') eligible.reverse();
-      const items = eligible.slice(offset, offset + 2);
+      const items = eligible.slice(offset, offset + query.limit);
       return {
         requestId: randomUUID(),
         data: {
@@ -85,7 +85,8 @@ function fixture() {
           scope,
           throughCheckpoint: 'cp.' + high,
           items,
-          nextCursor: offset + 2 < eligible.length ? 'cursor.' + (offset + 2) : null,
+          nextCursor:
+            offset + query.limit < eligible.length ? 'cursor.' + (offset + query.limit) : null,
         },
       };
     },
@@ -111,24 +112,24 @@ it('buffers events before ACK, drains all catch-up pages, deduplicates and keeps
   const f = fixture();
   await f.sync.reconcile();
   expect(f.sync.snapshot().checkpoint).toBe('cp.1');
-  for (let seq = 2; seq <= 8; seq++) f.rows.push(message(seq));
+  for (let seq = 2; seq <= 152; seq++) f.rows.push(message(seq));
   f.hooks.subscribed = () => {
     f.push(f.rows[3]!);
-    f.push(message(9));
+    f.push(message(153));
   };
   await f.sync.reconcile();
   const state = f.sync.snapshot();
   expect(state.phase).toBe('live');
-  expect(state.messages.map((row) => row.commitSeq).sort((a, b) => a! - b!)).toEqual([
-    1, 2, 3, 4, 5, 6, 7, 8, 9,
-  ]);
-  expect(state.checkpoint).toBe('cp.8');
+  expect(state.messages.map((row) => row.commitSeq).sort((a, b) => a! - b!)).toEqual(
+    Array.from({ length: 153 }, (_, i) => i + 1),
+  );
+  expect(state.checkpoint).toBe('cp.152');
   const pages = f.historyQueries.filter((q) => q.mode === 'catch-up');
   expect(pages).toHaveLength(4);
   expect(
     pages.every(
       (q) =>
-        q.mode === 'catch-up' && q.afterCheckpoint === 'cp.1' && q.throughCheckpoint === 'cp.8',
+        q.mode === 'catch-up' && q.afterCheckpoint === 'cp.1' && q.throughCheckpoint === 'cp.152',
     ),
   ).toBe(true);
 });
@@ -156,7 +157,7 @@ it.each(['AUTH_REQUIRED', 'FORBIDDEN', 'NOT_FOUND'])(
   async (code) => {
     const f = fixture();
     await f.sync.reconcile();
-    for (let seq = 2; seq <= 6; seq++) f.rows.push(message(seq));
+    for (let seq = 2; seq <= 60; seq++) f.rows.push(message(seq));
     f.hooks.page = (query) => {
       if ('cursor' in query && query.cursor) f.hooks.error = { code, message: 'Denied' };
     };
@@ -203,7 +204,7 @@ it('fails closed on event/byte overflow, timeout, disconnect and stale responses
   const tiny = createTextSynchronizer(f.port, channelId, { ...limits, bytes: 10 }, () => {});
   disposers.push(tiny.stop);
   await tiny.reconcile();
-  expect(tiny.snapshot().phase).toBe('resync');
+  expect(tiny.snapshot()).toMatchObject({ phase: 'blocked', reason: 'PROJECTION_CAPACITY' });
   tiny.stop();
   let release = () => {};
   f.hooks.page = () =>
@@ -251,6 +252,141 @@ it('falls back to a bounded snapshot after catch-up exceeds the projection capac
   expect(bounded.snapshot()).toMatchObject({ phase: 'resync', checkpoint: undefined });
   await vi.advanceTimersByTimeAsync(100);
   expect(bounded.snapshot()).toMatchObject({ phase: 'live', checkpoint: 'cp.6' });
-  expect(bounded.snapshot().messages.map((row) => row.commitSeq)).toEqual([5, 6]);
+  expect(bounded.snapshot().messages.map((row) => row.commitSeq)).toEqual([4, 5, 6]);
   expect(bounded.snapshot().olderCursor).not.toBeNull();
+});
+
+const encodedBytes = (value: unknown) => new TextEncoder().encode(JSON.stringify(value)).byteLength;
+
+it('requests a real 30-row snapshot from 60 messages, retaining the older cursor and deferring H until completion', async () => {
+  const f = fixture();
+  for (let seq = 2; seq <= 60; seq++) f.rows.push(message(seq));
+  const states: TextSyncState[] = [];
+  const bounded = createTextSynchronizer(f.port, channelId, { ...limits, messages: 30 }, (state) =>
+    states.push(state),
+  );
+  disposers.push(bounded.stop);
+  let release = () => {};
+  let reached = () => {};
+  const ready = new Promise<void>((resolve) => {
+    reached = resolve;
+  });
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  f.hooks.page = () => {
+    reached();
+    return gate;
+  };
+  const pending = bounded.reconcile();
+  await ready;
+  expect(f.historyQueries.map((query) => query.limit)).toEqual([30]);
+  expect(bounded.snapshot()).toMatchObject({ phase: 'syncing', checkpoint: undefined });
+  expect(states.some((state) => state.phase === 'live')).toBe(false);
+  release();
+  await pending;
+  expect(bounded.snapshot()).toMatchObject({
+    phase: 'live',
+    checkpoint: 'cp.60',
+    olderCursor: 'cursor.30',
+  });
+  expect(bounded.snapshot().messages.map((row) => row.commitSeq)).toEqual(
+    Array.from({ length: 30 }, (_, i) => i + 31),
+  );
+  expect(encodedBytes(bounded.snapshot().messages)).toBeLessThanOrEqual(limits.bytes);
+  delete f.hooks.page;
+  await bounded.reconcile(); // A catch-up query also respects the projection row limit.
+  expect(f.historyQueries.map((query) => query.limit)).toEqual([30, 30]);
+  expect(bounded.snapshot().messages).toHaveLength(30);
+});
+
+it('shrinks a snapshot to fit its byte budget using the same lease/H and preserves unread history', async () => {
+  const f = fixture();
+  for (let seq = 2; seq <= 60; seq++) f.rows.push({ ...message(seq), text: 'x'.repeat(200) });
+  const byteLimit = encodedBytes(f.rows.slice(-2)) + 5;
+  const states: TextSyncState[] = [];
+  const bounded = createTextSynchronizer(
+    f.port,
+    channelId,
+    { ...limits, bytes: byteLimit },
+    (state) => states.push(state),
+  );
+  disposers.push(bounded.stop);
+  f.hooks.page = () => {
+    expect(bounded.snapshot().phase).toBe('syncing');
+    expect(bounded.snapshot().checkpoint).toBeUndefined();
+  };
+  await bounded.reconcile();
+  expect(f.historyQueries[0]?.limit).toBe(50);
+  expect(f.historyQueries.length).toBeGreaterThan(1);
+  expect(f.historyQueries.length).toBeLessThanOrEqual(6);
+  expect(
+    f.historyQueries.every(
+      (query) =>
+        query.mode === 'snapshot' &&
+        query.throughCheckpoint === 'cp.60' &&
+        query.syncToken === 'sync.token',
+    ),
+  ).toBe(true);
+  expect(bounded.snapshot()).toMatchObject({ phase: 'live', checkpoint: 'cp.60' });
+  expect(bounded.snapshot().olderCursor).not.toBeNull();
+  expect(encodedBytes(bounded.snapshot().messages)).toBeLessThanOrEqual(byteLimit);
+  expect(bounded.snapshot().messages.length).toBeLessThan(50);
+  expect(states.filter((state) => state.phase === 'live')).toHaveLength(1);
+});
+
+it('also reserves projection space for an event arriving before ACK with a 30-row window', async () => {
+  const f = fixture();
+  for (let seq = 2; seq <= 60; seq++) f.rows.push(message(seq));
+  f.hooks.subscribed = () => f.push(message(61));
+  const bounded = createTextSynchronizer(f.port, channelId, { ...limits, messages: 30 }, () => {});
+  disposers.push(bounded.stop);
+  await bounded.reconcile();
+  expect(bounded.snapshot()).toMatchObject({ phase: 'live', checkpoint: 'cp.60' });
+  expect(bounded.snapshot().messages.length).toBeLessThanOrEqual(30);
+  expect(bounded.snapshot().messages.some((row) => row.commitSeq === 61)).toBe(true);
+  expect(bounded.snapshot().olderCursor).not.toBeNull();
+  expect(f.historyQueries.some((query) => query.limit < 30)).toBe(true);
+});
+
+it.each([1, 20])(
+  'terminates when even one message cannot fit, including a %i-page round budget',
+  async (pages) => {
+    vi.useFakeTimers();
+    const f = fixture();
+    for (let seq = 2; seq <= 60; seq++) f.rows.push(message(seq));
+    const states: TextSyncState[] = [];
+    const bounded = createTextSynchronizer(
+      f.port,
+      channelId,
+      { ...limits, messages: 30, bytes: 10, pages },
+      (state) => states.push(state),
+    );
+    disposers.push(bounded.stop);
+    await bounded.reconcile();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(bounded.snapshot()).toMatchObject({
+      phase: 'blocked',
+      reason: 'PROJECTION_CAPACITY',
+      checkpoint: undefined,
+      messages: [],
+    });
+    const requests = f.historyQueries.length;
+    expect(requests).toBeGreaterThan(0);
+    expect(requests).toBeLessThanOrEqual(6);
+    expect(f.historyQueries.at(-1)?.limit).toBe(1);
+    await vi.advanceTimersByTimeAsync(10_000);
+    await bounded.reconcile();
+    expect(f.historyQueries).toHaveLength(requests);
+    expect(states.some((state) => state.phase === 'live')).toBe(false);
+    expect(f.unsubscribe).toHaveBeenCalled();
+  },
+);
+
+it('rejects a configuration that cannot encode an empty projection before any I/O', () => {
+  const f = fixture();
+  expect(() =>
+    createTextSynchronizer(f.port, channelId, { ...limits, bytes: 1 }, () => {}),
+  ).toThrow('empty projection');
+  expect(f.historyQueries).toEqual([]);
 });

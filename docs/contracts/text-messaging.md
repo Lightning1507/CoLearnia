@@ -80,3 +80,7 @@ Registry cung cấp `MessagingRevocationPort` với fence đồng bộ và water
 REST POST và `message.send` tiếp tục bị main vô hiệu hóa theo rollout history-only của PR #117. Hook fanout chỉ được gọi sau kết quả commit xác định; commit chưa rõ hoặc event bị mất cần lượt đối soát, không tự suy rollback hoặc nâng checkpoint. Bản sửa này không đóng P2/recovery của đường gửi.
 
 Giới hạn: chưa nối controller vào UI thật của SCRUM-47; route `/workspace` vẫn là fixture SCRUM-46. DM, thread/reply-count runtime và chat cuộc họp chưa được bật bởi triển khai này. Không thay semantics/schema đã mô tả cho các consumer đó. Bằng chứng và phần bàn giao nằm ở [SCRUM-43](../test-evidence/2026-11-18-scrum-43-text-sync.md); M1/M4 cần review composition/rollout trước khi bật thật, không coi các fixture LIVE trong test là nghiệm thu LIVE production.
+
+### Projection nhỏ và ngân sách byte của controller
+
+Kích thước trang không vượt `limits.messages` hoặc giới hạn contract. Snapshot chưa vừa budget được đọc lại với limit nhỏ hơn trong cùng lease/H; không lấy cursor từ trang đã bị bỏ. Nếu một tin tối thiểu vẫn vượt trần, controller trả `blocked` cùng `PROJECTION_CAPACITY`, hủy lease và dừng tự resync; cần cấu hình/controller mới. Byte budget không mã hóa được `[]` bị từ chối trước I/O. Đây là trạng thái chưa đồng bộ, không có checkpoint hoàn tất. Consumer SCRUM-47 cần hiển thị lỗi cấu hình/tài nguyên này; không tự tăng trần để giấu lỗi. Xem regression P2 trong evidence SCRUM-43.
