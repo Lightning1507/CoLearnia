@@ -65,6 +65,9 @@ const authSessionSchema = new Schema(
     tokenHash: privateHash,
     expiresAt: { type: Date, required: true },
     revokedAt: { type: Date, default: null },
+    // Proposed for the AUTH_SESSION trial. Missing serial means zero for $inc.
+    textWriteSerial: { type: Number, min: 0, validate: Number.isSafeInteger, select: false },
+    textRevokeOperationId: { type: String, select: false },
   },
   { collection: 'authSessions', strict: 'throw', timestamps: true, versionKey: false },
 );

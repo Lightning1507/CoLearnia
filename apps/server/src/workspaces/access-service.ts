@@ -10,8 +10,8 @@ import {
 import type { AuthenticatedContext } from '@colearnia/contracts';
 import type { ClientSession } from 'mongoose';
 import { authIndexRequirements, authModels } from '../auth/models.js';
-import { isDatabaseUnavailableError } from '../lib/database.js';
-import type { Database } from '../lib/database.js';
+import { databaseQueryOptions, isDatabaseUnavailableError } from '../lib/database.js';
+import type { Database, DatabaseDeadline } from '../lib/database.js';
 import type { CoordinationContext, OperationCoordinator } from '../lib/operation-coordinator.js';
 import { channelIndexRequirements, channelModels } from './channel-models.js';
 import { workspaceIndexRequirements, workspaceModels } from './workspace-models.js';
@@ -69,7 +69,11 @@ export function createWorkspaceAccessService(
       authSessionId: id(parsed.data.authSessionId),
     };
   }
-  async function confirmSession(actor: AuthenticatedContext, session: ClientSession) {
+  async function confirmSession(
+    actor: AuthenticatedContext,
+    session: ClientSession,
+    queryTime = () => maxTimeMS,
+  ) {
     const current = await AuthSession.findOne({
       _id: actor.authSessionId,
       userId: actor.userId,
@@ -78,13 +82,13 @@ export function createWorkspaceAccessService(
     })
       .select('_id expiresAt')
       .session(session)
-      .maxTimeMS(maxTimeMS)
+      .setOptions(databaseQueryOptions(queryTime))
       .lean();
     const user =
       current &&
       (await User.exists({ _id: actor.userId, status: 'ACTIVE' })
         .session(session)
-        .maxTimeMS(maxTimeMS));
+        .setOptions(databaseQueryOptions(queryTime)));
     if (!current || !user) throw new WorkspaceAccessError('AUTH_REQUIRED');
     return current.expiresAt.getTime();
   }
@@ -92,11 +96,12 @@ export function createWorkspaceAccessService(
     actor: AuthenticatedContext,
     workspaceId: string,
     session: ClientSession,
+    queryTime = () => maxTimeMS,
   ) {
     const workspace = await Workspace.findOne({ _id: workspaceId, deletedAt: null })
       .select('_id name ownerId revision deletedAt')
       .session(session)
-      .maxTimeMS(maxTimeMS)
+      .setOptions(databaseQueryOptions(queryTime))
       .lean();
     const member =
       workspace &&
@@ -108,7 +113,7 @@ export function createWorkspaceAccessService(
       })
         .select('_id workspaceId userId role status incarnation revision')
         .session(session)
-        .maxTimeMS(maxTimeMS)
+        .setOptions(databaseQueryOptions(queryTime))
         .lean());
     const state: ChannelAccessState = {
       workspace: workspace
@@ -136,15 +141,21 @@ export function createWorkspaceAccessService(
   }
   async function read<T>(
     actor: AuthenticatedContext,
-    work: (session: ClientSession) => Promise<T>,
+    work: (session: ClientSession, queryTime?: DatabaseDeadline) => Promise<T>,
+    remaining?: DatabaseDeadline,
+    snapshotOnly = false,
   ): Promise<T> {
     if (!indexesReady() || !database.isConnected())
       throw new WorkspaceAccessError('DEPENDENCY_UNAVAILABLE');
     try {
-      const result = await database.transaction(async (session) => {
-        const expiresAt = await confirmSession(actor, session);
-        return { value: await work(session), expiresAt };
-      });
+      const resolve = async (session: ClientSession, queryTime?: DatabaseDeadline) => {
+        const expiresAt = await confirmSession(actor, session, queryTime);
+        return { value: await work(session, queryTime), expiresAt };
+      };
+      const result =
+        snapshotOnly && remaining
+          ? await database.snapshotRead(resolve, remaining)
+          : await database.transaction(resolve, remaining);
       if (Math.min(Date.parse(actor.expiresAt), result.expiresAt) <= Date.now())
         throw new WorkspaceAccessError('AUTH_REQUIRED');
       return result.value;
@@ -180,65 +191,75 @@ export function createWorkspaceAccessService(
     )
       throw new WorkspaceAccessError('NOT_FOUND');
   }
-  async function resolveChannelAccessHeld(input: AccessInput, context: CoordinationContext) {
+  async function resolveChannelAccessHeld(
+    input: AccessInput,
+    context: CoordinationContext,
+    remaining?: DatabaseDeadline,
+    snapshotOnly = false,
+  ) {
     const actor = identity(input.identity);
     const workspaceId = id(input.workspaceId);
     const channelId = id(input.channelId);
     context.assertHeld({ userId: actor.userId, workspaceId });
-    return read(actor, async (session) => {
-      const state = await readState(actor, workspaceId, session);
-      checkBarrier(actor, state, context);
-      if (!hasWorkspaceAccess(state, actor.userId)) throw new WorkspaceAccessError('NOT_FOUND');
-      const channel = await Channel.findOne({ _id: channelId, workspaceId, deletedAt: null })
-        .select('_id workspaceId type accessMode revision')
-        .session(session)
-        .maxTimeMS(maxTimeMS)
-        .lean();
-      if (!channel) throw new WorkspaceAccessError('NOT_FOUND');
-      state.channel = {
-        id: channelId,
-        workspaceId,
-        type: channel.type,
-        accessMode: channel.accessMode,
-        revision: channel.revision,
-        deleted: false,
-      };
-      if (channel.accessMode === 'PRIVATE') {
-        const grant = await ChannelAccessGrant.findOne({
+    return read(
+      actor,
+      async (session, queryTime = () => maxTimeMS) => {
+        const state = await readState(actor, workspaceId, session, queryTime);
+        checkBarrier(actor, state, context);
+        if (!hasWorkspaceAccess(state, actor.userId)) throw new WorkspaceAccessError('NOT_FOUND');
+        const channel = await Channel.findOne({ _id: channelId, workspaceId, deletedAt: null })
+          .select('_id workspaceId type accessMode revision')
+          .session(session)
+          .setOptions(databaseQueryOptions(queryTime))
+          .lean();
+        if (!channel) throw new WorkspaceAccessError('NOT_FOUND');
+        state.channel = {
+          id: channelId,
+          workspaceId,
+          type: channel.type,
+          accessMode: channel.accessMode,
+          revision: channel.revision,
+          deleted: false,
+        };
+        if (channel.accessMode === 'PRIVATE') {
+          const grant = await ChannelAccessGrant.findOne({
+            workspaceId,
+            channelId,
+            membershipId: state.membership!.id,
+            membershipIncarnation: state.membership!.incarnation,
+            revokedAt: null,
+          })
+            .select('workspaceId channelId membershipId membershipIncarnation')
+            .session(session)
+            .setOptions(databaseQueryOptions(queryTime))
+            .lean();
+          if (grant)
+            state.grant = {
+              workspaceId: grant.workspaceId.toHexString(),
+              channelId: grant.channelId.toHexString(),
+              membershipId: grant.membershipId.toHexString(),
+              membershipIncarnation: grant.membershipIncarnation,
+              revoked: false,
+            };
+        }
+        checkBarrier(actor, state, context);
+        const permissions = channelPermissions(state, actor.userId);
+        if (!permissions.canKnowChannel) throw new WorkspaceAccessError('NOT_FOUND');
+        return channelAccessSnapshotSchema.parse({
           workspaceId,
           channelId,
+          channelType: channel.type,
           membershipId: state.membership!.id,
           membershipIncarnation: state.membership!.incarnation,
-          revokedAt: null,
-        })
-          .select('workspaceId channelId membershipId membershipIncarnation')
-          .session(session)
-          .maxTimeMS(maxTimeMS)
-          .lean();
-        if (grant)
-          state.grant = {
-            workspaceId: grant.workspaceId.toHexString(),
-            channelId: grant.channelId.toHexString(),
-            membershipId: grant.membershipId.toHexString(),
-            membershipIncarnation: grant.membershipIncarnation,
-            revoked: false,
-          };
-      }
-      checkBarrier(actor, state, context);
-      const permissions = channelPermissions(state, actor.userId);
-      if (!permissions.canKnowChannel) throw new WorkspaceAccessError('NOT_FOUND');
-      return channelAccessSnapshotSchema.parse({
-        workspaceId,
-        channelId,
-        channelType: channel.type,
-        membershipId: state.membership!.id,
-        membershipIncarnation: state.membership!.incarnation,
-        membershipRevision: state.membership!.revision,
-        channelRevision: channel.revision,
-        canReadContent: permissions.canReadContent,
-        canManageChannel: permissions.canManageChannel,
-      });
-    });
+          membershipRevision: state.membership!.revision,
+          channelRevision: channel.revision,
+          canReadContent: permissions.canReadContent,
+          canManageChannel: permissions.canManageChannel,
+        });
+      },
+      remaining,
+      snapshotOnly,
+    );
   }
   async function requireWorkspacePermissionHeld(
     input: WorkspaceInput,
