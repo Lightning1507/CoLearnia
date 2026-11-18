@@ -49,9 +49,28 @@ pnpm check
 
 ## Giới hạn và phần còn lại
 
+### Login thay phiên: đã tái hiện lỗi
+
+Đã chạy lại nhận xét của Việt tại `5e63da1` bằng auth/ACL MongoDB, HTTP/Socket.IO và mediasoup native thật. Trình tự: join MAIN → tạo SEND transport → đăng nhập lại cùng tài khoản bằng cookie/CSRF đang dùng. Login trả 200, session cũ có `revokedAt` và cookie cũ gọi `/auth/me` trả 401. Cookie mới gọi `/auth/me` trả 200 và mở được Socket.IO mới; tài khoản khác vẫn dùng HTTP được.
+
+Sau các bước đó, socket cũ vẫn connected, transport cũ chưa closed và registry còn 1 ownership cũ. Đây là **kết quả lỗi đã xác nhận**, không còn là ca chưa kiểm. Theo dõi tại [issue M1/M4 #130](https://github.com/Lightning1507/CoLearnia/issues/130), liên quan đường login của SCRUM-20 và gate SCRUM-88; chưa sửa luồng login trong PR này.
+
+Diagnostic `tests/diagnostics/login-replacement.diagnostic.ts` kiểm cookie cũ/mới và Socket.IO mới trước khi yêu cầu cleanup phiên cũ. Hiện diagnostic thất bại đúng tại assertion ba tài nguyên cũ; các bước tiếp theo kiểm phiên mới join/tạo transport và cleanup cũ không ảnh hưởng generation mới chưa tới được. Khi xử lý issue #130, cần làm toàn bộ ca này xanh rồi đưa vào suite tích hợp mặc định.
+
+Sau bổ sung diagnostic và helper login thật, 9/9 ca SCRUM-88 mặc định đã chạy lại đạt; diagnostic riêng có 1 ca FAIL như mô tả. Không cộng ca FAIL này vào các tổng kiểm đạt ở trên.
+
+```sh
+pnpm --filter @colearnia/contracts build
+pnpm exec vitest run --config vitest.login-replacement.config.ts
+```
+
+Dùng cùng replica set test và biến `COLEARNIA_DB_TEST_PORT` ở trên. Diagnostic có cấu hình chạy riêng để người kiểm thấy kết quả FAIL hiện tại; không được tính nó vào số ca CI đạt hoặc coi CI mặc định xanh là đã khắc phục lỗi này.
+
+### Các giới hạn khác
+
 - M2/M5 cleanup dùng **test double**, được khai báo ngay trong harness; không có chat/board subscription hoặc nội dung riêng thực trong phép kiểm này. Kết quả không xác nhận thu quyền chat/board xuyên miền.
 - Chưa mount registry, ticket REST và toàn bộ signaling MAIN vào `main.ts`. `createMainAuthority` là đầu vào thật đã kiểm để composition dùng tiếp; không cài adapter cleanup trả thành công giả vào ứng dụng.
-- Nhánh login thay session cũ hiện ghi `revokedAt` trực tiếp, chưa đi qua shared deny/cleanup. Bộ này kiểm logout qua coordinator và session đã bị revoke trong DB; chưa xác nhận race login-replacement với thao tác media đang chờ. Cần M1 phối hợp trước nghiệm thu composition production, không suy rằng mọi đường thu quyền đã được serialize bởi adapter mới.
+- Nhánh login thay session cũ hiện ghi `revokedAt` trực tiếp, chưa đi qua shared deny/cleanup; lỗi tài nguyên cũ còn mở đã tái hiện ở mục trên. Race login-replacement với native create còn pending và retry vẫn cần kiểm trong issue #130. Cần M1 phối hợp trước nghiệm thu composition production, không suy rằng mọi đường thu quyền đã được serialize bởi adapter mới.
 - Đã kiểm deadline với query DB chậm trong hai đường ACL/User nêu trên; chưa đo pool saturation, mạng DB mất hoàn toàn hoặc tải kết hợp. Không lấy hai ca local này làm cam kết thời gian đáp ứng hoặc capacity.
 - Transport native và Router capabilities là thật; chưa có kết nối DTLS/RTP giữa hai browser, mic/camera/share hoặc âm thanh MAIN thực. Không tính native smoke thành cuộc gọi đã dùng được.
 - Chưa kiểm staging, 5 người, hai mạng, forced TURN hay credential expiry. SCRUM-89 và issue TURN tiếp tục theo phạm vi riêng.

@@ -248,19 +248,8 @@ export async function setup() {
     registry.close();
     media.close();
   });
-  async function signUp() {
-    const csrf = await http.get('/api/v1/auth/csrf').expect(200);
-    const response = await http
-      .post('/api/v1/auth/register')
-      .set('Origin', origin)
-      .set('Cookie', cookies(csrf))
-      .set('X-CSRF-Token', csrfResponseSchema.parse(csrf.body).data.csrfToken)
-      .send({
-        email: `${randomUUID()}@example.test`,
-        password: randomBytes(24).toString('hex'),
-        displayName: 'Sinh viên',
-      })
-      .expect(201);
+  const credentials = new WeakMap<object, { email: string; password: string }>();
+  async function accountFrom(response: Response) {
     const data = authenticatedResponseSchema.parse(response.body).data;
     const cookie = cookies(response);
     const token = cookie
@@ -269,6 +258,37 @@ export async function setup() {
       .slice(authCookie.length + 1);
     const auth = (await readSession(token))!.context;
     return { data, cookie, auth };
+  }
+  async function signUp() {
+    const input = {
+      email: `${randomUUID()}@example.test`,
+      password: randomBytes(24).toString('hex'),
+    };
+    const csrf = await http.get('/api/v1/auth/csrf').expect(200);
+    const response = await http
+      .post('/api/v1/auth/register')
+      .set('Origin', origin)
+      .set('Cookie', cookies(csrf))
+      .set('X-CSRF-Token', csrfResponseSchema.parse(csrf.body).data.csrfToken)
+      .send({ ...input, displayName: 'Sinh viên' })
+      .expect(201);
+    const account = await accountFrom(response);
+    credentials.set(account, input);
+    return account;
+  }
+  async function loginAgain(account: Awaited<ReturnType<typeof signUp>>) {
+    const input = credentials.get(account);
+    if (!input) throw new Error('Unknown test account');
+    const response = await http
+      .post('/api/v1/auth/login')
+      .set('Origin', origin)
+      .set('Cookie', account.cookie)
+      .set('X-CSRF-Token', account.data.csrfToken)
+      .send(input)
+      .expect(200);
+    const replacement = await accountFrom(response);
+    credentials.set(replacement, input);
+    return replacement;
   }
   async function connect(account: Awaited<ReturnType<typeof signUp>>) {
     const socket = connectSocket(`http://127.0.0.1:${(server.address() as AddressInfo).port}`, {
@@ -337,6 +357,7 @@ export async function setup() {
     member,
     channel,
     signUp,
+    loginAgain,
     connect,
     join,
     disconnect,

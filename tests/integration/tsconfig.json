@@ -7,5 +7,5 @@
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "noEmit": true
   },
-  "include": ["*.integration.ts"]
+  "include": ["*.integration.ts", "../diagnostics/*.diagnostic.ts"]
 }
