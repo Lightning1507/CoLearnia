@@ -321,3 +321,15 @@ Upload nguồn Readable dùng pipeline qua PassThrough với backpressure, rồi
 Fixture local gồm bảy ca. Ca nguồn encoder phát một phần rồi lỗi xác nhận put reject, nguồn bị destroy và HTTP request đóng với complete=false, socketDestroyed=true, bytes>0. Cùng tiến trình tiếp tục upload/xóa thành công. Ca caller hủy upload xác nhận ABORTED và đóng request; các ca timeout upload/download vẫn kiểm TIMEOUT.
 
 Nghiệm thu R2 thật còn chờ người có quyền bucket. Lần chạy smoke sau sửa dừng trước I/O vì thiếu R2_ACCOUNT_ID, R2_BUCKET, R2_ACCESS_KEY_ID và R2_SECRET_ACCESS_KEY. Người có quyền cần chạy lệnh trên với cấu hình server-only, ghi lại kết quả đã lọc của upload/read/delete/not-found, rồi xác nhận trong dashboard rằng r2.dev và public custom domains đều tắt. Chưa có bằng chứng nghiệm thu dịch vụ thật trong lượt này.
+
+#### Bàn giao nghiệm thu dịch vụ R2
+
+Người có quyền bucket thử nghiệm của nhóm chạy smoke tại SHA đang đề nghị nghiệm thu. M2 tổng hợp bằng chứng và M1 review kết quả trước khi đóng SCRUM-52. Chạy `git rev-parse HEAD` trước lệnh smoke ở trên, ghi SHA, thời điểm và exit code cùng dòng `PASS` hoặc lỗi đã lọc. Cấu hình và credential chỉ đặt trong môi trường server-only của người chạy.
+
+Một lượt đạt cần đủ upload → đọc đúng byte → HEAD ẩn danh trả 401/403 trong khi object còn tồn tại → delete → đọc có chữ ký trả `NOT_FOUND`. Dòng `PASS` chỉ được in sau cả chuỗi đó. Nếu có lỗi cleanup, giữ object key mà script báo để người có quyền đối soát và dọn đúng object thử, rồi xác nhận kết quả. Dừng trước I/O do thiếu cấu hình giữ bước nghiệm thu mở.
+
+Ghi riêng xác nhận dashboard của cùng bucket tại thời điểm chạy rằng r2.dev và public custom domains đều tắt. Thành công ở endpoint S3 chưa cung cấp xác nhận này. Dùng [bằng chứng SCRUM-52](../test-evidence/2026-11-18-scrum-52-r2-acceptance.md) để đối chiếu phần đã kiểm và phần còn chờ.
+
+#### Ngoại lệ audit đang kế thừa từ main
+
+[Issue #127](https://github.com/Lightning1507/CoLearnia/issues/127) ghi chấp thuận tạm advisory `GHSA-fc5q-39xc-vjpf`, mốc rà soát 25/11/2026 và điều kiện gỡ. Ngoại lệ có trên main sau [PR #117](https://github.com/Lightning1507/CoLearnia/pull/117), đồng thời có trong head `4e2a041` của [PR #123](https://github.com/Lightning1507/CoLearnia/pull/123). Cấu hình `auditConfig.ignoreGhsas` áp dụng cho audit toàn workspace, vì vậy các nhánh kế thừa main, gồm nhánh nghiệm thu SCRUM-52, cùng chịu ngoại lệ này. CI/audit đạt với cấu hình đó vẫn giữ advisory trong danh sách bỏ qua. Bước nghiệm thu R2 độc lập với việc gỡ advisory và không thay mốc rà soát của issue.
