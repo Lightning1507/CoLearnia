@@ -322,3 +322,26 @@ pnpm exec vitest run --pool=threads --config vitest.database.config.ts apps/serv
 Cùng cấu hình trial ở trên, mỗi đợt tải ghép chạy hai lượt gửi TEXT song song với đọc phiên, mở Workspace và tạo Workspace/kênh TEXT trên cùng pool. Một lượt đo cục bộ với pool 2 cho kết quả cùng phiên 224/175 ms và khác phiên 174/151 ms (tắt/bật fence). Hai đợt bật fence có đúng hai update AuthSession mỗi đợt. Cả bốn đợt có tám tin và sequence cuối 8. Mẫu này kiểm các đường chạy đồng thời và đếm update. Cần mẫu tải lớn hơn để chốt budget hoặc capacity.
 
 P2 tiếp tục mở. Runtime mặc định vẫn dùng đường hiện hành. Recovery qua restart, deadline và các scope ngoài AUTH_SESSION cần được chốt trước quyết định merge.
+
+### Đồng bộ subscribe-first TEXT (SCRUM-43)
+
+Main tiếp tục history-only: không bật gửi TEXT. Subscribe/snapshot/catch-up chỉ được admit khi đủ budget `handlers.history` và `handlers.subscription`, `TEXT_SYNC_LIMITS_JSON`, index sync và **chính** `textService.syncRevocation` đã bind cùng cleanup LIVE thật vào coordinator chung. Composition hiện tại chưa bind cặp port này, nên chỉ điền env vẫn trả `DEPENDENCY_UNAVAILABLE` khi subscribe; không thay bằng adapter no-op. M1/M4 review composition trước khi bật trên môi trường dùng chung.
+
+`TEXT_SYNC_LIMITS_JSON` là server-only, không có mặc định bật. Hình dạng dùng trong test riêng (không phải giá trị rollout/capacity đã duyệt):
+
+```json
+{ "subscriptions": 16, "perUser": 4, "leaseMs": 60000, "revocationRecords": 16 }
+```
+
+`subscriptions`/`perUser` giới hạn resource đang giữ, `leaseMs` giới hạn thời gian token (còn bị chặn bởi hạn auth), `revocationRecords` giới hạn ledger fence chưa được phép xóa tự động. Mỗi lease giữ reservation 8192 byte, được cộng vào admission byte chung và lớp subscription; đây là accounting bảo thủ, không thay phép đo RSS. Pending delivery tối đa một event/lease; event tiếp khi lượt trước chưa drain làm invalidation `RESYNC_REQUIRED`. Fanout kiểm ACL lần lượt để không tự làm đầy pool chỉ vì audience đông; không tích hàng private event vô hạn trong Socket.IO. Subscribe chỉ giữ tối đa một ACK đang chờ mỗi socket, dùng transport drain công khai và execution budget để giới hạn chờ.
+
+Index bổ sung ở `textSyncIndexes` trong [manifest](../../apps/server/src/messaging/text-message.ts): `ix_message_scope_commit` với key `{conversationId:1, rootMessageId:1, commitSeq:1}`. Runtime chỉ preflight, không tự tạo/migrate. Áp dụng trên DB riêng theo [quy trình index](mongodb-transactions.md#kiểm-db-và-indexmigration-trên-môi-trường-riêng), review trước staging. Index sync thiếu chỉ chặn sync; preflight và history cũ không phụ thuộc index mới. Restart registry làm checkpoint/token cũ hết hiệu lực; client tạo snapshot mới sau CONFLICT, không giải mã token, không lưu cache private vào localStorage.
+
+Kiểm native trên replica test riêng, ví dụ đặt `COLEARNIA_DB_TEST_PORT=27143`, rồi chạy:
+
+```powershell
+pnpm exec vitest run apps/server/src/messaging/text-sync.test.ts apps/web/src/features/text/text-sync.test.ts
+pnpm exec vitest run --config vitest.database.config.ts apps/server/test/text-sync.integration.ts test/text-sync.integration.mjs --disableConsoleIntercept
+```
+
+Lệnh tích hợp tự tạo và dọn DB tên ngẫu nhiên `colearnia_test_scrum43_*`, không chạy trên DB ứng dụng/staging. Test ghép cấp repo nối controller Web với HTTP/Socket.IO và ACL/Mongo thật; writer test dùng repository/gate thật, send runtime vẫn tắt. Adapter LIVE trong fixture là giả lập và không chứng minh LIVE production. Xem [bằng chứng và giới hạn](../test-evidence/2026-11-18-scrum-43-text-sync.md).
