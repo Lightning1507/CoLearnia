@@ -169,3 +169,9 @@
     margin: 0 12px 12px;
   }
 }
+
+.text-draft-notice {
+  font-size: 13px;
+  color: var(--workspace-muted);
+  margin: 8px 0;
+}

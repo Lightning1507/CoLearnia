@@ -74,3 +74,16 @@ Run the web development server, open /workspace and select the TEXT channel. The
 Retry resubmits the same clientMessageId, text and root intent. The action to compose a new message copies text into the draft and retains the failed row; submitting that draft creates a new clientMessageId. Enter inserts a newline; Ctrl/Cmd+Enter sends. The shared contract validates nonblank text and the 4000-code-point limit, preserving surrounding whitespace.
 
 Browser verification covered loading, empty and failed history with retry, sending, lost ACK with retry, and a separate edited draft. The fixture test verifies unchanged retry identity, conflict on a different payload, one merged committed message, empty/error history and cancellation. A channel/revision change remounts the panel and aborts its outstanding requests. Real REST/socket integration and server ACL verification are the consumer work in SCRUM-47.
+
+#### PR #125 regression verification (2026-11-18)
+
+Populated history reads both seed messages and messages committed in the same fixture instance. Deliberate empty/error modes remain available; a full page reload still resets the in-memory fixture. Copying a failed message into a nonempty composer preserves the draft and shows a status notice. Clear or send that draft before copying. Copying into an empty composer keeps the failed row; only submitting the new draft allocates a new ID.
+
+Verified in local Chrome headless against `pnpm --filter @colearnia/web dev --port 5186`, at `/workspace` with the TEXT channel selected:
+
+1. Successful send → history error → populated history: the saved message appears exactly once.
+2. Lost ACK → type another draft → compose from the failed row: draft unchanged, notice visible, original failed row and retry action retained.
+3. Clear composer → compose from the failed row → edit and send → retry the original: both different texts remain, with one committed row each. Reopen history: two seed messages plus three unique committed messages from the scenario.
+4. A separate lost-ACK send is visible exactly once after reopening populated history, without retrying. No browser `pageerror` occurred.
+
+`pnpm exec vitest run apps/web/src/features/text/text-intent.test.ts` passes 4/4 cases, including populated history before/after lost-ACK retry, unchanged retry ID/payload, conflict on changed payload, and successful-send history after an intentional load error. These checks cover the local fixture only; REST/socket delivery and server ACL remain SCRUM-47.

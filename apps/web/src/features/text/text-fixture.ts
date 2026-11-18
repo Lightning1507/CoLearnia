@@ -70,7 +70,7 @@ export function createTextFixture(channelId: string, senderId: string) {
             data: {
               mode: 'history',
               scope,
-              items: view === 'empty' ? [] : initial,
+              items: view === 'empty' ? [] : [...initial, ...saved.values()],
               nextCursor: null,
             },
             requestId: crypto.randomUUID(),

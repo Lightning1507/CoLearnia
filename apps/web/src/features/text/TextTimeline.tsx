@@ -19,6 +19,7 @@ export function TextTimeline({
   const [reload, setReload] = useState(0);
   const [draft, setDraft] = useState('');
   const [validation, setValidation] = useState('');
+  const [draftNotice, setDraftNotice] = useState('');
   const input = useRef<HTMLTextAreaElement>(null);
   const lifetime = useRef<AbortController | null>(null);
   const sending = useRef(new Set<string>());
@@ -89,6 +90,7 @@ export function TextTimeline({
     const intent = newTextIntent(draft);
     setOutbox((rows) => [...rows, intent]);
     setDraft('');
+    setDraftNotice('');
     setValidation('');
     void send(intent);
   }
@@ -161,6 +163,14 @@ export function TextTimeline({
                           <button onClick={() => void send(intent)}>Thử gửi lại</button>
                           <button
                             onClick={() => {
+                              if (draft.length > 0) {
+                                setDraftNotice(
+                                  'Bạn đang có bản nháp. Hãy gửi hoặc xóa nháp trước khi soạn từ tin lỗi.',
+                                );
+                                input.current?.focus();
+                                return;
+                              }
+                              setDraftNotice('');
                               setDraft(intent.payload.text);
                               setValidation('');
                               input.current?.focus();
@@ -197,6 +207,7 @@ export function TextTimeline({
           placeholder="Viết tin nhắn cho nhóm…"
           onChange={(event) => {
             setDraft(event.target.value);
+            setDraftNotice('');
             setValidation('');
           }}
           onKeyDown={(event) => {
@@ -210,6 +221,11 @@ export function TextTimeline({
             }
           }}
         />
+        {draftNotice && (
+          <p className="text-draft-notice" role="status">
+            {draftNotice}
+          </p>
+        )}
         {validation && (
           <p id="text-validation" role="alert">
             {validation}
