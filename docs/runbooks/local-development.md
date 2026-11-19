@@ -67,6 +67,46 @@ Xem [checklist cấu hình staging SCRUM-54](staging-configuration.md) để đ�
 
 Theo [capacity](../capacity.md), local start/health hoặc media smoke không chứng minh 25/50 người. Các profile cần DB test/dữ liệu cũ, config pool/queue/quota hữu hạn và media thật trên hạ tầng ghi rõ; không đo 50 tab trên một laptop rồi suy capacity server. Một VPS/DB node là phương án thử, chưa là HA. Đợt đồng bộ tài liệu không start/stop container hoặc chạy migration.
 
+### Private R2 (SCRUM-52)
+
+Use a team-provided private test bucket with both the R2.dev URL and public custom domains disabled. Issue an Object Read & Write token limited to that test bucket. Configure R2_ACCOUNT_ID, R2_BUCKET, R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY from the server-only secret store or a local ignored environment file. The adapter targets the standard R2 S3 endpoint.
+
+From the repository root, run:
+
+```powershell
+pnpm --filter @colearnia/server exec tsx --env-file-if-exists=../../.env scripts/r2-smoke.ts
+```
+
+The smoke writes a randomly named disposable object, compares downloaded bytes, checks that anonymous HEAD is denied while the object exists, deletes it and verifies that a signed read then reports not found. Check bucket-level public access in the Cloudflare dashboard as well. An anonymous request to the S3 endpoint cannot verify that separate public domains are disabled.
+
+Use one adapter instance for file and video consumers. Both use the same bucket and credentials, with server-generated object keys. Single PUT requires a known byte length. Reads stream into a caller-provided writable, and the adapter owns both supplied streams until the operation settles. R2_TIMEOUT_MS defaults to 15000 and bounds the complete operation, including streaming the response. Callers can supply an AbortSignal. Failed or aborted writes/deletes can have an unknown remote result, so follow-up consumers must reconcile the same key before publishing or releasing quota. Multipart lifecycle, video range reads and metadata/ACL integration belong to the consumer tasks.
+
+Upload nguồn Readable dùng pipeline qua PassThrough với backpressure, rồi truyền stream đó vào SDK. Nếu nguồn hoặc request lỗi, adapter hủy signal dùng chung cho upload và chờ cả pipeline lẫn request kết thúc. Lỗi I/O nguồn trả UNAVAILABLE; caller hủy và deadline vẫn được phân loại ABORTED/TIMEOUT. [Node pipeline](https://nodejs.org/api/stream.html#streampipelinesource-transforms-destination-callback)
+
+Fixture local gồm bảy ca. Ca nguồn encoder phát một phần rồi lỗi xác nhận put reject, nguồn bị destroy và HTTP request đóng với complete=false, socketDestroyed=true, bytes>0. Cùng tiến trình tiếp tục upload/xóa thành công. Ca caller hủy upload xác nhận ABORTED và đóng request; các ca timeout upload/download vẫn kiểm TIMEOUT.
+
+Nghiệm thu R2 thật còn chờ người có quyền bucket. Lần chạy smoke sau sửa dừng trước I/O vì thiếu R2_ACCOUNT_ID, R2_BUCKET, R2_ACCESS_KEY_ID và R2_SECRET_ACCESS_KEY. Người có quyền cần chạy lệnh trên với cấu hình server-only, ghi lại kết quả đã lọc của upload/read/delete/not-found, rồi xác nhận trong dashboard rằng r2.dev và public custom domains đều tắt. Chưa có bằng chứng nghiệm thu dịch vụ thật trong lượt này.
+
+#### Bàn giao nghiệm thu dịch vụ thật sau review PR #123
+
+M1 đã xác nhận bản sửa lỗi nguồn upload ở `b2a9532` và adapter tại `4e2a041` phù hợp với phạm vi fixture. Chưa có bằng chứng nghiệm thu R2 thật; SCRUM-52 còn mở, không coi adapter/CI đạt là đủ đóng task. Nếu muốn merge riêng adapter trước, cần M1 chốt lại phạm vi bàn giao trên PR.
+
+Kiểm tra ngày 18/11/2026 tại `4e2a041`: chạy lại lệnh smoke ở trên, exit 1 trước I/O vì thiếu `R2_ACCOUNT_ID`, `R2_BUCKET`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`. Không có object thử được tạo trong lượt này. Chưa tìm thấy file cấu hình tại các checkout local/WSL đã kiểm; SSH tới staging timeout nên chưa kiểm được server. Các kết quả này không xác nhận bucket chưa tồn tại trong tài khoản Cloudflare.
+
+Người có quyền bucket thử nghiệm chạy smoke tại SHA đề nghị nghiệm thu và ghi kết quả đã lọc, không đưa credential vào log/PR. M2 tổng hợp evidence, M1 review. Giữ đủ các bước:
+
+1. Ghi SHA (`git rev-parse HEAD`), thời điểm, lệnh smoke và exit code.
+2. Upload object thử với key ngẫu nhiên; đọc có chữ ký và so sánh đúng byte.
+3. HEAD ẩn danh bị từ chối (401/403) khi object còn tồn tại.
+4. Delete rồi đọc có chữ ký trả `NOT_FOUND`; xác nhận object thử đã dọn. Nếu cleanup lỗi, dùng đúng key script báo để đối soát, không khẳng định đã xóa.
+5. Xác nhận riêng trên dashboard cùng bucket rằng r2.dev và public custom domains đều tắt. PASS tại endpoint S3 không thay bước này.
+
+Chỉ báo smoke đạt sau đầy đủ chuỗi I/O. Thiếu cấu hình hoặc chưa xác nhận dashboard thì giữ bước nghiệm thu mở. Multipart/Range và metadata/ACL consumer vẫn ngoài phạm vi PR này.
+
+#### Phạm vi ngoại lệ audit ở PR #123
+
+[Issue #127](https://github.com/Lightning1507/CoLearnia/issues/127) ban đầu ghi nhận ngoại lệ tạm thời cho [PR #117](https://github.com/Lightning1507/CoLearnia/pull/117). Người dùng cũng đã yêu cầu áp dụng cùng ngoại lệ cho [PR #123](https://github.com/Lightning1507/CoLearnia/pull/123); commit `4e2a041` chỉ thêm cùng `GHSA-fc5q-39xc-vjpf` vào `auditConfig.ignoreGhsas` của workspace, không thêm advisory khác. Mốc rà soát vẫn là 25/11/2026 và điều kiện gỡ vẫn theo issue #127. CI/audit đạt với ngoại lệ không có nghĩa advisory đã được vá. Nghiệm thu R2 và việc gỡ ngoại lệ là hai việc độc lập.
+
 ### Timeline/composer TEXT fixture (SCRUM-46)
 
 Run the web development server, open /workspace and select the TEXT channel. The labelled fixture controls expose populated, empty and failing history, plus successful send, first-send failure and lost acknowledgement. Reloading the page resets the fixture.
@@ -322,3 +362,30 @@ pnpm exec vitest run --pool=threads --config vitest.database.config.ts apps/serv
 Cùng cấu hình trial ở trên, mỗi đợt tải ghép chạy hai lượt gửi TEXT song song với đọc phiên, mở Workspace và tạo Workspace/kênh TEXT trên cùng pool. Một lượt đo cục bộ với pool 2 cho kết quả cùng phiên 224/175 ms và khác phiên 174/151 ms (tắt/bật fence). Hai đợt bật fence có đúng hai update AuthSession mỗi đợt. Cả bốn đợt có tám tin và sequence cuối 8. Mẫu này kiểm các đường chạy đồng thời và đếm update. Cần mẫu tải lớn hơn để chốt budget hoặc capacity.
 
 P2 tiếp tục mở. Runtime mặc định vẫn dùng đường hiện hành. Recovery qua restart, deadline và các scope ngoài AUTH_SESSION cần được chốt trước quyết định merge.
+
+### Đồng bộ subscribe-first TEXT (SCRUM-43)
+
+Main tiếp tục history-only: không bật gửi TEXT. Subscribe/snapshot/catch-up chỉ được admit khi đủ budget `handlers.history` và `handlers.subscription`, `TEXT_SYNC_LIMITS_JSON`, index sync và **chính** `textService.syncRevocation` đã bind cùng cleanup LIVE thật vào coordinator chung. Composition hiện tại chưa bind cặp port này, nên chỉ điền env vẫn trả `DEPENDENCY_UNAVAILABLE` khi subscribe; không thay bằng adapter no-op. M1/M4 review composition trước khi bật trên môi trường dùng chung.
+
+`TEXT_SYNC_LIMITS_JSON` là server-only, không có mặc định bật. Hình dạng dùng trong test riêng (không phải giá trị rollout/capacity đã duyệt):
+
+```json
+{ "subscriptions": 16, "perUser": 4, "leaseMs": 60000, "revocationRecords": 16 }
+```
+
+`subscriptions`/`perUser` giới hạn resource đang giữ, `leaseMs` giới hạn thời gian token (còn bị chặn bởi hạn auth), `revocationRecords` giới hạn ledger fence chưa được phép xóa tự động. Mỗi lease giữ reservation 8192 byte, được cộng vào admission byte chung và lớp subscription; đây là accounting bảo thủ, không thay phép đo RSS. Pending delivery tối đa một event/lease; event tiếp khi lượt trước chưa drain làm invalidation `RESYNC_REQUIRED`. Fanout kiểm ACL lần lượt để không tự làm đầy pool chỉ vì audience đông; không tích hàng private event vô hạn trong Socket.IO. Subscribe chỉ giữ tối đa một ACK đang chờ mỗi socket, dùng transport drain công khai và execution budget để giới hạn chờ.
+
+Index bổ sung ở `textSyncIndexes` trong [manifest](../../apps/server/src/messaging/text-message.ts): `ix_message_scope_commit` với key `{conversationId:1, rootMessageId:1, commitSeq:1}`. Runtime chỉ preflight, không tự tạo/migrate. Áp dụng trên DB riêng theo [quy trình index](mongodb-transactions.md#kiểm-db-và-indexmigration-trên-môi-trường-riêng), review trước staging. Index sync thiếu chỉ chặn sync; preflight và history cũ không phụ thuộc index mới. Restart registry làm checkpoint/token cũ hết hiệu lực; client tạo snapshot mới sau CONFLICT, không giải mã token, không lưu cache private vào localStorage.
+
+Kiểm native trên replica test riêng, ví dụ đặt `COLEARNIA_DB_TEST_PORT=27143`, rồi chạy:
+
+```powershell
+pnpm exec vitest run apps/server/src/messaging/text-sync.test.ts apps/web/src/features/text/text-sync.test.ts
+pnpm exec vitest run --config vitest.database.config.ts apps/server/test/text-sync.integration.ts test/text-sync.integration.mjs --disableConsoleIntercept
+```
+
+Lệnh tích hợp tự tạo và dọn DB tên ngẫu nhiên `colearnia_test_scrum43_*`, không chạy trên DB ứng dụng/staging. Test ghép cấp repo nối controller Web với HTTP/Socket.IO và ACL/Mongo thật; writer test dùng repository/gate thật, send runtime vẫn tắt. Adapter LIVE trong fixture là giả lập và không chứng minh LIVE production. Xem [bằng chứng và giới hạn](../test-evidence/2026-11-18-scrum-43-text-sync.md).
+
+#### Projection capacity sau review PR #129
+
+Controller dùng limit theo trần messages và thu nhỏ snapshot khi vướng byte budget, giữ token/H cố định cùng cursor của trang vừa budget. Nếu không chứa nổi một tin tối thiểu, trạng thái là `blocked / PROJECTION_CAPACITY`: lease đã hủy, checkpoint/cache đã xóa, không tự retry. Tạo controller mới với giới hạn đã review; không tăng trần mặc định hoặc coi blocked là live. Cấu hình bytes dưới kích thước JSON `[]` bị từ chối ngay. [Bằng chứng P2](../test-evidence/2026-11-18-scrum-43-text-sync.md#bổ-sung-sau-review-p2-projection-của-m1) phân biệt kết quả mới với ma trận tại c808723.

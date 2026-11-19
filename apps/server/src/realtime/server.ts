@@ -1,4 +1,8 @@
 import type { AuthenticatedContext } from '@colearnia/contracts';
+import {
+  textMessageCreatedEventSchema,
+  textConversationInvalidatedEventSchema,
+} from '@colearnia/contracts';
 import type { Server as HttpServer } from 'node:http';
 import { Server } from 'socket.io';
 import { createCsrf, csrfCookie, readCookie } from '../auth/csrf.js';
@@ -8,7 +12,11 @@ import { authCookie } from '../auth/session-credentials.js';
 import type { AppConfig } from '../config/env.js';
 import { logger } from '../lib/logger.js';
 
-import type { createTextSocketSend, TextSocketEvents } from '../messaging/text-transport.js';
+import type {
+  createTextSocketSend,
+  createTextSocketSync,
+  TextSocketEvents,
+} from '../messaging/text-transport.js';
 import type { createSessionConnections } from './session-connections.js';
 
 type SocketData = { auth: AuthenticatedContext };
@@ -25,8 +33,15 @@ export function createRealtime(
   connections?: ReturnType<typeof createSessionConnections>,
   checkCurrent?: (auth: AuthenticatedContext) => boolean,
   textSend?: ReturnType<typeof createTextSocketSend>,
+  textSync?: ReturnType<typeof createTextSocketSync>,
 ) {
-  const io = new Server<TextSocketEvents, never, never, SocketData>(httpServer, {
+  type Outgoing = {
+    'message.created': (payload: ReturnType<typeof textMessageCreatedEventSchema.parse>) => void;
+    'conversation.invalidated': (
+      payload: ReturnType<typeof textConversationInvalidatedEventSchema.parse>,
+    ) => void;
+  };
+  const io = new Server<TextSocketEvents, Outgoing, never, SocketData>(httpServer, {
     transports: ['websocket'],
     cors: { origin: config.APP_ORIGIN, credentials: true },
     allowRequest: (request, callback) =>
@@ -66,7 +81,7 @@ export function createRealtime(
     next();
   });
 
-  if (connections || textSend) {
+  if (connections || textSend || textSync) {
     io.on('connection', (socket) => {
       const auth = socket.data.auth;
       if (Date.parse(auth.expiresAt) <= Date.now() || checkCurrent?.(auth) === false) {
@@ -76,6 +91,71 @@ export function createRealtime(
       const untrack = connections?.track(auth, () => socket.disconnect(true));
       if (untrack) socket.once('disconnect', untrack);
       if (textSend) socket.on('message.send', textSend(auth));
+      if (textSync) {
+        const sync = textSync(auth, socket.id, (event, payload) => {
+          // Never accumulate private events in Socket.IO's disconnected/slow-client buffer.
+          if (!socket.connected || !socket.conn.transport.writable) {
+            socket.disconnect(true);
+            return false;
+          }
+          if (event === 'message.created')
+            socket.volatile.emit(event, textMessageCreatedEventSchema.parse(payload));
+          else socket.volatile.emit(event, textConversationInvalidatedEventSchema.parse(payload));
+          return true;
+        });
+        let awaitingAck = false;
+        let cancelDrain: (() => void) | undefined;
+        socket.once('disconnect', () => {
+          cancelDrain?.();
+          sync.close();
+        });
+        socket.on('conversation.subscribe', (input, reply) => {
+          if (typeof reply !== 'function') return;
+          // At most one pending subscribe ACK per socket; no private engine buffers.
+          if (awaitingAck) {
+            socket.disconnect(true);
+            return;
+          }
+          awaitingAck = true;
+          void sync
+            .subscribe(input, (result) => {
+              if (!socket.connected) return;
+              if (socket.conn.transport.writable) {
+                awaitingAck = false;
+                reply(result);
+                return;
+              }
+              const waitMs = config.MESSAGING_BUDGET_JSON?.handlers.subscription?.executionMs;
+              if (!waitMs) {
+                socket.disconnect(true);
+                return;
+              }
+              const finish = () => {
+                cancelDrain?.();
+                awaitingAck = false;
+                if (socket.connected) reply(result);
+              };
+              const deadline = setTimeout(
+                () => socket.disconnect(true),
+                Math.min(waitMs, 2_147_483_647),
+              ).unref();
+              cancelDrain = () => {
+                clearTimeout(deadline);
+                socket.conn.transport.off('drain', finish);
+                cancelDrain = undefined;
+              };
+              socket.conn.transport.once('drain', finish);
+            })
+            .catch(() => socket.disconnect(true));
+        });
+        socket.on('conversation.unsubscribe', (input, reply) => {
+          if (!socket.conn.transport.writable) {
+            socket.disconnect(true);
+            return;
+          }
+          sync.unsubscribe(input, reply);
+        });
+      }
     });
   }
   return io;

@@ -13,8 +13,12 @@ import { logger } from './lib/logger.js';
 import { operationCoordinator } from './lib/shared-coordination.js';
 import { accessRevocations } from './lib/shared-access-revocation.js';
 import { createTextService } from './messaging/text-service.js';
-import { createTextRouter, createTextSocketSend } from './messaging/text-transport.js';
-import { textMessageIndexes } from './messaging/text-message.js';
+import {
+  createTextRouter,
+  createTextSocketSend,
+  createTextSocketSync,
+} from './messaging/text-transport.js';
+import { textMessageIndexes, textSyncIndexes } from './messaging/text-message.js';
 import { createChannelConversationFactory } from './messaging/conversation.js';
 import {
   createWorkspaceCreator,
@@ -45,6 +49,7 @@ let stopping = false;
 let authIndexesReady = false;
 let workspaceIndexesReady = false;
 let textIndexesReady = false;
+let textSyncIndexesReady = false;
 let acceptingLiveRuntime = false;
 const sessionBootstrap = createSessionBootstrap(database, {
   isOffline: () => !acceptingLiveRuntime && !stopping,
@@ -102,9 +107,14 @@ const workspaceAccess = createWorkspaceAccessService(
 const messagingBudget = config.MESSAGING_BUDGET_JSON;
 const historyBudget = messagingBudget && {
   ...messagingBudget,
-  handlers: messagingBudget.handlers.history ? { history: messagingBudget.handlers.history } : {},
+  handlers: {
+    ...(messagingBudget.handlers.history && { history: messagingBudget.handlers.history }),
+    ...(messagingBudget.handlers.subscription && {
+      subscription: messagingBudget.handlers.subscription,
+    }),
+  },
 };
-const textService = config.SESSION_SECRET
+const textService: ReturnType<typeof createTextService> | undefined = config.SESSION_SECRET
   ? createTextService(
       database,
       operationCoordinator,
@@ -112,6 +122,15 @@ const textService = config.SESSION_SECRET
       () => canUseAuthIndexes() && workspaceIndexesReady && textIndexesReady,
       config.SESSION_SECRET,
       historyBudget,
+      undefined,
+      false,
+      config.TEXT_SYNC_LIMITS_JSON,
+      () =>
+        Boolean(
+          textSyncIndexesReady &&
+          textService?.syncRevocation &&
+          accessRevocations.isMessagingCleanupBound(textService.syncRevocation),
+        ),
     )
   : undefined;
 const textRouter = httpAuth && textService ? createTextRouter(httpAuth, textService) : undefined;
@@ -145,6 +164,7 @@ const io = createRealtime(
   connections,
   (auth) => !accessRevocations.isSessionDenied(auth),
   textService && createTextSocketSend(textService),
+  textService && createTextSocketSync(textService),
 );
 
 async function start() {
@@ -187,6 +207,11 @@ async function start() {
       ]);
       textIndexesReady = ready;
       if (!ready) logger.warn({ issues }, 'TEXT messaging requires its indexes before startup.');
+      if (config.TEXT_SYNC_LIMITS_JSON) {
+        textSyncIndexesReady = (await preflightIndexes(database.connection, textSyncIndexes)).ready;
+        if (!textSyncIndexesReady)
+          logger.warn('TEXT subscriptions require the commit-order index.');
+      }
     } catch {
       logger.warn('Could not check TEXT indexes; messaging remains unavailable.');
     }
@@ -235,6 +260,7 @@ async function start() {
 async function shutdown() {
   if (stopping) return;
   stopping = true;
+  textService?.stop();
   const deadline = setTimeout(() => process.exit(1), 10_000).unref();
   connections.stop();
   media?.close();

@@ -66,3 +66,21 @@ Ví dụ ACK từ chối. Fixture kiểm hình dạng lỗi, dữ liệu cũ và
 ```
 
 [Bảng lỗi](error-codes.md) · [Fixture kiểm schema](../../packages/contracts/src/text-messaging.test.ts)
+
+## Triển khai SCRUM-43 và điều kiện bật
+
+Backend đã có adapter `conversation.subscribe/unsubscribe`, snapshot/catch-up cho **tin gốc kênh TEXT** và fanout có kiểm quyền. [Service](../../apps/server/src/messaging/text-service.ts) dùng cùng Database/pool, admission và User/Workspace coordinator với history. H được đọc majority và registry được cài trong cùng đoạn giữ gate; writer dùng chung gate không thể commit vào khoảng giữa hai bước. Catch-up đọc majority theo `commitSeq`, giữ nguyên L/H qua mọi trang. Snapshot giữ cả dữ liệu baseline chưa có sequence; cursor đọc lịch sử cũ từ snapshot tiếp tục giữ giới hạn H.
+
+Checkpoint ký HMAC với miền riêng, gồm incarnation registry, kênh, hội thoại và sequence; không dùng timestamp hoặc ID làm checkpoint. Incarnation này không phải epoch của cuộc gọi LIVE. Token ngẫu nhiên tra trong registry, ràng phiên auth, lease/connection, scope và snapshot membership/incarnation/revision/kênh. Mỗi trang vẫn kiểm ACL thật dưới gate. Lease đóng, hết hạn, registry restart hoặc thay revision thì token cũ không cho hoàn tất lượt. Cursor catch-up ký và ràng đúng subscription; token/cursor không cấp quyền đọc. Format opaque là chi tiết implementation để M1 review, không phải API cho client giải mã.
+
+[Controller client](../../apps/web/src/features/text/text-sync.ts) gắn listener trước subscribe, giữ buffer có giới hạn event/byte, tải hết các trang catch-up, gộp theo ID và chỉ công bố checkpoint H sau khi toàn lượt thành công. Snapshot đầu chỉ mở cửa sổ tin mới nhất; `olderCursor` dùng cho cuộn đọc lịch sử, không buộc tải toàn bộ lịch sử cũ để mở timeline. Event sau H không tiến checkpoint. Đối soát định kỳ chạy lại subscribe/catch-up, kể cả khi socket còn kết nối và chỉ một event bị mất; không suy mất tin từ khoảng trống sequence của timeline/thread. ACCESS_REVOKED và lỗi auth/quyền xóa cache/checkpoint; timeout, overflow, disconnect, token hết hiệu lực hoặc trang sai scope không công bố trạng thái live của lượt đó. Nếu catch-up vượt trần projection/page, lượt đó báo resync và bỏ checkpoint để thử snapshot hữu hạn; không báo hoàn tất khoảng cũ. Consumer phải `stop()` khi đổi danh tính/phạm vi/logout; cache chỉ nằm trong bộ nhớ.
+
+Registry cung cấp `MessagingRevocationPort` với fence đồng bộ và watermark generation, cleanup idempotent chỉ thu resource cũ. **Main chỉ cho subscribe khi chính port này đã được bind cùng adapter LIVE thật vào coordinator thu quyền**, có index sync, cấu hình resource và budget history/subscription. Không bind LIVE giả để mở tính năng. Composition LIVE hiện tại vẫn chờ các port thật theo SCRUM-88; do đó merge code này hoặc chỉ điền env không tự bật sync trên môi trường dùng chung. Phần thêm ở coordinator chỉ kiểm identity adapter đã bind; không đổi FIFO, deny, thứ tự commit/cleanup hay pool.
+
+REST POST và `message.send` tiếp tục bị main vô hiệu hóa theo rollout history-only của PR #117. Hook fanout chỉ được gọi sau kết quả commit xác định; commit chưa rõ hoặc event bị mất cần lượt đối soát, không tự suy rollback hoặc nâng checkpoint. Bản sửa này không đóng P2/recovery của đường gửi.
+
+Giới hạn: chưa nối controller vào UI thật của SCRUM-47; route `/workspace` vẫn là fixture SCRUM-46. DM, thread/reply-count runtime và chat cuộc họp chưa được bật bởi triển khai này. Không thay semantics/schema đã mô tả cho các consumer đó. Bằng chứng và phần bàn giao nằm ở [SCRUM-43](../test-evidence/2026-11-18-scrum-43-text-sync.md); M1/M4 cần review composition/rollout trước khi bật thật, không coi các fixture LIVE trong test là nghiệm thu LIVE production.
+
+### Projection nhỏ và ngân sách byte của controller
+
+Kích thước trang không vượt `limits.messages` hoặc giới hạn contract. Snapshot chưa vừa budget được đọc lại với limit nhỏ hơn trong cùng lease/H; không lấy cursor từ trang đã bị bỏ. Nếu một tin tối thiểu vẫn vượt trần, controller trả `blocked` cùng `PROJECTION_CAPACITY`, hủy lease và dừng tự resync; cần cấu hình/controller mới. Byte budget không mã hóa được `[]` bị từ chối trước I/O. Đây là trạng thái chưa đồng bộ, không có checkpoint hoàn tất. Consumer SCRUM-47 cần hiển thị lỗi cấu hình/tài nguyên này; không tự tăng trần để giấu lỗi. Xem regression P2 trong evidence SCRUM-43.
