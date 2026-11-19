@@ -112,11 +112,21 @@ function CameraTile({ camera, synchronized }: { camera: CameraView; synchronized
   );
 }
 
-export function CameraTiles({ snapshot }: { snapshot: CameraSnapshot }) {
+export function CameraTiles({
+  snapshot,
+  layout = 'grid',
+}: {
+  snapshot: CameraSnapshot;
+  layout?: 'grid' | 'rail';
+}) {
   return (
     <section
       aria-label="Camera cuộc gọi"
-      className="grid w-full grid-cols-1 gap-3 p-3 @min-[560px]/room-layout:grid-cols-2"
+      className={
+        layout === 'rail'
+          ? 'live-camera-rail'
+          : 'grid w-full grid-cols-1 gap-3 p-3 @min-[560px]/room-layout:grid-cols-2'
+      }
     >
       {snapshot.cameras.length === 0 ? (
         <p>Chưa có camera khả dụng.</p>

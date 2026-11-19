@@ -224,7 +224,7 @@ async function verifyLifecycle(container: HTMLElement) {
   const room = () => container.querySelector('article');
   const status = () => room()?.querySelector('[role="status"]')?.textContent;
   const video = () => room()?.querySelector('video');
-  const isDisplayed = (element: Element) => getComputedStyle(element).display !== 'none';
+  const isDisplayed = (element: Element) => element.getClientRects().length > 0;
   const verifyListeners = (expected: number) => {
     check(listeners === expected, `Số subscription đang hoạt động phải là ${expected}`);
   };
@@ -270,10 +270,11 @@ async function verifyLifecycle(container: HTMLElement) {
     const sidebar = container.querySelector('.workspace-sidebar');
     check(sidebar, 'Thiếu sidebar Workspace');
     const borderColor = getComputedStyle(sidebar).borderBottomColor;
-    verifyListeners(2);
+    // Badge + RoomShell's call, audio recovery and camera projections.
+    verifyListeners(4);
     check(
-      subscriptions - subscriptionsBeforeRoom === 2,
-      'StrictMode phải đăng ký lại subscription phòng đúng một lần',
+      subscriptions - subscriptionsBeforeRoom === 6,
+      'StrictMode phải đăng ký lại cả ba projection của phòng đúng một lần',
     );
 
     // Complete the call-owned async setup while RoomShell is unmounted.
@@ -350,7 +351,7 @@ async function verifyLifecycle(container: HTMLElement) {
     const verifyActive = () => {
       const currentVideo = video();
       check(
-        status() === 'Phiên gọi đang hoạt động' && listeners === 2,
+        status() === 'Phiên gọi đang hoạt động' && listeners === 4,
         'RoomShell phải nhận snapshot mới nhất',
       );
       check(currentVideo?.srcObject === stream && bindings.size === 1, 'Chỉ được gắn một video');
@@ -378,7 +379,7 @@ async function verifyLifecycle(container: HTMLElement) {
     const activeRoom = room();
     const activeStage = roomAVideo.parentElement;
     const activePanel = activeRoom?.querySelector('section[aria-labelledby]');
-    const stageLayout = activeStage?.parentElement;
+    const stageLayout = activeStage?.closest('.live-call-media')?.parentElement;
     const backButton = activePanel?.querySelector('button');
     const toolbar = activeRoom?.querySelector('footer');
     const workspace = activeRoom?.closest<HTMLElement>('.workspace-shell');
@@ -458,7 +459,7 @@ async function verifyLifecycle(container: HTMLElement) {
         boardPanel.textContent.includes('Nội dung bảng kiểm thử'),
       'Panel bên phải lấy nhãn và nội dung từ bên gọi',
     );
-    verifyListeners(2);
+    verifyListeners(4);
     verifyCallPreserved();
     await click(roomName);
     const routeVideo = verifyActive();
@@ -770,7 +771,10 @@ if (import.meta.env.DEV) {
   check(container && result, 'Thiếu khung hiển thị kiểm thử');
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   void verifyLifecycle(container)
-    .then(async (message) => `${message} · ${await verifyWorkspaceRoute()}`)
+    .then(async (message) => {
+      console.info(message);
+      return `${message} · ${await verifyWorkspaceRoute()}`;
+    })
     .then(
       (message) => {
         result.textContent = message;

@@ -42,7 +42,7 @@ function StageVideo({ stream }: { stream: MediaStream }) {
     <video
       ref={video}
       aria-label="Hình ảnh sân khấu"
-      className="block max-h-[55dvh] w-full object-contain"
+      className="block h-full min-h-0 w-full object-contain"
       autoPlay
       muted
       playsInline
@@ -68,7 +68,7 @@ export function RoomShell({
   const panelId = useId();
   const panelHeading = useRef<HTMLHeadingElement>(null);
   const roomElement = useRef<HTMLElement>(null);
-  const stageElement = useRef<HTMLElement>(null);
+  const stageElement = useRef<HTMLDivElement>(null);
   const backButton = useRef<HTMLButtonElement>(null);
   const toolbar = useRef<HTMLElement>(null);
   const audioButtonFocused = useRef(false);
@@ -136,6 +136,7 @@ export function RoomShell({
     roomCall?.status === 'active' && stageMedia?.call.identity === roomCall.identity
       ? stageMedia.stream
       : undefined;
+  const sharedStage = !error && roomCall?.status === 'active' && Boolean(stage || stream);
 
   return (
     <article
@@ -161,28 +162,29 @@ export function RoomShell({
               : 'grid grid-cols-1'
           }
         >
-          <section
-            className={`min-h-48 min-w-0 place-items-center rounded-xl bg-stone-50 text-center ${sidePanel ? 'hidden @min-[1280px]/room-layout:grid' : 'grid'}`}
-            aria-label="Sân khấu cuộc gọi"
+          <div
+            className={`live-call-media min-w-0 ${sidePanel ? 'hidden @min-[1280px]/room-layout:block' : ''}`}
             ref={stageElement}
             onBlur={restorePanelFocus}
           >
-            {error ? (
-              <p role="alert">{error}</p>
-            ) : (
-              (stage ??
-              (stream ? (
-                <StageVideo stream={stream} />
-              ) : roomCall?.status === 'active' ? (
-                <CameraTiles snapshot={cameras} />
-              ) : (
-                <p>Chưa có hình ảnh sân khấu.</p>
-              )))
-            )}
-            {!error && roomCall?.status === 'active' && (stage || stream) && (
-              <CameraTiles snapshot={cameras} />
-            )}
-          </section>
+            <div className={sharedStage ? 'live-call-share-layout' : undefined}>
+              <section className="live-call-stage" aria-label="Sân khấu cuộc gọi">
+                {error ? (
+                  <p role="alert">{error}</p>
+                ) : (
+                  (stage ??
+                  (stream ? (
+                    <StageVideo stream={stream} />
+                  ) : roomCall?.status === 'active' ? (
+                    <CameraTiles snapshot={cameras} />
+                  ) : (
+                    <p>Chưa có hình ảnh sân khấu.</p>
+                  )))
+                )}
+              </section>
+              {sharedStage && <CameraTiles snapshot={cameras} layout="rail" />}
+            </div>
+          </div>
           {sidePanel && (
             <section className="grid min-w-0 content-start gap-2" aria-labelledby={panelId}>
               <h3 className="text-base font-semibold" id={panelId} ref={panelHeading} tabIndex={-1}>

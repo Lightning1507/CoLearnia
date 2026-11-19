@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SCRUM-78 · Share stage và camera rail</title>
+    <style>
+      body {
+        display: flex;
+        min-height: 100dvh;
+        flex-direction: column;
+      }
+      #root {
+        display: flex;
+        flex: 1;
+      }
+      #root > .workspace-shell {
+        min-height: 0;
+        flex: 1;
+      }
+    </style>
+  </head>
+  <body>
+    <p class="px-5 py-2 text-xs">
+      SCRUM-78 · Kiểm bố cục bằng RoomShell/WorkspaceShell thật, snapshot mô phỏng và video canvas.
+      Không phải kiểm share qua SFU/TURN.
+    </p>
+    <output id="result" class="block px-5 pb-2 text-xs" role="status">Đang kiểm bố cục…</output>
+    <div id="root"></div>
+    <script type="module" src="./cameraShareLayoutFixture.tsx"></script>
+  </body>
+</html>

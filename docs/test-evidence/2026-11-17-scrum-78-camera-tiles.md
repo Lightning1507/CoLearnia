@@ -96,3 +96,30 @@ SCRUM-88 / M4-T11.1 cần ghép join có xác thực, SEND/RECV, projection/cont
 - Camera có 44 test; camera + snapshot + caller audio có 78/78 test đạt. Ca `receiveMainAudio` dùng runtime thật và signaling/Consumer giả lập kiểm event thêm C → ACK B → R1 vẫn pending B → R2 ready/paused; cả hai caller thành công, không gửi `media.consumer.close`, không đóng nhầm Consumer.
 - Browser tích hợp tại fixture cổng 5193 hiển thị PASS cho A ACK → thêm C → B ACK → R1 còn pending B → đọc lại → R2 ready nhưng B vẫn paused. Chỉ A hiện video sau đối soát, không đóng nhầm Consumer. Các ca ACK cũ không ghi đè pause, local enabled hai chiều, token Figma, pause/resume/ended và StrictMode/remount vẫn đạt. Snapshot/event mô phỏng; canvas/track clone thật, chưa là nghiệm thu SFU, camera vật lý hoặc TURN.
 - `pnpm.exe check` exit 0: harness 54 PASS/1 skip Windows, 139 nguồn/links, format/lint/typecheck/build contracts/web/server đạt, 1012/1012 test trên 71 file đạt. `pnpm.exe media:smoke` exit 0, native worker/Router Opus/VP8 đạt. Không thay dependency, config audit hoặc cổng CI trong lần sửa này.
+
+## Camera rail cạnh share stage — 19/11/2026
+
+- Review tại `8c20399` yêu cầu ghép layout ngay trong SCRUM-78. Nguồn đối chiếu: [Call shell và panel](../design-system/frontend/layouts.md#call-shell-và-panel), `.media-layout/.camera-rail` trong `docs/figma-ui/src/index.css`. Không chuyển việc bố trí stage/rail sang task sau.
+- Trước sửa, fixture mới tái hiện `FAIL: Có share nhưng thiếu camera rail`. Khi có `stage` hoặc `stageMedia` hợp lệ trong call đang active, RoomShell nay đặt stage và camera thành hai vùng cạnh nhau; rail rộng 180 px, stage nhận phần rộng còn lại. Rail cuộn riêng khi thiếu chiều cao, giữ tỷ lệ 16:9, không bỏ camera để vừa khung. Không share vẫn dùng camera grid; error/call identity guards không đổi.
+- Container media dưới 560 px xếp stage rồi camera phía dưới để tránh ép stage quá hẹp. Đây là reflow bên trong vùng media; ngưỡng shell/panel 1280 px hiện hành không đổi. Header/toolbar và panel chat vẫn có hàng/vùng riêng. Không đổi policy, camera demand, controller hoặc protocol share.
+- Fixture `/test/browser/camera-share-layout/` dùng **WorkspaceShell + RoomShell thật**, canvas video/track clone thật và snapshot server mô phỏng với 5 camera (đang nhận, paused, switching, pending). Không dùng iframe/laptop frame cho hai ảnh desktop. Viewport và shell đều đúng 1280/1440 CSS px; các kích thước stage/rail dưới đây là khung ngoài, video dùng object-contain để giữ letterbox.
+
+| Viewport | Panel   | Stage   | Rail    | Kết quả                                                 |
+| -------- | ------- | ------- | ------- | ------------------------------------------------------- |
+| 1280×800 | Đóng    | 774×460 | 180×460 | PASS; rail cuộn tới camera cuối, không cuộn ngang trang |
+| 1280×800 | Chat mở | 438×460 | 180×460 | PASS; panel 320 px, toolbar còn tới được                |
+| 1440×900 | Đóng    | 934×520 | 180×520 | PASS; stage chiếm phần lớn vùng media                   |
+| 1440×900 | Chat mở | 598×520 | 180×520 | PASS; stage/rail/panel cạnh nhau                        |
+
+![Share stage và camera rail ở 1280×800](images/scrum-78/share-1280x800.jpg)
+
+![Share stage và camera rail ở 1440×900](images/scrum-78/share-1440x900.jpg)
+
+![Mở chat khi share ở 1280×800](images/scrum-78/share-panel-1280x800.jpg)
+
+![Mở chat khi share ở 1440×900](images/scrum-78/share-panel-1440x900.jpg)
+
+- Browser PASS thêm: `stageMedia` video → `stage` tùy chỉnh → không share/grid → video; 1279/1280, 767/768 và 320 CSS px; mở panel thay stage ở chế độ hẹp, Về sân khấu trả focus về trigger. Bản nháp giữ qua resize 1279→1440. Một call initialization, không Consumer bị đóng, borrowed tracks còn live qua các lần đổi layout. Các nhãn “Camera tạm dừng”, “Đang chuyển camera”, “Đang chờ hình ảnh” và regression camera/ready ACK cũ vẫn PASS.
+- Cập nhật fixture lifecycle theo ba subscription call/audio/camera hiện có (cộng một badge); vẫn kiểm StrictMode đăng ký lại đúng một lần và cleanup về 0. Lifecycle PASS: subscriptions=68, remaining=0, video attach/detach=16/16, peak=1, call init/dispose=1/1, observers=0; cả hai ca focus resize đạt. **Fixture tổng hợp room-shell vẫn FAIL ở bước route TEXT `/workspace` sau lifecycle**, vì selector cũ `article[aria-label^="Chat "]` không khớp TextTimeline hiện tại; không gọi toàn bộ fixture này là PASS hoặc giảm assertion TEXT để làm xanh. Đây không phải bằng chứng về chat production.
+- Bộ unit camera/snapshot/audio: 78/78 PASS; typecheck web PASS. Ảnh chứng minh layout ứng dụng đang chạy với canvas, chưa chứng minh share/RTP qua SFU, camera vật lý, isolation hoặc TURN.
+- `pnpm.exe check` exit 0: harness 54 PASS/1 skip Windows, 139 nguồn/links, format/lint/typecheck (kể cả tsconfig integration) và build contracts/web/server đạt; 1012/1012 test trên 71 file PASS. `pnpm.exe media:smoke` exit 0, worker/Router Opus/VP8 PASS. Không đổi config audit, dependency hoặc test gate.

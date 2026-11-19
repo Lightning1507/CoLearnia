@@ -26,6 +26,8 @@
   --cl-color-camera-text: #ffffff;
   --cl-color-camera-status-bg: rgb(19 24 23 / 0.75);
   --cl-color-camera-status-text: #d5dcda;
+  --cl-color-call-bg: #161b1a;
+  --cl-color-stage-bg: #222826;
   --cl-color-dialog-border: #d6dcda;
   --cl-color-dialog-divider: #e7ebe9;
   --cl-color-dialog-footer-bg: #fafbfb;
@@ -95,6 +97,50 @@ button:focus-visible {
   background: var(--cl-color-camera-status-bg);
   color: var(--cl-color-camera-status-text);
   font-size: 12px;
+}
+.live-call-media {
+  container: call-media / inline-size;
+}
+.live-call-stage {
+  display: grid;
+  min-width: 0;
+  min-height: 12rem;
+  place-items: center;
+  border-radius: 7px;
+  background: var(--cl-color-stage-bg);
+  color: var(--cl-color-camera-text);
+  text-align: center;
+}
+.live-call-share-layout {
+  display: grid;
+  min-width: 0;
+  gap: 10px;
+  padding: 10px;
+  border-radius: 12px;
+  background: var(--cl-color-call-bg);
+}
+.live-camera-rail {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  max-height: 18rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-rows: max-content;
+  align-content: start;
+  gap: 8px;
+  overflow-y: auto;
+  color: var(--cl-color-camera-status-text);
+  scrollbar-gutter: stable;
+}
+@container call-media (min-width: 560px) {
+  .live-call-share-layout {
+    height: clamp(20rem, 60dvh, 42rem);
+    grid-template-columns: minmax(0, 1fr) 180px;
+  }
+  .live-camera-rail {
+    max-height: none;
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 .live-toolbar-control:hover {
   background: var(--cl-color-live-control-hover-bg);
