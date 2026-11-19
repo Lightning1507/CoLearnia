@@ -608,7 +608,9 @@ async function verifyWorkspaceRoute() {
         view.getComputedStyle(back).display === 'none',
       'Workspace 1440px phải hiện sân khấu và ẩn nút quay lại',
     );
-    const stageRect = stage.getBoundingClientRect();
+    const mediaRegion = stage.closest('.live-call-media');
+    check(mediaRegion, 'Thiếu vùng media để đối chiếu panel');
+    const stageRect = mediaRegion.getBoundingClientRect();
     const panelRect = panel.getBoundingClientRect();
     check(
       panelRect.width === 320 &&

@@ -28,6 +28,8 @@
   --cl-color-camera-status-text: #d5dcda;
   --cl-color-call-bg: #161b1a;
   --cl-color-stage-bg: #222826;
+  --cl-color-media-border: #343e3a;
+  --cl-color-media-muted: #aeb9b5;
   --cl-color-dialog-border: #d6dcda;
   --cl-color-dialog-divider: #e7ebe9;
   --cl-color-dialog-footer-bg: #fafbfb;
@@ -86,6 +88,12 @@ button:focus-visible {
 .live-camera-placeholder {
   color: var(--cl-color-camera-status-text);
 }
+.live-camera-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--cl-color-live-control-hover-bg);
+}
 .live-camera-status {
   position: absolute;
   top: 7px;
@@ -98,8 +106,137 @@ button:focus-visible {
   color: var(--cl-color-camera-status-text);
   font-size: 12px;
 }
+.live-room-shell {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+}
+.live-room-layout {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  min-height: 30rem;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  background: var(--cl-color-call-bg);
+  overflow-wrap: anywhere;
+}
+.live-room-in-workspace > .live-room-layout {
+  height: calc(100dvh - 64px);
+}
+.live-room-standalone > .live-room-layout {
+  height: min(50rem, calc(100dvh - 2rem));
+  overflow: hidden;
+  border: 1px solid var(--workspace-border);
+  border-radius: 12px;
+}
+.live-room-header {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--workspace-border);
+  background: var(--workspace-content-bg);
+  color: var(--workspace-text);
+  font-size: 12px;
+}
+.live-room-header h2 {
+  font-size: 14px;
+  font-weight: 600;
+}
+.live-room-call-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--workspace-muted);
+}
+.live-room-call-status::before {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  content: '';
+}
+.live-room-call-status[data-state='active'] {
+  color: var(--workspace-channel-selected-text);
+}
+.live-room-body {
+  min-width: 0;
+  min-height: 0;
+}
+.live-room-panel {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  border-left: 1px solid var(--workspace-border);
+  background: var(--workspace-content-bg);
+  color: var(--workspace-text);
+}
+.live-room-panel-heading {
+  padding: 16px;
+  border-bottom: 1px solid var(--workspace-border);
+  font-size: 14px;
+  font-weight: 600;
+}
+.live-room-panel-back {
+  align-self: start;
+  margin: 12px 16px 0;
+  padding: 8px 12px;
+  border: 1px solid var(--workspace-border);
+  border-radius: var(--cl-radius-control);
+  font-size: 12px;
+}
+.live-room-panel-content {
+  min-height: 0;
+  padding: 16px;
+  overflow-y: auto;
+  font-size: 14px;
+}
+.live-room-toolbar {
+  display: flex;
+  min-height: 66px;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px;
+  border-top: 1px solid var(--cl-color-media-border);
+  background: var(--cl-color-call-bg);
+  color: var(--cl-color-camera-status-text);
+}
+.live-room-toolbar .live-toolbar-control {
+  min-height: 42px;
+  font-size: 12px;
+}
+.live-room-toolbar p {
+  color: var(--cl-color-media-muted);
+}
+.live-room-toolbar:focus-visible {
+  outline: 2px solid var(--cl-color-focus-ring);
+  outline-offset: -2px;
+}
 .live-call-media {
+  min-height: 0;
+  padding: 12px;
   container: call-media / inline-size;
+}
+.live-call-grid-layout {
+  height: 100%;
+  overflow-y: auto;
+}
+.live-call-grid-layout > .live-call-stage {
+  min-height: 100%;
+}
+.live-call-grid-layout,
+.live-camera-rail {
+  scrollbar-width: thin;
+  scrollbar-color: var(--cl-color-live-control-hover-bg) transparent;
+  color-scheme: dark;
 }
 .live-call-stage {
   display: grid;
@@ -113,10 +250,10 @@ button:focus-visible {
 }
 .live-call-share-layout {
   display: grid;
+  height: 100%;
   min-width: 0;
+  min-height: 0;
   gap: 10px;
-  padding: 10px;
-  border-radius: 12px;
   background: var(--cl-color-call-bg);
 }
 .live-camera-rail {
@@ -134,8 +271,11 @@ button:focus-visible {
 }
 @container call-media (min-width: 560px) {
   .live-call-share-layout {
-    height: clamp(20rem, 60dvh, 42rem);
     grid-template-columns: minmax(0, 1fr) 180px;
+    grid-template-rows: minmax(0, 1fr);
+  }
+  .live-call-share-layout > .live-call-stage {
+    min-height: 0;
   }
   .live-camera-rail {
     max-height: none;

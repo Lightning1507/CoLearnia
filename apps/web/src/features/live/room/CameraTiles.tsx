@@ -73,6 +73,15 @@ function CameraVideo({
   );
 }
 
+function CameraPlaceholder() {
+  return (
+    <svg className="live-camera-avatar" viewBox="0 0 48 48" aria-hidden="true">
+      <circle cx="24" cy="17" r="8" fill="currentColor" />
+      <path d="M8 44a16 16 0 0 1 32 0" fill="currentColor" />
+    </svg>
+  );
+}
+
 function CameraTile({ camera, synchronized }: { camera: CameraView; synchronized: boolean }) {
   const [playing, setPlaying] = useState(false);
   return (
@@ -93,7 +102,7 @@ function CameraTile({ camera, synchronized }: { camera: CameraView; synchronized
               className="live-camera-placeholder absolute inset-0 grid place-items-center"
               aria-hidden="true"
             >
-              Camera
+              <CameraPlaceholder />
             </span>
           )}
         </div>
@@ -102,7 +111,7 @@ function CameraTile({ camera, synchronized }: { camera: CameraView; synchronized
           className="live-camera-surface live-camera-placeholder grid aspect-video place-items-center"
           aria-hidden="true"
         >
-          Camera
+          <CameraPlaceholder />
         </div>
       )}
       <p className="live-camera-status" role="status">

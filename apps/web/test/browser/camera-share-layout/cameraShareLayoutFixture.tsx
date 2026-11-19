@@ -1,9 +1,11 @@
 import { StrictMode, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
+import { createPortal } from 'react-dom';
 import { RoomShell } from '../../../src/features/live/room/RoomShell';
 import { CallControllerProvider } from '../../../src/features/live/runtime/CallControllerProvider';
 import { CallControllerOwner } from '../../../src/features/live/runtime/callController';
 import type { MediaSnapshotRuntime } from '../../../src/features/live/runtime/mediaSnapshotRuntime';
+import { DeviceMedia } from '../../../src/features/live/runtime/deviceMedia';
 import { WorkspaceShell } from '../../../src/features/workspaces/WorkspaceShell';
 import {
   sidebarFixture,
@@ -123,6 +125,14 @@ async function start() {
     })),
   );
   const channel = sidebarFixture.find((entry) => entry.channel.type === 'LIVE')!;
+  const devices = new DeviceMedia(
+    async ({ video }) => {
+      if (!video) throw new DOMException('Fixture has no microphone', 'NotFoundError');
+      return new MediaStream([tracks[0]!.clone()]);
+    },
+    async () => ({ close: async () => {} }),
+  );
+  devices.updateContext(context);
 
   function Fixture() {
     const [mode, setMode] = useState<'video' | 'custom' | 'grid'>('video');
@@ -192,6 +202,15 @@ async function start() {
             toolbar.getBoundingClientRect().width <= innerWidth && toolbar.getClientRects().length,
             'Toolbar không tới được',
           );
+          if (innerHeight >= 640 && innerWidth >= 768)
+            check(
+              toolbar.getBoundingClientRect().bottom <= innerHeight + 1,
+              'Toolbar phải nằm trong viewport desktop',
+            );
+          check(
+            getComputedStyle(toolbar).backgroundColor === 'rgb(22, 27, 26)',
+            'Toolbar phải cùng nền media theo export',
+          );
           result.textContent = `PASS · viewport=${innerWidth}×${innerHeight}; mode=${mode}; panel=${panel ? 'mở' : 'đóng'}${sizes}; 1 call, 0 Consumer đóng`;
         } catch (error) {
           result.textContent = `FAIL · ${String(error)}`;
@@ -207,70 +226,113 @@ async function start() {
         window.removeEventListener('resize', verify);
       };
     }, [mode, panel]);
-    const controlClass = 'live-toolbar-control rounded-lg px-3 py-2 text-sm';
+    const controlClass =
+      'live-toolbar-control inline-flex items-center justify-center gap-1.5 rounded-lg px-[11px] py-2 text-xs';
     return (
-      <WorkspaceShell
-        workspace={workspaceFixture}
-        channels={sidebarFixture}
-        panel={{ kind: 'live', channelId: channel.channel.id }}
-        onSelectChannel={() => {}}
-        onOpenWorkspaceList={() => {}}
-        chatPanel={null}
-        persistentCallControls={<span className="text-xs">Cuộc gọi đang hoạt động</span>}
-        callPanel={
-          <RoomShell
-            channelName={channel.channel.name}
-            sessionId={context.sessionId}
-            useWorkspaceWidth
-            stageMedia={mode === 'video' ? { call, stream } : undefined}
-            stage={
-              mode === 'custom' ? (
-                <div className="p-8">
-                  <h3>Nguồn sân khấu tùy chỉnh</h3>
-                  <p>Nội dung chia sẻ vẫn ở cột lớn.</p>
-                </div>
-              ) : undefined
-            }
-            sidePanel={
-              panel
-                ? {
-                    label: 'Chat cuộc họp',
-                    onBackToStage: () => {
-                      setPanel(false);
-                      panelButton.current?.focus();
-                    },
-                    content: (
-                      <label className="grid gap-2">
-                        Bản nháp chat
-                        <textarea
-                          className="min-w-0 rounded border p-2"
-                          value={draft}
-                          onChange={(event) => setDraft(event.target.value)}
-                        />
-                      </label>
-                    ),
-                  }
-                : undefined
-            }
-            controls={
-              <>
-                <button className={controlClass} onClick={() => setMode('video')}>
-                  Nguồn video
-                </button>
-                <button className={controlClass} onClick={() => setMode('custom')}>
-                  Nguồn tùy chỉnh
-                </button>
-                <button className={controlClass} onClick={() => setMode('grid')}>
-                  Không share
-                </button>
-                <button ref={panelButton} className={controlClass} onClick={() => setPanel(!panel)}>
-                  Đóng/mở chat
-                </button>
-              </>
-            }
-          />
-        }
-      />
+      <>
+        <WorkspaceShell
+          workspace={workspaceFixture}
+          channels={sidebarFixture}
+          panel={{ kind: 'live', channelId: channel.channel.id }}
+          onSelectChannel={() => {}}
+          onOpenWorkspaceList={() => {}}
+          chatPanel={null}
+          persistentCallControls={<span className="text-xs">Cuộc gọi đang hoạt động</span>}
+          callPanel={
+            <RoomShell
+              channelName={channel.channel.name}
+              sessionId={context.sessionId}
+              useWorkspaceWidth
+              devices={devices}
+              stageMedia={mode === 'video' ? { call, stream } : undefined}
+              stage={
+                mode === 'custom' ? (
+                  <div className="p-8">
+                    <h3>Nguồn sân khấu tùy chỉnh</h3>
+                    <p>Nội dung chia sẻ vẫn ở cột lớn.</p>
+                  </div>
+                ) : undefined
+              }
+              sidePanel={
+                panel
+                  ? {
+                      label: 'Chat cuộc họp',
+                      onBackToStage: () => {
+                        setPanel(false);
+                        panelButton.current?.focus();
+                      },
+                      content: (
+                        <label className="grid gap-2">
+                          Bản nháp chat
+                          <textarea
+                            className="min-w-0 rounded border p-2"
+                            value={draft}
+                            onChange={(event) => setDraft(event.target.value)}
+                          />
+                        </label>
+                      ),
+                    }
+                  : undefined
+              }
+              controls={
+                <>
+                  <button
+                    className={controlClass}
+                    data-state={mode !== 'grid' ? 'active' : undefined}
+                    onClick={() => setMode(mode === 'grid' ? 'video' : 'grid')}
+                  >
+                    <svg
+                      aria-hidden="true"
+                      viewBox="0 0 24 24"
+                      className="size-4"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                    >
+                      <rect x="3" y="4" width="18" height="13" rx="2" />
+                      <path d="M8 21h8M12 17v4" />
+                    </svg>
+                    {mode === 'grid' ? 'Chia sẻ' : 'Dừng share'}
+                  </button>
+                  <button
+                    ref={panelButton}
+                    className={controlClass}
+                    aria-expanded={panel}
+                    data-state={panel ? 'active' : undefined}
+                    onClick={() => setPanel(!panel)}
+                  >
+                    <svg
+                      aria-hidden="true"
+                      viewBox="0 0 24 24"
+                      className="size-4"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                    >
+                      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                    </svg>
+                    Chat cuộc họp
+                  </button>
+                </>
+              }
+            />
+          }
+        />
+        {createPortal(
+          <>
+            <button className={controlClass} onClick={() => setMode('video')}>
+              Nguồn video
+            </button>
+            <button className={controlClass} onClick={() => setMode('custom')}>
+              Nguồn tùy chỉnh
+            </button>
+            <button className={controlClass} onClick={() => setMode('grid')}>
+              Không share
+            </button>
+          </>,
+          document.getElementById('fixture-controls')!,
+        )}
+      </>
     );
   }
   const root = createRoot(document.getElementById('root')!);
@@ -287,6 +349,7 @@ async function start() {
       clearInterval(timer);
       root.unmount();
       owner.shutdown();
+      devices.dispose();
       for (const track of [...stream.getTracks(), ...cameraStream.getTracks(), ...tracks])
         track.stop();
     },

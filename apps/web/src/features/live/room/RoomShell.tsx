@@ -140,26 +140,28 @@ export function RoomShell({
 
   return (
     <article
-      className={useWorkspaceWidth ? 'w-full min-w-0' : '@container/room-layout w-full min-w-0'}
+      className={`live-room-shell ${useWorkspaceWidth ? 'live-room-in-workspace' : '@container/room-layout live-room-standalone'}`}
       aria-labelledby={titleId}
       ref={roomElement}
     >
-      <div
-        className={`grid min-w-0 gap-4 bg-[var(--workspace-content-bg)] [overflow-wrap:anywhere] ${useWorkspaceWidth ? 'p-5' : 'rounded-2xl border border-[color:var(--workspace-border)] p-5'}`}
-      >
-        <header>
+      <div className="live-room-layout">
+        <header className="live-room-header">
           <h2 className={useWorkspaceWidth ? 'sr-only' : undefined} id={titleId}>
             {channelName}
           </h2>
-          <p className="mt-2 text-stone-600" role="status">
+          <p
+            className="live-room-call-status"
+            role="status"
+            data-state={roomCall?.status ?? 'idle'}
+          >
             {statusLabels[roomCall?.status ?? 'idle']}
           </p>
         </header>
         <div
           className={
             sidePanel
-              ? 'grid grid-cols-1 gap-4 @min-[1280px]/room-layout:grid-cols-[minmax(0,1fr)_320px]'
-              : 'grid grid-cols-1'
+              ? 'live-room-body grid grid-cols-1 @min-[1280px]/room-layout:grid-cols-[minmax(0,1fr)_320px]'
+              : 'live-room-body grid grid-cols-1'
           }
         >
           <div
@@ -167,7 +169,7 @@ export function RoomShell({
             ref={stageElement}
             onBlur={restorePanelFocus}
           >
-            <div className={sharedStage ? 'live-call-share-layout' : undefined}>
+            <div className={sharedStage ? 'live-call-share-layout' : 'live-call-grid-layout'}>
               <section className="live-call-stage" aria-label="Sân khấu cuộc gọi">
                 {error ? (
                   <p role="alert">{error}</p>
@@ -186,25 +188,25 @@ export function RoomShell({
             </div>
           </div>
           {sidePanel && (
-            <section className="grid min-w-0 content-start gap-2" aria-labelledby={panelId}>
-              <h3 className="text-base font-semibold" id={panelId} ref={panelHeading} tabIndex={-1}>
+            <section className="live-room-panel" aria-labelledby={panelId}>
+              <h3 className="live-room-panel-heading" id={panelId} ref={panelHeading} tabIndex={-1}>
                 {sidePanel.label}
               </h3>
               <button
                 type="button"
-                className="justify-self-start rounded-lg border border-stone-200 px-3 py-2 @min-[1280px]/room-layout:hidden"
+                className="live-room-panel-back @min-[1280px]/room-layout:hidden"
                 onClick={sidePanel.onBackToStage}
                 ref={backButton}
                 onBlur={restorePanelFocus}
               >
                 Về sân khấu
               </button>
-              {sidePanel.content}
+              <div className="live-room-panel-content">{sidePanel.content}</div>
             </section>
           )}
         </div>
         <footer
-          className="flex flex-wrap gap-3 border-t border-stone-200 pt-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--cl-color-focus-ring)]"
+          className="live-room-toolbar"
           aria-label="Điều khiển cuộc gọi"
           ref={toolbar}
           tabIndex={-1}
@@ -213,7 +215,7 @@ export function RoomShell({
           {controls ?? (!devices && <p>Chưa có điều khiển cuộc gọi khả dụng.</p>)}
           {showAudioRecovery && (
             <div className="flex flex-wrap items-center gap-2">
-              <p className="text-sm text-[color:var(--workspace-muted)]" role="status">
+              <p className="text-sm" role="status">
                 Âm thanh cuộc gọi đang tạm dừng.
               </p>
               <button

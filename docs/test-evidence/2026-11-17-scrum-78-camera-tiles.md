@@ -123,3 +123,29 @@ SCRUM-88 / M4-T11.1 cần ghép join có xác thực, SEND/RECV, projection/cont
 - Cập nhật fixture lifecycle theo ba subscription call/audio/camera hiện có (cộng một badge); vẫn kiểm StrictMode đăng ký lại đúng một lần và cleanup về 0. Lifecycle PASS: subscriptions=68, remaining=0, video attach/detach=16/16, peak=1, call init/dispose=1/1, observers=0; cả hai ca focus resize đạt. **Fixture tổng hợp room-shell vẫn FAIL ở bước route TEXT `/workspace` sau lifecycle**, vì selector cũ `article[aria-label^="Chat "]` không khớp TextTimeline hiện tại; không gọi toàn bộ fixture này là PASS hoặc giảm assertion TEXT để làm xanh. Đây không phải bằng chứng về chat production.
 - Bộ unit camera/snapshot/audio: 78/78 PASS; typecheck web PASS. Ảnh chứng minh layout ứng dụng đang chạy với canvas, chưa chứng minh share/RTP qua SFU, camera vật lý, isolation hoặc TURN.
 - `pnpm.exe check` exit 0: harness 54 PASS/1 skip Windows, 139 nguồn/links, format/lint/typecheck (kể cả tsconfig integration) và build contracts/web/server đạt; 1012/1012 test trên 71 file PASS. `pnpm.exe media:smoke` exit 0, worker/Router Opus/VP8 PASS. Không đổi config audit, dependency hoặc test gate.
+
+## Đồng bộ style khung cuộc gọi — 19/11/2026
+
+- Sau phản hồi về ảnh ở `c0851f9`, đọc lại [global.css](../../apps/web/src/styles/global.css), [tokens.css](../../apps/web/src/styles/tokens.css), [foundations](../design-system/frontend/foundations.md), [Call shell và panel](../design-system/frontend/layouts.md#call-shell-và-panel), [quy ước styling](../design-system/frontend/coding-conventions.md#styling) và các selector meeting-stage/meeting-controls/meeting-panel/camera-rail trong [CSS export](../figma-ui/src/index.css). Worktree fast-forward tới `eb13ab1`, cài đúng frozen lockfile; không sửa export gốc, Workspace navigation hoặc dependency.
+- Bỏ bố cục card bo góc nổi trên nền trắng và chiều cao media 60dvh cố định. RoomShell dùng header ngữ cảnh gọn, vùng media tối nhận chiều cao còn lại, toolbar tối cùng surface và panel sáng có header/divider riêng. Bản nhúng Workspace không lặp lớp card/padding quanh nội dung; standalone vẫn có khung và token viền riêng. Viewport thấp có chiều cao tối thiểu để cuộn tới control, không thu nhỏ chữ để ép vừa.
+- Màu/viền/spacing lấy từ token trong global.css và giá trị đang dùng ở export: media #161b1a, stage #222826, camera #29302e, control theo live-toolbar-control hiện có. Chữ kế thừa font ứng dụng, nhãn/control trong toolbar tối thiểu 12px; không copy metadata 9px thành chuẩn mới. Placeholder dùng silhouette trung tính, không bịa tên participant; scrollbar media dùng màu tối, mảnh. Ready/paused/policy và quyền nhận media không đổi.
+- Fixture chuyển PASS log và nút chọn kịch bản sang mục “Dữ liệu mô phỏng · Kiểm thử” thu gọn bên ngoài app. Toolbar hiển thị DeviceMediaControls thật với adapter capture/publish mô phỏng và mic/camera mặc định tắt, cùng các control share/chat fixture hoạt động theo state. Không giả vờ đã nối signaling production; đồ thị là video canvas của nguồn chia sẻ minh họa, không phải component sản phẩm.
+
+| Viewport | Chat | Stage   | Rail    | Kết quả                                       |
+| -------- | ---- | ------- | ------- | --------------------------------------------- |
+| 1280×800 | Đóng | 810×601 | 180×601 | PASS, toolbar trong viewport                  |
+| 1280×800 | Mở   | 490×601 | 180×601 | PASS, panel 320px phân vùng riêng             |
+| 1440×900 | Đóng | 970×701 | 180×701 | PASS, không còn khoảng trắng/card quanh media |
+| 1440×900 | Mở   | 650×701 | 180×701 | PASS, nháp giữ qua resize                     |
+
+![Style đồng bộ ở 1280×800](images/scrum-78/style-share-1280x800.jpg)
+
+![Style đồng bộ ở 1440×900](images/scrum-78/style-share-1440x900.jpg)
+
+![Panel chat ở 1280×800](images/scrum-78/style-panel-1280x800.jpg)
+
+![Panel chat ở 1440×900](images/scrum-78/style-panel-1440x900.jpg)
+
+- Browser PASS cho video/custom/grid, reflow 320px, panel ở 767/768 và 1279/1280px, nháp giữ qua 1279→1440, Về sân khấu trả focus tới trigger. Một call initialization, không Consumer bị đóng, borrowed tracks còn live. Fixture camera/ACK/pause/local enabled/StrictMode vẫn PASS. Lifecycle RoomShell riêng PASS: subscription remaining=0, attach/detach=16/16, peak=1, call init/dispose=1/1, observers=0, hai ca focus resize đạt.
+- Fixture room-shell tổng hợp tiếp tục FAIL ở selector Chat cũ trong route TEXT `/workspace` sau khi lifecycle đã PASS; không giảm assertion hoặc đổi product TEXT trong task style này. Cập nhật phép đo panel so với media region ngoài, vì stage video nay có inset 12px theo layout. Bộ unit camera/snapshot/audio 78/78 PASS. Ảnh là ứng dụng đang render canvas/snapshot mô phỏng, chưa là bằng chứng SFU/TURN hoặc camera vật lý.
+- `pnpm.exe check` exit 0: harness 54 PASS/1 skip Windows, 140 nguồn/links, format/lint/typecheck (contracts/web/server và tsconfig integration), 1040/1040 test trên 74 file và build cả ba package PASS. `pnpm.exe media:smoke` exit 0: native worker/Router Opus/VP8 PASS. Không sửa dependency, config audit, cổng check hoặc assertion TEXT để làm xanh.
