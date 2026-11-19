@@ -39,6 +39,7 @@ type Limits = {
   pages: number;
   reconcileMs: number;
   roundMs: number;
+  pageSize?: number;
 };
 
 // Controller only: the labelled SCRUM-46 fixture UI is not silently switched to a live API.
@@ -48,11 +49,12 @@ export function createTextSynchronizer(
   limits: Limits,
   changed: (state: TextSyncState) => void,
 ) {
-  for (const value of Object.values(limits))
+  const { pageSize, ...budgets } = limits;
+  for (const value of [...Object.values(budgets), pageSize ?? textHistoryMaxLimit])
     if (!Number.isSafeInteger(value) || value < 1 || value > 2_147_483_647)
       throw new Error('Invalid sync limits');
   if (limits.bytes < 2) throw new Error('Sync byte budget cannot contain an empty projection');
-  const pageLimit = Math.min(textHistoryMaxLimit, limits.messages);
+  const pageLimit = Math.min(textHistoryMaxLimit, limits.messages, pageSize ?? textHistoryMaxLimit);
   // Learn a smaller snapshot window across rounds, including pages=1 configurations.
   let snapshotLimit = pageLimit;
   let state: TextSyncState = {
@@ -65,6 +67,8 @@ export function createTextSynchronizer(
   let cleanup: (() => void) | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let inFlight: Promise<void> | undefined;
+  let readOlder: (() => Promise<void>) | undefined;
+  let olderInFlight: Promise<void> | undefined;
   const bytes = (value: unknown) => new TextEncoder().encode(JSON.stringify(value)).byteLength;
   const notify = () => changed({ ...state, messages: [...state.messages] });
   function stop() {
@@ -73,10 +77,13 @@ export function createTextSynchronizer(
     cleanup?.();
     cleanup = undefined;
     inFlight = undefined;
+    readOlder = undefined;
+    olderInFlight = undefined;
     state = { phase: 'idle', messages: [], checkpoint: undefined, olderCursor: null };
     notify();
   }
   async function run() {
+    readOlder = undefined;
     const turn = ++generation;
     clearTimeout(timer);
     cleanup?.();
@@ -311,6 +318,43 @@ export function createTextSynchronizer(
         olderCursor,
       };
       notify();
+      readOlder = async () => {
+        const cursor = state.olderCursor;
+        if (!valid() || !cursor) return;
+        try {
+          const raw = await port.history(
+            channelId,
+            { mode: 'history', cursor, limit: pageLimit },
+            controller.signal,
+          );
+          if (!valid()) return;
+          const failure = apiErrorSchema.safeParse(raw);
+          if (failure.success) throw failure.data.error;
+          const response = textMessageHistoryResponseSchema.parse(raw);
+          if ('error' in response) throw response.error;
+          const page = response.data;
+          if (
+            page.mode !== 'history' ||
+            JSON.stringify(page.scope) !== JSON.stringify(scope) ||
+            page.items.length > pageLimit ||
+            page.nextCursor === cursor
+          )
+            throw new SnapshotRequired('Wrong older-history scope');
+          for (const row of page.items) merge(row);
+          state = { ...state, messages: ordered(), olderCursor: page.nextCursor };
+          notify();
+        } catch (error) {
+          if (error instanceof ProjectionCapacityError) invalidate(false, true, true);
+          else {
+            const code =
+              error && typeof error === 'object' && 'code' in error ? error.code : undefined;
+            invalidate(
+              ['AUTH_REQUIRED', 'FORBIDDEN', 'NOT_FOUND'].includes(String(code)),
+              code === 'CONFLICT' || error instanceof SnapshotRequired,
+            );
+          }
+        }
+      };
       timer = setTimeout(() => {
         inFlight = undefined;
         void reconcile();
@@ -337,5 +381,20 @@ export function createTextSynchronizer(
     });
     return pending;
   }
-  return { reconcile, stop, snapshot: () => ({ ...state, messages: [...state.messages] }) };
+  function loadOlder() {
+    if (state.phase !== 'live' || !readOlder) return Promise.resolve();
+    if (olderInFlight) return olderInFlight;
+    const pending = readOlder();
+    olderInFlight = pending;
+    void pending.finally(() => {
+      if (olderInFlight === pending) olderInFlight = undefined;
+    });
+    return pending;
+  }
+  return {
+    reconcile,
+    loadOlder,
+    stop,
+    snapshot: () => ({ ...state, messages: [...state.messages] }),
+  };
 }

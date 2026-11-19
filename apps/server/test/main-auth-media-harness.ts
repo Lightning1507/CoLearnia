@@ -8,6 +8,14 @@ import request from 'supertest';
 import type { Response } from 'supertest';
 import { expect } from 'vitest';
 import { Router } from 'express';
+import { conversationModel } from '../src/messaging/conversation.js';
+import { textMessageModel } from '../src/messaging/text-message.js';
+import { createTextService } from '../src/messaging/text-service.js';
+import {
+  createTextRouter,
+  createTextSocketSend,
+  createTextSocketSync,
+} from '../src/messaging/text-transport.js';
 import { createApp } from '../src/app.js';
 import { createAuthRouter } from '../src/auth/auth-routes.js';
 import { createHttpAuth } from '../src/auth/http-auth.js';
@@ -35,10 +43,16 @@ import { createAccessRevocationCoordinator } from '../src/workspaces/access-revo
 import { createWorkspaceAccessService } from '../src/workspaces/access-service.js';
 import { channelModels } from '../src/workspaces/channel-models.js';
 import { workspaceModels } from '../src/workspaces/workspace-models.js';
+import { createWorkspaceRouter } from '../src/workspaces/workspace-routes.js';
+import { createWorkspaceCreator } from '../src/workspaces/create-workspace.js';
+import { createChannelCreator } from '../src/workspaces/create-channel.js';
+import { createChannelConversationFactory } from '../src/messaging/conversation.js';
+import { auditModel } from '../src/workspaces/workspace-audit.js';
 import { testReplicaUri } from './replica-uri.js';
 import {
   authenticatedResponseSchema,
   csrfResponseSchema,
+  textConversationSubscribeAckSchema,
   mediaTransportCreateAckSchema,
   sessionJoinAckSchema,
   mediaHttpContextIssueAckSchema,
@@ -52,10 +66,12 @@ const { User, AuthSession } = authModels(database.connection);
 const { Workspace, Membership } = workspaceModels(database.connection);
 const { Channel, ChannelAccessGrant } = channelModels(database.connection);
 const { LiveSession, SessionParticipant } = sessionModels(database.connection);
+const Conversation = conversationModel(database.connection);
+const Message = textMessageModel(database.connection);
 let ownsDatabase = false;
 const disposers: (() => Promise<void>)[] = [];
 export const origin = 'https://colearnia.example.test';
-const config = loadConfig({
+const baseConfig = loadConfig({
   NODE_ENV: 'test',
   APP_ORIGIN: origin,
   SESSION_SECRET: randomBytes(32).toString('hex'),
@@ -79,6 +95,9 @@ export async function initializeDatabase() {
     ChannelAccessGrant,
     LiveSession,
     SessionParticipant,
+    Conversation,
+    Message,
+    auditModel(database.connection),
   ]) {
     await model.createCollection();
     await model.createIndexes();
@@ -117,7 +136,9 @@ async function isolatedDomainCleanup(value: SessionCleanupRequest): Promise<Sess
   };
 }
 
-export async function setup() {
+export async function setup(options: { text?: boolean; origin?: string; port?: number } = {}) {
+  const config = { ...baseConfig, APP_ORIGIN: options.origin ?? baseConfig.APP_ORIGIN };
+  const origin = config.APP_ORIGIN;
   const coordinator = createOperationCoordinator();
   const revocations = createAccessRevocationCoordinator({ coordinator });
   const access = createWorkspaceAccessService(
@@ -125,6 +146,7 @@ export async function setup() {
     coordinator,
     () => true,
     revocations.barrier,
+    config.SESSION_SECRET,
   );
   const authority = createMainAuthority(database, access, revocations.barrier);
   const readPersisted = createSessionReader(database, () => true);
@@ -142,13 +164,62 @@ export async function setup() {
     logout.logout,
   );
   const mediaRouter = Router();
+  const creation = {
+    database,
+    coordinator,
+    barrier: revocations.barrier,
+    indexesReady: () => true,
+    createConversation: createChannelConversationFactory(database.connection).create,
+  };
+  const workspaces = options.text
+    ? createWorkspaceRouter(
+        httpAuth,
+        createWorkspaceCreator(creation),
+        access,
+        createChannelCreator(creation),
+      )
+    : undefined;
+  const textHandler = {
+    processInFlight: 4,
+    processQueued: 4,
+    processBytes: 4_000_000,
+    perUserInFlight: 4,
+    perScopeInFlight: 4,
+    payloadBytes: 32768,
+    queueWaitMs: 1000,
+    executionMs: 5000,
+  };
+  const textService: ReturnType<typeof createTextService> | undefined = options.text
+    ? createTextService(
+        database,
+        coordinator,
+        access,
+        () => true,
+        config.SESSION_SECRET!,
+        {
+          process: { inFlight: 8, queued: 8, bytes: 16_000_000 },
+          database: { maxPoolSize: 10, waitQueueTimeoutMs: 5000, queryTimeoutMs: 2000 },
+          revocation: { reservedInFlight: 1, cleanupBatchSize: 8, executionMs: 1000 },
+          handlers: { text: textHandler, history: textHandler, subscription: textHandler },
+        },
+        undefined,
+        false,
+        { subscriptions: 16, perUser: 4, leaseMs: 60_000, revocationRecords: 16 },
+        () =>
+          Boolean(
+            textService?.syncRevocation &&
+            revocations.isMessagingCleanupBound(textService.syncRevocation),
+          ),
+      )
+    : undefined;
   const server = createServer(
     createApp(
       config,
       () => ({ name: 'CoLearnia', database: 'connected', media: 'connected', ready: true }),
       authRouter,
-      undefined,
+      workspaces,
       mediaRouter,
+      textService && createTextRouter(httpAuth, textService),
     ),
   );
   const io = createRealtime(
@@ -157,6 +228,8 @@ export async function setup() {
     readSession,
     connections,
     (auth) => !revocations.isSessionDenied(auth),
+    textService && createTextSocketSend(textService),
+    textService && createTextSocketSync(textService),
   );
   let registry!: ReturnType<typeof createMainJoinRegistry>;
   let transports!: ReturnType<typeof createTransportSignaling>;
@@ -210,7 +283,7 @@ export async function setup() {
     },
   });
   revocations.bindCleanupAdapters({
-    messaging: {
+    messaging: textService?.syncRevocation ?? {
       fence: () => ({ throughResourceGeneration: 0 }),
       revoke: async ({ revocationId }) => ({ revocationId, status: 'completed' }),
     },
@@ -237,12 +310,13 @@ export async function setup() {
     transports.attach(liveSocket);
     bootstrap.attachSocket(liveSocket, readAuth);
   });
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  await new Promise<void>((resolve) => server.listen(options.port ?? 0, '127.0.0.1', resolve));
   const http = request(server);
   const clients: ClientSocket[] = [];
   disposers.push(async () => {
     release?.();
     for (const socket of clients) socket.disconnect();
+    textService?.stop();
     connections.stop();
     await new Promise<void>((resolve) => io.close(() => resolve()));
     registry.close();
@@ -364,6 +438,8 @@ export async function setup() {
     native,
     errors,
     http,
+    textService,
+    baseUrl: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
     cleanupRequests,
     retryOldCleanup: (value: SessionCleanupRequest) => transports.cleanup(value),
     replaySnapshots: async (client: ClientSocket, packets: readonly unknown[]) => {
@@ -394,12 +470,16 @@ export {
   AuthSession,
   Channel,
   Membership,
+  ChannelAccessGrant,
   SessionParticipant,
+  Conversation,
+  Message,
   sessionJoinAckSchema,
   mediaTransportCreateAckSchema,
   mediaHttpContextIssueAckSchema,
   mediaBootstrapResponseSchema,
 };
+export { textConversationSubscribeAckSchema };
 export function registerDisposer(close: () => Promise<void>) {
   disposers.push(close);
 }
