@@ -88,7 +88,21 @@ Handler lấy `AuthenticatedContext` từ `socket.data.auth` và kiểm quyền 
 
 SCRUM-20 giới hạn riêng đăng nhập ở 10 yêu cầu đã qua CSRF/Origin mỗi phút theo IP và 5 yêu cầu hợp lệ về cú pháp mỗi phút theo cặp email đã chuẩn hóa + IP. Vượt một trong hai ngưỡng trả `429 RATE_LIMITED` cùng `Retry-After` trước khi đọc DB hoặc xác minh mật khẩu. Bộ đếm dùng cửa sổ cố định trong bộ nhớ tiến trình và reset khi restart. Cấu hình IP dùng cùng `AUTH_TRUST_PROXY` với đăng ký.
 
-Đăng nhập thay phiên được gửi qua cookie trong cùng transaction cấp phiên mới. SCRUM-20 kiểm thu phiên ở DB và qua HTTP. Việc đóng socket/media đang dùng phiên bị thu cần tích hợp adapter ở luồng thu quyền M2/M4.
+Đăng nhập thay phiên lấy phiên cũ từ cookie đã tra bằng token hash ở server. SCRUM-94 dùng cùng `createSessionRevocation`/shared coordinator với logout và expiry:
+
+1. Giữ validation, Origin/CSRF, giới hạn thử và kiểm mật khẩu trước khi thu phiên. Kiểm lại hash dưới User gate trước cleanup và trong transaction cấp phiên; sai mật khẩu không tự thu phiên hiện tại.
+2. `prepareReplacement(auth)` cài deny `AUTH_SESSION`, chụp generation của messaging và gọi LIVE cleanup; đóng socket đúng authSessionId. Cleanup chạy ngoài User/Workspace gate và ngoài transaction. Thiếu adapter, lỗi hoặc pending trả 503, không cấp cookie mới và không gỡ deny.
+3. Sau khi cleanup xác nhận, claim một lượt ghi cho phiên cũ trong ledger hiện có. Transaction kiểm lại User/hash, CAS đúng `_id/userId/revokedAt:null` của phiên cũ rồi tạo phiên mới; cả hai thay đổi DB cùng commit/rollback. Không giữ hai User gate khi chuyển tài khoản: khóa User đích và CAS phiên nguồn. Các phiên độc lập khác không bị thu.
+4. Commit đã xác nhận mới finalize cùng operation thu phiên rồi trả cookie/CSRF mới. Cleanup/callback cũ vẫn nhắm đúng phiên/generation cũ, không nhận phiên mới chỉ vì cùng userId. DB rollback không khôi phục socket/quyền runtime đã thu; deny tiếp tục chặn phiên cũ.
+5. Commit/dependency lỗi chưa rõ giữ claim của phiên cũ dù driver đã trả gate/pool slot. Không tự bắt đầu transaction login khác từ cùng cookie trong trạng thái đó; đọc thấy chưa có phiên mới không chứng minh rollback. Logout với cookie cũ đi qua cùng ledger để tiếp tục cleanup và durable revoke, kể cả DB đã có `revokedAt`.
+
+Retry của thao tác chưa rõ thực hiện durable revoke đúng phiên cũ qua cùng ledger, không chạy thêm transaction login trong request đối soát đó. Nếu đã xác nhận thu quyền, một lần đăng nhập chủ động tiếp theo có thể cấp phiên mới; nếu chưa xác nhận thì tiếp tục 503. Nhánh lỗi không clear cookie, vì phản hồi muộn có thể xóa phiên vừa đăng nhập ở tab khác. Không trả lại token phiên mới từ DB, không giữ bearer token trong ledger và không cam kết exactly-once/recovery qua restart.
+
+Cookie đã hết hạn nhưng document chưa bị TTL dọn không phải phiên còn hiệu lực cần thay thế. Sau khi xử lý các record đang deny, login chỉ chuẩn bị replacement khi `revokedAt:null` và `expiresAt > now`. Expiry không cho phép bỏ qua replacement đang chạy hoặc chưa rõ; nhánh đó vẫn trả 503/đối soát, không mở transaction login mới.
+
+Ledger giữ riêng kết quả replacement `not_committed` để retry khi phiên còn hạn. Khi phiên đã hết hạn, record này chỉ được thu hồi nếu không có attempt ghi persistence, không còn active/write đang chạy hoặc chưa rõ, và cả LIVE/messaging cleanup đã xác nhận hoàn tất. Không thu hồi cleanup pending hoặc persistence/replacement chưa rõ chỉ vì đã qua expiry.
+
+Điểm nối ứng dụng tại `main.ts` truyền shared session revocation vào login. SCRUM-88 vẫn phải mount adapter messaging/LIVE thật; SCRUM-94 không tự gắn adapter trả thành công giả để mở luồng thay phiên. Không có dependency revocation thì login thay cookie phiên còn hiệu lực chưa thu bị từ chối 503; login không thay phiên vẫn giữ luồng cũ.
 
 ### Retry và mất kết nối
 
