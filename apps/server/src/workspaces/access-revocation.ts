@@ -390,6 +390,9 @@ export function createAccessRevocationCoordinator(options: {
     return result(record);
   }
   return {
+    isMessagingCleanupBound(port: MessagingRevocationPort) {
+      return cleanupAdapters?.messaging === port;
+    },
     coordinator: options.coordinator,
     barrier,
     isSessionDenied(auth: AuthenticatedContext) {

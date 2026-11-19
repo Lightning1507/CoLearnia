@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { messagingBudgetSchema } from '../messaging/budget.js';
+import { textSyncLimitsSchema } from '../messaging/text-sync.js';
 
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -26,6 +27,18 @@ const envSchema = z.object({
         return messagingBudgetSchema.parse(JSON.parse(value));
       } catch {
         ctx.addIssue({ code: 'custom', message: 'Invalid messaging budget JSON' });
+        return z.NEVER;
+      }
+    }),
+  TEXT_SYNC_LIMITS_JSON: z
+    .string()
+    .optional()
+    .transform((value, ctx) => {
+      if (!value) return undefined;
+      try {
+        return textSyncLimitsSchema.parse(JSON.parse(value));
+      } catch {
+        ctx.addIssue({ code: 'custom', message: 'Invalid TEXT sync limits JSON' });
         return z.NEVER;
       }
     }),

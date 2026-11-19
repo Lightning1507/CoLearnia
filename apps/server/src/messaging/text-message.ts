@@ -21,6 +21,14 @@ export const textMessageIndexes = [
   },
 ] as const satisfies readonly IndexRequirement[];
 
+export const textSyncIndexes = [
+  {
+    collection: 'messages',
+    name: 'ix_message_scope_commit',
+    key: { conversationId: 1, rootMessageId: 1, commitSeq: 1 },
+  },
+] as const satisfies readonly IndexRequirement[];
+
 const bodySchema = textMessageSendBodySchema.omit({ rootMessageId: true });
 const schema = new Schema(
   {
@@ -49,7 +57,7 @@ schema.pre('validate', function () {
     this.invalidate('attachmentIds', 'Expected an empty attachment list');
   }
 });
-for (const index of textMessageIndexes) {
+for (const index of [...textMessageIndexes, ...textSyncIndexes]) {
   schema.index(index.key, { name: index.name, ...('unique' in index && { unique: index.unique }) });
 }
 
@@ -80,6 +88,37 @@ export function createTextMessageRepository(database: ReturnType<typeof createDa
   const { AuthSession } = authModels(database.connection);
 
   return {
+    async highWater(conversationId: Types.ObjectId, remaining: DatabaseDeadline) {
+      const conversation = await Conversation.findOne({ _id: conversationId, closedAt: null })
+        .select('lastMessageCommitSeq')
+        .readConcern('majority')
+        .setOptions(databaseQueryOptions(remaining))
+        .lean();
+      const high = conversation?.lastMessageCommitSeq ?? 0;
+      if (!conversation || !Number.isSafeInteger(high) || high < 0)
+        throw new Error('Invalid sync watermark');
+      return high;
+    },
+    async catchUp(
+      conversationId: Types.ObjectId,
+      after: number,
+      through: number,
+      limit: number,
+      remaining: DatabaseDeadline,
+    ) {
+      const rows = await Message.find({
+        conversationId,
+        rootMessageId: null,
+        commitSeq: { $gt: after, $lte: through },
+      })
+        .select('_id senderId clientMessageId text createdAt replyCount commitSeq')
+        .sort({ commitSeq: 1 })
+        .limit(limit + 1)
+        .readConcern('majority')
+        .setOptions(databaseQueryOptions(remaining))
+        .lean();
+      return { items: rows.slice(0, limit), more: rows.length > limit };
+    },
     async append(
       input: {
         conversationId: Types.ObjectId;
@@ -165,6 +204,7 @@ export function createTextMessageRepository(database: ReturnType<typeof createDa
       limit: number,
       cursor?: TextRootCursor,
       maxTimeMS = 5000,
+      through?: number,
     ) {
       if (!Number.isInteger(limit) || limit < 1 || limit > textHistoryMaxLimit) {
         throw new RangeError('Invalid text history limit');
@@ -179,6 +219,9 @@ export function createTextMessageRepository(database: ReturnType<typeof createDa
       const rows = await Message.find({
         conversationId,
         rootMessageId: null,
+        ...(through !== undefined && {
+          $and: [{ $or: [{ commitSeq: { $lte: through } }, { commitSeq: { $exists: false } }] }],
+        }),
         ...(cursor && {
           $or: [
             { createdAt: { $lt: cursor.createdAt } },
@@ -189,6 +232,7 @@ export function createTextMessageRepository(database: ReturnType<typeof createDa
         .select('_id senderId clientMessageId text createdAt replyCount commitSeq')
         .sort({ createdAt: -1, _id: -1 })
         .limit(limit + 1)
+        .readConcern('majority')
         .setOptions(databaseQueryOptions(() => maxTimeMS))
         .lean();
       const items = rows.slice(0, limit);
