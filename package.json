@@ -19,7 +19,7 @@
   "scripts": {
     "dev": "pnpm --filter @colearnia/contracts build && concurrently -k -n contracts,server,web \"pnpm --filter @colearnia/contracts dev\" \"pnpm --filter @colearnia/server dev\" \"pnpm --filter @colearnia/web dev\"",
     "build": "pnpm -r --sort run build",
-    "typecheck": "pnpm --filter @colearnia/contracts build && pnpm -r --sort run typecheck",
+    "typecheck": "pnpm --filter @colearnia/contracts build && pnpm -r --sort run typecheck && tsc -p tests/integration/tsconfig.json",
     "lint": "eslint . --max-warnings=0",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
