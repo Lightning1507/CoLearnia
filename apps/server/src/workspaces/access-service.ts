@@ -170,8 +170,11 @@ export function createWorkspaceAccessService(
     actor: AuthenticatedContext,
     state: ChannelAccessState,
     context: CoordinationContext,
+    peer = false,
   ) {
-    if (!barrier.isCurrent(actor, undefined, context))
+    // A peer read holds only Workspace. The access-stamped barrier below checks
+    // auth denies too; do not pretend to hold that peer's User gate.
+    if (!peer && !barrier.isCurrent(actor, undefined, context))
       throw new WorkspaceAccessError('AUTH_REQUIRED');
     if (
       state.membership &&
@@ -191,21 +194,22 @@ export function createWorkspaceAccessService(
     )
       throw new WorkspaceAccessError('NOT_FOUND');
   }
-  async function resolveChannelAccessHeld(
+  async function readChannelAccessHeld(
     input: AccessInput,
     context: CoordinationContext,
     remaining?: DatabaseDeadline,
     snapshotOnly = false,
+    peer = false,
   ) {
     const actor = identity(input.identity);
     const workspaceId = id(input.workspaceId);
     const channelId = id(input.channelId);
-    context.assertHeld({ userId: actor.userId, workspaceId });
+    context.assertHeld({ workspaceId, ...(peer ? {} : { userId: actor.userId }) });
     return read(
       actor,
       async (session, queryTime = () => maxTimeMS) => {
         const state = await readState(actor, workspaceId, session, queryTime);
-        checkBarrier(actor, state, context);
+        checkBarrier(actor, state, context, peer);
         if (!hasWorkspaceAccess(state, actor.userId)) throw new WorkspaceAccessError('NOT_FOUND');
         const channel = await Channel.findOne({ _id: channelId, workspaceId, deletedAt: null })
           .select('_id workspaceId type accessMode revision')
@@ -242,7 +246,7 @@ export function createWorkspaceAccessService(
               revoked: false,
             };
         }
-        checkBarrier(actor, state, context);
+        checkBarrier(actor, state, context, peer);
         const permissions = channelPermissions(state, actor.userId);
         if (!permissions.canKnowChannel) throw new WorkspaceAccessError('NOT_FOUND');
         return channelAccessSnapshotSchema.parse({
@@ -261,6 +265,13 @@ export function createWorkspaceAccessService(
       snapshotOnly,
     );
   }
+  const resolveChannelAccessHeld = (
+    input: AccessInput,
+    context: CoordinationContext,
+    remaining?: DatabaseDeadline,
+    snapshotOnly = false,
+  ) => readChannelAccessHeld(input, context, remaining, snapshotOnly);
+
   async function requireWorkspacePermissionHeld(
     input: WorkspaceInput,
     context: CoordinationContext,
@@ -533,6 +544,24 @@ export function createWorkspaceAccessService(
     },
     resolveChannelAccess,
     resolveChannelAccessHeld,
+    // M4 refreshes peers while holding the room's Workspace gate. This read-only
+    // port never acquires a peer User gate or authorizes a mutation for that peer.
+    // Session, membership, PRIVATE grant and shared deny checks remain identical.
+    async resolvePeerChannelAccessHeld(
+      input: AccessInput,
+      context: CoordinationContext,
+      remaining?: DatabaseDeadline,
+    ) {
+      // Read-only MAIN resolution uses a snapshot session and deadline-aware
+      // queries. It needs no transaction commit/abort I/O after the read budget.
+      const access = await readChannelAccessHeld(input, context, remaining, !!remaining, true);
+      remaining?.();
+      // Auth denies use the peer's independent User gate and may be installed
+      // while the snapshot transaction is completing under this Workspace gate.
+      if (!barrier.isCurrent(identity(input.identity), access, context))
+        throw new WorkspaceAccessError('NOT_FOUND');
+      return access;
+    },
     requireWorkspacePermissionHeld,
     async requireWorkspacePermission(input: WorkspaceInput) {
       const actor = identity(input.identity);

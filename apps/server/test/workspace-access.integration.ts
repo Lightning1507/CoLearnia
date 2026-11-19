@@ -131,6 +131,49 @@ async function fixture(
 }
 const deny = (code: string) => expect.objectContaining({ name: 'WorkspaceAccessError', code });
 describe('SCRUM-27 real Mongo shared access provider', () => {
+  it('rechecks peer deny after the real snapshot transaction completes', async () => {
+    const f = await fixture('MEMBER', 'WORKSPACE', 'LIVE');
+    let denied = false;
+    const peerService = createWorkspaceAccessService(database, coordinator, () => true, {
+      ...revocations.barrier,
+      isCurrent: (...args) => !denied && revocations.barrier.isCurrent(...args),
+    });
+    const transaction = database.transaction;
+    const probe = vi
+      .spyOn(database, 'transaction')
+      .mockImplementationOnce(async (work, remaining) => {
+        const value = await transaction(work, remaining);
+        denied = true; // A peer User gate may install deny while this read awaits commit.
+        return value;
+      });
+    try {
+      await coordinator.run({ workspaceId: f.workspace.id }, async (held) => {
+        await expect(peerService.resolvePeerChannelAccessHeld(f.input, held)).rejects.toEqual(
+          deny('NOT_FOUND'),
+        );
+      });
+    } finally {
+      probe.mockRestore();
+    }
+  });
+  it('reads a MAIN peer under the Workspace gate without acquiring another User gate', async () => {
+    const f = await fixture('MEMBER', 'WORKSPACE', 'LIVE');
+    await coordinator.run({ workspaceId: f.workspace.id }, async (held) => {
+      await expect(service.resolveChannelAccessHeld(f.input, held)).rejects.toThrow();
+      expect(await service.resolvePeerChannelAccessHeld(f.input, held)).toMatchObject({
+        channelType: 'LIVE',
+        membershipId: f.membership.id,
+        canReadContent: true,
+      });
+      await AuthSession.updateOne({ _id: f.session.id }, { $set: { revokedAt: new Date() } });
+      await expect(service.resolvePeerChannelAccessHeld(f.input, held)).rejects.toEqual(
+        deny('AUTH_REQUIRED'),
+      );
+    });
+    await coordinator.run({ userId: f.user.id }, async (held) => {
+      await expect(service.resolvePeerChannelAccessHeld(f.input, held)).rejects.toThrow();
+    });
+  });
   it.each(['OWNER', 'ADMIN', 'MEMBER'] as const)(
     '%s resolves TEXT/LIVE and separates PRIVATE management from content',
     async (role) => {
