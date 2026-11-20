@@ -1,5 +1,7 @@
 # SCRUM-81 — Tái kiểm điều kiện chạy staging ngày 19/11/2026
 
+Xem phần [đo bổ sung](#đo-bổ-sung-lúc-2332-giờ-việt-nam) cho kết quả mới nhất trong ngày. Mỗi lượt kiểm công khai chỉ quan sát từ một máy Windows. Người giao việc xác nhận vẫn thiếu operator staging và người thử mạng B.
+
 **Phần kiểm hai mạng/TURN MAIN/rollback thật vẫn BLOCKED.** Người giao việc xác nhận các đầu vào vận hành bên dưới vẫn “chưa có”. Lượt này thu thêm kết quả preflight thật và đối chiếu đầu ra tích hợp hiện tại; không thay công cụ, runbook hoặc [evidence PR #124](2026-11-17-scrum-81.md) đã bàn giao. Không deploy, restart, reset/restore/migrate DB hoặc thay dữ liệu staging.
 
 Nền mã của PR mới: `226f2ebf103b339677cfa891fbcb8fe75ef567bd` trên `origin/main`, đã gồm PR #124 và SCRUM-88 (#128). Tạo nhánh bằng terminal `git checkout -b fix/SCRUM-81-staging-recheck` trong worktree riêng để giữ nguyên các thay đổi camera/layout và file staged của checkout chung. Diff của lượt này chỉ thêm báo cáo này và JSON preflight đã lọc.
@@ -74,3 +76,65 @@ Trong checkout có cùng ba script gốc: diagnostic **13/13 PASS**, native `pnp
 | Kiểm tài liệu và JSON bằng script tạm                             | 6 link nội bộ tồn tại; JSON parse được, giữ scope một mạng, DNS PASS và ba phép HTTPS FAIL. Không kiểm anchor hoặc ngữ nghĩa tự động.                                                     |
 
 Worker/Router Opus/VP8 và unit test không chứng minh camera/mic/TURN. Chưa chạy bộ database integration, diagnostic login replacement, app trên hai browser, tải kết hợp hoặc rollback staging trong lượt này; Docker/quyền/đầu vào chưa sẵn sàng. Không chạy seed/migration để vượt blocker. Kiểm format và `git diff --check` được kiểm lại sau khi điền kết quả này.
+
+## Đo bổ sung lúc 23:32 giờ Việt Nam
+
+Nhánh `chore/SCRUM-81-staging-acceptance-followup` được tạo trong checkout gốc bằng `git checkout -b` từ `origin/main` tại `226f2eb`, sau đó fast-forward tới `c08eb0b`, đầu nhánh [PR #133](https://github.com/Lightning1507/CoLearnia/pull/133). Phép đo dùng cùng phiên bản helper đã merge trong [PR #124](https://github.com/Lightning1507/CoLearnia/pull/124).
+
+Windows NT `10.0.22621.0`, Node `26.12.1` qua pnpm `11.5.2`. Origin lấy từ bàn giao SCRUM-55. Chưa có operator xác nhận release hiện chạy hoặc xác nhận máy này là client A. Chưa có dữ liệu browser/ISP cho buổi nghiệm thu. Chạy ba GET công khai bằng helper trong phần trên, với TLS verification mặc định của script.
+
+| Phép đo                                          | UTC ngày 19/11/2026       | Kết quả                                                                                                                                                                                                    |
+| ------------------------------------------------ | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `staging-preflight.mjs` với origin trong runbook | 16:32:37.813              | **FAIL**, exit 1. DNS PASS. Ba GET `/`, `/api/v1/system/status` và `/api/v1/auth/me` đều `httpStatus: null`, `tls-or-network-error`. Chưa có phản hồi HTTP để xác minh readiness hoặc anonymous rejection. |
+| HTTPS GET `/` trực tiếp bằng curl                | 16:35:42.803–16:35:50.863 | **FAIL**, exit 28. `http=000 tcp_seconds=0.000000 tls_seconds=0.000000 total_seconds=8.014324`. Đường kết nối từ máy thử hết hạn trước khi lập TCP tới cổng 443.                                           |
+
+```powershell
+curl.exe --noproxy '*' --silent --output NUL --connect-timeout 8 --max-time 10 --write-out 'http=%{http_code} tcp_seconds=%{time_connect} tls_seconds=%{time_appconnect} total_seconds=%{time_total}\n' https://colearnia-staging.duckdns.org/
+```
+
+Lượt `curl` chưa tới bước xác minh hostname và chuỗi chứng chỉ. Handoff SCRUM-55 yêu cầu cấp đường vào TCP 443 cho máy thử. Operator cần xác nhận lại origin, đường truy cập hợp lệ cho A/B và listener HTTPS staging trước lượt đo tiếp theo. Kết quả từ máy này chưa xác định nguyên nhân timeout hoặc khả năng truy cập từ mạng khác.
+
+Chrome chuyển tới màn hình đăng nhập Atlassian khi mở SCRUM-81. Nội dung Jira hiện tại chưa được xác minh. Đã đối chiếu [M3 proposal tại revision tham chiếu](https://github.com/Lightning1507/CoLearnia/blob/a5fce0a1dbf1db577f373047910fbb615c0fb731/docs/proposals/m3-media.md#L859) và [Sprint 1](../planning/sprint-1.md) với `origin/main`. Phạm vi T17.4 vẫn là hai mạng và rollback app-only. Kiểm credential hết hạn được theo dõi ở SCRUM-92, gate MAIN năm người ở SCRUM-89.
+
+### Phụ thuộc và đầu mối
+
+| Phụ thuộc                     | Bằng chứng đã có                                                                                                                                                                                       | Điều kiện staging còn thiếu                                                                                                                                         | Đầu mối                             |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
+| M3-T17.2 / SCRUM-55           | [PR #78](https://github.com/Lightning1507/CoLearnia/pull/78) ghi kết quả HTTPS, readiness và transaction trên release lịch sử `50eec8f`.                                                               | **BLOCKED**. Xác minh quyền truy cập, current release và DB/volume đang dùng.                                                                                       | Operator staging, M1/M4             |
+| M3-T17.3 / SCRUM-63, SCRUM-64 | [PR #88](https://github.com/Lightning1507/CoLearnia/pull/88) có bằng chứng Allocate/relay lịch sử. [PR #116](https://github.com/Lightning1507/CoLearnia/pull/116) ghép REST bootstrap/ICE credentials. | **BLOCKED**. Xác minh cấp credential tạm qua hợp đồng app và đo qua MAIN thật với TLS 443/UDP 3478.                                                                 | M3/M4, operator TURN                |
+| M3-T5.1 / SCRUM-71            | [PR #120](https://github.com/Lightning1507/CoLearnia/pull/120) triển khai bật/tắt mic/camera, có loopback thiết bị giả local.                                                                          | **BLOCKED**. Kiểm mic/camera vật lý trong MAIN cùng hai người thử.                                                                                                  | M3/M5, người thử A/B                |
+| M3-T6.2 / SCRUM-75            | [PR #99](https://github.com/Lightning1507/CoLearnia/pull/99) có code publish/stop screen và screen audio.                                                                                              | **BLOCKED**. Chạy screen share, kiểm hình/âm thanh tại đầu nhận và dừng nguồn qua app staging.                                                                      | M3/M5, người thử A/B                |
+| M3-T8.1 / SCRUM-77            | [PR #114](https://github.com/Lightning1507/CoLearnia/pull/114) có playback MAIN và bằng chứng fixture local.                                                                                           | **BLOCKED**. Xác minh playback, autoplay và nghe được hai chiều trong app.                                                                                          | M3/M5, người thử A/B                |
+| M4-T2.4 / SCRUM-80            | [PR #75](https://github.com/Lightning1507/CoLearnia/pull/75) có bootstrap/readiness được kiểm với DB test.                                                                                             | **BLOCKED**. Đối chiếu startup, schema/index và quyền trên current/target staging.                                                                                  | M4, M1, operator                    |
+| SCRUM-88                      | [PR #128 và evidence local](2026-11-18-scrum-88-main-auth-media.md) có auth/ACL MongoDB, signaling Socket.IO và native transports. Entry point tại baseline chưa nối registry/router MAIN vào app.     | **BLOCKED**. Cần build có browser join/SEND/RECV và xác nhận phạm vi lỗi thu hồi phiên cũ theo [issue #130](https://github.com/Lightning1507/CoLearnia/issues/130). | M1/M3/M4                            |
+| SCRUM-93                      | Chưa xác minh được Jira, SHA/bản build hay nhánh trùng mã trên origin.                                                                                                                                 | **BLOCKED**. Cần đầu ra tích hợp và bản build chứa luồng app đủ cho người thử.                                                                                      | PM xác nhận đầu mối SCRUM-93, M3/M4 |
+
+### NET-01–04 và TURN-01–04
+
+NET-01 **BLOCKED** cho cả A/B. Trên đường thử công khai, DNS PASS và HTTPS FAIL. Mạng A/B chính thức đều **NOT TESTED**. Login, workspace, WebSocket authenticated, MAIN join và truyền mic/camera/share hai chiều đều **NOT TESTED**. NET-02–04 và TURN-01–04 **BLOCKED** vì thiếu build staging được xác nhận, hai client độc lập, tài khoản được cấp quyền và cấu hình relay-only của phiên thử.
+
+| Client | Transport | TURN TLS 443 | TURN UDP 3478 | ICE/DTLS, selected pair và local type | RTP bytes/packets và nghe/nhìn |
+| ------ | --------- | ------------ | ------------- | ------------------------------------- | ------------------------------ |
+| A      | SEND      | NOT TESTED   | NOT TESTED    | Chưa đo                               | Chưa đo hoặc xác nhận          |
+| A      | RECV      | NOT TESTED   | NOT TESTED    | Chưa đo                               | Chưa đo hoặc xác nhận          |
+| B      | SEND      | NOT TESTED   | NOT TESTED    | Chưa đo                               | Chưa đo hoặc xác nhận          |
+| B      | RECV      | NOT TESTED   | NOT TESTED    | Chưa đo                               | Chưa đo hoặc xác nhận          |
+
+### RB-01–04 và DATA-01
+
+RB-01 **BLOCKED**. Chưa có commit và image digest server/web của current, target và recovery, chứng cứ compatibility API/auth/socket/schema/index/storage, trạng thái call/recording/upload, drain, cửa sổ thực hiện hoặc lệnh và approval từ operator. RB-02/RB-04 **BLOCKED**. Thực thi rollback và recovery **NOT TESTED**, release cuối phiên chưa xác minh.
+
+| Pha RB-03      | Mạng | UTC, commit và image digest server/web | HTTPS          | Readiness nội bộ | Auth, workspace, signaling, MAIN | Kết quả |
+| -------------- | ---- | -------------------------------------- | -------------- | ---------------- | -------------------------------- | ------- |
+| Trước rollback | A    | Chưa đo                                | Chưa đo trên A | Chưa nhận        | Chưa chạy                        | BLOCKED |
+| Trước rollback | B    | Chưa đo                                | Chưa đo trên B | Chưa nhận        | Chưa chạy                        | BLOCKED |
+| Sau rollback   | A    | Chưa đo                                | Chưa đo trên A | Chưa nhận        | Chưa chạy                        | BLOCKED |
+| Sau rollback   | B    | Chưa đo                                | Chưa đo trên B | Chưa nhận        | Chưa chạy                        | BLOCKED |
+
+DATA-01 **BLOCKED**. Identity MongoDB, volume/mount, canary hợp lệ và checksum trước/sau đều **NOT TESTED**. Chưa có bằng chứng kiểm object/recording storage, tải kết hợp hoặc queue/pool/gate/quota của staging. Operator cùng M1/M2/M3/M4 cần chốt baseline và compatibility trước khi xin phê duyệt đổi release. M5 điều phối hai người thử rồi bàn giao kết quả cho M3 review.
+
+### Kiểm local của lượt đo bổ sung
+
+`pnpm install --frozen-lockfile` và `pnpm doctor` exit 0. Doctor báo Docker Engine không chạy hoặc không truy cập được. `pnpm exec node --test scripts/scrum81/diagnostics.test.mjs` **PASS** 13/13, `pnpm exec eslint scripts/scrum81 --max-warnings=0` **PASS**, `pnpm media:smoke` **PASS** worker và Router Opus/VP8. Đây là kiểm local của cùng baseline code. Kết quả mạng, TURN và rollback được ghi riêng ở trên.
+
+`pnpm check` **PASS** với 54 ca harness đạt, 1 ca symlink được bỏ qua trên Windows, 140 kiểm tra nguồn/link/runtime, format, lint, typecheck, 994 unit test trong 73 file và build. Đã kiểm tám liên kết nội bộ dẫn tới file và đủ bốn dòng riêng ở mỗi ma trận TURN/RB-03. DB integration và browser staging chưa chạy trong lượt đo bổ sung.
