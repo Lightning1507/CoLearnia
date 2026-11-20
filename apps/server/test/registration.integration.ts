@@ -17,7 +17,7 @@ import { createApp } from '../src/app.js';
 import { createAuthRouter } from '../src/auth/auth-routes.js';
 import { createCsrf, csrfCookie } from '../src/auth/csrf.js';
 import { createHttpAuth, requireVerifiedSession } from '../src/auth/http-auth.js';
-import { createLogin, InvalidCredentialsError } from '../src/auth/login.js';
+import { createLogin, InvalidCredentialsError, LoginUnconfirmedError } from '../src/auth/login.js';
 import { authIndexRequirements, authModels } from '../src/auth/models.js';
 import { hashPassword } from '../src/auth/password-hash.js';
 import { createSessionReader } from '../src/auth/read-session.js';
@@ -51,15 +51,54 @@ const origin = 'https://colearnia.example.test';
 const config = loadConfig({ NODE_ENV: 'test', APP_ORIGIN: origin });
 const prefix = '/api/v1/auth';
 
+// Auth-only fixture: these adapters prove orchestration, not LIVE/messaging runtime.
+function fixtureAuth(db = database, cleanupReady = () => true) {
+  const coordinator = createOperationCoordinator();
+  const control = createAccessRevocationCoordinator({
+    coordinator,
+    messaging: {
+      fence: () => ({ throughResourceGeneration: 0 }),
+      revoke: async ({ revocationId }) => ({ revocationId, status: 'completed' }),
+    },
+    live: {
+      revoke: async ({ operationId }) => ({
+        operationId,
+        permissionRevoked: true,
+        pendingInvalidated: cleanupReady(),
+        cleanupPending: !cleanupReady(),
+      }),
+    },
+  });
+  const revoke = createSessionRevocation(
+    db,
+    () => true,
+    control,
+    () => {},
+  );
+  const persisted = createSessionReader(db, () => true);
+  const readSession: ReturnType<typeof createSessionReader> = async (token) => {
+    const session = await persisted(token);
+    return session && !control.isSessionDenied(session.context) ? session : null;
+  };
+  return {
+    login: createLogin(db, () => true, 604800, coordinator, revoke),
+    readSession,
+    control,
+    coordinator,
+    revoke,
+  };
+}
+
 function app(
   register = createRegistration(database, () => true, 604800),
-  readSession = createSessionReader(database, () => true),
+  readSession?: ReturnType<typeof createSessionReader>,
   onMutation = vi.fn(),
-  login = createLogin(database, () => true, 604800, createOperationCoordinator()),
+  login?: ReturnType<typeof createLogin>,
   logout?: ReturnType<typeof createSessionRevocation>['logout'],
 ) {
-  const httpAuth = createHttpAuth(origin, secret, readSession);
-  const router = createAuthRouter(httpAuth, register, login, logout);
+  const fixture = fixtureAuth();
+  const httpAuth = createHttpAuth(origin, secret, readSession ?? fixture.readSession);
+  const router = createAuthRouter(httpAuth, register, login ?? fixture.login, logout);
   router.post('/test-mutation', httpAuth.requireAuth, httpAuth.requireCsrf, (_req, res) => {
     onMutation();
     res.json(requireVerifiedSession(res)?.context);
@@ -796,6 +835,87 @@ describe('SCRUM-20 password login with MongoDB', () => {
     });
   }
 
+  it.each([false, true])(
+    'allows an expired cookie awaiting TTL with revocation dependency=%s',
+    async (withRevocation) => {
+      const coordinator = createOperationCoordinator();
+      const control = createAccessRevocationCoordinator({ coordinator });
+      const revoke = createSessionRevocation(
+        database,
+        () => true,
+        control,
+        () => {},
+      );
+      const prepare = vi.spyOn(revoke, 'prepareReplacement');
+      const login = createLogin(
+        database,
+        () => true,
+        604800,
+        coordinator,
+        withRevocation ? revoke : undefined,
+      );
+      const http = client(undefined, undefined, undefined, login);
+      const body = input();
+      const first = await signUp(http, body);
+      const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.parse(first.data.expiresAt) + 1);
+      try {
+        // Advance the application clock, not Mongo's TTL clock: the expired row
+        // definitely remains. Bootstrap fresh CSRF bound to the presented cookie.
+        expect(
+          await AuthSession.exists({
+            tokenHash: hashAuthToken(first.sessionCookie.slice(authCookie.length + 1)),
+          }),
+        ).not.toBeNull();
+        const csrf = await http
+          .get(prefix + '/csrf')
+          .set('Cookie', first.sessionCookie)
+          .expect(200);
+        const response = await loginRequest(http, {
+          cookie: `${first.sessionCookie}; ${cookie(csrf, csrfCookie).split(';', 1)[0]!}`,
+          csrfToken: csrfResponseSchema.parse(csrf.body).data.csrfToken,
+        })
+          .send({ email: body.email, password: body.password })
+          .expect(200);
+        expect(sessionFrom(response).sessionCookie).not.toBe(first.sessionCookie);
+        expect(prepare).not.toHaveBeenCalled();
+        expect(control.metrics().operations).toBe(0);
+      } finally {
+        clock.mockRestore();
+      }
+    },
+  );
+
+  it.each(['running', 'unknown'] as const)(
+    'does not bypass an expired cookie with a %s replacement',
+    async (phase) => {
+      const fixture = fixtureAuth();
+      const http = client(undefined, fixture.readSession, undefined, fixture.login);
+      const body = input();
+      const first = await signUp(http, body);
+      const token = first.sessionCookie.slice(authCookie.length + 1);
+      const auth = (await createSessionReader(database, () => true)(token))!.context;
+      expect(await fixture.revoke.prepareReplacement(auth)).toBe(true);
+      expect(fixture.revoke.claimReplacement(auth)).toBe(true);
+      if (phase === 'unknown') fixture.revoke.finishReplacement(auth, 'unknown');
+      const writes = vi.spyOn(database, 'transaction');
+      const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.parse(auth.expiresAt) + 1);
+      try {
+        await expect(
+          fixture.login(
+            { email: body.email, password: body.password },
+            token,
+            new AbortController().signal,
+          ),
+        ).rejects.toBeInstanceOf(LoginUnconfirmedError);
+        expect(writes).not.toHaveBeenCalled();
+        expect(await AuthSession.countDocuments({ userId: first.data.user.id })).toBe(1);
+      } finally {
+        clock.mockRestore();
+        writes.mockRestore();
+      }
+    },
+  );
+
   it('replaces the exact presented session on login and preserves other sessions', async () => {
     const http = client();
     const { displayName, ...credentials } = input();
@@ -960,7 +1080,7 @@ describe('SCRUM-20 password login with MongoDB', () => {
       .expect(200);
   });
 
-  it('rolls back the old session revocation when the new session insert fails', async () => {
+  it('rolls back DB replacement when insert fails; runtime denial remains fail-closed', async () => {
     const http = client();
     const { displayName, ...credentials } = input();
     const signedIn = await signUp(http, { ...credentials, displayName });
@@ -976,35 +1096,191 @@ describe('SCRUM-20 password login with MongoDB', () => {
       await http
         .get(prefix + '/me')
         .set('Cookie', signedIn.sessionCookie)
-        .expect(200);
+        .expect(401);
+      expect(
+        await AuthSession.findOne({ userId: signedIn.data.user.id, revokedAt: null }),
+      ).not.toBeNull();
       expect(await AuthSession.countDocuments({ userId: signedIn.data.user.id })).toBe(1);
     } finally {
       await db.command({ collMod: 'authSessions', validator: {}, validationLevel: 'strict' });
     }
   });
 
-  it('withholds cookies when MongoDB did not confirm the login commit', async () => {
-    const login = createLogin(
-      {
+  it('keeps denial and issues no new session when cleanup fails, then retries the same old scope', async () => {
+    let ready = false;
+    const fixture = fixtureAuth(database, () => ready);
+    const http = client(undefined, fixture.readSession, undefined, fixture.login);
+    const body = input();
+    const signedIn = await signUp(http, body);
+    await loginWithSession(http, signedIn)
+      .send({ email: body.email, password: body.password })
+      .expect(503);
+    await http
+      .get(prefix + '/me')
+      .set('Cookie', signedIn.sessionCookie)
+      .expect(401);
+    expect(await AuthSession.countDocuments({ userId: signedIn.data.user.id })).toBe(1);
+    ready = true;
+    await loginWithSession(http, signedIn)
+      .send({ email: body.email, password: body.password })
+      .expect(200);
+    expect(await AuthSession.countDocuments({ userId: signedIn.data.user.id })).toBe(2);
+  });
+
+  it('allows only one of two competing replacements to insert a new session', async () => {
+    const fixture = fixtureAuth();
+    const http = client(undefined, fixture.readSession, undefined, fixture.login);
+    const body = input();
+    const signedIn = await signUp(http, body);
+    const prepared = deferred<void>();
+    let requests = 0;
+    const prepare = fixture.revoke.prepareReplacement.bind(fixture.revoke);
+    vi.spyOn(fixture.revoke, 'prepareReplacement').mockImplementation(async (auth) => {
+      const ready = await prepare(auth);
+      if (++requests === 2) prepared.resolve();
+      await prepared.promise;
+      return ready;
+    });
+    const responses = await Promise.all(
+      [1, 2].map(() =>
+        loginWithSession(http, signedIn).send({ email: body.email, password: body.password }),
+      ),
+    );
+    expect(responses.map((value) => value.status).sort()).toEqual([200, 503]);
+    expect(await AuthSession.countDocuments({ userId: signedIn.data.user.id })).toBe(2);
+    const next = sessionFrom(responses.find((value) => value.status === 200)!);
+    await http
+      .get(prefix + '/me')
+      .set('Cookie', next.sessionCookie)
+      .expect(200);
+  });
+
+  it('rechecks the password after cleanup without holding the User gate during adapters', async () => {
+    const fixture = fixtureAuth();
+    const http = client(undefined, fixture.readSession, undefined, fixture.login);
+    const body = input();
+    const signedIn = await signUp(http, body);
+    const prepare = fixture.revoke.prepareReplacement.bind(fixture.revoke);
+    vi.spyOn(fixture.revoke, 'prepareReplacement').mockImplementation(async (auth) => {
+      const ready = await prepare(auth);
+      const passwordHash = await hashPassword('A different password after cleanup');
+      await fixture.coordinator.run({ userId: auth.userId }, async () => {
+        await User.updateOne({ _id: auth.userId }, { passwordHash });
+      });
+      return ready;
+    });
+    await loginWithSession(http, signedIn)
+      .send({ email: body.email, password: body.password })
+      .expect(401);
+    expect(await AuthSession.countDocuments({ userId: signedIn.data.user.id })).toBe(1);
+    await http
+      .get(prefix + '/me')
+      .set('Cookie', signedIn.sessionCookie)
+      .expect(401);
+  });
+
+  it('fails closed for replacement when no revocation dependency was supplied', async () => {
+    const login = createLogin(database, () => true, 604800, createOperationCoordinator());
+    const http = client(undefined, undefined, undefined, login);
+    const body = input();
+    const signedIn = await signUp(http, body);
+    const result = await loginWithSession(http, signedIn)
+      .send({ email: body.email, password: body.password })
+      .expect(503);
+    expect(result.headers['set-cookie']).toBeUndefined();
+    expect(await AuthSession.countDocuments({ userId: signedIn.data.user.id })).toBe(1);
+    await http
+      .get(prefix + '/me')
+      .set('Cookie', signedIn.sessionCookie)
+      .expect(200);
+  });
+
+  it.each(['commit-label', 'network-no-label'] as const)(
+    'retains replacement admission for %s while majority reads still see the old session active',
+    async (fault) => {
+      let writes = 0;
+      const fixture = fixtureAuth({
         ...database,
         async transaction(work) {
-          await database.transaction(work);
-          const error = new mongoose.mongo.MongoServerError({ message: 'test commit outcome' });
+          writes++;
+          if (writes > 1) return database.transaction(work);
+          // Fault model: the caller cannot establish a terminal DB outcome. Absence
+          // of a visible new session is intentionally not treated as rollback.
+          if (fault === 'network-no-label')
+            throw new mongoose.mongo.MongoNetworkError('unknown network fault');
+          const error = new mongoose.mongo.MongoServerError({ message: 'unknown commit fault' });
           error.addErrorLabel('UnknownTransactionCommitResult');
           throw error;
         },
+      });
+      const http = client(undefined, fixture.readSession, undefined, fixture.login);
+      const body = input();
+      const signedIn = await signUp(http, body);
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const response = await loginWithSession(http, signedIn)
+          .send({ email: body.email, password: body.password })
+          .expect(503);
+        expect(response.headers['set-cookie']).toBeUndefined();
+      }
+      expect(writes).toBe(1);
+      expect(await AuthSession.countDocuments({ userId: signedIn.data.user.id })).toBe(1);
+      expect(
+        (
+          await AuthSession.findOne({
+            tokenHash: hashAuthToken(signedIn.sessionCookie.slice(authCookie.length + 1)),
+          }).lean()
+        )?.revokedAt,
+      ).toBeInstanceOf(Date);
+      await http
+        .get(prefix + '/me')
+        .set('Cookie', signedIn.sessionCookie)
+        .expect(401);
+      // After the reconciliation-only retry, a new explicit login can recover
+      // without a failed/stale response clearing another tab's cookies.
+      await loginWithSession(http, signedIn)
+        .send({ email: body.email, password: body.password })
+        .expect(200);
+      expect(writes).toBe(2);
+      expect(await AuthSession.countDocuments({ userId: signedIn.data.user.id })).toBe(2);
+      // Repeated logout continues the same durable old-session revoke.
+      expect(await fixture.revoke.logout(signedIn.sessionCookie.slice(authCookie.length + 1))).toBe(
+        true,
+      );
+      expect(
+        (
+          await AuthSession.findOne({
+            tokenHash: hashAuthToken(signedIn.sessionCookie.slice(authCookie.length + 1)),
+          }).lean()
+        )?.revokedAt,
+      ).toBeInstanceOf(Date);
+    },
+  );
+
+  it('withholds cookies when MongoDB did not confirm the login commit', async () => {
+    const fixture = fixtureAuth({
+      ...database,
+      async transaction(work) {
+        await database.transaction(work);
+        const error = new mongoose.mongo.MongoServerError({ message: 'test commit outcome' });
+        error.addErrorLabel('UnknownTransactionCommitResult');
+        throw error;
       },
-      () => true,
-      604800,
-      createOperationCoordinator(),
-    );
-    const http = client(undefined, undefined, undefined, login);
+    });
+    const http = client(undefined, fixture.readSession, undefined, fixture.login);
     const { displayName, ...credentials } = input();
     const signedIn = await signUp(http, { ...credentials, displayName });
     const response = await loginWithSession(http, signedIn).send(credentials).expect(503);
     expect(response.headers['set-cookie']).toBeUndefined();
     expect(apiErrorSchema.parse(response.body).error.code).toBe('DEPENDENCY_UNAVAILABLE');
     expect(await AuthSession.countDocuments({ userId: signedIn.data.user.id })).toBe(2);
+    // Replaying the old cookie cannot start another write after ambiguous commit.
+    const retry = await loginWithSession(http, signedIn).send(credentials).expect(503);
+    expect(retry.headers['set-cookie']).toBeUndefined();
+    expect(await AuthSession.countDocuments({ userId: signedIn.data.user.id })).toBe(2);
+    await http
+      .get(prefix + '/me')
+      .set('Cookie', signedIn.sessionCookie)
+      .expect(401);
   });
 });
 
