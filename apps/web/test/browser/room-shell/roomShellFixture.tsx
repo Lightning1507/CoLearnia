@@ -269,7 +269,6 @@ async function verifyLifecycle(container: HTMLElement) {
     );
     const sidebar = container.querySelector('.workspace-sidebar');
     check(sidebar, 'Thiếu sidebar Workspace');
-    const borderColor = getComputedStyle(sidebar).borderBottomColor;
     // Badge + RoomShell's call, audio recovery and camera projections.
     verifyListeners(4);
     check(
@@ -481,10 +480,9 @@ async function verifyLifecycle(container: HTMLElement) {
     const standaloneStyle = getComputedStyle(standaloneCard);
     check(
       standaloneStyle.display === 'grid' &&
-        parseFloat(standaloneStyle.borderTopWidth) > 0 &&
-        standaloneStyle.borderTopColor === borderColor &&
-        standaloneStyle.borderTopColor !== 'rgba(0, 0, 0, 0)',
-      `Tailwind layout và token viền phải có hiệu lực ngoài Workspace (${standaloneStyle.display}, ${standaloneStyle.borderTopWidth}, ${standaloneStyle.borderTopColor}, Workspace ${borderColor})`,
+        standaloneStyle.backgroundColor === 'rgb(22, 27, 26)' &&
+        standaloneStyle.borderRadius === '0px',
+      'Room standalone phải dùng media surface toàn màn hình, không đóng khung card Workspace',
     );
     const stage = standaloneVideo.parentElement;
     check(

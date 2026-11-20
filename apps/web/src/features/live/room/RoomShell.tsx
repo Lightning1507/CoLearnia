@@ -22,6 +22,11 @@ type RoomShellProps = {
   controls?: ReactNode;
   devices?: DeviceMedia;
   error?: string | undefined;
+  header?: { navigation?: ReactNode; description?: ReactNode; position?: ReactNode };
+  participantNames?: Readonly<Record<string, string>>;
+  shareLabel?: string;
+  secondaryControls?: ReactNode;
+  volumeControls?: ReactNode;
 };
 
 function StageVideo({ stream }: { stream: MediaStream }) {
@@ -60,6 +65,11 @@ export function RoomShell({
   controls,
   devices,
   error,
+  header,
+  participantNames,
+  shareLabel,
+  secondaryControls,
+  volumeControls,
 }: RoomShellProps) {
   const call = useCallSnapshot();
   const audio = useCallAudio();
@@ -146,16 +156,21 @@ export function RoomShell({
     >
       <div className="live-room-layout">
         <header className="live-room-header">
-          <h2 className={useWorkspaceWidth ? 'sr-only' : undefined} id={titleId}>
-            {channelName}
-          </h2>
-          <p
-            className="live-room-call-status"
-            role="status"
-            data-state={roomCall?.status ?? 'idle'}
-          >
-            {statusLabels[roomCall?.status ?? 'idle']}
-          </p>
+          <div className="live-room-navigation">{header?.navigation}</div>
+          <div className="live-room-heading">
+            <h2 className={useWorkspaceWidth ? 'sr-only' : undefined} id={titleId}>
+              {channelName}
+            </h2>
+            <p
+              className={header?.description ? 'sr-only' : 'live-room-call-status'}
+              role="status"
+              data-state={roomCall?.status ?? 'idle'}
+            >
+              {statusLabels[roomCall?.status ?? 'idle']}
+            </p>
+            {header?.description && <p className="live-room-description">{header.description}</p>}
+          </div>
+          <div className="live-room-position">{header?.position}</div>
         </header>
         <div
           className={
@@ -171,6 +186,7 @@ export function RoomShell({
           >
             <div className={sharedStage ? 'live-call-share-layout' : 'live-call-grid-layout'}>
               <section className="live-call-stage" aria-label="Sân khấu cuộc gọi">
+                {sharedStage && shareLabel && <p className="live-share-status">{shareLabel}</p>}
                 {error ? (
                   <p role="alert">{error}</p>
                 ) : (
@@ -178,13 +194,15 @@ export function RoomShell({
                   (stream ? (
                     <StageVideo stream={stream} />
                   ) : roomCall?.status === 'active' ? (
-                    <CameraTiles snapshot={cameras} />
+                    <CameraTiles snapshot={cameras} participantNames={participantNames} />
                   ) : (
                     <p>Chưa có hình ảnh sân khấu.</p>
                   )))
                 )}
               </section>
-              {sharedStage && <CameraTiles snapshot={cameras} layout="rail" />}
+              {sharedStage && (
+                <CameraTiles snapshot={cameras} layout="rail" participantNames={participantNames} />
+              )}
             </div>
           </div>
           {sidePanel && (
@@ -211,8 +229,12 @@ export function RoomShell({
           ref={toolbar}
           tabIndex={-1}
         >
-          {roomCall?.status === 'active' && devices && <DeviceMediaControls devices={devices} />}
-          {controls ?? (!devices && <p>Chưa có điều khiển cuộc gọi khả dụng.</p>)}
+          {volumeControls && <div className="live-room-volume">{volumeControls}</div>}
+          <div className="live-room-controls-main">
+            {roomCall?.status === 'active' && devices && <DeviceMediaControls devices={devices} />}
+            {controls ?? (!devices && <p>Chưa có điều khiển cuộc gọi khả dụng.</p>)}
+          </div>
+          {secondaryControls && <div className="live-room-controls-side">{secondaryControls}</div>}
           {showAudioRecovery && (
             <div className="flex flex-wrap items-center gap-2">
               <p className="text-sm" role="status">

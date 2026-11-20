@@ -22,6 +22,7 @@
   --cl-color-live-control-active-text: #126a53;
   --cl-color-live-control-disabled-bg: #242a28;
   --cl-color-live-control-disabled-text: #717c78;
+  --cl-color-live-control-danger-bg: #a83f3f;
   --cl-color-camera-bg: #29302e;
   --cl-color-camera-text: #ffffff;
   --cl-color-camera-status-bg: rgb(19 24 23 / 0.75);
@@ -77,7 +78,7 @@ button:focus-visible {
 .live-camera-tile {
   position: relative;
   overflow: hidden;
-  border-radius: 7px;
+  border-radius: var(--cl-radius-control);
   background: var(--cl-color-camera-bg);
   color: var(--cl-color-camera-text);
 }
@@ -106,11 +107,34 @@ button:focus-visible {
   color: var(--cl-color-camera-status-text);
   font-size: 12px;
 }
+.live-camera-name {
+  position: absolute;
+  left: 8px;
+  bottom: 7px;
+  max-width: calc(100% - 16px);
+  margin: 0;
+  font-size: 12px;
+  text-shadow: 0 1px 3px var(--cl-color-call-bg);
+}
+.live-camera-initials {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border-radius: 10px;
+  background: var(--workspace-channel-selected-bg);
+  color: var(--workspace-channel-selected-text);
+  font-size: 14px;
+  font-weight: 600;
+}
 .live-room-shell {
   display: flex;
   flex: 1;
   min-width: 0;
   width: 100%;
+  font-family: var(--cl-font-sans);
+  font-size: 14px;
+  line-height: 1.5;
 }
 .live-room-layout {
   display: grid;
@@ -125,10 +149,80 @@ button:focus-visible {
   height: calc(100dvh - 64px);
 }
 .live-room-standalone > .live-room-layout {
-  height: min(50rem, calc(100dvh - 2rem));
-  overflow: hidden;
-  border: 1px solid var(--workspace-border);
-  border-radius: 12px;
+  height: 100dvh;
+}
+.live-room-standalone .live-room-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  min-height: 64px;
+  padding: 0 16px;
+}
+.live-room-heading {
+  text-align: center;
+  min-width: 0;
+}
+.live-room-position {
+  justify-self: end;
+  color: var(--workspace-muted);
+}
+.live-room-description {
+  margin-top: 3px;
+  color: var(--workspace-muted);
+  font-size: 12px;
+}
+.live-room-navigation button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 8px;
+  border-radius: var(--cl-radius-control);
+  font-size: 14px;
+  font-weight: 600;
+}
+.live-room-navigation button:hover {
+  background: var(--workspace-channel-hover-bg);
+}
+.live-room-shell :is(button, textarea, input):focus-visible {
+  outline: 2px solid var(--cl-color-focus-ring);
+  outline-offset: 3px;
+}
+.live-room-in-workspace .live-room-navigation:empty,
+.live-room-in-workspace .live-room-position:empty {
+  display: none;
+}
+.live-room-in-workspace .live-room-heading {
+  text-align: left;
+}
+.live-share-status {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 9px;
+  border-radius: 5px;
+  background: var(--cl-color-camera-status-bg);
+  color: var(--cl-color-camera-status-text);
+  font-size: 12px;
+}
+.live-share-status::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--cl-color-focus-ring);
+}
+@media (max-width: 767px) {
+  .live-room-standalone .live-room-header {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .live-room-position {
+    grid-column: 1 / -1;
+    justify-self: center;
+  }
 }
 .live-room-header {
   display: flex;
@@ -141,10 +235,10 @@ button:focus-visible {
   border-bottom: 1px solid var(--workspace-border);
   background: var(--workspace-content-bg);
   color: var(--workspace-text);
-  font-size: 12px;
+  font-size: 14px;
 }
 .live-room-header h2 {
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 600;
 }
 .live-room-call-status {
@@ -189,7 +283,8 @@ button:focus-visible {
   padding: 8px 12px;
   border: 1px solid var(--workspace-border);
   border-radius: var(--cl-radius-control);
-  font-size: 12px;
+  min-height: 44px;
+  font-size: 14px;
 }
 .live-room-panel-content {
   min-height: 0;
@@ -198,20 +293,56 @@ button:focus-visible {
   font-size: 14px;
 }
 .live-room-toolbar {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   min-height: 66px;
-  flex-wrap: wrap;
   align-items: center;
-  justify-content: center;
   gap: 8px;
   padding: 12px;
   border-top: 1px solid var(--cl-color-media-border);
   background: var(--cl-color-call-bg);
   color: var(--cl-color-camera-status-text);
 }
-.live-room-toolbar .live-toolbar-control {
-  min-height: 42px;
+.live-room-controls-main,
+.live-room-controls-side {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+}
+.live-room-controls-main {
+  justify-self: center;
+}
+.live-room-controls-side {
+  justify-self: end;
+}
+.live-room-volume {
+  grid-column: 1 / -1;
+  color: var(--cl-color-media-muted);
   font-size: 12px;
+}
+.live-toolbar-control[data-state='danger'] {
+  background: var(--cl-color-live-control-danger-bg);
+  color: var(--cl-color-camera-text);
+}
+@media (max-width: 767px) {
+  .live-room-toolbar {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .live-room-controls-side {
+    justify-self: center;
+  }
+}
+.live-room-toolbar .live-toolbar-control {
+  min-height: 44px;
+  gap: 8px;
+  border-radius: var(--cl-radius-control);
+  font-size: 14px;
+  font-weight: 500;
+}
+.live-room-toolbar .live-toolbar-control svg {
+  width: 20px;
+  height: 20px;
 }
 .live-room-toolbar p {
   color: var(--cl-color-media-muted);
@@ -239,11 +370,12 @@ button:focus-visible {
   color-scheme: dark;
 }
 .live-call-stage {
+  position: relative;
   display: grid;
   min-width: 0;
   min-height: 12rem;
   place-items: center;
-  border-radius: 7px;
+  border-radius: var(--cl-radius-control);
   background: var(--cl-color-stage-bg);
   color: var(--cl-color-camera-text);
   text-align: center;
@@ -280,6 +412,14 @@ button:focus-visible {
   .live-camera-rail {
     max-height: none;
     grid-template-columns: minmax(0, 1fr);
+    grid-auto-rows: minmax(120px, 1fr);
+    align-content: stretch;
+    scrollbar-gutter: auto;
+  }
+  .live-camera-rail .live-camera-surface,
+  .live-camera-rail .live-camera-surface > video {
+    height: 100%;
+    aspect-ratio: auto;
   }
 }
 .live-toolbar-control:hover {

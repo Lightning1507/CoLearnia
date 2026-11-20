@@ -149,3 +149,41 @@ SCRUM-88 / M4-T11.1 cần ghép join có xác thực, SEND/RECV, projection/cont
 - Browser PASS cho video/custom/grid, reflow 320px, panel ở 767/768 và 1279/1280px, nháp giữ qua 1279→1440, Về sân khấu trả focus tới trigger. Một call initialization, không Consumer bị đóng, borrowed tracks còn live. Fixture camera/ACK/pause/local enabled/StrictMode vẫn PASS. Lifecycle RoomShell riêng PASS: subscription remaining=0, attach/detach=16/16, peak=1, call init/dispose=1/1, observers=0, hai ca focus resize đạt.
 - Fixture room-shell tổng hợp tiếp tục FAIL ở selector Chat cũ trong route TEXT `/workspace` sau khi lifecycle đã PASS; không giảm assertion hoặc đổi product TEXT trong task style này. Cập nhật phép đo panel so với media region ngoài, vì stage video nay có inset 12px theo layout. Bộ unit camera/snapshot/audio 78/78 PASS. Ảnh là ứng dụng đang render canvas/snapshot mô phỏng, chưa là bằng chứng SFU/TURN hoặc camera vật lý.
 - `pnpm.exe check` exit 0: harness 54 PASS/1 skip Windows, 140 nguồn/links, format/lint/typecheck (contracts/web/server và tsconfig integration), 1040/1040 test trên 74 file và build cả ba package PASS. `pnpm.exe media:smoke` exit 0: native worker/Router Opus/VP8 PASS. Không sửa dependency, config audit, cổng check hoặc assertion TEXT để làm xanh.
+
+## Đồng nhất với giao diện app hiện có — 20/11/2026
+
+### Nguồn đối chiếu
+
+Phần này thay thế kết luận style của lượt 19/11 ở trên. Figma là draft tham khảo, không phải thiết kế đã duyệt để sao chép nguyên mẫu. Chuẩn triển khai lấy từ [global.css](../../apps/web/src/styles/global.css), [tokens.css](../../apps/web/src/styles/tokens.css), [WorkspaceShell](../../apps/web/src/features/workspaces/WorkspaceShell.tsx), [channel-list.css](../../apps/web/src/features/channels/channel-list.css), [text-timeline.css](../../apps/web/src/features/text/text-timeline.css) và [auth.css](../../apps/web/src/features/auth/auth.css). Đã xem màn Workspace và preview kiểm tra thiết bị đang render; route login báo không kết nối được API, nên không ghi nhận nghiệm thu form đăng nhập qua browser.
+
+Tham khảo cách ưu tiên nội dung chia sẻ và giữ người tham gia bên cạnh trong [Google Meet](https://support.google.com/meet/answer/9292748?hl=en), [Microsoft Teams](https://support.microsoft.com/en-us/teams/meetings/customize-your-meeting-view-in-microsoft-teams). Chỉ tham khảo tổ chức không gian, không nhập bảng màu hoặc toàn bộ tính năng của hai sản phẩm.
+
+### Thay đổi và bằng chứng browser
+
+- RoomShell standalone có header 64px, vùng media tối liền mạch, stage lớn và camera rail, panel đọc sáng; vẫn hỗ trợ nhúng Workspace và dùng cùng controller. Header/tên người tham gia/nhãn nguồn là dữ liệu trình bày do caller cấp, không tạo nguồn camera hoặc cấp quyền mới.
+- Dùng font `--cl-font-sans`, radius control và màu Workspace đang dùng. Avatar chữ có kích thước 36px, nền/foreground giống avatar chat; bỏ bảng bốn màu avatar riêng. Các control chính cao 44px, chữ 14px, icon 20px, focus ring có token chung. Nhãn camera trạng thái vẫn 12px và giữ “Camera tạm dừng”, “Đang đồng bộ camera”.
+- Tái sử dụng DeviceMediaControls và RoomShell/CameraTiles thật; CSS demo tách riêng, dùng token cho slide và bản nháp chat. Không tạo bộ primitive giả khi app chưa có component tương ứng. Màu media tối dùng token media đã có trong global.css, không đổi theme các trang khác.
+- Browser xác nhận computed font đúng token, control cao 44px/chữ 14px, avatar dùng `#dcefe8` như chat. Không tràn ngang; camera thứ năm vẫn còn trong rail có cuộn; video/custom/grid đều PASS. Resize 1279→1280 giữ nháp và không khởi tạo lại call/đóng Consumer.
+
+| Viewport | Chat | Stage    | Rail    | Kết quả                            |
+| -------- | ---- | -------- | ------- | ---------------------------------- |
+| 1280×800 | Đóng | 1066×553 | 180×553 | PASS; toolbar trong viewport       |
+| 1280×800 | Mở   | 746×553  | 180×553 | PASS; panel cạnh media             |
+| 1440×900 | Đóng | 1226×653 | 180×653 | PASS; stage ưu tiên nội dung share |
+| 1440×900 | Mở   | 906×653  | 180×653 | PASS; giữ nháp khi resize          |
+
+![Giao diện app 1280×800](images/scrum-78/app-style-1280x800.jpg)
+
+![Giao diện app 1440×900](images/scrum-78/app-style-1440x900.jpg)
+
+![Chat mở 1280×800](images/scrum-78/app-style-panel-1280x800.jpg)
+
+![Chat mở 1440×900](images/scrum-78/app-style-panel-1440x900.jpg)
+
+### Kiểm thử và giới hạn
+
+- Fixture camera PASS: ACK A → camera C không liên quan → ACK B → snapshot B pending → đọc lại → snapshot ready vẫn pause B; ACK cũ không ghi đè pause; local enabled → disabled → enabled; pause/resume/remount/switching/ended/StrictMode. Browser phát canvas track thật, snapshot/signaling và capture/publish được mô phỏng.
+- Lifecycle RoomShell riêng PASS: subscriptions=68, remaining=0, attach/detach=16/16, peak=1, init/dispose=1/1, observers=0, resizeFocus=true/true. Fixture tổng hợp vẫn FAIL sau đó ở selector TEXT cũ `article[aria-label^="Chat "]`; TextTimeline hiện là section “Tin nhắn văn bản”. Không đổi product TEXT hoặc giảm assertion để làm xanh. Console fixture còn cảnh báo React act; kết quả assertion được ghi riêng, không gọi toàn bộ browser suite là PASS.
+- `pnpm.exe media:smoke` exit 0: native worker/Router Opus/VP8. Không chứng minh SFU/TURN, camera vật lý hoặc cuộc gọi xuyên mạng. Các slot âm lượng/nhóm trong demo chỉ kiểm bố cục; chưa nghiệm thu AudioGraph/nhóm production. Đường ghép LIVE production vẫn theo SCRUM-88 / M4-T11.1 như phạm vi đã ghi ở đầu evidence.
+- `pnpm.exe check` exit 0: harness 54 PASS/1 skip Windows, 140 nguồn/links; format/lint/typecheck; 1040/1040 test trên 74 file; build contracts/web/server. Bộ regression runtime camera/ACK/audio nằm trong lượt test đầy đủ này. Không đổi dependency, audit config hoặc cổng check.
+- Kiểm thử trong checkout độc lập để tránh chat khác đổi nhánh giữa lượt chạy; sau đó chép đủ 13 file về checkout SCRUM-78 chính và đối chiếu hash. Đã xóa `.worktrees` theo yêu cầu sau khi xác minh hai lượt SCRUM-81 đã kết thúc, worktree sạch, commit có trên remote và không có process sử dụng; giữ nguyên nhánh/PR SCRUM-81. Thay đổi `.vscode/settings.json` staged có sẵn được giữ nguyên và không đưa vào commit SCRUM-78.

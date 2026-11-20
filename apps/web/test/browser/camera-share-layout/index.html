@@ -19,18 +19,18 @@
         flex: 1;
       }
       .camera-layout-tools {
-        position: fixed;
-        bottom: 12px;
-        left: 12px;
+        position: absolute;
+        top: 3px;
+        right: 18px;
         z-index: 20;
         max-width: min(420px, calc(100vw - 24px));
-        padding: 8px 12px;
-        border: 1px solid #dfe4e2;
+        padding: 5px 12px;
+        border: 1px solid var(--cl-color-border-subtle);
         border-radius: 8px;
-        background: #fff;
-        color: #52605c;
+        background: var(--cl-color-surface);
+        color: var(--cl-color-text-secondary);
         font:
-          12px/1.5 system-ui,
+          12px/1.5 var(--cl-font-sans),
           sans-serif;
       }
       .camera-layout-tools[open] {
@@ -49,16 +49,19 @@
     </style>
   </head>
   <body>
+    <div class="camera-layout-demo-bar">
+      <span>Tình huống demo · cuộc họp mô phỏng</span>
+      <details class="camera-layout-tools">
+        <summary>Tình huống demo</summary>
+        <p>
+          SCRUM-78 · RoomShell/WorkspaceShell thật, snapshot và thiết bị mô phỏng, video canvas.
+          Không phải kiểm SFU/TURN.
+        </p>
+        <output id="result" role="status">Đang kiểm bố cục…</output>
+        <div id="fixture-controls"></div>
+      </details>
+    </div>
     <div id="root"></div>
-    <details class="camera-layout-tools">
-      <summary>Dữ liệu mô phỏng · Kiểm thử</summary>
-      <p>
-        SCRUM-78 · RoomShell/WorkspaceShell thật, snapshot và thiết bị mô phỏng, video canvas. Không
-        phải kiểm SFU/TURN.
-      </p>
-      <output id="result" role="status">Đang kiểm bố cục…</output>
-      <div id="fixture-controls"></div>
-    </details>
     <script type="module" src="./cameraShareLayoutFixture.tsx"></script>
   </body>
 </html>

@@ -73,7 +73,19 @@ function CameraVideo({
   );
 }
 
-function CameraPlaceholder() {
+function CameraPlaceholder({ name }: { name?: string | undefined }) {
+  if (name)
+    return (
+      <span className="live-camera-initials">
+        {name
+          .trim()
+          .split(/\s+/)
+          .slice(-2)
+          .map((word) => word[0])
+          .join('')
+          .toLocaleUpperCase('vi')}
+      </span>
+    );
   return (
     <svg className="live-camera-avatar" viewBox="0 0 48 48" aria-hidden="true">
       <circle cx="24" cy="17" r="8" fill="currentColor" />
@@ -82,7 +94,15 @@ function CameraPlaceholder() {
   );
 }
 
-function CameraTile({ camera, synchronized }: { camera: CameraView; synchronized: boolean }) {
+function CameraTile({
+  camera,
+  synchronized,
+  name,
+}: {
+  camera: CameraView;
+  synchronized: boolean;
+  name?: string | undefined;
+}) {
   const [playing, setPlaying] = useState(false);
   return (
     <article
@@ -102,7 +122,7 @@ function CameraTile({ camera, synchronized }: { camera: CameraView; synchronized
               className="live-camera-placeholder absolute inset-0 grid place-items-center"
               aria-hidden="true"
             >
-              <CameraPlaceholder />
+              <CameraPlaceholder name={name} />
             </span>
           )}
         </div>
@@ -111,12 +131,13 @@ function CameraTile({ camera, synchronized }: { camera: CameraView; synchronized
           className="live-camera-surface live-camera-placeholder grid aspect-video place-items-center"
           aria-hidden="true"
         >
-          <CameraPlaceholder />
+          <CameraPlaceholder name={name} />
         </div>
       )}
       <p className="live-camera-status" role="status">
         {cameraStatus(camera, synchronized, playing)}
       </p>
+      <p className="live-camera-name">{camera.local ? 'Bạn' : (name ?? 'Người tham gia')}</p>
     </article>
   );
 }
@@ -124,9 +145,11 @@ function CameraTile({ camera, synchronized }: { camera: CameraView; synchronized
 export function CameraTiles({
   snapshot,
   layout = 'grid',
+  participantNames,
 }: {
   snapshot: CameraSnapshot;
   layout?: 'grid' | 'rail';
+  participantNames?: Readonly<Record<string, string>> | undefined;
 }) {
   return (
     <section
@@ -145,6 +168,7 @@ export function CameraTiles({
             key={`${camera.source.sourceId}:${camera.source.sourceGeneration}:${camera.source.sourceRevision}:${camera.track?.id ?? 'waiting'}`}
             camera={camera}
             synchronized={snapshot.synchronized}
+            name={participantNames?.[camera.source.ownerParticipantId]}
           />
         ))
       )}

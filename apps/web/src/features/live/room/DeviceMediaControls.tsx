@@ -58,7 +58,7 @@ function DeviceControl({ devices, kind }: { devices: DeviceMedia; kind: DeviceKi
     <div className="flex flex-wrap items-center gap-2">
       <button
         type="button"
-        className="live-toolbar-control inline-flex h-[42px] min-w-12 items-center justify-center gap-1.5 rounded-lg px-[11px] text-[9px]"
+        className="live-toolbar-control inline-flex min-h-11 min-w-12 items-center justify-center gap-2 rounded-lg px-3 text-sm"
         aria-label={action + ' ' + label}
         title={action + ' ' + label}
         aria-pressed={phase === 'on'}
