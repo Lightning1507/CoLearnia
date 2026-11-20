@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { AuthenticatedData } from '@colearnia/contracts';
 import { io } from 'socket.io-client';
 import { TextTimeline } from './TextTimeline';
 import { createTextApi } from './text-api';
 import { createTextSynchronizer, type TextSyncState } from './text-sync';
+import { createTextConnection } from './text-connection';
 
 // Bounded in-memory projection. These budgets do not establish server capacity.
 const limits = {
@@ -38,6 +39,7 @@ export function TextChannel({
   }>();
   const [opened, setOpened] = useState(false);
   const [error, setError] = useState('');
+  const connectionRef = useRef<ReturnType<typeof createTextConnection> | null>(null);
   useEffect(() => {
     let active = true;
     const origin = new URL(import.meta.env.VITE_API_BASE_URL ?? '/api/v1', window.location.href)
@@ -58,35 +60,32 @@ export function TextChannel({
       if (active) {
         setState(value);
         if (value.phase === 'live') setOpened(true);
-        if (value.phase === 'revoked' || value.phase === 'blocked') socket.disconnect();
+        if (value.phase === 'revoked' || value.phase === 'blocked')
+          connectionRef.current?.disconnect();
         if (value.phase === 'revoked') onAccessLost();
       }
     });
-    socket.on('connect', () => {
-      if (!active) return;
-      setRuntime({ api, controller, disconnect: () => socket.disconnect() });
-      setError('');
-      void controller.reconcile();
-    });
-    socket.on('connect_error', (failure: unknown) => {
-      const data =
-        failure && typeof failure === 'object' && 'data' in failure ? failure.data : null;
-      const code = data && typeof data === 'object' && 'code' in data ? data.code : '';
-      if (active && ['AUTH_REQUIRED', 'CSRF_INVALID'].includes(String(code))) {
-        controller.stop();
+    const connection = createTextConnection(socket, controller, {
+      connected() {
+        if (!active) return;
+        setRuntime({ api, controller, disconnect: connection.disconnect });
+        setError('');
+      },
+      unavailable() {
+        if (active) setError('Chưa kết nối được dịch vụ chat. Hãy kiểm tra phiên và thử lại.');
+      },
+      accessLost() {
+        if (!active) return;
         setState({ phase: 'revoked', messages: [], checkpoint: undefined, olderCursor: null });
-        socket.disconnect();
         onAccessLost();
-        return;
-      }
-      if (active) setError('Chưa kết nối được dịch vụ chat. Hãy kiểm tra phiên và thử lại.');
+      },
     });
+    connectionRef.current = connection;
     socket.connect();
     return () => {
       active = false;
-      controller.stop();
-      socket.removeAllListeners();
-      socket.disconnect();
+      if (connectionRef.current === connection) connectionRef.current = null;
+      connection.dispose();
     };
   }, [channelId, session.csrfToken, onAccessLost]);
 
@@ -111,7 +110,7 @@ export function TextChannel({
               ? 'Chưa đồng bộ được chat. Dịch vụ có thể chưa sẵn sàng, hãy thử lại.'
               : 'Đang kết nối và đồng bộ tin nhắn…'}
           </p>
-          <button onClick={() => void runtime?.controller.reconcile()}>Thử kết nối lại</button>
+          <button onClick={() => connectionRef.current?.retry()}>Thử kết nối lại</button>
         </div>
       )}
       {runtime && opened && (

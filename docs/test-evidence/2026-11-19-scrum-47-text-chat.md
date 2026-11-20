@@ -72,3 +72,54 @@ M1 review cache/identity/abort và bằng chứng hai tài khoản. Task có đ�
 - Ba file unit text-api/text-sync/text-intent đạt 23 test, gồm ACK subscribe muộn, HTTP 401 không phải JSON và lỗi quyền/cursor khi đọc trang cũ.
 - Build web thành công, còn cảnh báo bundle chính 542,40 kB minified (165,48 kB gzip) vượt ngưỡng cảnh báo 500 kB. Giữ cảnh báo để review hiệu năng.
 - `git diff --check` sạch. Vite/server demo đã dừng, container Mongo dùng một lần và file dừng walkthrough đã được dọn. Các database ngoài container thử được giữ nguyên.
+
+## Bổ sung review P2 retry kết nối — 20/11/2026
+
+Mốc đối chiếu: review trên `8fa64db`. Bản sửa giữ handle kết nối ngay khi tạo socket,
+trước lần `connect` thành công. Nút “Thử kết nối lại” gọi cùng handle này: socket chưa
+kết nối thì `connect()`; khi đã nối thì chỉ `reconcile()`. Event `connect` mới bắt đầu
+đối soát. Không tạo thêm socket/listener mỗi lần bấm. Cleanup gỡ đúng listener sở hữu,
+stop controller và disconnect; handle đã dispose/thu quyền bỏ qua retry và callback muộn.
+`AUTH_REQUIRED`/`CSRF_INVALID` là lỗi phiên terminal, không retry trong lifetime cũ.
+
+### Lệnh và bằng chứng của lượt sửa
+
+```powershell
+pnpm exec vitest run apps/web/src/features/text/text-connection.test.ts apps/web/src/features/text/text-api.test.ts apps/web/src/features/text/text-sync.test.ts
+pnpm exec vitest run --config vitest.database.config.ts test/text-connection.integration.mjs
+pnpm --filter @colearnia/web typecheck
+pnpm check
+```
+
+- Unit gần thay đổi: **24/24 đạt**, gồm 5 ca mới: retry trước connect, reconcile khi đã nối,
+  hai lỗi phiên terminal, cleanup/listener và callback/retry sau dispose/deny.
+- Native Socket.IO loopback: **4/4 đạt**. Middleware từ chối handshake đầu với
+  `DEPENDENCY_UNAVAILABLE`, client `active=false`; chính action nút dùng khôi phục về
+  `live` sau dependency hồi phục, handshake tăng 1 → 2. Server chủ động disconnect rồi
+  retry cũng về live. Hai lỗi phiên không mở lại kết nối. REST/history ở đây là fixture,
+  không chạy MongoDB hoặc auth/ACL server thật.
+- Browser Chrome headless/Playwright: mount **TextChannel thật** qua Vite với server
+  Socket.IO loopback và REST/session fixture tạm. Bấm nút thật sau lỗi handshake đầu:
+  thấy `browser-recovered`, attempts=2, main-frame navigation=1. Server disconnect,
+  bấm nút lần nữa: chat live, attempts=3, navigation vẫn 1 (không reload).
+  Reload riêng từng fixture `AUTH_REQUIRED`/`CSRF_INVALID`: thông báo mất quyền,
+  không còn nút retry và không mở lại handshake sau khi server hồi phục.
+  Fixture tạm đã gỡ; không thêm đường thử vào entry sản phẩm. Có thể tái kiểm đường
+  điều phối bằng file integration ở trên; walkthrough nút thật cần mount TextChannel
+  với middleware từ chối lần đầu rồi cho phép, REST trả snapshot hợp lệ.
+- Typecheck Web đạt. `pnpm check` đạt: harness 54 pass/1 skip theo baseline, format/lint/typecheck, 1.003/1.003 unit và build. Bundle Web 542,78 kB còn cảnh báo >500 kB; `git diff --check` sạch.
+
+Các kết quả Mongo/native 10 ca và walkthrough hai tài khoản ở phần trước thuộc
+`8fa64db`, không được ghi thành chạy lại trong lượt sửa retry này. Browser lượt này
+chỉ chứng minh nút/transport React với fixture; không thay nghiệm thu staging/ACL.
+
+### Bàn giao rollout còn mở
+
+| Đầu việc                                              | Nguồn theo dõi                                                | Đầu mối và điều kiện                                                                                                                     |
+| ----------------------------------------------------- | ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| Recovery gửi TEXT / ambiguous commit / durable revoke | [#126](https://github.com/Lightning1507/CoLearnia/issues/126) | M2 `WANNAREST` nhận đầu mối; M1/M4 review giải pháp và bằng chứng trước bật send.                                                        |
+| Entry thật và binding M2/LIVE cleanup                 | [#135](https://github.com/Lightning1507/CoLearnia/issues/135) | M2 `WANNAREST` nhận phối hợp; M4 cần xác nhận phần composition SCRUM-88/cleanup, M1 review quyền/config. Chưa tự coi M4 đã nhận/approve. |
+
+PR này giao đầu ra UI đã kiểm; **không bật send/sync trong main**, không đổi mặc định,
+không deploy. SCRUM-47 và nghiệm thu demo/rollout vẫn mở đến khi các điều kiện trên
+được kiểm và M1/M4 review; merge UI không tự hoàn thành các tiêu chí đó.
