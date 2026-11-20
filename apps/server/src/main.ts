@@ -1,4 +1,5 @@
 import { createServer } from 'node:http';
+import { Router } from 'express';
 import { createApp } from './app.js';
 import { createAuthRouter } from './auth/auth-routes.js';
 import { createHttpAuth } from './auth/http-auth.js';
@@ -35,6 +36,9 @@ import {
   createSessionBootstrap,
 } from './live/session-manager/session-bootstrap.js';
 import type { createMediaRuntime } from './live/media/runtime.js';
+import { createMainRuntime } from './live/main-runtime.js';
+import { createApplicationMainRegistry } from './lib/shared-main-registry.js';
+import { sessionIndexRequirements } from './live/session-manager/session-models.js';
 import type { SystemStatus } from '@colearnia/contracts';
 
 const config = loadConfig();
@@ -51,6 +55,31 @@ let workspaceIndexesReady = false;
 let textIndexesReady = false;
 let textSyncIndexesReady = false;
 let acceptingLiveRuntime = false;
+let mainRuntime: ReturnType<typeof createMainRuntime> | undefined;
+const mediaRouter = Router();
+const liveChannelRouter = Router();
+liveChannelRouter.use((req, res, next) => {
+  if (!mainRuntime && /^\/[^/]+\/live-session\/join\/?$/.test(req.path)) {
+    res.setHeader('Cache-Control', 'no-store');
+    res.status(503).json({
+      requestId: res.locals.requestId,
+      error: { code: 'DEPENDENCY_UNAVAILABLE', message: 'Cuộc gọi chưa sẵn sàng.' },
+    });
+    return;
+  }
+  next();
+});
+mediaRouter.use((_req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store');
+  if (!mainRuntime) {
+    res.status(503).json({
+      requestId: res.locals.requestId,
+      error: { code: 'DEPENDENCY_UNAVAILABLE', message: 'Cuộc gọi chưa sẵn sàng.' },
+    });
+    return;
+  }
+  next();
+});
 const sessionBootstrap = createSessionBootstrap(database, {
   isOffline: () => !acceptingLiveRuntime && !stopping,
   prepareStaleSession: createColdSessionArtifactGuard(database),
@@ -65,7 +94,10 @@ const status = (): SystemStatus => ({
     sessionBootstrap.isReady() &&
     database.isConnected() &&
     Boolean(media?.isReady()) &&
-    (!config.SESSION_SECRET || (authIndexesReady && workspaceIndexesReady)),
+    (!config.SESSION_SECRET ||
+      (authIndexesReady &&
+        workspaceIndexesReady &&
+        (!config.TEXT_SYNC_LIMITS_JSON || Boolean(mainRuntime)))),
 });
 
 const canUseAuthIndexes = () => authIndexesReady && !stopping;
@@ -161,7 +193,15 @@ const workspaceRouter = httpAuth
     )
   : undefined;
 const httpServer = createServer(
-  createApp(config, status, authRouter, workspaceRouter, undefined, textRouter),
+  createApp(
+    config,
+    status,
+    authRouter,
+    workspaceRouter,
+    mediaRouter,
+    textRouter,
+    liveChannelRouter,
+  ),
 );
 const io = createRealtime(
   httpServer,
@@ -172,6 +212,7 @@ const io = createRealtime(
   textService && createTextSocketSend(textService),
   textService && createTextSocketSync(textService),
 );
+io.on('connection', (socket) => mainRuntime?.attach(socket));
 
 async function start() {
   // Health endpoints respond during cold bootstrap; LIVE stays gated by readiness.
@@ -239,10 +280,44 @@ async function start() {
     try {
       const { startLiveRuntime } = await import('./live/media/live-runtime.js');
       media = await startLiveRuntime(config, {
-        // SCRUM-88 supplies mountRegistry with real M1/M2/M3/M5 ports through
-        // createApplicationMainRegistry (shared deny/cohort and one-time binding).
-        // Wire its REST router and socket proof handler with createMediaBootstrapComposition.
-        // Never substitute a fake authority/cleanup here.
+        ...(httpAuth && config.TEXT_SYNC_LIMITS_JSON
+          ? {
+              async mountRegistry(runtime: Awaited<ReturnType<typeof createMediaRuntime>>) {
+                if (
+                  !httpAuth ||
+                  !textService?.syncRevocation ||
+                  !authIndexesReady ||
+                  !workspaceIndexesReady
+                )
+                  throw new Error('MAIN requires auth, Workspace indexes and real TEXT cleanup');
+                if (!(await preflightIndexes(database.connection, sessionIndexRequirements)).ready)
+                  throw new Error('MAIN session indexes must be provisioned before startup');
+                mainRuntime = createMainRuntime({
+                  config,
+                  database,
+                  httpAuth,
+                  access: workspaceAccess,
+                  barrier: accessRevocations.barrier,
+                  media: runtime,
+                  createRegistry: (input) =>
+                    createApplicationMainRegistry(input, textService.syncRevocation!),
+                  isReady: () =>
+                    acceptingLiveRuntime &&
+                    !stopping &&
+                    sessionBootstrap.isReady() &&
+                    database.isConnected() &&
+                    authIndexesReady &&
+                    workspaceIndexesReady,
+                  isAuthCurrent: (auth) => !accessRevocations.isSessionDenied(auth),
+                  report: (code) => logger.warn({ code }, 'MAIN lifecycle requires reconciliation'),
+                });
+                mediaRouter.use(mainRuntime.mediaRouter);
+                liveChannelRouter.use(mainRuntime.channelRouter);
+                for (const socket of io.sockets.sockets.values()) mainRuntime.attach(socket);
+                return mainRuntime.registry;
+              },
+            }
+          : {}),
         closeAdmission() {
           acceptingLiveRuntime = false;
           logger.error(
@@ -269,6 +344,7 @@ async function shutdown() {
   textService?.stop();
   const deadline = setTimeout(() => process.exit(1), 10_000).unref();
   connections.stop();
+  mainRuntime?.close();
   media?.close();
   await new Promise<void>((resolve) => io.close(() => resolve()));
   await database.close();
