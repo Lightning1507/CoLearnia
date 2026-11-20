@@ -7,6 +7,9 @@ import {
   sessionJoinInputSchema,
   sessionJoinTicketInputSchema,
   sessionEndInputSchema,
+  sessionLeaveInputSchema,
+  sessionLeaveAckSchema,
+  sessionEndedEventSchema,
   workspaceDocumentIdSchema,
   liveAccessRevocationSchema,
   accessCleanupResultSchema,
@@ -86,6 +89,7 @@ type Ownership = {
   room: Room;
   participant: PolicyParticipant;
   resumeTicket: string;
+  projectionSequence?: number;
   reconnect?: {
     deadline: number;
     generation: number;
@@ -112,6 +116,18 @@ type Revocation = {
   expiresAt: number;
   task?: Promise<AccessCleanupResult>;
   retry?: () => Promise<AccessCleanupResult>;
+};
+type LeaveRecord = {
+  command: string;
+  owner: Ownership;
+  handle: ReturnType<typeof beginSessionTransition>;
+  input: import('@colearnia/contracts').SessionLeaveInput;
+  binding: Binding;
+  task?: Promise<ReturnType<typeof sessionLeaveAckSchema.parse>>;
+  completed: boolean;
+  expiresAt: number;
+  write?: ReturnType<typeof createSessionMetadataWrite>;
+  retry?: () => Promise<ReturnType<typeof sessionLeaveAckSchema.parse>>;
 };
 export class MainJoinError extends Error {
   constructor(readonly code: CommonErrorCode) {
@@ -157,6 +173,10 @@ export function createMainJoinRegistry(options: {
     'coordinator' | 'barrier' | 'revokedAuthSessions'
   >;
   repository: Repository;
+  leaveParticipant?: ReturnType<
+    typeof import('./session-repository.js').createSessionRepository
+  >['leave'];
+  publishEnded?(socketId: string, notice: import('@colearnia/contracts').SessionEndedEvent): void;
   resolveAuthority(
     auth: AuthenticatedContext,
     target: Target,
@@ -193,6 +213,7 @@ export function createMainJoinRegistry(options: {
   const endRecords = new Map<string, EndRecord>();
   const failedRouters = new Set<string>();
   const revocations = new Map<string, Revocation>();
+  const leaves = new Map<string, LeaveRecord>();
   const inFlight = new Map<symbol, { auth: AuthenticatedContext; target: Target }>();
   const pendingRouters = new Set<string>();
   const creatingRooms = new Set<string>();
@@ -421,6 +442,8 @@ export function createMainJoinRegistry(options: {
     for (const intent of intents.values()) if (intent.expiresAt <= time) forget(intent);
     for (const [key, record] of endRecords) if (record.expiresAt <= time) endRecords.delete(key);
     for (const [key, record] of revocations) if (record.expiresAt <= time) revocations.delete(key);
+    for (const [key, record] of leaves)
+      if (record.completed && record.expiresAt <= time) leaves.delete(key);
   }
   async function metadataResult(
     room: Room,
@@ -615,6 +638,7 @@ export function createMainJoinRegistry(options: {
     const input = policyInput(owner, current);
     const cursor = createSessionProjectionCursor(input);
     if (!cursor.ok) fail(cursor.errorCode);
+    cursor.cursor.projectionSequence = owner.projectionSequence ?? 0;
     const snapshot = prepareSessionSnapshot(input, cursor.cursor, {
       requestId,
       snapshotId: randomUUID(),
@@ -714,6 +738,13 @@ export function createMainJoinRegistry(options: {
       },
       targets,
       adapters,
+      retryMedia: (retry) =>
+        options.coordinator.run({ workspaceId: destination.workspaceId }, async (context) => {
+          retry({
+            assertHeld: () => context.assertHeld({ workspaceId: destination.workspaceId }),
+            isCurrent,
+          });
+        }),
       beginEnding: async (guard) => {
         if (currentRoom.metadata && currentRoom.metadata !== beginWrite)
           await settleMetadata(currentRoom, guard);
@@ -739,6 +770,24 @@ export function createMainJoinRegistry(options: {
             if (ownerships.get(value.participant.auth.userId) === value)
               ownerships.delete(value.participant.auth.userId);
           if (rooms.get(destination.channelId) === currentRoom) rooms.delete(destination.channelId);
+          for (const owner of owners) {
+            const notice = sessionEndedEventSchema.parse({
+              event: 'session.ended',
+              sessionId: currentRoom.state.sessionId,
+              epoch: currentRoom.state.epoch,
+              participantId: owner.participant.participantId,
+              callGeneration: owner.participant.callGeneration,
+              audienceEpoch: owner.participant.audienceEpoch,
+              policyRevision: currentRoom.state.policyRevision,
+              projectionSequence: (owner.projectionSequence ?? 0) + 1,
+              scope: owner.participant.scope,
+            });
+            try {
+              options.publishEnded?.(owner.binding.socketId, notice);
+            } catch {
+              /* Delivery failure cannot undo a completed end. Reconnect resync denies it. */
+            }
+          }
         }),
     });
     const accepted = {
@@ -858,6 +907,10 @@ export function createMainJoinRegistry(options: {
       assertRunning();
       const owner = [...ownerships.values()].find((value) => value.binding.socketId === socketId);
       if (!owner) return;
+      const leaving = [...leaves.values()].find(
+        (value) => value.owner === owner && !value.completed,
+      );
+      if (leaving) return leaving.retry?.().then(() => undefined);
       if (owner.reconnect) return owner.reconnect.task ?? owner.reconnect.retryCleanup?.();
       const { participant, room } = owner;
       const record: NonNullable<Ownership['reconnect']> = {
@@ -1726,6 +1779,181 @@ export function createMainJoinRegistry(options: {
       return structuredClone(await record.task);
     },
 
+    async leave(rawBinding: Binding, raw: unknown) {
+      const input = sessionLeaveInputSchema.parse(raw);
+      const auth = identity(rawBinding.auth);
+      const command = JSON.stringify([auth, rawBinding.socketId, input]);
+      const key = JSON.stringify([auth.userId, input.requestId]);
+      let record = leaves.get(key);
+      if (record && record.command !== command) fail('CONFLICT');
+      if (!record) {
+        const owner = ownerships.get(auth.userId);
+        if (!owner) fail('CONFLICT');
+        const room = owner.room;
+        record = await run(auth, room.state, async (held) => {
+          const existing = leaves.get(key);
+          if (existing) {
+            if (existing.command !== command) fail('CONFLICT');
+            return existing;
+          }
+          await authority(auth, room.state, held);
+          usable(room);
+          if (
+            ownerships.get(auth.userId) !== owner ||
+            owner.binding.socketId !== rawBinding.socketId ||
+            owner.participant.auth.authSessionId !== auth.authSessionId ||
+            !rawBinding.isConnected() ||
+            room.state.sessionId !== input.sessionId ||
+            room.state.epoch !== input.epoch ||
+            owner.participant.callGeneration !== input.callGeneration ||
+            room.state.policyRevision !== input.expectedPolicyRevision
+          )
+            fail('CONFLICT');
+          if (room.state.hostParticipantId === owner.participant.participantId) fail('FORBIDDEN');
+          if (!options.leaveParticipant || !options.reconnectCleanup)
+            fail('DEPENDENCY_UNAVAILABLE');
+          if ([...leaves.values()].some((value) => value.owner === owner && !value.completed))
+            fail('CONFLICT');
+          sweep();
+          for (const [oldKey, oldRecord] of leaves) {
+            if (leaves.size < 128) break;
+            if (oldRecord.completed) leaves.delete(oldKey);
+          }
+          if (leaves.size >= 128) fail('SERVER_BUSY');
+          blockPeer(room, owner.participant);
+          owner.participant.connected = false;
+          owner.resumeTicket = '';
+          room.shareLeases.closeFor(
+            {
+              session: room.state,
+              nowMs: clock(),
+              assertHeld: () => held.assertHeld({ workspaceId: room.state.workspaceId }),
+            },
+            owner.participant.participantId,
+            owner.participant.callGeneration,
+          );
+          const request = {
+            operationId: input.requestId,
+            transitionToken: randomUUID(),
+            sessionId: input.sessionId,
+            epoch: input.epoch,
+            callGeneration: input.callGeneration,
+            target: {
+              type: 'PARTICIPANT' as const,
+              participantId: owner.participant.participantId,
+            },
+            reason: 'SCOPE_CLOSED' as const,
+          };
+          const value: LeaveRecord = {
+            command,
+            owner,
+            input,
+            binding: { ...rawBinding, auth },
+            completed: false,
+            expiresAt: Number.POSITIVE_INFINITY,
+            handle: beginSessionTransition(
+              request,
+              {
+                assertHeld: () => held.assertHeld({ workspaceId: room.state.workspaceId }),
+                isCurrent: () => ownerships.get(auth.userId) === owner && owner.participant.blocked,
+              },
+              options.reconnectCleanup,
+              { userId: auth.userId, timing: createSessionTransitionTiming() },
+            ),
+          };
+          leaves.set(key, value);
+          return value;
+        });
+      }
+      const current = record;
+      const reply = (complete: boolean) =>
+        sessionLeaveAckSchema.parse({
+          requestId: input.requestId,
+          data: {
+            status: complete ? 'completed' : 'pending',
+            result: {
+              sessionId: input.sessionId,
+              epoch: input.epoch,
+              left: complete,
+              cleanupPending: !complete,
+            },
+          },
+        });
+      if (current.completed) return reply(true);
+      if (current.task) return current.task;
+      current.retry ??= () => registryLeaveRetry();
+      const registryLeaveRetry = () => {
+        if (current.completed) return Promise.resolve(reply(true));
+        if (current.task) return current.task;
+        current.task = (async () => {
+          const { owner } = current;
+          const room = owner.room;
+          await options.coordinator.run({ workspaceId: room.state.workspaceId }, async (held) => {
+            current.handle.retryMediaHeld({
+              assertHeld: () => held.assertHeld({ workspaceId: room.state.workspaceId }),
+              isCurrent: () => !closed && leaves.get(key) === current,
+            });
+          });
+          const cleaned = await current.handle.retryCleanup();
+          if (!cleaned.permissionRevoked || !cleaned.pendingInvalidated || cleaned.cleanupPending)
+            return reply(false);
+          await options.coordinator.run({ workspaceId: room.state.workspaceId }, async (held) => {
+            if (closed) fail('DEPENDENCY_UNAVAILABLE');
+            // An end/revoke may have removed this ownership while cleanup waited.
+            // Its exact old resource request has now settled; never mutate a new owner.
+            if (
+              ownerships.get(auth.userId) !== owner ||
+              room.state.epoch !== input.epoch ||
+              owner.participant.callGeneration !== input.callGeneration ||
+              room.state.state === 'ENDED'
+            ) {
+              current.completed = true;
+              current.expiresAt = clock() + 60_000;
+              return;
+            }
+            if (room.state.state !== 'ACTIVE') fail('CONFLICT');
+            if (room.metadata && room.metadata !== current.write)
+              await settleMetadata(room, () => {
+                if (closed) fail('CONFLICT');
+              });
+            current.write ??= createSessionMetadataWrite(
+              { ...options.repository, leave: options.leaveParticipant! },
+              {
+                kind: 'leave',
+                input: {
+                  sessionId: new Types.ObjectId(input.sessionId),
+                  epoch: input.epoch,
+                  expectedRevision: room.revision,
+                  at: new Date(clock()),
+                  userId: new Types.ObjectId(auth.userId),
+                },
+              },
+            );
+            await metadataResult(room, current.write, () => {
+              if (closed || ownerships.get(auth.userId) !== owner) fail('CONFLICT');
+            });
+            held.assertHeld({ workspaceId: room.state.workspaceId });
+            if (ownerships.get(auth.userId) !== owner) fail('CONFLICT');
+            ownerships.delete(auth.userId);
+            const participants = new Map(room.state.participants);
+            participants.delete(owner.participant.participantId);
+            room.state.participants = participants;
+            for (const intent of [...intents.values()])
+              if (intent.consumed?.ownership === owner) forget(intent);
+            current.completed = true;
+            current.expiresAt = clock() + 60_000;
+          });
+          return reply(true);
+        })()
+          .catch(() => reply(false))
+          .finally(() => {
+            delete current.task;
+          });
+        return current.task;
+      };
+      return registryLeaveRetry();
+    },
+
     async end(rawBinding: Binding, raw: unknown) {
       const timing = createSessionTransitionTiming();
       const input = sessionEndInputSchema.parse(raw);
@@ -1892,6 +2120,14 @@ export function createMainJoinRegistry(options: {
     // Composition calls periodically. Workspace-only cleanup never acquires a User gate.
     async sweepExpired() {
       sweep();
+      // Bounded round-robin recovery also progresses leaves whose socket vanished.
+      for (const [key, record] of [...leaves].filter(([, value]) => !value.completed).slice(0, 8)) {
+        await record.retry?.();
+        if (leaves.get(key) === record) {
+          leaves.delete(key);
+          leaves.set(key, record);
+        }
+      }
       const deferredWorkspaces = new Set<string>();
       for (const room of [...rooms.values()]) {
         if (deferredWorkspaces.has(room.state.workspaceId)) continue;
@@ -1987,6 +2223,7 @@ export function createMainJoinRegistry(options: {
       tickets.clear();
       intents.clear();
       revocations.clear();
+      leaves.clear();
       endRecords.clear();
       ownerships.clear();
       rooms.clear();

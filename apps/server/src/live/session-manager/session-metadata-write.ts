@@ -1,9 +1,10 @@
 import type { createSessionRepository } from './session-repository.js';
 
 type Repository = ReturnType<typeof createSessionRepository>;
-type Kind = 'create' | 'join' | 'beginEnding' | 'completeEnding';
+type Kind = 'create' | 'join' | 'leave' | 'beginEnding' | 'completeEnding';
 type Intent = { [K in Kind]: { kind: K; input: Parameters<Repository[K]>[0] } }[Kind];
-export type SessionMutationRepository = Pick<Repository, Kind | 'readMutation'>;
+export type SessionMutationRepository = Pick<Repository, Exclude<Kind, 'leave'> | 'readMutation'> &
+  Partial<Pick<Repository, 'leave'>>;
 type Result = { revision: number; participantId?: import('mongoose').Types.ObjectId };
 
 // One captured write, then read-only recovery. Absence or a later revision never
@@ -20,12 +21,35 @@ export function createSessionMetadataWrite(repository: SessionMutationRepository
       epoch: input.epoch,
       ...(kind === 'create' ? { userId: intent.input.hostUserId } : {}),
       ...(kind === 'join' ? { userId: intent.input.userId } : {}),
+      ...(kind === 'leave' ? { userId: intent.input.userId } : {}),
     });
     guard();
     const version = proof.version;
+    // A leave retry uses the identical CAS revision and timestamp. A positive
+    // unchanged read allows another attempt; a later/ambiguous revision never does.
+    if (
+      kind === 'leave' &&
+      version?.epoch === input.epoch &&
+      version._id.equals(input.sessionId) &&
+      version.status === 'ACTIVE' &&
+      version.revision === intent.input.expectedRevision &&
+      proof.participant?.userId.equals(intent.input.userId) &&
+      proof.participant.sessionId.equals(input.sessionId) &&
+      proof.participant.leftAt === null
+    ) {
+      started = false;
+      throw new Error('Leave transaction has not committed');
+    }
     const expectedRevision = kind === 'create' ? 0 : intent.input.expectedRevision + 1;
     const status =
       kind === 'beginEnding' ? 'ENDING' : kind === 'completeEnding' ? 'ENDED' : 'ACTIVE';
+    if (
+      kind === 'leave' &&
+      (!proof.participant?.userId.equals(intent.input.userId) ||
+        !proof.participant.sessionId.equals(input.sessionId) ||
+        proof.participant.leftAt?.getTime() !== input.at.getTime())
+    )
+      throw new Error('Session leave result is unconfirmed');
     if (
       !version ||
       !version._id.equals(input.sessionId) ||
@@ -88,6 +112,10 @@ export function createSessionMetadataWrite(repository: SessionMutationRepository
                 break;
               case 'join':
                 result = await repository.join(intent.input);
+                break;
+              case 'leave':
+                if (!repository.leave) throw new Error('Session leave repository unavailable');
+                result = await repository.leave(intent.input);
                 break;
               case 'beginEnding':
                 result = await repository.beginEnding(intent.input, guard);

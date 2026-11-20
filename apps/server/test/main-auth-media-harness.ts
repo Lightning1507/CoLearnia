@@ -24,6 +24,8 @@ import { startLiveRuntime } from '../src/live/media/live-runtime.js';
 import { createTransportSignaling } from '../src/live/media/transport-signaling.js';
 import { createMediaBootstrapComposition } from '../src/live/media/media-bootstrap-composition.js';
 import { createMainAuthority } from '../src/live/session-manager/main-authority.js';
+import { createMainRuntime } from '../src/live/main-runtime.js';
+import { createTextSyncRegistry } from '../src/messaging/text-sync.js';
 import { createMainJoinRegistry } from '../src/live/session-manager/main-join-registry.js';
 import { attachMainJoinSocket } from '../src/live/session-manager/main-join-signaling.js';
 import { attachMainReconnectSocket } from '../src/live/session-manager/main-reconnect-signaling.js';
@@ -117,7 +119,7 @@ async function isolatedDomainCleanup(value: SessionCleanupRequest): Promise<Sess
   };
 }
 
-export async function setup() {
+export async function setup(options: { productionRuntime?: boolean } = {}) {
   const coordinator = createOperationCoordinator();
   const revocations = createAccessRevocationCoordinator({ coordinator });
   const access = createWorkspaceAccessService(
@@ -142,6 +144,7 @@ export async function setup() {
     logout.logout,
   );
   const mediaRouter = Router();
+  const liveChannelRouter = Router();
   const server = createServer(
     createApp(
       config,
@@ -149,6 +152,8 @@ export async function setup() {
       authRouter,
       undefined,
       mediaRouter,
+      undefined,
+      liveChannelRouter,
     ),
   );
   const io = createRealtime(
@@ -159,6 +164,8 @@ export async function setup() {
     (auth) => !revocations.isSessionDenied(auth),
   );
   let registry!: ReturnType<typeof createMainJoinRegistry>;
+  let mainRuntime: ReturnType<typeof createMainRuntime> | undefined;
+  let runtimeReady = true;
   let transports!: ReturnType<typeof createTransportSignaling>;
   let delayed = false;
   let entered: (() => void) | undefined;
@@ -171,6 +178,52 @@ export async function setup() {
     closeAdmission() {},
     report() {},
     mountRegistry(runtime) {
+      if (options.productionRuntime) {
+        const messaging = createTextSyncRegistry(config.SESSION_SECRET!, {
+          subscriptions: 32,
+          perUser: 4,
+          leaseMs: 60_000,
+          revocationRecords: 128,
+        });
+        mainRuntime = createMainRuntime({
+          config,
+          database,
+          httpAuth,
+          access,
+          barrier: revocations.barrier,
+          media: {
+            ...runtime,
+            createTransport: async (router) => {
+              const value = await runtime.createTransport(router);
+              native.push(value);
+              if (delayed) {
+                const wait = new Promise<void>((resolve) => {
+                  release = resolve;
+                });
+                entered?.();
+                await wait;
+              }
+              return value;
+            },
+          },
+          isReady: () => runtimeReady,
+          isAuthCurrent: (auth) => !revocations.isSessionDenied(auth),
+          report: () => {},
+          createRegistry(input) {
+            const value = createMainJoinRegistry({
+              ...input,
+              coordinator,
+              accessRevocations: revocations,
+            });
+            revocations.bindCleanupAdapters({ messaging: messaging.revocation, live: value });
+            return value;
+          },
+        });
+        registry = mainRuntime.registry;
+        mediaRouter.use(mainRuntime.mediaRouter);
+        liveChannelRouter.use(mainRuntime.channelRouter);
+        return registry;
+      }
       const cleanup = {
         media: {
           revoke: (value: SessionCleanupRequest) => {
@@ -209,13 +262,14 @@ export async function setup() {
       return registry;
     },
   });
-  revocations.bindCleanupAdapters({
-    messaging: {
-      fence: () => ({ throughResourceGeneration: 0 }),
-      revoke: async ({ revocationId }) => ({ revocationId, status: 'completed' }),
-    },
-    live: registry,
-  });
+  if (!options.productionRuntime)
+    revocations.bindCleanupAdapters({
+      messaging: {
+        fence: () => ({ throughResourceGeneration: 0 }),
+        revoke: async ({ revocationId }) => ({ revocationId, status: 'completed' }),
+      },
+      live: registry,
+    });
   const bootstrap = createMediaBootstrapComposition(config, httpAuth, registry);
   mediaRouter.use(bootstrap.router);
   const errors: string[] = [];
@@ -230,6 +284,10 @@ export async function setup() {
   };
   io.on('connection', (socket) => {
     const liveSocket = socket as unknown as ServerSocket;
+    if (mainRuntime) {
+      mainRuntime.attach(liveSocket);
+      return;
+    }
     const readAuth = () =>
       !revocations.isSessionDenied(socket.data.auth) ? socket.data.auth : null;
     attachMainJoinSocket(registry, liveSocket, readAuth);
@@ -246,6 +304,7 @@ export async function setup() {
     connections.stop();
     await new Promise<void>((resolve) => io.close(() => resolve()));
     registry.close();
+    mainRuntime?.close();
     media.close();
   });
   const credentials = new WeakMap<object, { email: string; password: string }>();
@@ -384,6 +443,9 @@ export async function setup() {
     native,
     errors,
     http,
+    setRuntimeReady: (value: boolean) => {
+      runtimeReady = value;
+    },
     cleanupRequests,
     retryOldCleanup: (value: SessionCleanupRequest) => transports.cleanup(value),
     replaySnapshots: async (client: ClientSocket, packets: readonly unknown[]) => {
@@ -409,6 +471,8 @@ export async function setup() {
 }
 
 export {
+  config,
+  database,
   User,
   Workspace,
   AuthSession,

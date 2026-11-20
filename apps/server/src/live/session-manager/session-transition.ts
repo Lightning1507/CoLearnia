@@ -349,12 +349,19 @@ export function beginSessionTransition(
         }
       }
     },
-    async retryCleanup() {
+    async retryCleanup({ preservePermanentRefusal = false } = {}) {
       if (committed || retired) return inspect();
       const until = currentTime() + sessionControlBudget.cleanupAttemptTimeoutMs;
       await Promise.all(
         domains.map(async (name) => {
           const state = states[name];
+          if (
+            preservePermanentRefusal &&
+            state.outcome?.permissionRevoked === false &&
+            !state.outcome.retryable &&
+            state.outcome.errorCode !== 'DEPENDENCY_UNAVAILABLE'
+          )
+            return;
           if (
             state.outcome?.permissionRevoked &&
             state.outcome.pendingInvalidated &&

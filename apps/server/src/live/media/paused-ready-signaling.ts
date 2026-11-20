@@ -247,13 +247,15 @@ export function createPausedReadySignaling({
       sessionControlBudget.cleanupAttemptTimeoutMs,
     );
     // Keep admission until native I/O settles, even if the client already received a timeout.
-    const settled = task({
-      isCancelled: () => cancelled,
-      bindResource(native) {
-        resource = native;
-        if (cancelled) closeResource();
-      },
-    })
+    const settled = outsideCoordination(() =>
+      task({
+        isCancelled: () => cancelled,
+        bindResource(native) {
+          resource = native;
+          if (cancelled) closeResource();
+        },
+      }),
+    )
       .catch(() => fail('MEDIA_UNAVAILABLE'))
       .finally(() => {
         clearTimeout(timer);
