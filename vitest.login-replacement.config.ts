@@ -1,6 +1,6 @@
 import { defineConfig } from 'vitest/config';
 
-// Issue #130: known-failing diagnostic, reported separately from default CI.
+// SCRUM-94 / issue #130: compatibility command for the default integration regression.
 export default defineConfig({
   test: {
     environment: 'node',
