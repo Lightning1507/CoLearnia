@@ -160,7 +160,7 @@ export async function setup(options: { text?: boolean; origin?: string; port?: n
   const authRouter = createAuthRouter(
     httpAuth,
     createRegistration(database, () => true, 3600),
-    createLogin(database, () => true, 3600, coordinator),
+    createLogin(database, () => true, 3600, coordinator, logout),
     logout.logout,
   );
   const mediaRouter = Router();
@@ -350,19 +350,37 @@ export async function setup(options: { text?: boolean; origin?: string; port?: n
     credentials.set(account, input);
     return account;
   }
-  async function loginAgain(account: Awaited<ReturnType<typeof signUp>>) {
+  function requestLogin(account: Awaited<ReturnType<typeof signUp>>, presented = account) {
     const input = credentials.get(account);
     if (!input) throw new Error('Unknown test account');
-    const response = await http
+    return http
       .post('/api/v1/auth/login')
       .set('Origin', origin)
-      .set('Cookie', account.cookie)
-      .set('X-CSRF-Token', account.data.csrfToken)
-      .send(input)
-      .expect(200);
+      .set('Cookie', presented.cookie)
+      .set('X-CSRF-Token', presented.data.csrfToken)
+      .send(input);
+  }
+  async function loginAgain(account: Awaited<ReturnType<typeof signUp>>, presented = account) {
+    const input = credentials.get(account)!;
+    const response = await requestLogin(account, presented).expect(200);
     const replacement = await accountFrom(response);
     credentials.set(replacement, input);
     return replacement;
+  }
+  async function loginStandalone(account: Awaited<ReturnType<typeof signUp>>) {
+    const input = credentials.get(account);
+    if (!input) throw new Error('Unknown test account');
+    const csrf = await http.get('/api/v1/auth/csrf').expect(200);
+    const response = await http
+      .post('/api/v1/auth/login')
+      .set('Origin', origin)
+      .set('Cookie', cookies(csrf))
+      .set('X-CSRF-Token', csrfResponseSchema.parse(csrf.body).data.csrfToken)
+      .send(input)
+      .expect(200);
+    const independent = await accountFrom(response);
+    credentials.set(independent, input);
+    return independent;
   }
   async function connect(account: Awaited<ReturnType<typeof signUp>>) {
     const socket = connectSocket(`http://127.0.0.1:${(server.address() as AddressInfo).port}`, {
@@ -432,6 +450,8 @@ export async function setup(options: { text?: boolean; origin?: string; port?: n
     channel,
     signUp,
     loginAgain,
+    loginStandalone,
+    requestLogin,
     connect,
     join,
     disconnect,

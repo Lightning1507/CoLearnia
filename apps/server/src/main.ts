@@ -91,7 +91,13 @@ const authRouter = httpAuth
   ? createAuthRouter(
       httpAuth,
       createRegistration(database, canUseAuthIndexes, config.AUTH_TTL_SECONDS),
-      createLogin(database, canUseAuthIndexes, config.AUTH_TTL_SECONDS, operationCoordinator),
+      createLogin(
+        database,
+        canUseAuthIndexes,
+        config.AUTH_TTL_SECONDS,
+        operationCoordinator,
+        sessionRevocation,
+      ),
       sessionRevocation.logout,
     )
   : undefined;

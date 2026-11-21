@@ -92,6 +92,139 @@ function setup(
 }
 
 describe('shared access revocation', () => {
+  it('prepares AUTH_SESSION cleanup outside gates without committing; revoke finalizes the same operation', async () => {
+    const f = setup();
+    const command = {
+      ...event('AUTH_SESSION'),
+      kind: 'AUTH_SESSION' as const,
+      authSessionId: sessionId,
+    };
+    const input = { event: command, userId, persistence: f.persistence };
+    f.live.revoke.mockImplementation(async (value) => {
+      expect(await f.current()).toBe(false);
+      return {
+        operationId: value.operationId,
+        permissionRevoked: true,
+        pendingInvalidated: true,
+        cleanupPending: false,
+      };
+    });
+    expect(await f.control.prepareAuthSession(input)).toBe(true);
+    expect(f.persistence.commitHeld).not.toHaveBeenCalled();
+    expect(f.control.claimAuthSessionReplacement(command.operationId)).toBe(true);
+    expect(f.control.claimAuthSessionReplacement(command.operationId)).toBe(false);
+    f.control.finishAuthSessionReplacement(command.operationId, 'unknown');
+    expect(f.control.isAuthSessionReplacementUncertain(command.operationId)).toBe(true);
+    // Releasing the caller/driver gate does not release unresolved write admission.
+    expect(f.control.claimAuthSessionReplacement(command.operationId)).toBe(false);
+    expect(await f.current()).toBe(false);
+    expect((await f.control.revoke(input)).cleanupPending).toBe(false);
+    expect(f.control.isAuthSessionReplacementUncertain(command.operationId)).toBe(false);
+    expect(f.persistence.commitHeld).toHaveBeenCalledTimes(1);
+    expect(f.live.revoke).toHaveBeenCalledTimes(1);
+    expect(f.messaging.revoke).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not announce prepared cleanup when adapters are missing or pending', async () => {
+    const coordinator = createOperationCoordinator();
+    const control = createAccessRevocationCoordinator({ coordinator });
+    const f = setup();
+    const command = {
+      ...event('AUTH_SESSION'),
+      kind: 'AUTH_SESSION' as const,
+      authSessionId: sessionId,
+    };
+    expect(
+      await control.prepareAuthSession({ event: command, userId, persistence: f.persistence }),
+    ).toBe(false);
+    expect(control.isSessionDenied(auth)).toBe(true);
+    expect(f.persistence.commitHeld).not.toHaveBeenCalled();
+  });
+
+  it('retires a cleaned, definitely aborted replacement only after absolute auth expiry', async () => {
+    const f = setup({ maxOperations: 1 });
+    const expiresAt = Date.now() + 10_000;
+    const command = {
+      ...event('AUTH_SESSION'),
+      kind: 'AUTH_SESSION' as const,
+      authSessionId: sessionId,
+    };
+    const input = {
+      event: command,
+      userId,
+      persistence: { ...f.persistence, authSessionExpiresAt: expiresAt },
+    };
+    const next = {
+      ...input,
+      event: { ...command, operationId: randomUUID(), authSessionId: 'f'.repeat(24) },
+      persistence: { ...f.persistence, authSessionExpiresAt: expiresAt + 60_000 },
+    };
+    expect(await f.control.prepareAuthSession(input)).toBe(true);
+    expect(f.control.claimAuthSessionReplacement(command.operationId)).toBe(true);
+    f.control.finishAuthSessionReplacement(command.operationId, 'not_committed');
+    // A known rollback remains retryable while the old session is still valid.
+    expect(f.control.claimAuthSessionReplacement(command.operationId)).toBe(true);
+    f.control.finishAuthSessionReplacement(command.operationId, 'not_committed');
+    await expect(f.control.prepareAuthSession(next)).rejects.toMatchObject({ code: 'SERVER_BUSY' });
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(expiresAt + 1);
+    try {
+      expect(await f.control.prepareAuthSession(next)).toBe(true);
+      expect(f.control.metrics().operations).toBe(1);
+      expect(f.control.isSessionDenied(auth)).toBe(false);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  it.each([
+    'running',
+    'unknown',
+    'live-pending',
+    'messaging-pending',
+    'persistence-unknown',
+  ] as const)('retains an expired record with unresolved %s work', async (phase) => {
+    const f = setup({ maxOperations: 1, cleanupTimeoutMs: 5 });
+    const expiresAt = Date.now() + 10_000;
+    const command = {
+      ...event('AUTH_SESSION'),
+      kind: 'AUTH_SESSION' as const,
+      authSessionId: sessionId,
+    };
+    const input = {
+      event: command,
+      userId,
+      persistence: { ...f.persistence, authSessionExpiresAt: expiresAt },
+    };
+    if (phase === 'live-pending') f.live.revoke.mockReturnValue(new Promise(() => {}));
+    if (phase === 'messaging-pending') f.messaging.revoke.mockReturnValue(new Promise(() => {}));
+    const ready = await f.control.prepareAuthSession(input);
+    expect(ready).toBe(phase !== 'live-pending' && phase !== 'messaging-pending');
+    if (phase === 'running' || phase === 'unknown') {
+      expect(f.control.claimAuthSessionReplacement(command.operationId)).toBe(true);
+      if (phase === 'unknown')
+        f.control.finishAuthSessionReplacement(command.operationId, 'unknown');
+    }
+    if (phase === 'persistence-unknown') {
+      expect(f.control.claimAuthSessionReplacement(command.operationId)).toBe(true);
+      f.control.finishAuthSessionReplacement(command.operationId, 'not_committed');
+      vi.mocked(f.persistence.commitHeld).mockResolvedValue('unknown');
+      expect((await f.control.revoke(input)).cleanupPending).toBe(true);
+    }
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(expiresAt + 1);
+    try {
+      await expect(
+        f.control.prepareAuthSession({
+          ...input,
+          event: { ...command, operationId: randomUUID(), authSessionId: 'f'.repeat(24) },
+        }),
+      ).rejects.toMatchObject({ code: 'SERVER_BUSY' });
+      expect(f.control.isSessionDenied(auth)).toBe(true);
+      expect(f.control.metrics().operations).toBe(1);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
   it.each([
     'AUTH_SESSION',
     'USER_AUTH_SESSIONS',
