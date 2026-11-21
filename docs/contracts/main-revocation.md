@@ -14,7 +14,9 @@ await registry.revoke({
 // { operationId, permissionRevoked, pendingInvalidated, cleanupPending }
 ```
 
-M1 commit auth/access và cài deny/version fence của mình trước khi gọi. Không gọi `revoke()` trong lúc còn giữ User/Workspace gate: hàm sẽ lấy các Workspace gate cần thiết. Sau khi nhả gate của mutation M1, gọi cổng này và nhận kết quả cleanup. M1 fence vẫn phải chặn quyền trong khoảng chờ; không dùng kết quả đọc ACL cũ hoặc callback luôn trả true trong production.
+M1 phải cài deny/version fence trước khi gọi; fence tiếp tục chặn quyền trong khoảng chờ. Không gọi `revoke()` trong lúc còn giữ User/Workspace gate: hàm sẽ lấy các Workspace gate cần thiết. Không dùng kết quả đọc ACL cũ hoặc callback luôn trả true trong production.
+
+Riêng login thay phiên SCRUM-94 dùng hai pha: shared coordinator cài deny và gọi cleanup trước; sau khi cleanup xác nhận, M1 CAS thu phiên cũ và cấp phiên mới trong cùng transaction rồi finalize ledger. Khi chuẩn bị cleanup, DB có thể vẫn ghi phiên cũ chưa thu; M4 phải đọc shared deny, không đợi riêng `revokedAt`. Pending/cleanup lỗi hoặc commit chưa rõ không được diễn giải thành hoàn tất. Operation `AUTH_SESSION` và generation cleanup giữ nguyên qua retry; không mở rộng sang toàn user hoặc chụp lại tài nguyên của phiên mới. Xem [contract auth](auth-profile.md#retry-và-mất-kết-nối) và phần SCRUM-94 ngay trước đó.
 
 Registry chưa được mount vào composition app. Logout/mutation ACL phát revocation production và terminal fanout còn phải nối ở luồng tích hợp. Task này không thêm endpoint logout hoặc dựng provider quyền thay M1.
 

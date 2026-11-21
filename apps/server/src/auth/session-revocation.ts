@@ -14,7 +14,11 @@ export function createSessionRevocation(
 ) {
   const { AuthSession } = authModels(database.connection);
 
-  async function revoke({ userId, authSessionId, expiresAt }: AuthenticatedContext) {
+  function command({
+    userId,
+    authSessionId,
+    expiresAt,
+  }: AuthenticatedContext): Parameters<typeof control.prepareAuthSession>[0] {
     const digest = createHash('sha256').update(`AUTH_SESSION:${authSessionId}`).digest('hex');
     const operationId = `${digest.slice(0, 8)}-${digest.slice(8, 12)}-8${digest.slice(13, 16)}-8${digest.slice(17, 20)}-${digest.slice(20, 32)}`;
     const scope = { _id: authSessionId, userId };
@@ -43,9 +47,9 @@ export function createSessionRevocation(
       return result.matchedCount === 1 ? 'committed' : 'unknown';
     }
 
-    const result = await control.revoke({
+    return {
       userId,
-      event: { kind: 'AUTH_SESSION', authSessionId, operationId, revision: 0 },
+      event: { kind: 'AUTH_SESSION' as const, authSessionId, operationId, revision: 0 },
       persistence: {
         authSessionExpiresAt: Date.parse(expiresAt),
         prepareHeld: async () => ({ authSessionIds: [] }),
@@ -57,12 +61,12 @@ export function createSessionRevocation(
           )
             .setOptions({ writeConcern: { w: 'majority' } })
             .maxTimeMS(5000);
-          return 'committed';
+          return 'committed' as const;
         },
         async reconcileHeld() {
           if (authSessionFenceTrial) {
             if (await AuthSession.exists(marker).readConcern('majority').maxTimeMS(5000))
-              return 'committed';
+              return 'committed' as const;
             // Absence is inconclusive and never announces rollback. Reissue only
             // the same idempotent CAS, after the coordinator confirmed cleanup.
             return commitFence();
@@ -73,13 +77,40 @@ export function createSessionRevocation(
           return active ? 'not_committed' : 'committed';
         },
       },
-    });
-    closeConnections(authSessionId);
+    };
+  }
+
+  async function revoke(auth: AuthenticatedContext) {
+    const result = await control.revoke(command(auth));
+    closeConnections(auth.authSessionId);
     return result.permissionRevoked && result.pendingInvalidated && !result.cleanupPending;
   }
 
   return {
     revoke,
+    async prepareReplacement(auth: AuthenticatedContext) {
+      const ready = await control.prepareAuthSession(command(auth));
+      // Deny is already installed. Disconnect only this session, even while native
+      // cleanup is pending; no old socket may keep dispatching authorized work.
+      if (control.isSessionDenied(auth)) closeConnections(auth.authSessionId);
+      return ready;
+    },
+    claimReplacement(auth: AuthenticatedContext) {
+      return control.claimAuthSessionReplacement(command(auth).event.operationId);
+    },
+    isReplacementRunning(auth: AuthenticatedContext) {
+      return control.isAuthSessionReplacementRunning(command(auth).event.operationId);
+    },
+    isReplacementUncertain(auth: AuthenticatedContext) {
+      return control.isAuthSessionReplacementUncertain(command(auth).event.operationId);
+    },
+    finishReplacement(
+      auth: AuthenticatedContext,
+      outcome: 'committed' | 'unknown' | 'not_committed',
+    ) {
+      control.finishAuthSessionReplacement(command(auth).event.operationId, outcome);
+    },
+    isDenied: control.isSessionDenied,
     async logout(token: string | undefined) {
       if (!isSessionToken(token)) return true;
       if (!indexesReady() || !database.isConnected()) return false;
@@ -89,7 +120,17 @@ export function createSessionRevocation(
         .readConcern('majority')
         .maxTimeMS(5000)
         .lean();
-      if (!session || (session.revokedAt && !authSessionFenceTrial)) return true;
+      if (!session) return true;
+      if (
+        session.revokedAt &&
+        !authSessionFenceTrial &&
+        !control.isSessionDenied({
+          userId: session.userId.toHexString(),
+          authSessionId: session._id.toHexString(),
+          expiresAt: session.expiresAt.toISOString(),
+        })
+      )
+        return true;
       return revoke({
         userId: session.userId.toHexString(),
         authSessionId: session._id.toHexString(),
