@@ -224,7 +224,7 @@ async function verifyLifecycle(container: HTMLElement) {
   const room = () => container.querySelector('article');
   const status = () => room()?.querySelector('[role="status"]')?.textContent;
   const video = () => room()?.querySelector('video');
-  const isDisplayed = (element: Element) => getComputedStyle(element).display !== 'none';
+  const isDisplayed = (element: Element) => element.getClientRects().length > 0;
   const verifyListeners = (expected: number) => {
     check(listeners === expected, `Số subscription đang hoạt động phải là ${expected}`);
   };
@@ -269,11 +269,11 @@ async function verifyLifecycle(container: HTMLElement) {
     );
     const sidebar = container.querySelector('.workspace-sidebar');
     check(sidebar, 'Thiếu sidebar Workspace');
-    const borderColor = getComputedStyle(sidebar).borderBottomColor;
-    verifyListeners(2);
+    // Badge + RoomShell's call, audio recovery and camera projections.
+    verifyListeners(4);
     check(
-      subscriptions - subscriptionsBeforeRoom === 2,
-      'StrictMode phải đăng ký lại subscription phòng đúng một lần',
+      subscriptions - subscriptionsBeforeRoom === 6,
+      'StrictMode phải đăng ký lại cả ba projection của phòng đúng một lần',
     );
 
     // Complete the call-owned async setup while RoomShell is unmounted.
@@ -350,7 +350,7 @@ async function verifyLifecycle(container: HTMLElement) {
     const verifyActive = () => {
       const currentVideo = video();
       check(
-        status() === 'Phiên gọi đang hoạt động' && listeners === 2,
+        status() === 'Phiên gọi đang hoạt động' && listeners === 4,
         'RoomShell phải nhận snapshot mới nhất',
       );
       check(currentVideo?.srcObject === stream && bindings.size === 1, 'Chỉ được gắn một video');
@@ -378,8 +378,8 @@ async function verifyLifecycle(container: HTMLElement) {
     const activeRoom = room();
     const activeStage = roomAVideo.parentElement;
     const activePanel = activeRoom?.querySelector('section[aria-labelledby]');
-    const stageLayout = activeStage?.parentElement;
-    const backButton = activePanel?.querySelector('button');
+    const stageLayout = activeStage?.closest('.live-call-media')?.parentElement;
+    const backButton = activePanel?.querySelector<HTMLButtonElement>('.live-room-panel-back');
     const toolbar = activeRoom?.querySelector('footer');
     const workspace = activeRoom?.closest<HTMLElement>('.workspace-shell');
     check(
@@ -408,7 +408,7 @@ async function verifyLifecycle(container: HTMLElement) {
       );
       const columns = getComputedStyle(stageLayout).gridTemplateColumns.split(' ');
       check(
-        wide ? columns.length === 2 && columns[1] === '320px' : columns.length === 1,
+        wide ? columns.length === 2 && columns[1] === '360px' : columns.length === 1,
         `Sai số cột ở ${width}px`,
       );
       check(verifyActive() === roomAVideo, 'Đổi layout phải giữ video đang gắn');
@@ -458,7 +458,7 @@ async function verifyLifecycle(container: HTMLElement) {
         boardPanel.textContent.includes('Nội dung bảng kiểm thử'),
       'Panel bên phải lấy nhãn và nội dung từ bên gọi',
     );
-    verifyListeners(2);
+    verifyListeners(4);
     verifyCallPreserved();
     await click(roomName);
     const routeVideo = verifyActive();
@@ -480,10 +480,9 @@ async function verifyLifecycle(container: HTMLElement) {
     const standaloneStyle = getComputedStyle(standaloneCard);
     check(
       standaloneStyle.display === 'grid' &&
-        parseFloat(standaloneStyle.borderTopWidth) > 0 &&
-        standaloneStyle.borderTopColor === borderColor &&
-        standaloneStyle.borderTopColor !== 'rgba(0, 0, 0, 0)',
-      `Tailwind layout và token viền phải có hiệu lực ngoài Workspace (${standaloneStyle.display}, ${standaloneStyle.borderTopWidth}, ${standaloneStyle.borderTopColor}, Workspace ${borderColor})`,
+        standaloneStyle.backgroundColor === 'rgb(22, 27, 26)' &&
+        standaloneStyle.borderRadius === '0px',
+      'Room standalone phải dùng media surface toàn màn hình, không đóng khung card Workspace',
     );
     const stage = standaloneVideo.parentElement;
     check(
@@ -594,7 +593,7 @@ async function verifyWorkspaceRoute() {
     const stage = await waitForElement(page, 'section[aria-label="Sân khấu cuộc gọi"]');
     const room = stage.closest('article');
     const panel = room?.querySelector('section[aria-labelledby]');
-    const back = panel?.querySelector('button');
+    const back = panel?.querySelector('.live-room-panel-back');
     check(room && panel && back, '/workspace phải mở panel Người tham gia');
     const workspaceWidth = room.closest('.workspace-shell')?.getBoundingClientRect().width;
     const roomWidth = room.getBoundingClientRect().width;
@@ -607,13 +606,15 @@ async function verifyWorkspaceRoute() {
         view.getComputedStyle(back).display === 'none',
       'Workspace 1440px phải hiện sân khấu và ẩn nút quay lại',
     );
-    const stageRect = stage.getBoundingClientRect();
+    const mediaRegion = stage.closest('.live-call-media');
+    check(mediaRegion, 'Thiếu vùng media để đối chiếu panel');
+    const stageRect = mediaRegion.getBoundingClientRect();
     const panelRect = panel.getBoundingClientRect();
     check(
-      panelRect.width === 320 &&
+      panelRect.width === 348 &&
         panelRect.left >= stageRect.right &&
-        panelRect.top === stageRect.top,
-      'Panel phải rộng 320px và nằm cạnh sân khấu',
+        panelRect.top === stageRect.top + 10,
+      'Panel trong cột 360px phải có gutter 12px và nằm cạnh media/toolbar',
     );
     const header = page.querySelector('.workspace-topbar');
     const liveHost = page.querySelector('.workspace-panel-host');
@@ -634,7 +635,8 @@ async function verifyWorkspaceRoute() {
     const textChannel = channels.find((button) => button.textContent?.includes(chatName));
     check(textChannel, 'Không tìm thấy kênh TEXT trên /workspace');
     textChannel.click();
-    const chatCard = await waitForElement(page, 'article[aria-label^="Chat "]');
+    // TEXT now embeds TextTimeline, rather than the old article placeholder.
+    const chatCard = await waitForElement(page, 'section[aria-label="Tin nhắn văn bản"]');
     const host = chatCard.closest('.workspace-panel-host');
     const main = host?.closest('.workspace-main');
     check(host && main && sidebar, 'Thiếu sidebar hoặc vùng nền quanh Chat');
@@ -653,8 +655,10 @@ async function verifyWorkspaceRoute() {
     );
     const textHeaderRect = header.getBoundingClientRect();
     const textRect = chatCard.getBoundingClientRect();
-    const timeline = chatCard.querySelector('section');
-    check(timeline, 'Thiếu timeline TEXT');
+    const timeline = await waitForElement(
+      page,
+      '.text-chat .text-message-list, .text-chat .text-chat-state',
+    );
     check(
       textHeaderRect.left === headerRect.left &&
         textHeaderRect.top === headerRect.top &&
@@ -665,8 +669,8 @@ async function verifyWorkspaceRoute() {
     );
     check(
       view.getComputedStyle(header).paddingLeft === '20px' &&
-        view.getComputedStyle(timeline).paddingLeft === '20px',
-      'Header và timeline TEXT phải dùng khoảng đệm 20px',
+        view.getComputedStyle(timeline).paddingLeft === '24px',
+      'Header giữ padding 20px; timeline dùng padding 24px của TextTimeline hiện hành',
     );
     const brand = sidebar.querySelector('span[aria-hidden="true"]');
     check(
@@ -770,7 +774,10 @@ if (import.meta.env.DEV) {
   check(container && result, 'Thiếu khung hiển thị kiểm thử');
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   void verifyLifecycle(container)
-    .then(async (message) => `${message} · ${await verifyWorkspaceRoute()}`)
+    .then(async (message) => {
+      console.info(message);
+      return `${message} · ${await verifyWorkspaceRoute()}`;
+    })
     .then(
       (message) => {
         result.textContent = message;

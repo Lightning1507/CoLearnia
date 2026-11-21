@@ -9,8 +9,14 @@ import type { Socket } from 'socket.io-client';
 import { DeviceCleanupUnconfirmedError, DeviceMedia, sameDeviceBinding } from './deviceMedia';
 import type { DeviceMediaContext } from './deviceMedia';
 import type { LobbyDevicePreferences } from '../lobby/LobbyDeviceCheck';
+import type { MediaSnapshotRuntime } from './mediaSnapshotRuntime';
+import type { MediaSourceDescriptor } from '@colearnia/contracts';
 
-type PublishIntent = { context: DeviceMediaContext; signal: AbortSignal };
+type PublishIntent = {
+  context: DeviceMediaContext;
+  signal: AbortSignal;
+  source?: MediaSourceDescriptor;
+};
 type CloseTarget = { producerId: string } | { createRequestId: string };
 type PendingClose = { context: DeviceMediaContext; target: CloseTarget };
 
@@ -29,6 +35,7 @@ export function createDeviceMediaSocket(
   send: Pick<MediaTypes.Transport, 'id' | 'produce'>,
   lifetime: AbortSignal,
   preferences?: LobbyDevicePreferences,
+  media?: Pick<MediaSnapshotRuntime, 'bindCameraPreview'>,
 ) {
   const intents = new Map<string, PublishIntent>();
   const pendingClose = new Map<string, PendingClose>();
@@ -87,8 +94,12 @@ export function createDeviceMediaSocket(
         });
         pendingClose.delete(track.kind);
         producer.on('transportclose', () => devices.updateContext(null));
+        const source = intents.get(key)?.source;
+        const detachPreview =
+          source && track.kind === 'video' ? media?.bindCameraPreview(source, track) : undefined;
         return {
           async close() {
+            detachPreview?.();
             producer.close();
             const pending = { context, target: { producerId: producer.id } };
             pendingClose.set(track.kind, pending);
@@ -148,6 +159,7 @@ export function createDeviceMediaSocket(
         throw new Error('Device producer was not confirmed');
       }
       const { producerId } = ack.data.result;
+      intent.source = ack.data.result.source;
       intent.signal.throwIfAborted();
       callback({ id: producerId });
     })().catch(errback);
