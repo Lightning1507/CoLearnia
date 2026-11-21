@@ -8,14 +8,21 @@ export function TextTimeline({
   port,
   senderId,
   displayName,
+  projection,
+  connected = true,
 }: {
   port: TextPort;
   senderId: string;
   displayName: string;
+  projection?: TextHistoryMessage[];
+  connected?: boolean;
 }) {
   const [messages, setMessages] = useState<TextHistoryMessage[]>([]);
   const [outbox, setOutbox] = useState<OutgoingText[]>([]);
-  const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [historyState, setState] = useState<'loading' | 'ready' | 'error'>('loading');
+  const state = projection ? 'ready' : historyState;
+  const displayed = projection ?? messages;
+  const [previousProjection, setPreviousProjection] = useState(projection);
   const [reload, setReload] = useState(0);
   const [draft, setDraft] = useState('');
   const [validation, setValidation] = useState('');
@@ -23,6 +30,22 @@ export function TextTimeline({
   const input = useRef<HTMLTextAreaElement>(null);
   const lifetime = useRef<AbortController | null>(null);
   const sending = useRef(new Set<string>());
+
+  // Resolve an outbox row when the committed event wins the race with its ACK.
+  if (projection !== previousProjection) {
+    setPreviousProjection(projection);
+    if (projection)
+      setOutbox((rows) =>
+        rows.filter(
+          (row) =>
+            !projection.some(
+              (message) =>
+                message.senderId === senderId &&
+                message.clientMessageId === row.payload.clientMessageId,
+            ),
+        ),
+      );
+  }
 
   useEffect(() => {
     const controller = new AbortController();
@@ -33,6 +56,7 @@ export function TextTimeline({
   }, []);
 
   useEffect(() => {
+    if (projection) return;
     const controller = new AbortController();
     port.history(controller.signal).then(
       (rows) => {
@@ -48,7 +72,7 @@ export function TextTimeline({
     return () => {
       controller.abort();
     };
-  }, [port, reload]);
+  }, [port, reload, projection]);
 
   async function send(intent: OutgoingText) {
     const signal = lifetime.current?.signal;
@@ -63,7 +87,7 @@ export function TextTimeline({
     try {
       const message = await port.send(intent.payload, signal);
       if (signal.aborted) return;
-      setMessages((rows) => mergeTextMessage(rows, message));
+      if (!projection) setMessages((rows) => mergeTextMessage(rows, message));
       setOutbox((rows) => rows.filter((row) => row.payload.clientMessageId !== key));
     } catch {
       if (signal.aborted) return;
@@ -78,6 +102,7 @@ export function TextTimeline({
   }
 
   function submit() {
+    if (!connected || state !== 'ready') return;
     const valid = textMessageSendBodySchema.safeParse({
       text: draft,
       clientMessageId: '00000000-0000-4000-8000-000000000001',
@@ -118,22 +143,30 @@ export function TextTimeline({
         )}
         {state === 'ready' && (
           <>
-            {messages.length === 0 && outbox.length === 0 && (
+            {displayed.length === 0 && outbox.length === 0 && (
               <div className="text-chat-state">
                 <h2>Bắt đầu cuộc trò chuyện</h2>
                 <p>Gửi lời chào hoặc chia sẻ một câu hỏi với nhóm.</p>
               </div>
             )}
             <ol className="text-message-list" aria-label="Lịch sử tin nhắn">
-              {messages.map((message) => (
+              {displayed.map((message) => (
                 <li key={message.id} className="text-message">
                   <span className="text-avatar" aria-hidden="true">
-                    {message.senderId === senderId ? displayName.slice(0, 1) : 'L'}
+                    {message.senderId === senderId
+                      ? displayName.slice(0, 1)
+                      : projection
+                        ? 'T'
+                        : 'L'}
                   </span>
                   <div>
                     <div className="text-message-meta">
                       <strong>
-                        {message.senderId === senderId ? displayName : 'Linh · Fixture'}
+                        {message.senderId === senderId
+                          ? displayName
+                          : projection
+                            ? `Thành viên ${message.senderId.slice(-6)}`
+                            : 'Linh · Fixture'}
                       </strong>
                       <time dateTime={message.createdAt}>
                         {new Date(message.createdAt).toLocaleTimeString('vi-VN', {
@@ -201,7 +234,7 @@ export function TextTimeline({
           id="text-composer-input"
           rows={3}
           value={draft}
-          disabled={state !== 'ready'}
+          disabled={state !== 'ready' || !connected}
           aria-invalid={!!validation}
           aria-describedby={validation ? 'text-validation' : 'text-composer-help'}
           placeholder="Viết tin nhắn cho nhóm…"
@@ -233,7 +266,7 @@ export function TextTimeline({
         )}
         <div className="text-composer-footer">
           <small id="text-composer-help">Ctrl / ⌘ + Enter để gửi · Enter xuống dòng</small>
-          <button type="submit" disabled={state !== 'ready' || !draft.trim()}>
+          <button type="submit" disabled={state !== 'ready' || !connected || !draft.trim()}>
             Gửi tin nhắn
           </button>
         </div>
