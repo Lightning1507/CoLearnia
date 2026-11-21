@@ -91,6 +91,7 @@ type RecordEntry = {
   cleanupPending: boolean;
   writeAttempted: boolean;
   committed: boolean;
+  replacementWrite?: 'running' | 'unknown' | 'committed' | 'reconciled' | 'not_committed';
   active?: Promise<AccessCleanupResult>;
 };
 const objectId = (value: string) => workspaceDocumentIdSchema.parse(value).toLowerCase();
@@ -282,7 +283,7 @@ export function createAccessRevocationCoordinator(options: {
         adapterTasks--;
       });
   }
-  async function execute(record: RecordEntry) {
+  async function execute(record: RecordEntry, prepareOnly = false) {
     // Capture one adapter pair per attempt. Late binding takes effect on a retry,
     // without replacing the barrier, ledger, captured cohort or watermarks.
     const adapters = cleanupAdapters;
@@ -372,6 +373,7 @@ export function createAccessRevocationCoordinator(options: {
     }
     await Promise.all(tasks);
     if (!record.liveDone || record.legs.some((leg) => !leg.done)) return result(record);
+    if (prepareOnly) return result(record);
     await options.coordinator.run(scope(record), async (held) => {
       if (record.committed) return;
       if (record.writeAttempted) {
@@ -388,6 +390,113 @@ export function createAccessRevocationCoordinator(options: {
       else if (outcome !== 'unknown') throw new TypeError('Invalid persistence outcome');
     });
     return result(record);
+  }
+  async function runRevocation(
+    input: {
+      event: AccessRevocation;
+      // For auth-session this MUST be its server-verified owner; otherwise the affected
+      // user (when present) or the actor. prepareHeld verifies actor/target from DB.
+      userId: string;
+      persistence: RevocationPersistence;
+    },
+    prepareOnly = false,
+  ): Promise<AccessCleanupResult> {
+    const parsed = accessRevocationSchema.parse(input.event);
+    const event = accessRevocationSchema.parse(
+      Object.fromEntries(
+        Object.entries(parsed).map(([key, value]) => [
+          key,
+          typeof value === 'string' && (key.endsWith('Id') || key === 'operationId')
+            ? value.toLowerCase()
+            : value,
+        ]),
+      ),
+    );
+    const userId = objectId(input.userId);
+    if ('userId' in event && event.userId !== userId)
+      throw new TypeError('Affected User gate required');
+    const command = JSON.stringify({ event, userId });
+    let occupied = 0;
+    const now = Date.now();
+    for (const [id, existing] of records) {
+      const expiresAt = existing.persistence.authSessionExpiresAt;
+      const pendingWrite =
+        existing.replacementWrite === 'running' || existing.replacementWrite === 'unknown';
+      // A definitely aborted replacement can retire after absolute auth expiry,
+      // but only when every cleanup leg is complete and no durable write was tried.
+      // Keep all unresolved cleanup, persistence and replacement work fail-closed.
+      const abortedAndClean =
+        existing.replacementWrite === 'not_committed' &&
+        !existing.writeAttempted &&
+        existing.liveDone &&
+        !existing.livePending &&
+        !existing.cleanupPending &&
+        existing.legs.every((leg) => leg.done && !leg.pending);
+      if (
+        existing.event.kind === 'AUTH_SESSION' &&
+        expiresAt !== undefined &&
+        expiresAt <= now &&
+        !existing.active &&
+        !pendingWrite &&
+        (existing.committed || abortedAndClean)
+      ) {
+        records.delete(id);
+        continue;
+      }
+      if (
+        existing.event.kind !== 'AUTH_SESSION' ||
+        !existing.committed ||
+        pendingWrite ||
+        expiresAt === undefined
+      )
+        occupied++;
+    }
+    let record = records.get(event.operationId);
+    if (record && record.command !== command) return fail('CONFLICT');
+    if (!record && activeOperations >= maxConcurrentOperations) return fail('SERVER_BUSY');
+    if (!record) {
+      if (occupied >= maxOperations) return fail('SERVER_BUSY');
+      record = {
+        event,
+        userId,
+        command,
+        persistence: { ...input.persistence },
+        cohort: [],
+        prepared: false,
+        installed: false,
+        legs: [],
+        liveDone: false,
+        cleanupPending: false,
+        writeAttempted: false,
+        committed: false,
+      };
+      records.set(event.operationId, record);
+    }
+    if (record.committed) {
+      if (record.replacementWrite === 'unknown') record.replacementWrite = 'reconciled';
+      return result(record);
+    }
+    if (!record.active) {
+      if (activeOperations >= maxConcurrentOperations) return fail('SERVER_BUSY');
+      activeOperations++;
+      const current = record;
+      current.active = execute(current, prepareOnly)
+        .catch((error: unknown) => {
+          if (!current.installed) {
+            records.delete(current.event.operationId);
+            throw error;
+          }
+          return result(current);
+        })
+        .finally(() => {
+          delete current.active;
+          activeOperations--;
+        });
+    }
+    const outcome = await record.active!;
+    if (record.committed && record.replacementWrite === 'unknown')
+      record.replacementWrite = 'reconciled';
+    return structuredClone(outcome);
   }
   return {
     isMessagingCleanupBound(port: MessagingRevocationPort) {
@@ -416,79 +525,50 @@ export function createAccessRevocationCoordinator(options: {
         return fail('DEPENDENCY_UNAVAILABLE');
       return [...record.cohort];
     },
-    async revoke(input: {
-      event: AccessRevocation;
-      // For auth-session this MUST be its server-verified owner; otherwise the affected
-      // user (when present) or the actor. prepareHeld verifies actor/target from DB.
+    // Login may clean the old scope before atomically replacing its DB session.
+    // This phase never marks persistence committed and never removes the deny.
+    async prepareAuthSession(input: {
+      event: Extract<AccessRevocation, { kind: 'AUTH_SESSION' }>;
       userId: string;
       persistence: RevocationPersistence;
-    }): Promise<AccessCleanupResult> {
-      const parsed = accessRevocationSchema.parse(input.event);
-      const event = accessRevocationSchema.parse(
-        Object.fromEntries(
-          Object.entries(parsed).map(([key, value]) => [
-            key,
-            typeof value === 'string' && (key.endsWith('Id') || key === 'operationId')
-              ? value.toLowerCase()
-              : value,
-          ]),
-        ),
-      );
-      const userId = objectId(input.userId);
-      if ('userId' in event && event.userId !== userId)
-        throw new TypeError('Affected User gate required');
-      const command = JSON.stringify({ event, userId });
-      let occupied = 0;
-      for (const [id, existing] of records) {
-        const expiresAt = existing.persistence.authSessionExpiresAt;
-        if (
-          existing.event.kind === 'AUTH_SESSION' &&
-          existing.committed &&
-          expiresAt !== undefined
-        ) {
-          if (expiresAt <= Date.now() && !existing.active) records.delete(id);
-        } else occupied++;
-      }
-      let record = records.get(event.operationId);
-      if (record && record.command !== command) return fail('CONFLICT');
-      if (!record && activeOperations >= maxConcurrentOperations) return fail('SERVER_BUSY');
-      if (!record) {
-        if (occupied >= maxOperations) return fail('SERVER_BUSY');
-        record = {
-          event,
-          userId,
-          command,
-          persistence: { ...input.persistence },
-          cohort: [],
-          prepared: false,
-          installed: false,
-          legs: [],
-          liveDone: false,
-          cleanupPending: false,
-          writeAttempted: false,
-          committed: false,
-        };
-        records.set(event.operationId, record);
-      }
-      if (record.committed) return result(record);
-      if (!record.active) {
-        if (activeOperations >= maxConcurrentOperations) return fail('SERVER_BUSY');
-        activeOperations++;
-        const current = record;
-        current.active = execute(current)
-          .catch((error: unknown) => {
-            if (!current.installed) {
-              records.delete(current.event.operationId);
-              throw error;
-            }
-            return result(current);
-          })
-          .finally(() => {
-            delete current.active;
-            activeOperations--;
-          });
-      }
-      return structuredClone(await record.active!);
+    }) {
+      await runRevocation(input, true);
+      const record = records.get(input.event.operationId.toLowerCase());
+      return Boolean(record?.installed && record.liveDone && record.legs.every((leg) => leg.done));
+    },
+    // A prepared session can own only one replacement transaction. Unknown commit
+    // retains admission even when the driver has returned its pool slot/gate.
+    claimAuthSessionReplacement(operationId: string) {
+      const record = records.get(operationId);
+      if (
+        !record ||
+        record.event.kind !== 'AUTH_SESSION' ||
+        record.committed ||
+        (record.replacementWrite && record.replacementWrite !== 'not_committed') ||
+        !record.liveDone ||
+        record.legs.some((leg) => !leg.done)
+      )
+        return false;
+      record.replacementWrite = 'running';
+      return true;
+    },
+    isAuthSessionReplacementRunning(operationId: string) {
+      return records.get(operationId)?.replacementWrite === 'running';
+    },
+    isAuthSessionReplacementUncertain(operationId: string) {
+      return records.get(operationId)?.replacementWrite === 'unknown';
+    },
+    finishAuthSessionReplacement(
+      operationId: string,
+      outcome: 'committed' | 'unknown' | 'not_committed',
+    ) {
+      const record = records.get(operationId);
+      if (!record || record.replacementWrite !== 'running')
+        throw new Error('Replacement was not claimed');
+      record.replacementWrite = outcome;
+    },
+    revoke(input: Parameters<typeof runRevocation>[0]) {
+      return runRevocation(input);
     },
     metrics() {
       return {
