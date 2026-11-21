@@ -33,3 +33,12 @@ export const sessionEndAckSchema = commandAckSchema(
 );
 export type SessionEndInput = z.infer<typeof sessionEndInputSchema>;
 export type SessionEndAck = z.infer<typeof sessionEndAckSchema>;
+
+export const sessionLeaveInputSchema = sessionEndInputSchema.omit({ action: true });
+export const sessionLeaveAckSchema = commandAckSchema(
+  z.strictObject({
+    status: z.enum(['completed', 'pending']),
+    result: z.strictObject({ ...identity, left: z.boolean(), cleanupPending: z.boolean() }),
+  }),
+);
+export type SessionLeaveInput = z.infer<typeof sessionLeaveInputSchema>;

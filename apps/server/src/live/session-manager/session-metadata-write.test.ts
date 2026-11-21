@@ -45,7 +45,9 @@ function setup() {
     activeParticipants: 1,
   };
   const repository: {
-    [K in keyof SessionMutationRepository]: ReturnType<typeof vi.fn<SessionMutationRepository[K]>>;
+    [K in keyof SessionMutationRepository]: ReturnType<
+      typeof vi.fn<NonNullable<SessionMutationRepository[K]>>
+    >;
   } = {
     create: vi.fn(async () => {
       throw new Error('Lost acknowledgement');
@@ -64,6 +66,57 @@ function setup() {
   return { input, proof, repository };
 }
 describe('metadata write read-back', () => {
+  it('retries a leave only after proving the same revision and active participation', async () => {
+    const f = setup();
+    const leave = vi
+      .fn<NonNullable<SessionMutationRepository['leave']>>()
+      .mockRejectedValueOnce(new Error('Transaction rolled back'))
+      .mockResolvedValueOnce({ revision: 1 });
+    const write = createSessionMetadataWrite(
+      { ...f.repository, leave },
+      {
+        kind: 'leave',
+        input: {
+          sessionId: f.input.sessionId,
+          epoch: f.input.epoch,
+          expectedRevision: 0,
+          userId: f.input.hostUserId,
+          at: f.input.at,
+        },
+      },
+    );
+    await expect(write.run()).rejects.toThrow('has not committed');
+    const [one, two] = await Promise.all([write.run(), write.run()]);
+    expect(one).toEqual({ revision: 1 });
+    expect(two).toEqual(one);
+    expect(leave).toHaveBeenCalledTimes(2);
+    expect(leave.mock.calls[0]).toEqual(leave.mock.calls[1]);
+  });
+  it('reads back a committed leave after read failure without writing again', async () => {
+    const f = setup();
+    f.proof.version!.revision = 1;
+    f.proof.participant!.leftAt = f.input.at;
+    f.repository.readMutation.mockRejectedValueOnce(new Error('Read unavailable'));
+    const leave = vi
+      .fn<NonNullable<SessionMutationRepository['leave']>>()
+      .mockRejectedValue(new Error('Commit acknowledgement lost'));
+    const write = createSessionMetadataWrite(
+      { ...f.repository, leave },
+      {
+        kind: 'leave',
+        input: {
+          sessionId: f.input.sessionId,
+          epoch: f.input.epoch,
+          expectedRevision: 0,
+          userId: f.input.hostUserId,
+          at: f.input.at,
+        },
+      },
+    );
+    await expect(write.run()).rejects.toThrow('Read unavailable');
+    await expect(write.run()).resolves.toEqual({ revision: 1 });
+    expect(leave).toHaveBeenCalledOnce();
+  });
   it('confirms the exact committed create and never writes it again', async () => {
     const f = setup();
     const write = createSessionMetadataWrite(f.repository, { kind: 'create', input: f.input });

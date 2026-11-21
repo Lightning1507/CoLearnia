@@ -32,6 +32,8 @@ import { startLiveRuntime } from '../src/live/media/live-runtime.js';
 import { createTransportSignaling } from '../src/live/media/transport-signaling.js';
 import { createMediaBootstrapComposition } from '../src/live/media/media-bootstrap-composition.js';
 import { createMainAuthority } from '../src/live/session-manager/main-authority.js';
+import { createMainRuntime } from '../src/live/main-runtime.js';
+import { createTextSyncRegistry } from '../src/messaging/text-sync.js';
 import { createMainJoinRegistry } from '../src/live/session-manager/main-join-registry.js';
 import { attachMainJoinSocket } from '../src/live/session-manager/main-join-signaling.js';
 import { attachMainReconnectSocket } from '../src/live/session-manager/main-reconnect-signaling.js';
@@ -136,7 +138,9 @@ async function isolatedDomainCleanup(value: SessionCleanupRequest): Promise<Sess
   };
 }
 
-export async function setup(options: { text?: boolean; origin?: string; port?: number } = {}) {
+export async function setup(
+  options: { productionRuntime?: boolean; text?: boolean; origin?: string; port?: number } = {},
+) {
   const config = { ...baseConfig, APP_ORIGIN: options.origin ?? baseConfig.APP_ORIGIN };
   const origin = config.APP_ORIGIN;
   const coordinator = createOperationCoordinator();
@@ -164,6 +168,7 @@ export async function setup(options: { text?: boolean; origin?: string; port?: n
     logout.logout,
   );
   const mediaRouter = Router();
+  const liveChannelRouter = Router();
   const creation = {
     database,
     coordinator,
@@ -220,6 +225,7 @@ export async function setup(options: { text?: boolean; origin?: string; port?: n
       workspaces,
       mediaRouter,
       textService && createTextRouter(httpAuth, textService),
+      liveChannelRouter,
     ),
   );
   const io = createRealtime(
@@ -232,6 +238,8 @@ export async function setup(options: { text?: boolean; origin?: string; port?: n
     textService && createTextSocketSync(textService),
   );
   let registry!: ReturnType<typeof createMainJoinRegistry>;
+  let mainRuntime: ReturnType<typeof createMainRuntime> | undefined;
+  let runtimeReady = true;
   let transports!: ReturnType<typeof createTransportSignaling>;
   let delayed = false;
   let entered: (() => void) | undefined;
@@ -244,6 +252,54 @@ export async function setup(options: { text?: boolean; origin?: string; port?: n
     closeAdmission() {},
     report() {},
     mountRegistry(runtime) {
+      if (options.productionRuntime) {
+        const messaging =
+          textService?.syncRevocation ??
+          createTextSyncRegistry(config.SESSION_SECRET!, {
+            subscriptions: 32,
+            perUser: 4,
+            leaseMs: 60_000,
+            revocationRecords: 128,
+          }).revocation;
+        mainRuntime = createMainRuntime({
+          config,
+          database,
+          httpAuth,
+          access,
+          barrier: revocations.barrier,
+          media: {
+            ...runtime,
+            createTransport: async (router) => {
+              const value = await runtime.createTransport(router);
+              native.push(value);
+              if (delayed) {
+                const wait = new Promise<void>((resolve) => {
+                  release = resolve;
+                });
+                entered?.();
+                await wait;
+              }
+              return value;
+            },
+          },
+          isReady: () => runtimeReady,
+          isAuthCurrent: (auth) => !revocations.isSessionDenied(auth),
+          report: () => {},
+          createRegistry(input) {
+            const value = createMainJoinRegistry({
+              ...input,
+              coordinator,
+              accessRevocations: revocations,
+            });
+            revocations.bindCleanupAdapters({ messaging, live: value });
+            return value;
+          },
+        });
+        registry = mainRuntime.registry;
+        mediaRouter.use(mainRuntime.mediaRouter);
+        liveChannelRouter.use(mainRuntime.channelRouter);
+        return registry;
+      }
       const cleanup = {
         media: {
           revoke: (value: SessionCleanupRequest) => {
@@ -282,13 +338,14 @@ export async function setup(options: { text?: boolean; origin?: string; port?: n
       return registry;
     },
   });
-  revocations.bindCleanupAdapters({
-    messaging: textService?.syncRevocation ?? {
-      fence: () => ({ throughResourceGeneration: 0 }),
-      revoke: async ({ revocationId }) => ({ revocationId, status: 'completed' }),
-    },
-    live: registry,
-  });
+  if (!options.productionRuntime)
+    revocations.bindCleanupAdapters({
+      messaging: textService?.syncRevocation ?? {
+        fence: () => ({ throughResourceGeneration: 0 }),
+        revoke: async ({ revocationId }) => ({ revocationId, status: 'completed' }),
+      },
+      live: registry,
+    });
   const bootstrap = createMediaBootstrapComposition(config, httpAuth, registry);
   mediaRouter.use(bootstrap.router);
   const errors: string[] = [];
@@ -303,6 +360,10 @@ export async function setup(options: { text?: boolean; origin?: string; port?: n
   };
   io.on('connection', (socket) => {
     const liveSocket = socket as unknown as ServerSocket;
+    if (mainRuntime) {
+      mainRuntime.attach(liveSocket);
+      return;
+    }
     const readAuth = () =>
       !revocations.isSessionDenied(socket.data.auth) ? socket.data.auth : null;
     attachMainJoinSocket(registry, liveSocket, readAuth);
@@ -320,6 +381,7 @@ export async function setup(options: { text?: boolean; origin?: string; port?: n
     connections.stop();
     await new Promise<void>((resolve) => io.close(() => resolve()));
     registry.close();
+    mainRuntime?.close();
     media.close();
   });
   const credentials = new WeakMap<object, { email: string; password: string }>();
@@ -458,6 +520,9 @@ export async function setup(options: { text?: boolean; origin?: string; port?: n
     native,
     errors,
     http,
+    setRuntimeReady: (value: boolean) => {
+      runtimeReady = value;
+    },
     textService,
     baseUrl: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
     cleanupRequests,
@@ -485,6 +550,8 @@ export async function setup(options: { text?: boolean; origin?: string; port?: n
 }
 
 export {
+  baseConfig as config,
+  database,
   User,
   Workspace,
   AuthSession,

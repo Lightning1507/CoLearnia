@@ -16,6 +16,7 @@ export function createSessionEndOperation(options: {
   timing: SessionTransitionTiming;
   targets: { userId: string; request: SessionCleanupRequest }[];
   adapters: SessionTransitionAdapters;
+  retryMedia?(retry: (held: HeldTransitionContext) => void): Promise<void>;
   beginEnding(assertCurrent: () => void): Promise<void>;
   completeEnding(assertCurrent: () => void): Promise<void>;
   finalize(assertCurrent: () => void): Promise<void>;
@@ -47,9 +48,18 @@ export function createSessionEndOperation(options: {
   }
   async function execute(assertCurrent: () => void, recovery: boolean) {
     assertCurrent();
+    if (recovery && options.retryMedia) {
+      await options.retryMedia((held) => {
+        assertCurrent();
+        for (const handle of handles) handle.retryMediaHeld(held);
+      });
+    }
     // Revocation is independent of whether the DB acknowledgement can be confirmed.
     const cleanup = Promise.all(
-      handles.map((handle) => (recovery ? handle.reconcile() : handle.runForeground())),
+      handles.map(async (handle) => {
+        if (!recovery) return handle.runForeground();
+        return handle.retryCleanup({ preservePermanentRefusal: true });
+      }),
     );
     try {
       if (!begun) await options.beginEnding(assertCurrent);
@@ -100,7 +110,10 @@ export function createSessionEndOperation(options: {
   }
   return {
     run() {
-      return completed ? Promise.resolve(completed) : (task ??= attempt(false));
+      if (completed) return Promise.resolve(completed);
+      if (active) return active;
+      if (task) return attempt(true);
+      return (task = attempt(false));
     },
     // The registry's metadata hooks retain each write intent: subsequent calls
     // read it back rather than issuing the mutation again. Every attempt has its
