@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
@@ -15,6 +15,7 @@ import { CreateChannelForm } from './CreateChannelForm';
 import { ChannelApiError } from './channel-api';
 import { channelListOptions } from './channel-list-query';
 import './channel-list.css';
+import { TextChannel } from '../text/TextChannel';
 
 function message(error: unknown) {
   if (error instanceof ChannelApiError) {
@@ -44,6 +45,13 @@ export function ChannelWorkspace({
   const navigate = useNavigate();
   const [manage, setManage] = useState(false);
   const [panel, setPanel] = useState<WorkspacePanel>({ kind: 'empty' });
+  const [textAccessNotice, setTextAccessNotice] = useState('');
+  const withdrawText = useCallback(() => {
+    setPanel({ kind: 'empty' });
+    setTextAccessNotice('Quyền truy cập chat đã thay đổi. Nội dung kênh đã được xóa khỏi bộ nhớ.');
+    void client.resetQueries({ queryKey: ['channels', userId, workspace.id, expiresAt] });
+    void client.invalidateQueries({ queryKey: sessionKey });
+  }, [client, userId, workspace.id, expiresAt]);
   const notified = useRef<unknown>(null);
   const canManage = workspace.role === 'OWNER' || workspace.role === 'ADMIN';
   const prefix = ['channels', userId, workspace.id, expiresAt] as const;
@@ -90,6 +98,7 @@ export function ChannelWorkspace({
         ).values(),
       ];
   function select(channel: ChannelSummary) {
+    setTextAccessNotice('');
     setManage(false);
     setPanel({ kind: channel.type === 'TEXT' ? 'text' : 'live', channelId: channel.id });
   }
@@ -107,6 +116,7 @@ export function ChannelWorkspace({
       <p>Bạn có quyền truy cập kênh này.</p>
     </section>
   );
+  const session = client.getQueryData<AuthenticatedData | null>(sessionKey);
   return (
     <WorkspaceShell
       workspace={workspace}
@@ -118,7 +128,18 @@ export function ChannelWorkspace({
       panel={manage && canManage ? { kind: 'empty' } : panel}
       onSelectChannel={select}
       onOpenWorkspaceList={() => navigate('/workspaces')}
-      chatPanel={selectedPanel}
+      chatPanel={
+        selected?.type === 'TEXT' && session?.user.id === userId ? (
+          <TextChannel
+            key={`${userId}:${expiresAt}:${selected.id}`}
+            channelId={selected.id}
+            session={session}
+            onAccessLost={withdrawText}
+          />
+        ) : (
+          selectedPanel
+        )
+      }
       callPanel={selectedPanel}
       persistentCallControls={account}
       sidebarControls={
@@ -150,6 +171,7 @@ export function ChannelWorkspace({
       }
       sidebarStatus={
         <div className="channel-sidebar-status">
+          {textAccessNotice && <p role="status">{textAccessNotice}</p>}
           {content.isPending && <p role="status">Đang tải kênh…</p>}
           {content.isError && <p role="alert">{message(content.error)}</p>}
           {content.isSuccess && channels.length === 0 && (
