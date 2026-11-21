@@ -375,7 +375,9 @@ export function createMediaSourceSync({
         async publish<Name extends MediaSourceEventName>(
           name: Name,
           payload: MediaSourceEvent<Name>['payload'],
+          owner?: LiveContext,
         ) {
+          if (owner && stream && !sameAudience(owner, stream.context)) return false;
           if (snapshotInFlight) {
             snapshotDirty = true;
             return false;
@@ -398,6 +400,7 @@ export function createMediaSourceSync({
               return false;
             }
             const { context } = resolved;
+            if (owner && !sameAudience(owner, context)) return false;
             const projection = readProjection(context, policy, share);
             const result = mediaSourceEventSchemas[name].safeParse({
               sessionId: context.sessionId,

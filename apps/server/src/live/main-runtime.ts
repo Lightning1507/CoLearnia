@@ -67,6 +67,13 @@ export function createMainRuntime(options: {
   const transports = createTransportSignaling({
     withContext,
     createTransport: media.createTransport,
+    onTransportClosed(socketId, context, transportId, reason) {
+      const binding = projections.get(socketId);
+      if (binding)
+        void binding
+          .publish('media.transport.closed', { transportId, reason }, context)
+          .catch(() => options.report('DEPENDENCY_UNAVAILABLE'));
+    },
   });
   const sources = createPausedReadySignaling({
     ...transports,
@@ -106,6 +113,13 @@ export function createMainRuntime(options: {
   const registry = options.createRegistry({
     repository,
     leaveParticipant: repository.leave,
+    publishProjection(socketId, event) {
+      sockets.get(socketId)?.emit('session.changed', event);
+    },
+    projectionFailed(socketId) {
+      options.report('DEPENDENCY_UNAVAILABLE');
+      sockets.get(socketId)?.disconnect(true);
+    },
     publishEnded: (socketId, notice) => {
       const socket = sockets.get(socketId);
       if (socket?.connected) socket.emit('session.ended', notice);

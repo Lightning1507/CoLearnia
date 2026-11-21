@@ -109,6 +109,120 @@ async function enter(f: Fixture, account = f.host) {
   return { socket, context, snapshot, result: ack.data.result };
 }
 
+it('updates the existing MAIN client before its next media command', async () => {
+  const f = await setup({ productionRuntime: true });
+  const host = await enter(f);
+  const changes: { policyRevision: number; projectionSequence: number; projection: unknown }[] = [];
+  host.socket.on('session.changed', (event) => changes.push(event));
+  const account = await f.signUp();
+  await f.member(account);
+  const member = await enter(f, account);
+  await vi.waitFor(() => expect(changes).toHaveLength(1));
+  expect(changes[0]).toMatchObject({ policyRevision: 2, projectionSequence: 1 });
+  expect(JSON.stringify(changes[0]!.projection)).toContain(member.result.participantId);
+  const ack = await host.socket.timeout(5000).emitWithAck('media.transport.create', {
+    ...host.context,
+    requestId: randomUUID(),
+    expectedPolicyRevision: changes[0]!.policyRevision,
+    payload: { direction: 'SEND' },
+  });
+  expect(ack.data?.status).toBe('completed');
+  const leave = await member.socket.timeout(5000).emitWithAck('session.leave', {
+    ...member.context,
+    requestId: randomUUID(),
+    expectedPolicyRevision: 2,
+  });
+  expect(leave.data?.status).toBe('completed');
+  await vi.waitFor(() => expect(changes).toHaveLength(2));
+  expect(changes[1]).toMatchObject({ policyRevision: 3, projectionSequence: 2 });
+  expect(JSON.stringify(changes[1]!.projection)).not.toContain(member.result.participantId);
+});
+
+it('reports closed native transport to its owner and preserves the replacement', async () => {
+  const f = await setup({ productionRuntime: true });
+  const host = await enter(f);
+  const create = () =>
+    host.socket.timeout(5000).emitWithAck('media.transport.create', {
+      ...host.context,
+      requestId: randomUUID(),
+      expectedPolicyRevision: 1,
+      payload: { direction: 'RECV' },
+    });
+  const first = await create();
+  expect(first.data?.status).toBe('completed');
+  const snapshots: unknown[] = [];
+  const closed: unknown[] = [];
+  host.socket.on('media.sources.snapshot', (event) => snapshots.push(event));
+  host.socket.on('media.transport.closed', (event) => closed.push(event));
+  const sync = () =>
+    host.socket.timeout(5000).emitWithAck('media.sources.resync', {
+      ...host.context,
+      requestId: randomUUID(),
+      payload: {},
+    });
+  expect((await sync()).data?.status).toBe('completed');
+  await vi.waitFor(() =>
+    expect(snapshots[0]).toMatchObject({
+      payload: { ownTransports: [{ transportId: first.data.result.transportId }] },
+    }),
+  );
+  const old = f.native[0]!;
+  old.close();
+  const second = await create();
+  expect(second.data?.status).toBe('completed');
+  await vi.waitFor(() =>
+    expect(closed).toEqual([
+      expect.objectContaining({
+        ...host.context,
+        payload: { transportId: first.data.result.transportId, reason: 'TRANSPORT_FAILED' },
+      }),
+    ]),
+  );
+  // The fixture exposes a narrowed port, but this object is a native WebRtcTransport.
+  (old as typeof old & { emit(event: 'dtlsstatechange', state: 'closed'): boolean }).emit(
+    'dtlsstatechange',
+    'closed',
+  );
+  expect((await sync()).data?.status).toBe('completed');
+  await vi.waitFor(() =>
+    expect(snapshots[1]).toMatchObject({
+      payload: { ownTransports: [{ transportId: second.data.result.transportId }] },
+    }),
+  );
+  expect(closed).toHaveLength(1);
+  expect(f.native[1]!.closed).toBe(false);
+});
+
+it.each(['disconnect', 'revoke'] as const)('updates MAIN for peers after %s', async (action) => {
+  const f = await setup({ productionRuntime: true });
+  const host = await enter(f);
+  const account = await f.signUp();
+  await f.member(account);
+  const revisions: {
+    policyRevision: number;
+    projectionSequence: number;
+    projection: { participants: { participantId: string }[] };
+  }[] = [];
+  host.socket.on('session.changed', (event) => revisions.push(event));
+  const member = await enter(f, account);
+  await vi.waitFor(() => expect(revisions).toHaveLength(1));
+  if (action === 'disconnect') member.socket.disconnect();
+  else
+    await f.http
+      .post('/api/v1/auth/logout')
+      .set('Origin', origin)
+      .set('Cookie', account.cookie)
+      .set('X-CSRF-Token', account.data.csrfToken)
+      .send({})
+      .expect(200);
+  await vi.waitFor(() => expect(revisions).toHaveLength(2));
+  expect(revisions[1]).toMatchObject({ policyRevision: 3, projectionSequence: 2 });
+  expect(revisions[1]!.projection.participants.map((entry) => entry.participantId)).not.toContain(
+    member.result.participantId,
+  );
+  expect(host.socket.connected).toBe(true);
+});
+
 it('enters MAIN through the mounted HTTP ticket and authenticated socket using the application composition', async () => {
   const f = await setup({ productionRuntime: true });
   const ticket = await f.http

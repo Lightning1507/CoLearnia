@@ -24,6 +24,7 @@ import type {
   LiveContextRequest,
   LiveContextResult,
   SessionSnapshotPart,
+  SessionProjectionEvent,
   SessionEndInput,
   SessionCleanupRequest,
   LiveAccessRevocation,
@@ -35,6 +36,7 @@ import type { OperationCoordinator, CoordinationContext } from '../../lib/operat
 import { CoordinationError } from '../../lib/operation-coordinator.js';
 import {
   createSessionProjectionCursor,
+  prepareSessionProjectionEvent,
   prepareSessionSnapshot,
 } from '../projection/session-projection.js';
 import { resolveSessionPolicyContext } from '../policy/session-policy.js';
@@ -90,6 +92,7 @@ type Ownership = {
   participant: PolicyParticipant;
   resumeTicket: string;
   projectionSequence?: number;
+  projectionRevision?: number;
   reconnect?: {
     deadline: number;
     generation: number;
@@ -177,6 +180,8 @@ export function createMainJoinRegistry(options: {
     typeof import('./session-repository.js').createSessionRepository
   >['leave'];
   publishEnded?(socketId: string, notice: import('@colearnia/contracts').SessionEndedEvent): void;
+  publishProjection?(socketId: string, event: SessionProjectionEvent): void;
+  projectionFailed?(socketId: string): void;
   resolveAuthority(
     auth: AuthenticatedContext,
     target: Target,
@@ -207,6 +212,7 @@ export function createMainJoinRegistry(options: {
     throw new TypeError('Invalid join limits');
   const now = options.now ?? Date.now;
   const rooms = new Map<string, Room>();
+  const projectionJobs = new Set<Room>();
   const ownerships = new Map<string, Ownership>();
   const intents = new Map<string, Intent>();
   const tickets = new Map<string, Intent>();
@@ -413,6 +419,7 @@ export function createMainJoinRegistry(options: {
       fail('SERVER_BUSY');
     }
     room.state.policyRevision++;
+    scheduleProjection(room);
   }
   function forget(intent: Intent) {
     if (intents.get(intent.key) === intent) intents.delete(intent.key);
@@ -558,6 +565,7 @@ export function createMainJoinRegistry(options: {
       fail('SERVER_BUSY');
     }
     room.state.policyRevision++;
+    scheduleProjection(room);
   }
   async function refreshPeers(room: Room, held: CoordinationContext) {
     const destination = { workspaceId: room.state.workspaceId, channelId: room.state.channelId };
@@ -657,7 +665,78 @@ export function createMainJoinRegistry(options: {
       },
     });
     if (!('data' in ack)) fail('INTERNAL_ERROR');
+    owner.projectionRevision = snapshot.nextCursor.policyRevision;
     return { ack, parts: snapshot.parts as readonly SessionSnapshotPart[] };
+  }
+
+  function scheduleProjection(room: Room) {
+    if (closed || !options.publishProjection || projectionJobs.has(room)) return;
+    projectionJobs.add(room);
+    outsideCoordination(() => {
+      setImmediate(() => {
+        void fanoutProjection(room);
+      });
+    });
+  }
+
+  async function fanoutProjection(room: Room) {
+    const revision = room.state.policyRevision;
+    try {
+      for (const owner of [...ownerships.values()]) {
+        const { binding, participant } = owner;
+        const callGeneration = participant.callGeneration;
+        if (closed || room.state.state !== 'ACTIVE') break;
+        if (
+          owner.room !== room ||
+          participant.blocked ||
+          owner.reconnect ||
+          !binding.isConnected() ||
+          owner.projectionRevision === undefined ||
+          owner.projectionRevision >= room.state.policyRevision
+        )
+          continue;
+        const current = () =>
+          !closed &&
+          ownerships.get(participant.auth.userId) === owner &&
+          owner.binding === binding &&
+          participant.callGeneration === callGeneration &&
+          binding.isConnected();
+        try {
+          await registry.withContext(
+            binding.socketId,
+            {
+              sessionId: room.state.sessionId,
+              epoch: room.state.epoch,
+              callGeneration,
+            },
+            (resolved, _router, policy) => {
+              if (
+                !current() ||
+                !resolved.ok ||
+                !policy ||
+                owner.projectionRevision! >= resolved.context.policyRevision
+              )
+                return;
+              const cursor = createSessionProjectionCursor(policy);
+              if (!cursor.ok) return;
+              cursor.cursor.projectionSequence = owner.projectionSequence ?? 0;
+              const next = prepareSessionProjectionEvent(policy, cursor.cursor, 'session.changed');
+              if (!next.ok) throw new MainJoinError(next.errorCode);
+              options.publishProjection!(binding.socketId, next.event);
+              owner.projectionSequence = next.nextCursor.projectionSequence;
+              owner.projectionRevision = next.nextCursor.policyRevision;
+            },
+          );
+        } catch {
+          if (current() && !participant.blocked && room.state.state === 'ACTIVE')
+            options.projectionFailed?.(binding.socketId);
+        }
+      }
+    } finally {
+      projectionJobs.delete(room);
+      if (room.state.state === 'ACTIVE' && room.state.policyRevision !== revision)
+        scheduleProjection(room);
+    }
   }
 
   function acceptRoomEnd(
@@ -888,7 +967,7 @@ export function createMainJoinRegistry(options: {
     return Promise.all(jobs);
   }
 
-  return {
+  const registry = {
     stats: () => ({
       rooms: rooms.size,
       ownerships: ownerships.size,
@@ -928,6 +1007,7 @@ export function createMainJoinRegistry(options: {
       }
       participant.audienceEpoch++;
       room.state.policyRevision++;
+      scheduleProjection(room);
       const adapters = options.reconnectCleanup;
       if (!adapters || typeof adapters.media === 'function') fail('DEPENDENCY_UNAVAILABLE');
       const request: SessionCleanupRequest = {
@@ -1136,6 +1216,8 @@ export function createMainJoinRegistry(options: {
             owner.participant.access = { ...current.access };
             owner.participant.currentAccess = { ...current.access };
             owner.participant.callGeneration = ++nextGeneration;
+            delete owner.projectionSequence;
+            delete owner.projectionRevision;
             owner.participant.scope = { type: 'MAIN' };
             owner.participant.connected = true;
             owner.resumeReplay = {
@@ -1147,6 +1229,7 @@ export function createMainJoinRegistry(options: {
             owner.resumeTicket = randomBytes(32).toString('base64url');
             delete owner.reconnect;
             owner.room.state.policyRevision++;
+            scheduleProjection(owner.room);
             return true;
           },
         );
@@ -1489,6 +1572,7 @@ export function createMainJoinRegistry(options: {
           const previous = room.state;
           room.state = { ...previous, participants, policyRevision: previous.policyRevision + 1 };
           ownerships.set(auth.userId, owner);
+          scheduleProjection(room);
           if (participant.participantId === room.hostParticipantId) room.hostReservation = null;
           // Snapshot/provider failures do not revoke the committed ownership. Retry the
           // same consumed intent revalidates all authority without writing DB again.
@@ -1631,6 +1715,7 @@ export function createMainJoinRegistry(options: {
                   if (room.state.policyRevision < Number.MAX_SAFE_INTEGER)
                     room.state.policyRevision++;
                   else room.uncertain = true;
+                  scheduleProjection(room);
                 }
                 for (const { owner, generation, participantId, epoch } of originalOwners) {
                   const { participant, room } = owner;
@@ -1662,6 +1747,7 @@ export function createMainJoinRegistry(options: {
                   if (room.state.policyRevision < Number.MAX_SAFE_INTEGER)
                     room.state.policyRevision++;
                   else room.uncertain = true;
+                  scheduleProjection(room);
                   if (room.state.hostParticipantId === participant.participantId)
                     room.state.hostParticipantId = null;
                   const request = {
@@ -2228,6 +2314,8 @@ export function createMainJoinRegistry(options: {
       ownerships.clear();
       rooms.clear();
       failedRouters.clear();
+      projectionJobs.clear();
     },
   };
+  return registry;
 }

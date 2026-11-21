@@ -120,10 +120,17 @@ function describeTransport(transport: Transport) {
 export function createTransportSignaling({
   withContext,
   createTransport,
+  onTransportClosed,
   admission = sessionCleanupAdmission,
 }: {
   withContext: Authority;
   createTransport: (router: MediaTypes.Router) => Promise<Transport>;
+  onTransportClosed?(
+    socketId: string,
+    context: LiveContext,
+    transportId: string,
+    reason: 'TRANSPORT_FAILED' | 'DEADLINE',
+  ): void;
   admission?: CleanupAdmission;
 }) {
   const slots = new Map<string, Slot>();
@@ -143,7 +150,9 @@ export function createTransportSignaling({
     },
   };
 
-  function forget(slot: Slot) {
+  function forget(slot: Slot, reason: 'TRANSPORT_FAILED' | 'DEADLINE' = 'TRANSPORT_FAILED') {
+    const descriptor = slot.descriptor;
+    const published = descriptor && transports.get(descriptor.transportId) === slot;
     slot.closed = true;
     clearTimeout(slot.timer);
     if (slots.get(slot.key) === slot) slots.delete(slot.key);
@@ -151,11 +160,15 @@ export function createTransportSignaling({
       transports.delete(slot.transport.id);
     delete slot.transport;
     delete slot.descriptor;
+    if (published)
+      outsideCoordination(() =>
+        onTransportClosed?.(slot.socketId, slot.context, descriptor.transportId, reason),
+      );
   }
 
-  function close(slot: Slot) {
+  function close(slot: Slot, reason?: 'DEADLINE') {
     const transport = slot.transport;
-    forget(slot);
+    forget(slot, reason);
     transport?.close();
   }
 
@@ -325,7 +338,7 @@ export function createTransportSignaling({
               if (command.kind === 'create') {
                 slot.descriptor = describeTransport(slot.transport);
                 transports.set(slot.transport.id, slot);
-                slot.timer = setTimeout(() => close(slot), pendingConnectMs);
+                slot.timer = setTimeout(() => close(slot, 'DEADLINE'), pendingConnectMs);
                 slot.timer.unref();
               } else {
                 slot.connecting = false;
@@ -508,3 +521,4 @@ export function createTransportSignaling({
     },
   };
 }
+import { outsideCoordination } from '../../lib/operation-coordinator.js';
