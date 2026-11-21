@@ -154,11 +154,9 @@ export function CameraTiles({
   return (
     <section
       aria-label="Camera cuộc gọi"
-      className={
-        layout === 'rail'
-          ? 'live-camera-rail'
-          : 'grid w-full grid-cols-1 gap-3 p-3 @min-[560px]/room-layout:grid-cols-2'
-      }
+      className={layout === 'rail' ? 'live-camera-rail' : 'live-camera-grid'}
+      data-columns={snapshot.cameras.length <= 1 ? 1 : snapshot.cameras.length <= 4 ? 2 : 3}
+      data-camera-count={snapshot.cameras.length}
     >
       {snapshot.cameras.length === 0 ? (
         <p>Chưa có camera khả dụng.</p>

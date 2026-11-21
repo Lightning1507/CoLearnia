@@ -187,3 +187,38 @@ Tham khảo cách ưu tiên nội dung chia sẻ và giữ người tham gia bê
 - `pnpm.exe media:smoke` exit 0: native worker/Router Opus/VP8. Không chứng minh SFU/TURN, camera vật lý hoặc cuộc gọi xuyên mạng. Các slot âm lượng/nhóm trong demo chỉ kiểm bố cục; chưa nghiệm thu AudioGraph/nhóm production. Đường ghép LIVE production vẫn theo SCRUM-88 / M4-T11.1 như phạm vi đã ghi ở đầu evidence.
 - `pnpm.exe check` exit 0: harness 54 PASS/1 skip Windows, 140 nguồn/links; format/lint/typecheck; 1040/1040 test trên 74 file; build contracts/web/server. Bộ regression runtime camera/ACK/audio nằm trong lượt test đầy đủ này. Không đổi dependency, audit config hoặc cổng check.
 - Kiểm thử trong checkout độc lập để tránh chat khác đổi nhánh giữa lượt chạy; sau đó chép đủ 13 file về checkout SCRUM-78 chính và đối chiếu hash. Đã xóa `.worktrees` theo yêu cầu sau khi xác minh hai lượt SCRUM-81 đã kết thúc, worktree sạch, commit có trên remote và không có process sử dụng; giữ nguyên nhánh/PR SCRUM-81. Thay đổi `.vscode/settings.json` staged có sẵn được giữ nguyên và không đưa vào commit SCRUM-78.
+
+## Bố cục nhiều người theo ảnh Meet và UI chung — 21/11/2026
+
+Phần này cập nhật kết quả style ngày 20/11. Đã đọc lại [CSS draft](../figma-ui/src/index.css) ở các vùng meeting-header, meeting-stage/media-layout, camera-rail/grid, local-volume/meeting-controls và meeting-panel/chat; đối chiếu với hai ảnh Meet người dùng cung cấp. Giữ [global.css](../../apps/web/src/styles/global.css), [tokens](../../apps/web/src/styles/tokens.css), avatar/chat và typography của app làm nguồn style triển khai. Không sửa export Figma, component TEXT, quyền hoặc media runtime.
+
+### Thay đổi trong SCRUM-78
+
+- Không share: camera grid một ô khi chỉ có một nguồn, hai cột cho 2–4 nguồn, bố cục 2 ô trên/3 ô dưới cho 5 nguồn ở vùng rộng. Khi có share: stage lớn, rail rộng 180px, gap stage/rail 10px và gap tile 8px. Hiển thị đủ nguồn được runtime cấp; không dùng slice bốn người để khớp draft. Rail tối thiểu 100px/ô và cuộn khi thiếu chỗ; không suy cam đang bật từ roster.
+- Toolbar nằm trong cột media, không kéo dài dưới panel. Cụm mic/camera/share/rời có nền và khung gọn; nhóm/người tham gia/chat ở vùng phụ. Nút chính 44px, chữ 14px, icon 20px theo style app. Nút đóng panel có nhãn; resize vẫn giữ controller, track và focus.
+- Panel dùng cột 360px, surface thực 348px với gutter 12px, góc bo 12px; kéo dài bên cạnh cả stage và toolbar. Demo chat có header, danh sách tin mẫu cuộn và composer ở đáy; demo người tham gia có năm tên và bộ lọc cục bộ. Nút gửi/ảnh/đích bị vô hiệu hóa; nháp chỉ nằm trong state của fixture.
+- Đây là điều chỉnh có chủ ý theo ảnh Meet và typography chung, **không khẳng định toàn bộ LIVE khớp Figma từng pixel**. Draft dùng nút 38/42px và chữ 9px, header 52/58px; app giữ nút 44px/chữ 14px, header 56/58px. Do đó stage thấp hơn draft 27px tại 1280×800 và 8px tại 1440×900; chiều rộng stage/rail và phân vùng toolbar/panel được đối chiếu dưới đây. Panel trừ gutter khác surface 360px sát cạnh của draft.
+
+| Viewport | Chat | Stage app | Stage theo CSS draft | Rail app | Toolbar app | Panel app |
+| -------- | ---- | --------- | -------------------- | -------- | ----------- | --------- |
+| 1280×800 | Đóng | 1066×587  | 1066×614             | 180×587  | 1280×109    | —         |
+| 1280×800 | Mở   | 706×587   | 706×614              | 180×587  | 920×109     | 348×687   |
+| 1440×900 | Đóng | 1226×685  | 1226×693             | 180×685  | 1440×109    | —         |
+| 1440×900 | Mở   | 866×685   | 866×693              | 180×685  | 1080×109    | 348×785   |
+
+Cột draft là phép tính từ CSS đã đọc (demo/header/padding/volume/controls/panel), không phải số đo một phiên Figma đã chạy. Cột app là số đo browser thật ở viewport chính xác; [JSON kết quả](scrum-78/2026-11-21-meet-ui.json) lưu geometry, control size, số tile và kết quả assertion.
+
+![Năm camera ở 1440×900](images/scrum-78/meet-grid-1440x900.jpg)
+
+![Share và chat mẫu ở 1280×800](images/scrum-78/meet-chat-1280x800.jpg)
+
+Ảnh cùng viewport để review: [share 1280](images/scrum-78/meet-share-1280x800.jpg), [share 1440](images/scrum-78/meet-share-1440x900.jpg), [chat 1440](images/scrum-78/meet-chat-1440x900.jpg), [grid 1280](images/scrum-78/meet-grid-1280x800.jpg), [người tham gia 1280](images/scrum-78/meet-people-1280x800.jpg), [người tham gia 1440](images/scrum-78/meet-people-1440x900.jpg).
+
+### Kiểm thử và phạm vi bằng chứng
+
+- Chrome headless cài sẵn, Playwright 1.65.1 ở thư mục công cụ tạm ngoài repo; không thêm dependency/lockfile app. Ảnh chụp trực tiếp browser, không resize hoặc ghép ảnh. Các URL fixture `/test/browser/camera-share-layout/?ready=1`, `?mode=grid&ready=1`, `?mode=grid&cameras=1&ready=1` cho phép kiểm lại cùng dữ liệu. `ready=1` là dữ liệu mô phỏng, không phải ACK server thật.
+- Cả 1280×800 và 1440×900 PASS: năm tile; rail 180px/gap 10px; toolbar không chồng panel; chữ 14px/control 44px; không tràn ngang; nháp giữ qua 1279→1280/1440; đóng panel; grid/share; năm người và tìm tên. Ca một camera tắt→bật lại PASS nhờ fixture bind đúng track capture trong adapter publish. Một call initialization, không Consumer đóng do layout.
+- Camera/ACK/pause/StrictMode fixture PASS. RoomShell tổng hợp **PASS**, gồm lifecycle (remaining=0, attach/detach=16/16, init/dispose=1/1, observers=0, resizeFocus=true/true) và chuyển LIVE↔TEXT/menu/focus `/workspace`. Đã sửa selector cũ theo TextTimeline section hiện hành và kiểm padding header 20px/timeline 24px đúng CSS của consumer; giữ các assertion màu, mép cột, focus và cleanup. Không đổi code nghiệp vụ TEXT. Cảnh báo React act của fixture còn xuất hiện, không có assertion thất bại.
+- Reflow 320×700, 767×800, 768×800 và 1279×800 PASS: panel thay stage, toolbar trong viewport, Về sân khấu thao tác được; không gọi đây là nghiệm thu media trên thiết bị mobile.
+- `pnpm.exe check` exit 0 trên baseline PR mới `39fdffe`: harness 54 PASS/1 skip Windows, 140 nguồn/links, format/lint/typecheck; **1057 test/76 file PASS**; build contracts/web/server PASS. Build có cảnh báo chunk hơn 500kB, không đổi threshold. `pnpm.exe media:smoke` exit 0, native worker/Router Opus/VP8. Frozen install và Node 26.12.1 đúng pin; doctor báo Docker engine chưa chạy, không chạy DB hoặc staging test trong lượt UI này. Không đổi dependency hoặc audit config.
+- **Chat đầy đủ thuộc M2-T6.3**. Panel mẫu chỉ giúp kiểm phân vùng/header/list/composer; không chứng minh lịch sử, gửi/nhận text/ảnh, recipient ACL hoặc giao diện chat production đã hoàn tất. Người tham gia/nhóm/volume trong trang này cũng là fixture. Canvas/video có frame thật; snapshot/capture/publish được mô phỏng. Chưa nghiệm thu SFU/TURN hoặc camera vật lý và không dùng bộ ảnh này làm bằng chứng toàn bộ LIVE đã khớp Figma.

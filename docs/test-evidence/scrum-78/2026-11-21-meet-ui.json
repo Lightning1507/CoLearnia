@@ -1,0 +1,434 @@
+[
+  {
+    "kind": "share",
+    "size": [1280, 800],
+    "result": "PASS · viewport=1280×800; mode=slide; panel=đóng; stage=1066×587, rail=180×587; 1 call, 0 Consumer đóng",
+    "viewport": [1280, 800],
+    "stage": {
+      "x": 12,
+      "y": 104,
+      "w": 1066,
+      "h": 587,
+      "right": 1078,
+      "bottom": 691
+    },
+    "rail": {
+      "x": 1088,
+      "y": 104,
+      "w": 180,
+      "h": 587,
+      "right": 1268,
+      "bottom": 691
+    },
+    "toolbar": {
+      "x": 0,
+      "y": 691,
+      "w": 1280,
+      "h": 109,
+      "right": 1280,
+      "bottom": 800
+    },
+    "panel": null,
+    "tiles": 5,
+    "scrollWidth": 1280,
+    "controls": [
+      {
+        "label": "Tắt mic",
+        "height": 44,
+        "font": "14px"
+      },
+      {
+        "label": "Tắt camera",
+        "height": 44,
+        "font": "14px"
+      },
+      {
+        "label": "Dừng chia sẻ",
+        "height": 44,
+        "font": "14px"
+      },
+      {
+        "label": "Rời cuộc gọi",
+        "height": 44,
+        "font": "14px"
+      },
+      {
+        "label": "Nhóm",
+        "height": 44,
+        "font": "14px"
+      },
+      {
+        "label": "Người tham gia",
+        "height": 44,
+        "font": "14px"
+      },
+      {
+        "label": "Chat cuộc họp",
+        "height": 44,
+        "font": "14px"
+      }
+    ]
+  },
+  {
+    "kind": "share-chat",
+    "size": [1280, 800],
+    "result": "PASS · viewport=1280×800; mode=slide; panel=mở; stage=706×587, rail=180×587; 1 call, 0 Consumer đóng",
+    "viewport": [1280, 800],
+    "stage": {
+      "x": 12,
+      "y": 104,
+      "w": 706,
+      "h": 587,
+      "right": 718,
+      "bottom": 691
+    },
+    "rail": {
+      "x": 728,
+      "y": 104,
+      "w": 180,
+      "h": 587,
+      "right": 908,
+      "bottom": 691
+    },
+    "toolbar": {
+      "x": 0,
+      "y": 691,
+      "w": 920,
+      "h": 109,
+      "right": 920,
+      "bottom": 800
+    },
+    "panel": {
+      "x": 920,
+      "y": 104,
+      "w": 348,
+      "h": 687,
+      "right": 1268,
+      "bottom": 791
+    },
+    "tiles": 5,
+    "scrollWidth": 1280,
+    "controls": [
+      {
+        "label": "Tắt mic",
+        "height": 44,
+        "font": "14px"
+      },
+      {
+        "label": "Tắt camera",
+        "height": 44,
+        "font": "14px"
+      },
+      {
+        "label": "Dừng chia sẻ",
+        "height": 44,
+        "font": "14px"
+      },
+      {
+        "label": "Rời cuộc gọi",
+        "height": 44,
+        "font": "14px"
+      },
+      {
+        "label": "Nhóm",
+        "height": 44,
+        "font": "14px"
+      },
+      {
+        "label": "Người tham gia",
+        "height": 44,
+        "font": "14px"
+      },
+      {
+        "label": "Chat cuộc họp",
+        "height": 44,
+        "font": "14px"
+      }
+    ]
+  },
+  {
+    "kind": "grid",
+    "size": [1280, 800],
+    "result": "PASS · viewport=1280×800; mode=grid; panel=đóng; 1 call, 0 Consumer đóng",
+    "viewport": [1280, 800],
+    "stage": {
+      "x": 12,
+      "y": 104,
+      "w": 1256,
+      "h": 587,
+      "right": 1268,
+      "bottom": 691
+    },
+    "rail": null,
+    "toolbar": {
+      "x": 0,
+      "y": 691,
+      "w": 1280,
+      "h": 109,
+      "right": 1280,
+      "bottom": 800
+    },
+    "panel": null,
+    "tiles": 5,
+    "scrollWidth": 1280,
+    "controls": [
+      {
+        "label": "Tắt mic",
+        "height": 44,
+        "font": "14px"
+      },
+      {
+        "label": "Tắt camera",
+        "height": 44,
+        "font": "14px"
+      },
+      {
+        "label": "Chia sẻ",
+        "height": 44,
+        "font": "14px"
+      },
+      {
+        "label": "Rời cuộc gọi",
+        "height": 44,
+        "font": "14px"
+      },
+      {
+        "label": "Nhóm",
+        "height": 44,
+        "font": "14px"
+      },
+      {
+        "label": "Người tham gia",
+        "height": 44,
+        "font": "14px"
+      },
+      {
+        "label": "Chat cuộc họp",
+        "height": 44,
+        "font": "14px"
+      }
+    ]
+  },
+  {
+    "kind": "share",
+    "size": [1440, 900],
+    "result": "PASS · viewport=1440×900; mode=slide; panel=đóng; stage=1226×685, rail=180×685; 1 call, 0 Consumer đóng",
+    "viewport": [1440, 900],
+    "stage": {
+      "x": 12,
+      "y": 106,
+      "w": 1226,
+      "h": 685,
+      "right": 1238,
+      "bottom": 791
+    },
+    "rail": {
+      "x": 1248,
+      "y": 106,
+      "w": 180,
+      "h": 685,
+      "right": 1428,
+      "bottom": 791
+    },
+    "toolbar": {
+      "x": 0,
+      "y": 791,
+      "w": 1440,
+      "h": 109,
+      "right": 1440,
+      "bottom": 900
+    },
+    "panel": null,
+    "tiles": 5,
+    "scrollWidth": 1440,
+    "controls": [
+      {
+        "label": "Tắt mic",
+        "height": 44,
+        "font": "14px"
+      },
+      {
+        "label": "Tắt camera",
+        "height": 44,
+        "font": "14px"
+      },
+      {
+        "label": "Dừng chia sẻ",
+        "height": 44,
+        "font": "14px"
+      },
+      {
+        "label": "Rời cuộc gọi",
+        "height": 44,
+        "font": "14px"
+      },
+      {
+        "label": "Nhóm",
+        "height": 44,
+        "font": "14px"
+      },
+      {
+        "label": "Người tham gia",
+        "height": 44,
+        "font": "14px"
+      },
+      {
+        "label": "Chat cuộc họp",
+        "height": 44,
+        "font": "14px"
+      }
+    ]
+  },
+  {
+    "kind": "share-chat",
+    "size": [1440, 900],
+    "result": "PASS · viewport=1440×900; mode=slide; panel=mở; stage=866×685, rail=180×685; 1 call, 0 Consumer đóng",
+    "viewport": [1440, 900],
+    "stage": {
+      "x": 12,
+      "y": 106,
+      "w": 866,
+      "h": 685,
+      "right": 878,
+      "bottom": 791
+    },
+    "rail": {
+      "x": 888,
+      "y": 106,
+      "w": 180,
+      "h": 685,
+      "right": 1068,
+      "bottom": 791
+    },
+    "toolbar": {
+      "x": 0,
+      "y": 791,
+      "w": 1080,
+      "h": 109,
+      "right": 1080,
+      "bottom": 900
+    },
+    "panel": {
+      "x": 1080,
+      "y": 106,
+      "w": 348,
+      "h": 785,
+      "right": 1428,
+      "bottom": 891
+    },
+    "tiles": 5,
+    "scrollWidth": 1440,
+    "controls": [
+      {
+        "label": "Tắt mic",
+        "height": 44,
+        "font": "14px"
+      },
+      {
+        "label": "Tắt camera",
+        "height": 44,
+        "font": "14px"
+      },
+      {
+        "label": "Dừng chia sẻ",
+        "height": 44,
+        "font": "14px"
+      },
+      {
+        "label": "Rời cuộc gọi",
+        "height": 44,
+        "font": "14px"
+      },
+      {
+        "label": "Nhóm",
+        "height": 44,
+        "font": "14px"
+      },
+      {
+        "label": "Người tham gia",
+        "height": 44,
+        "font": "14px"
+      },
+      {
+        "label": "Chat cuộc họp",
+        "height": 44,
+        "font": "14px"
+      }
+    ]
+  },
+  {
+    "kind": "grid",
+    "size": [1440, 900],
+    "result": "PASS · viewport=1440×900; mode=grid; panel=đóng; 1 call, 0 Consumer đóng",
+    "viewport": [1440, 900],
+    "stage": {
+      "x": 12,
+      "y": 106,
+      "w": 1416,
+      "h": 685,
+      "right": 1428,
+      "bottom": 791
+    },
+    "rail": null,
+    "toolbar": {
+      "x": 0,
+      "y": 791,
+      "w": 1440,
+      "h": 109,
+      "right": 1440,
+      "bottom": 900
+    },
+    "panel": null,
+    "tiles": 5,
+    "scrollWidth": 1440,
+    "controls": [
+      {
+        "label": "Tắt mic",
+        "height": 44,
+        "font": "14px"
+      },
+      {
+        "label": "Tắt camera",
+        "height": 44,
+        "font": "14px"
+      },
+      {
+        "label": "Chia sẻ",
+        "height": 44,
+        "font": "14px"
+      },
+      {
+        "label": "Rời cuộc gọi",
+        "height": 44,
+        "font": "14px"
+      },
+      {
+        "label": "Nhóm",
+        "height": 44,
+        "font": "14px"
+      },
+      {
+        "label": "Người tham gia",
+        "height": 44,
+        "font": "14px"
+      },
+      {
+        "label": "Chat cuộc họp",
+        "height": 44,
+        "font": "14px"
+      }
+    ]
+  },
+  {
+    "kind": "single-camera-toggle",
+    "result": "PASS · viewport=1280×800; mode=grid; panel=đóng; 1 call, 0 Consumer đóng"
+  },
+  {
+    "kind": "camera-tiles",
+    "result": "PASS · ACK A → thêm camera C → ACK B → snapshot còn pending B → đọc lại → snapshot ready vẫn pause B; không đóng nhầm Consumer; snapshot paused → ACK cũ; local enabled → disabled → enabled; token Figma; ready → frame → pause → resume → remount → switching → ended; StrictMode; participant độc lập"
+  },
+  {
+    "kind": "room-shell",
+    "result": "PASS · subscriptions=68, remaining=0, video attach/detach=16/16, peak=1, call A init/dispose=1/1, observers=0, resizeFocus=true/true · workspace=1440×900, room=1184"
+  }
+]

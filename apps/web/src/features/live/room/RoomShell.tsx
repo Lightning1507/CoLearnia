@@ -18,7 +18,15 @@ type RoomShellProps = {
   useWorkspaceWidth?: boolean;
   stage?: ReactNode;
   stageMedia?: { call: CallHandle; stream: MediaStream } | undefined;
-  sidePanel?: { label: string; content: ReactNode; onBackToStage: () => void } | undefined;
+  sidePanel?:
+    | {
+        label: string;
+        content: ReactNode;
+        description?: string;
+        fillContent?: boolean;
+        onBackToStage: () => void;
+      }
+    | undefined;
   controls?: ReactNode;
   devices?: DeviceMedia;
   error?: string | undefined;
@@ -172,13 +180,7 @@ export function RoomShell({
           </div>
           <div className="live-room-position">{header?.position}</div>
         </header>
-        <div
-          className={
-            sidePanel
-              ? 'live-room-body grid grid-cols-1 @min-[1280px]/room-layout:grid-cols-[minmax(0,1fr)_320px]'
-              : 'live-room-body grid grid-cols-1'
-          }
-        >
+        <div className={sidePanel ? 'live-room-body live-room-has-panel' : 'live-room-body'}>
           <div
             className={`live-call-media min-w-0 ${sidePanel ? 'hidden @min-[1280px]/room-layout:block' : ''}`}
             ref={stageElement}
@@ -207,9 +209,37 @@ export function RoomShell({
           </div>
           {sidePanel && (
             <section className="live-room-panel" aria-labelledby={panelId}>
-              <h3 className="live-room-panel-heading" id={panelId} ref={panelHeading} tabIndex={-1}>
-                {sidePanel.label}
-              </h3>
+              <header className="live-room-panel-header">
+                <div>
+                  <h3
+                    className="live-room-panel-heading"
+                    id={panelId}
+                    ref={panelHeading}
+                    tabIndex={-1}
+                  >
+                    {sidePanel.label}
+                  </h3>
+                  {sidePanel.description && <p>{sidePanel.description}</p>}
+                </div>
+                <button
+                  type="button"
+                  className="live-room-panel-close"
+                  aria-label="Đóng panel"
+                  onClick={sidePanel.onBackToStage}
+                >
+                  <svg
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    aria-hidden="true"
+                  >
+                    <path d="m6 6 12 12M18 6 6 18" />
+                  </svg>
+                </button>
+              </header>
               <button
                 type="button"
                 className="live-room-panel-back @min-[1280px]/room-layout:hidden"
@@ -219,48 +249,56 @@ export function RoomShell({
               >
                 Về sân khấu
               </button>
-              <div className="live-room-panel-content">{sidePanel.content}</div>
+              <div
+                className={`live-room-panel-content${sidePanel.fillContent ? ' live-room-panel-content-fill' : ''}`}
+              >
+                {sidePanel.content}
+              </div>
             </section>
           )}
-        </div>
-        <footer
-          className="live-room-toolbar"
-          aria-label="Điều khiển cuộc gọi"
-          ref={toolbar}
-          tabIndex={-1}
-        >
-          {volumeControls && <div className="live-room-volume">{volumeControls}</div>}
-          <div className="live-room-controls-main">
-            {roomCall?.status === 'active' && devices && <DeviceMediaControls devices={devices} />}
-            {controls ?? (!devices && <p>Chưa có điều khiển cuộc gọi khả dụng.</p>)}
-          </div>
-          {secondaryControls && <div className="live-room-controls-side">{secondaryControls}</div>}
-          {showAudioRecovery && (
-            <div className="flex flex-wrap items-center gap-2">
-              <p className="text-sm" role="status">
-                Âm thanh cuộc gọi đang tạm dừng.
-              </p>
-              <button
-                type="button"
-                className="live-toolbar-control min-h-10 rounded-lg px-3 py-2 text-sm font-medium"
-                onFocus={() => {
-                  audioButtonFocused.current = true;
-                }}
-                onBlur={(event) => {
-                  if (
-                    event.relatedTarget &&
-                    event.relatedTarget !== event.currentTarget.ownerDocument.body
-                  ) {
-                    audioButtonFocused.current = false;
-                  }
-                }}
-                onClick={() => audio.enable(roomCall.identity)}
-              >
-                Bật âm thanh
-              </button>
+          <footer
+            className="live-room-toolbar"
+            aria-label="Điều khiển cuộc gọi"
+            ref={toolbar}
+            tabIndex={-1}
+          >
+            {volumeControls && <div className="live-room-volume">{volumeControls}</div>}
+            <div className="live-room-controls-main">
+              {roomCall?.status === 'active' && devices && (
+                <DeviceMediaControls devices={devices} />
+              )}
+              {controls ?? (!devices && <p>Chưa có điều khiển cuộc gọi khả dụng.</p>)}
             </div>
-          )}
-        </footer>
+            {secondaryControls && (
+              <div className="live-room-controls-side">{secondaryControls}</div>
+            )}
+            {showAudioRecovery && (
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="text-sm" role="status">
+                  Âm thanh cuộc gọi đang tạm dừng.
+                </p>
+                <button
+                  type="button"
+                  className="live-toolbar-control min-h-10 rounded-lg px-3 py-2 text-sm font-medium"
+                  onFocus={() => {
+                    audioButtonFocused.current = true;
+                  }}
+                  onBlur={(event) => {
+                    if (
+                      event.relatedTarget &&
+                      event.relatedTarget !== event.currentTarget.ownerDocument.body
+                    ) {
+                      audioButtonFocused.current = false;
+                    }
+                  }}
+                  onClick={() => audio.enable(roomCall.identity)}
+                >
+                  Bật âm thanh
+                </button>
+              </div>
+            )}
+          </footer>
+        </div>
       </div>
     </article>
   );

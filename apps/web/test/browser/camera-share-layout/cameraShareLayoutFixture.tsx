@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { createPortal } from 'react-dom';
 import { mediaSourcesSnapshotSchema } from '@colearnia/contracts';
 import { RoomShell } from '../../../src/features/live/room/RoomShell';
+import { MeetingChatPreview, MeetingPeoplePreview } from './MeetingChatPreview';
 import { CallControllerProvider } from '../../../src/features/live/runtime/CallControllerProvider';
 import { CallControllerOwner } from '../../../src/features/live/runtime/callController';
 import type { MediaSnapshotRuntime } from '../../../src/features/live/runtime/mediaSnapshotRuntime';
@@ -56,6 +57,8 @@ export function FixtureIcon({ kind }: { kind: 'people' | 'group' | 'leave' | 'vo
 }
 
 async function start() {
+  const params = new URLSearchParams(location.search);
+  const cameraCount = params.get('cameras') === '1' ? 1 : params.get('cameras') === '4' ? 4 : 5;
   const owner = new CallControllerOwner();
   let media!: MediaSnapshotRuntime;
   let initializations = 0;
@@ -121,7 +124,7 @@ async function start() {
   const timer = setInterval(draw, 100);
   const stream = slide.captureStream(10);
   const cameraStream = portrait.captureStream(10);
-  const sources = Array.from({ length: 4 }, (_, index) => ({
+  const sources = Array.from({ length: cameraCount }, (_, index) => ({
     ...camera,
     sourceId: `camera-${index}`,
     producerId: `producer-${index}`,
@@ -175,7 +178,7 @@ async function start() {
   const participantNames = Object.fromEntries(
     sources.map((source, index) => [
       source.ownerParticipantId,
-      ['Minh Anh', 'Gia Khoa', 'Thảo Vy', 'Hoàng Nam'][index]!,
+      ['Minh Anh', 'Gia Khoa', 'Thảo Vy', 'Hoàng Nam', 'Lan Chi'][index]!,
     ]),
   );
   const channel = sidebarFixture.find((entry) => entry.channel.type === 'LIVE')!;
@@ -187,14 +190,35 @@ async function start() {
         video ? tracks[0]!.clone() : audioDestination.stream.getAudioTracks()[0]!.clone(),
       ]);
     },
-    async () => ({ close: async () => {} }),
+    async (track) => {
+      const unbind =
+        track.kind === 'video' ? media.bindCameraPreview(sources[0]!, track) : () => {};
+      return {
+        close: async () => {
+          unbind();
+        },
+      };
+    },
   );
   devices.updateContext(context);
   await devices.start('microphone');
+  if (params.get('ready') === '1') {
+    await devices.start('camera');
+    await apply(true);
+  }
 
   function Fixture() {
-    const [mode, setMode] = useState<'slide' | 'video' | 'custom' | 'grid'>('slide');
-    const [panel, setPanel] = useState<'Chat cuộc họp' | 'Người tham gia' | 'Nhóm' | null>(null);
+    const [mode, setMode] = useState<'slide' | 'video' | 'custom' | 'grid'>(() => {
+      const mode = params.get('mode');
+      return mode === 'grid' || mode === 'video' || mode === 'custom' ? mode : 'slide';
+    });
+    const [panel, setPanel] = useState<'Chat cuộc họp' | 'Người tham gia' | 'Nhóm' | null>(
+      params.get('panel') === 'chat'
+        ? 'Chat cuộc họp'
+        : params.get('panel') === 'people'
+          ? 'Người tham gia'
+          : null,
+    );
     const [inWorkspace, setInWorkspace] = useState(false);
     const [left, setLeft] = useState(false);
     const [volume, setVolume] = useState(78);
@@ -254,7 +278,7 @@ async function start() {
               const tiles = [...cameras.querySelectorAll('article')];
               const tile = tiles[0]!.getBoundingClientRect();
               check(
-                tile.height >= 119 && tiles.length === media.getCameraSnapshot().cameras.length,
+                tile.height >= 99 && tiles.length === media.getCameraSnapshot().cameras.length,
                 'Rail phải giữ tile cao và không bỏ camera để vừa khung',
               );
               const name = tiles[0]!.querySelector('.live-camera-name')!.getBoundingClientRect();
@@ -369,22 +393,20 @@ async function start() {
           panel
             ? {
                 label: panel,
+                description:
+                  panel === 'Chat cuộc họp' ? 'Mẫu bố cục · chưa kết nối chat' : 'Dữ liệu mô phỏng',
+                fillContent: panel === 'Chat cuộc họp',
                 onBackToStage: () => {
                   setPanel(null);
                   panelButton.current?.focus();
                 },
                 content:
                   panel === 'Chat cuộc họp' ? (
-                    <label className="camera-layout-chat-draft">
-                      Bản nháp chat mô phỏng
-                      <textarea value={draft} onChange={(event) => setDraft(event.target.value)} />
-                    </label>
+                    <MeetingChatPreview draft={draft} onDraftChange={setDraft} />
+                  ) : panel === 'Người tham gia' ? (
+                    <MeetingPeoplePreview />
                   ) : (
-                    <p>
-                      {panel === 'Người tham gia'
-                        ? 'Lan Chi · Minh Anh · Gia Khoa · Thảo Vy · Hoàng Nam'
-                        : 'Panel nhóm mô phỏng để kiểm bố cục.'}
-                    </p>
+                    <p>Panel nhóm mô phỏng để kiểm bố cục.</p>
                   ),
               }
             : undefined
@@ -407,7 +429,18 @@ async function start() {
                 <rect x="3" y="4" width="18" height="13" rx="2" />
                 <path d="M8 21h8M12 17v4" />
               </svg>
-              {mode === 'grid' ? 'Chia sẻ' : 'Dừng share'}
+              {mode === 'grid' ? 'Chia sẻ' : 'Dừng chia sẻ'}
+            </button>
+            <button
+              className={controlClass}
+              data-state="danger"
+              aria-label="Rời cuộc gọi"
+              onClick={() => {
+                owner.end(context);
+                setLeft(true);
+              }}
+            >
+              <FixtureIcon kind="leave" /> Rời
             </button>
           </>
         }
@@ -437,11 +470,18 @@ async function start() {
               <FixtureIcon kind="group" />
               Nhóm
             </button>
-            <button className={controlClass} onClick={() => setPanel('Người tham gia')}>
-              <FixtureIcon kind="people" /> Người tham gia
+            <button
+              className={controlClass}
+              aria-label="Người tham gia"
+              title="Người tham gia"
+              onClick={() => setPanel('Người tham gia')}
+            >
+              <FixtureIcon kind="people" /> 5
             </button>
             <button
               ref={panelButton}
+              aria-label="Chat cuộc họp"
+              title="Chat cuộc họp"
               className={controlClass}
               aria-expanded={panel === 'Chat cuộc họp'}
               data-state={panel === 'Chat cuộc họp' ? 'active' : undefined}
@@ -457,18 +497,7 @@ async function start() {
               >
                 <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
               </svg>
-              Chat cuộc họp
-            </button>
-            <button
-              className={controlClass}
-              data-state="danger"
-              onClick={() => {
-                owner.end(context);
-                setLeft(true);
-              }}
-            >
-              <FixtureIcon kind="leave" />
-              Rời cuộc gọi
+              <span className="sr-only">Chat cuộc họp</span>
             </button>
           </>
         }
@@ -510,33 +539,34 @@ async function start() {
               className={controlClass}
               onClick={async () => {
                 await devices.start('camera');
-                media.bindCameraPreview(sources[0]!, tracks[0]!);
                 await apply(true);
               }}
             >
               Xác nhận camera ready
             </button>
-            <button
-              className={controlClass}
-              onClick={() =>
-                media.acceptEvent(
-                  'media.source.changed',
-                  event(
-                    {
-                      source: {
-                        ...camera,
-                        sourceId: 'camera-5',
-                        producerId: 'producer-5',
-                        ownerParticipantId: '7'.repeat(24),
+            {cameraCount === 4 && (
+              <button
+                className={controlClass}
+                onClick={() =>
+                  media.acceptEvent(
+                    'media.source.changed',
+                    event(
+                      {
+                        source: {
+                          ...camera,
+                          sourceId: 'camera-5',
+                          producerId: 'producer-5',
+                          ownerParticipantId: '7'.repeat(24),
+                        },
                       },
-                    },
-                    1,
-                  ),
-                )
-              }
-            >
-              Thêm camera thứ 5
-            </button>
+                      1,
+                    ),
+                  )
+                }
+              >
+                Thêm camera thứ 5
+              </button>
+            )}
           </>,
           document.getElementById('fixture-controls')!,
         )}

@@ -379,7 +379,7 @@ async function verifyLifecycle(container: HTMLElement) {
     const activeStage = roomAVideo.parentElement;
     const activePanel = activeRoom?.querySelector('section[aria-labelledby]');
     const stageLayout = activeStage?.closest('.live-call-media')?.parentElement;
-    const backButton = activePanel?.querySelector('button');
+    const backButton = activePanel?.querySelector<HTMLButtonElement>('.live-room-panel-back');
     const toolbar = activeRoom?.querySelector('footer');
     const workspace = activeRoom?.closest<HTMLElement>('.workspace-shell');
     check(
@@ -408,7 +408,7 @@ async function verifyLifecycle(container: HTMLElement) {
       );
       const columns = getComputedStyle(stageLayout).gridTemplateColumns.split(' ');
       check(
-        wide ? columns.length === 2 && columns[1] === '320px' : columns.length === 1,
+        wide ? columns.length === 2 && columns[1] === '360px' : columns.length === 1,
         `Sai số cột ở ${width}px`,
       );
       check(verifyActive() === roomAVideo, 'Đổi layout phải giữ video đang gắn');
@@ -593,7 +593,7 @@ async function verifyWorkspaceRoute() {
     const stage = await waitForElement(page, 'section[aria-label="Sân khấu cuộc gọi"]');
     const room = stage.closest('article');
     const panel = room?.querySelector('section[aria-labelledby]');
-    const back = panel?.querySelector('button');
+    const back = panel?.querySelector('.live-room-panel-back');
     check(room && panel && back, '/workspace phải mở panel Người tham gia');
     const workspaceWidth = room.closest('.workspace-shell')?.getBoundingClientRect().width;
     const roomWidth = room.getBoundingClientRect().width;
@@ -611,10 +611,10 @@ async function verifyWorkspaceRoute() {
     const stageRect = mediaRegion.getBoundingClientRect();
     const panelRect = panel.getBoundingClientRect();
     check(
-      panelRect.width === 320 &&
+      panelRect.width === 348 &&
         panelRect.left >= stageRect.right &&
-        panelRect.top === stageRect.top,
-      'Panel phải rộng 320px và nằm cạnh sân khấu',
+        panelRect.top === stageRect.top + 10,
+      'Panel trong cột 360px phải có gutter 12px và nằm cạnh media/toolbar',
     );
     const header = page.querySelector('.workspace-topbar');
     const liveHost = page.querySelector('.workspace-panel-host');
@@ -635,7 +635,8 @@ async function verifyWorkspaceRoute() {
     const textChannel = channels.find((button) => button.textContent?.includes(chatName));
     check(textChannel, 'Không tìm thấy kênh TEXT trên /workspace');
     textChannel.click();
-    const chatCard = await waitForElement(page, 'article[aria-label^="Chat "]');
+    // TEXT now embeds TextTimeline, rather than the old article placeholder.
+    const chatCard = await waitForElement(page, 'section[aria-label="Tin nhắn văn bản"]');
     const host = chatCard.closest('.workspace-panel-host');
     const main = host?.closest('.workspace-main');
     check(host && main && sidebar, 'Thiếu sidebar hoặc vùng nền quanh Chat');
@@ -654,8 +655,10 @@ async function verifyWorkspaceRoute() {
     );
     const textHeaderRect = header.getBoundingClientRect();
     const textRect = chatCard.getBoundingClientRect();
-    const timeline = chatCard.querySelector('section');
-    check(timeline, 'Thiếu timeline TEXT');
+    const timeline = await waitForElement(
+      page,
+      '.text-chat .text-message-list, .text-chat .text-chat-state',
+    );
     check(
       textHeaderRect.left === headerRect.left &&
         textHeaderRect.top === headerRect.top &&
@@ -666,8 +669,8 @@ async function verifyWorkspaceRoute() {
     );
     check(
       view.getComputedStyle(header).paddingLeft === '20px' &&
-        view.getComputedStyle(timeline).paddingLeft === '20px',
-      'Header và timeline TEXT phải dùng khoảng đệm 20px',
+        view.getComputedStyle(timeline).paddingLeft === '24px',
+      'Header giữ padding 20px; timeline dùng padding 24px của TextTimeline hiện hành',
     );
     const brand = sidebar.querySelector('span[aria-hidden="true"]');
     check(
