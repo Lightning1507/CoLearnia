@@ -68,6 +68,7 @@ it('closes native media when the authenticated socket session expires', async ()
     payload: { direction: 'SEND' },
   });
   expect(transport.data?.status).toBe('completed');
+
   await vi.waitFor(
     () => {
       expect(host.socket.connected).toBe(false);
@@ -454,6 +455,134 @@ it('closes resources on actual disconnect and resumes only the new socket genera
     payload: { direction: 'SEND' },
   });
   expect(stale).toHaveProperty('error');
+});
+
+it.each(['host', 'member'] as const)(
+  'discards queued old media grants while confirming %s departure',
+  async (role) => {
+    const f = await setup({ productionRuntime: true });
+    let account = f.host;
+    let host = await enter(f);
+    if (role === 'member') {
+      account = await f.signUp();
+      await f.member(account);
+      host = await enter(f, account);
+    }
+    const release = f.holdMainDelivery(host.socket);
+    const reads = vi.spyOn(f.registry, 'withContext');
+    const snapshot = vi.fn();
+    const resyncAck = vi.fn();
+    host.socket.on('media.sources.snapshot', snapshot);
+    host.socket.emit(
+      'media.sources.resync',
+      {
+        ...host.context,
+        requestId: randomUUID(),
+        payload: {},
+      },
+      resyncAck,
+    );
+    try {
+      await vi.waitFor(() =>
+        expect(reads.mock.results.filter((result) => result.type === 'return')).toHaveLength(2),
+      );
+      await Promise.all(reads.mock.results.map((result) => result.value));
+      const ended = host.socket
+        .timeout(5000)
+        .emitWithAck(role === 'host' ? 'session.end' : 'session.leave', {
+          ...host.context,
+          requestId: randomUUID(),
+          expectedPolicyRevision: host.snapshot.policyRevision,
+          ...(role === 'host' && { action: 'HOST_LEAVE' }),
+        });
+      await vi.waitFor(() =>
+        expect(f.registry.isContextRetired(host.socket.id!, host.context)).toBe(true),
+      );
+      release();
+      expect(await ended).toMatchObject({
+        data: {
+          status: 'completed',
+          result: role === 'host' ? { state: 'ENDED' } : { left: true },
+        },
+      });
+      expect(snapshot).not.toHaveBeenCalled();
+      expect(resyncAck).not.toHaveBeenCalled();
+      expect(host.socket.connected).toBe(true);
+      const next = await enter(f, account);
+      if (role === 'host') expect(next.context.sessionId).not.toBe(host.context.sessionId);
+      else expect(next.context.sessionId).toBe(host.context.sessionId);
+    } finally {
+      release();
+      reads.mockRestore();
+    }
+  },
+);
+
+it('ends and immediately rejoins after host leave with an owned native SEND transport', async () => {
+  const f = await setup({ productionRuntime: true });
+  const host = await enter(f);
+  const transport = await host.socket.timeout(5000).emitWithAck('media.transport.create', {
+    ...host.context,
+    requestId: randomUUID(),
+    expectedPolicyRevision: host.snapshot.policyRevision,
+    payload: { direction: 'SEND' },
+  });
+  expect(transport.data?.status).toBe('completed');
+  const command = {
+    ...host.context,
+    expectedPolicyRevision: host.snapshot.policyRevision,
+  };
+  const lease = await host.socket.timeout(5000).emitWithAck('screen.acquire', {
+    ...command,
+    requestId: randomUUID(),
+    payload: { scope: { type: 'MAIN' } },
+  });
+  expect(lease.data?.status).toBe('completed');
+  const publication = await host.socket.timeout(5000).emitWithAck('media.producer.create', {
+    ...command,
+    requestId: randomUUID(),
+    payload: {
+      transportId: transport.data.result.transportId,
+      sourceKind: 'SCREEN',
+      lease: {
+        leaseId: lease.data.result.leaseId,
+        leaseGeneration: lease.data.result.leaseGeneration,
+      },
+      rtpParameters: {
+        codecs: [{ mimeType: 'video/VP8', payloadType: 96, clockRate: 90000 }],
+        encodings: [{ ssrc: 12345678 }],
+      },
+    },
+  });
+  expect(publication.data?.status).toBe('completed');
+  expect(
+    (
+      await host.socket.timeout(5000).emitWithAck('media.sources.resync', {
+        ...host.context,
+        requestId: randomUUID(),
+        payload: {},
+      })
+    ).data?.status,
+  ).toBe('completed');
+  const release = host.socket.timeout(5000).emitWithAck('screen.release', {
+    ...command,
+    requestId: randomUUID(),
+    payload: {
+      leaseId: lease.data.result.leaseId,
+      leaseGeneration: lease.data.result.leaseGeneration,
+    },
+  });
+  const result = await host.socket.timeout(5000).emitWithAck('session.end', {
+    ...host.context,
+    requestId: randomUUID(),
+    expectedPolicyRevision: host.snapshot.policyRevision,
+    action: 'HOST_LEAVE',
+  });
+  expect(result).toMatchObject({ data: { status: 'completed', result: { state: 'ENDED' } } });
+  expect((await release).data?.status).toBe('completed');
+  expect(f.native[0]!.closed).toBe(true);
+  const next = await enter(f);
+  expect(next.context.sessionId).not.toBe(host.context.sessionId);
 });
 
 it('ends the host session, closes native resources and notifies every current ownership', async () => {

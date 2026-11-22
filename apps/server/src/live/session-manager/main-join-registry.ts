@@ -2129,6 +2129,19 @@ export function createMainJoinRegistry(options: {
     // The caller supplies IDs from the failed runtime, never from a client payload.
     handleRouterFailure: registryFailure,
 
+    // Only a delivery fence: retiring a packet never grants access or revives ownership.
+    isContextRetired(socketId: string, input: Omit<LiveContextRequest, 'auth'>) {
+      const owner = [...ownerships.values()].find((value) => value.binding.socketId === socketId);
+      return (
+        !owner ||
+        owner.room.state.sessionId !== input.sessionId ||
+        owner.room.state.epoch !== input.epoch ||
+        owner.participant.callGeneration !== input.callGeneration ||
+        owner.participant.blocked ||
+        owner.room.state.state !== 'ACTIVE'
+      );
+    },
+
     async withContext<T>(
       socketId: string,
       input: Omit<LiveContextRequest, 'auth'>,

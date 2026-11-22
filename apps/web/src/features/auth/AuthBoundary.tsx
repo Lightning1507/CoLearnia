@@ -6,9 +6,11 @@ import { AuthScreen } from './AuthScreen';
 import { authApi, sessionKey, sessionOptions } from './session';
 import { WorkspaceOpen, WorkspacePicker } from '../workspaces/WorkspacePages';
 import './auth.css';
+import { useMainCall } from '../live/runtime/mainCallContext';
 
 // Composition point for SCRUM-34. No fixture identity is used after authentication.
 export function AuthBoundary() {
+  const mainCall = useMainCall();
   const client = useQueryClient();
   const location = useLocation();
   const pathname = location.pathname.replace(/\/+$/, '') || '/';
@@ -22,6 +24,9 @@ export function AuthBoundary() {
     enabled: !submitting && !loggingOut && logoutError !== 'denied' && logoutError !== 'unknown',
   });
   const data = session.data;
+  useEffect(() => {
+    if (!session.isPending) mainCall.setAuth(session.isError ? null : (data ?? null));
+  }, [mainCall, data, session.isPending, session.isError]);
 
   const clearSession = useCallback(async () => {
     await client.cancelQueries({ queryKey: sessionKey, exact: true });
@@ -51,6 +56,7 @@ export function AuthBoundary() {
   }, [clearSession, data]);
 
   async function logout(value: AuthenticatedData) {
+    mainCall.clear();
     if (logoutInFlight.current) return;
     logoutInFlight.current = true;
     setLoggingOut(true);

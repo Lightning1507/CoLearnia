@@ -25,7 +25,7 @@ function continueButton(node: ReactNode): ButtonProps | undefined {
   } else if (isValidElement<ButtonProps>(node)) {
     if (
       node.type === 'button' &&
-      (node.props.children === 'Tiếp tục vào phiên' || node.props.children === 'Đang tiếp tục…')
+      (node.props.children === 'Tham gia cuộc họp' || node.props.children === 'Đang vào phòng…')
     )
       return node.props;
     return continueButton(node.props.children);

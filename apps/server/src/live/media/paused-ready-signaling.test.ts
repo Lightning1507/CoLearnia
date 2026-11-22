@@ -1,4 +1,8 @@
 import { randomUUID } from 'node:crypto';
+import {
+  createOperationCoordinator,
+  outsideCoordination,
+} from '../../lib/operation-coordinator.js';
 import { mediaProducerCreateAckSchema, mediaSourcesResyncAckSchema } from '@colearnia/contracts';
 import type { LiveContext, SessionCleanupRequest } from '@colearnia/contracts';
 import type { types as MediaTypes } from 'mediasoup';
@@ -22,7 +26,7 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
-function fixture({ syncDeviceChanges = false } = {}) {
+function fixture({ syncDeviceChanges = false, enforceShareGate = false } = {}) {
   const sessionId = '1'.repeat(24);
   const epoch = randomUUID();
   const access = {
@@ -149,14 +153,22 @@ function fixture({ syncDeviceChanges = false } = {}) {
       },
     };
   }
+  const coordinator = createOperationCoordinator();
   const leases = createShareLeaseRegistry(sessionId, epoch);
-  const shareFor = (context: LiveContext) => {
-    const held = { ...policyFor(context), assertHeld() {} };
+  const shareFor = (context: LiveContext, assertHeld = () => {}) => {
+    const held = { ...policyFor(context), assertHeld };
     return {
       leases,
       held,
       async retire(ref: { leaseId: string; leaseGeneration: number }) {
-        leases.retireHeld(held, ref);
+        await outsideCoordination(() =>
+          coordinator.run({ workspaceId: access.workspaceId }, async (gate) => {
+            leases.retireHeld(
+              { ...held, assertHeld: () => gate.assertHeld({ workspaceId: access.workspaceId }) },
+              ref,
+            );
+          }),
+        );
       },
     };
   };
@@ -190,17 +202,23 @@ function fixture({ syncDeviceChanges = false } = {}) {
         return { errorCode: 'CONFLICT' };
       }
       const policy = policyFor(context);
-      return use(
-        context,
-        { canConsume } as unknown as MediaTypes.Router,
-        policy,
-        {
-          id: transport,
-          produce: produce as unknown as MediaTypes.WebRtcTransport['produce'],
-          consume: consume as unknown as MediaTypes.WebRtcTransport['consume'],
-        },
-        shareFor(context),
-      );
+      const invoke = (assertHeld = () => {}) =>
+        use(
+          context,
+          { canConsume } as unknown as MediaTypes.Router,
+          policy,
+          {
+            id: transport,
+            produce: produce as unknown as MediaTypes.WebRtcTransport['produce'],
+            consume: consume as unknown as MediaTypes.WebRtcTransport['consume'],
+          },
+          shareFor(context, assertHeld),
+        );
+      return enforceShareGate
+        ? coordinator.run({ workspaceId: access.workspaceId }, async (gate) =>
+            invoke(() => gate.assertHeld({ workspaceId: access.workspaceId })),
+          )
+        : invoke();
     },
   });
   function cleanup(user: 'a' | 'b', callGeneration = 1, audienceEpoch?: number) {
@@ -862,7 +880,7 @@ describe('paused-ready media signaling', () => {
 
 describe('SCRUM-75 screen publication', () => {
   it('publishes the exact lease pair and closes both on stop', async () => {
-    const f = fixture();
+    const f = fixture({ enforceShareGate: true });
     const result = f.screen.acquire();
     if (!result.ok) throw new Error(result.errorCode);
     const lease = result.value;

@@ -91,6 +91,7 @@ export class CallControllerOwner {
     this.#current?.controller.mediaSnapshots.getCameraSnapshot() ?? emptyCameraSnapshot;
 
   getAudioBlocked = () => this.#current?.controller.audio.blocked ?? false;
+  getAudioDiagnostics = () => this.#current?.controller.audio.getDiagnostics() ?? null;
 
   enableAudio = (identity: CallIdentity) => {
     const controller = this.#current?.controller;

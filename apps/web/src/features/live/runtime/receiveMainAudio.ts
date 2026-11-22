@@ -22,7 +22,7 @@ type Command = (
 ) => Promise<unknown>;
 
 // The MAIN call adapter supplies its authenticated signaling port and current RECV transport.
-export async function receiveMainAudio({
+export async function receiveMainSource({
   media,
   snapshot,
   source,
@@ -42,10 +42,9 @@ export async function receiveMainAudio({
   signal.throwIfAborted();
   if (
     source.scope.type !== 'MAIN' ||
-    (source.sourceKind !== 'MIC' && source.sourceKind !== 'SCREEN_AUDIO') ||
     snapshot.payload.ownProducers.some(({ source: own }) => own.producerId === source.producerId)
   ) {
-    throw new Error('Expected a remote MAIN audio source');
+    throw new Error('Expected a remote MAIN source');
   }
   const { sourceId, sourceGeneration, sourceRevision, producerId } = source;
   const sourceVersion = { sourceId, sourceGeneration, expectedSourceRevision: sourceRevision };
@@ -73,7 +72,8 @@ export async function receiveMainAudio({
   }
   const result = created.data.result;
   if (
-    result.kind !== 'audio' ||
+    result.kind !==
+      (source.sourceKind === 'MIC' || source.sourceKind === 'SCREEN_AUDIO' ? 'audio' : 'video') ||
     result.producerId !== producerId ||
     result.sourceId !== sourceId ||
     result.sourceGeneration !== sourceGeneration ||
@@ -107,7 +107,7 @@ export async function receiveMainAudio({
     .consume({
       id: result.consumerId,
       producerId,
-      kind: 'audio',
+      kind: result.kind,
       rtpParameters: result.rtpParameters as MediaTypes.RtpParameters,
     })
     .catch(async (error: unknown) => {
@@ -125,7 +125,7 @@ export async function receiveMainAudio({
   };
   const detach = () => media.detachConsumer(binding, handle);
   const handle = {
-    audioTrack: consumer.track,
+    ...(result.kind === 'audio' ? { audioTrack: consumer.track } : { videoTrack: consumer.track }),
     attach: () => {
       consumer.observer.once('close', detach);
       signal.addEventListener('abort', detach, { once: true });
@@ -174,4 +174,11 @@ export async function receiveMainAudio({
     }
     throw error;
   }
+}
+
+// Keep the audio consumer API strict for existing AudioGraph callers.
+export function receiveMainAudio(input: Parameters<typeof receiveMainSource>[0]) {
+  if (input.source.sourceKind !== 'MIC' && input.source.sourceKind !== 'SCREEN_AUDIO')
+    return Promise.reject(new Error('Expected a remote MAIN audio source'));
+  return receiveMainSource(input);
 }

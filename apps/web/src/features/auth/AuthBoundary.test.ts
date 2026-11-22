@@ -6,13 +6,22 @@ import { describe, expect, it, vi } from 'vitest';
 import { AuthBoundary } from './AuthBoundary';
 import { AuthApiError } from './auth-api';
 import { authApi, sessionKey, sessionOptions } from './session';
+import { MainCallProvider } from '../live/MainCallProvider';
+import { CallControllerOwner } from '../live/runtime/callController';
 
 function render(client: QueryClient) {
   return renderToStaticMarkup(
     createElement(
       QueryClientProvider,
       { client },
-      createElement(MemoryRouter, { initialEntries: ['/register'] }, createElement(AuthBoundary)),
+      createElement(
+        MemoryRouter,
+        { initialEntries: ['/register'] },
+        createElement(MainCallProvider, {
+          owner: new CallControllerOwner(),
+          children: createElement(AuthBoundary),
+        }),
+      ),
     ),
   );
 }

@@ -381,7 +381,7 @@ export function createMediaBootstrapRuntime({
 }
 
 export function bindMediaBootstrapSocket(
-  socket: Pick<Socket, 'connected' | 'id' | 'volatile'>,
+  socket: Pick<Socket, 'connected' | 'id' | 'timeout'>,
   getProjection: () => SessionProjectionCursor | null,
   options: Omit<Parameters<typeof createMediaBootstrapRuntime>[0], 'getContext' | 'issue'>,
 ) {
@@ -396,7 +396,10 @@ export function bindMediaBootstrapSocket(
     async issue(input, signal) {
       signal.throwIfAborted();
       if (!socket.connected) throw new MediaBootstrapApiError('FORBIDDEN');
-      const result: unknown = await socket.volatile
+      // Proof issuance is a control request, not a disposable media update.
+      // Volatile drops a packet when the socket is briefly unwritable just after
+      // join/resync. The caller bounds one proof job and its ACK deadline.
+      const result: unknown = await socket
         .timeout(4000)
         .emitWithAck('media.httpContext.issue', input)
         .catch(() => {

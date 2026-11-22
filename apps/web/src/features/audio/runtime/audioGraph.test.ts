@@ -21,12 +21,104 @@ function audioFixture() {
     close: vi.fn(async () => {}),
   });
   const notify = vi.fn();
-  const graph = new AudioGraph(notify, () => context as unknown as AudioContext);
+  const playbacks: {
+    muted: boolean;
+    srcObject: MediaStream | null;
+    play: ReturnType<typeof vi.fn>;
+    pause: ReturnType<typeof vi.fn>;
+  }[] = [];
+  const graph = new AudioGraph(
+    notify,
+    () => context as unknown as AudioContext,
+    () => {
+      const playback = {
+        muted: false,
+        srcObject: null as MediaStream | null,
+        play: vi.fn(async () => {}),
+        pause: vi.fn(),
+      };
+      playbacks.push(playback);
+      return playback as unknown as HTMLAudioElement;
+    },
+  );
   const attach = () => graph.attach(track as unknown as MediaStreamTrack);
-  return { track, node, mix, context, graph, attach, notify };
+  return { track, node, mix, context, graph, attach, notify, playbacks };
 }
 
 describe('MAIN AudioGraph', () => {
+  it('ignores playback rejection after its borrowed track is detached', async () => {
+    vi.stubGlobal('MediaStream', class {});
+    try {
+      const { graph, attach, playbacks } = audioFixture();
+      const detach = attach();
+      let reject!: (error: Error) => void;
+      playbacks[0]!.play.mockReturnValueOnce(
+        new Promise<void>((_, fail) => {
+          reject = fail;
+        }),
+      );
+      graph.resume();
+      detach();
+      reject(new DOMException('late playback', 'AbortError'));
+      await Promise.resolve();
+      expect(graph.getDiagnostics()).toMatchObject({
+        remoteAudioTracks: 0,
+        blocked: false,
+        resumeError: null,
+      });
+      graph.dispose();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+  it('primes remote decoding silently and releases the media element on last detach', () => {
+    vi.stubGlobal('MediaStream', class {});
+    try {
+      const { attach, graph, playbacks, node, mix } = audioFixture();
+      const detach = attach();
+      const second = attach();
+      expect(playbacks).toHaveLength(1);
+      expect(playbacks[0]!.muted).toBe(true);
+      expect(playbacks[0]!.play).toHaveBeenCalledOnce();
+      expect(playbacks[0]!.srcObject).not.toBeNull();
+      expect(node.connect).toHaveBeenCalledExactlyOnceWith(mix);
+      detach();
+      expect(playbacks[0]!.pause).not.toHaveBeenCalled();
+      second();
+      expect(playbacks[0]!.pause).toHaveBeenCalledOnce();
+      expect(playbacks[0]!.srcObject).toBeNull();
+      graph.dispose();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+  it('retains a safe error name when the browser rejects playback recovery', async () => {
+    vi.stubGlobal('MediaStream', class {});
+    try {
+      const { graph, context, attach } = audioFixture();
+      attach();
+      context.resume.mockRejectedValueOnce(new DOMException('private details', 'NotAllowedError'));
+      graph.resume();
+      await vi.waitFor(() =>
+        expect(graph.getDiagnostics()).toMatchObject({
+          contextState: 'suspended',
+          blocked: true,
+          remoteAudioTracks: 1,
+          resumeError: 'NotAllowedError',
+        }),
+      );
+      graph.resume();
+      expect(graph.getDiagnostics()).toMatchObject({
+        contextState: 'running',
+        blocked: false,
+        remoteAudioTracks: 1,
+        resumeError: null,
+      });
+      graph.dispose();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
   it('shares one audible route and disconnects after the last detach', () => {
     vi.stubGlobal('MediaStream', class {});
     try {

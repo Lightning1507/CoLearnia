@@ -518,6 +518,15 @@ export async function setup(
     join,
     disconnect,
     native,
+    holdMainDelivery(client: ClientSocket) {
+      const transport = io.sockets.sockets.get(client.id!)!.conn.transport;
+      const original = transport.writable;
+      transport.writable = false;
+      return () => {
+        transport.writable = original;
+        transport.emit('drain');
+      };
+    },
     errors,
     http,
     setRuntimeReady: (value: boolean) => {
