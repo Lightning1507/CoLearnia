@@ -328,7 +328,7 @@ export class MainCall {
           resources = await initializeMainMedia({
             identity: acceptedIdentity,
             socket,
-            signal: lifetime,
+            signal: AbortSignal.any([lifetime, signal]),
             media,
             projection: this.#projection!,
             preferences,
@@ -349,6 +349,12 @@ export class MainCall {
               }
             },
           });
+          // A provider may finish after cancellation. Never hand its resources to
+          // the owner or publish active/capture after the departure intent began.
+          if (signal.aborted || this.#leaving || this.#joined?.identity !== identity) {
+            resources.dispose();
+            throw new DOMException('Activation cancelled', 'AbortError');
+          }
           return resources.dispose;
         },
       }),
@@ -455,6 +461,10 @@ export class MainCall {
   async leave() {
     if (!this.#joined || !this.#socket || this.#leaving) return;
     const ownership = this.#joined;
+    // Cancel bootstrap/capture immediately without aborting the independent
+    // departure command or discarding its server ownership/replay identity.
+    this.#attempt?.abort();
+    this.#state.resources?.dispose();
     try {
       this.#leaveIntent ??= (() => {
         const { identity } = this.#joined!;
@@ -485,7 +495,6 @@ export class MainCall {
     this.#leaving = true;
     const leaveAbort = new AbortController();
     this.#leaveAbort = leaveAbort;
-    this.#state.resources?.dispose();
     clearTimeout(this.#retry);
     this.#set({
       phase: 'leaving',

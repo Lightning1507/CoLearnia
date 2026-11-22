@@ -306,6 +306,44 @@ it('ignores a late successful join after cancel and never initializes capture', 
   expect(call.getSnapshot().phase).toBe('idle');
   expect(startDevices).not.toHaveBeenCalled();
 });
+it('cancels media bootstrap after join ACK while departure ACK is still pending', async () => {
+  const initialize = vi.mocked(initializeMainMedia).getMockImplementation()!;
+  let release!: () => void;
+  let bootstrapSignal!: AbortSignal;
+  vi.mocked(initializeMainMedia).mockImplementationOnce(async (input) => {
+    bootstrapSignal = input.signal;
+    const resources = await initialize(input);
+    await new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    return resources; // Simulate late bootstrap completion despite cancellation.
+  });
+  const joining = call.join({ ...preferences, microphone: { enabled: true, deviceId: '' } });
+  await vi.waitFor(() => expect(release).toBeDefined());
+  let departureReply!: (value: unknown) => void;
+  const socket = sockets[0]!;
+  socket.responder = () =>
+    new Promise((resolve) => {
+      departureReply = resolve;
+    });
+  call.cancel();
+  expect(bootstrapSignal.aborted).toBe(true);
+  await vi.waitFor(() => expect(departureReply).toBeDefined());
+  release();
+  await joining;
+  await vi.waitFor(() => expect(dispose).toHaveBeenCalled());
+  expect(startDevices).not.toHaveBeenCalled();
+  expect(call.getSnapshot()).toMatchObject({
+    phase: 'leaving',
+    cleanupPending: true,
+    expanded: false,
+  });
+  expect(socket.connected).toBe(true);
+  const request = socket.requests.find(({ event }) => event === 'session.end')!;
+  departureReply(socket.answer(request.event, request.input));
+  await vi.waitFor(() => expect(call.getSnapshot().phase).toBe('idle'));
+  expect(call.canResume()).toBe(false);
+});
 it('retains the same leave intent after pending cleanup, blocks a new join, then confirms it', async () => {
   await call.join(preferences);
   const socket = sockets[0]!;

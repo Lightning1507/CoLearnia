@@ -112,3 +112,11 @@ PASS: main-runtime integration qua HTTP/auth, Mongo test DB cô lập trên repl
 PASS: 1089 unit test trên 81 file; web/server typecheck; ESLint các file code thay đổi; media:smoke; git diff --check. Lệnh thử tsc với apps/server/test/tsconfig.json không chạy vì file không tồn tại; server typecheck đúng apps/server/tsconfig.json đã bao gồm src/scripts/test và đạt. Browser evidence hai chiều, share, leave/end, reconnect/revoke và outsider/PRIVATE gắn SHA/build cuối vẫn NOT RUN trong lượt sửa review; các giới hạn nghiệm thu bên trên còn hiệu lực. Chưa commit/push hoặc trả lời review trên GitHub.
 
 PASS: web build tạo index-DRfMDtX3.js, vẫn có cảnh báo chunk >500 kB; Prettier các file đổi đạt. check:harness đạt 54 test, skip 1 test symlink trên Windows, 140 required sources/links/runtime pins đạt. Không chạy lại toàn pnpm check trong lượt này; không coi các check riêng là toàn cổng đã đạt.
+
+## Hủy sau join ACK trong lúc media bootstrap còn chờ — review tiếp theo
+
+Working tree trên 59e948d, chưa commit bản sửa này. Hồi quy mới giữ initializeMainMedia chưa hoàn tất sau join ACK/projection, bật tùy chọn microphone, bấm cancel và giữ ACK session.end còn chờ. Trước sửa test thất bại: signal bootstrap chưa abort. Sửa MainCall.leave abort activation attempt ngay, dispose media đã công bố; media đang khởi tạo nhận signal kết hợp activation/lifetime để tự dọn partial resource. Nếu provider vẫn trả về muộn, callback dispose kết quả và từ chối activation, không gọi startDevices. Không abort socket/leave command, không xóa binding hoặc departure intent trước ACK.
+
+PASS hồi quy: trong lúc ACK rời vẫn chờ, signal bootstrap aborted, kết quả bootstrap muộn được dispose, startDevices không được gọi, phase vẫn leaving/cleanupPending và expanded=false; socket còn mở để nhận ACK, sau completed call chuyển idle và bỏ binding. Đây là controller test có mock ở biên provider/socket; chưa phải kiểm lại Chrome/thiết bị vật lý hay TURN.
+
+Kiểm lượt này: 1090 unit test/81 file đạt; web typecheck, ESLint hai file code, Prettier và git diff --check đạt; media:smoke đạt. Không chạy lại integration server hoặc toàn pnpm check vì thay đổi chỉ orchestration FE; không gán kết quả integration từ lượt trước cho bản sửa này. Chưa commit/push hay đăng comment review.
