@@ -58,6 +58,7 @@ export class MainCall {
   #socket: Socket | undefined;
   #attempt: AbortController | undefined;
   #joined: Joined | undefined;
+  #resumeIntent: { requestId: string; identity: CallIdentity; resumeTicket: string } | undefined;
   #preferences?: LobbyDevicePreferences;
   #ticketIntent:
     { requestId: string; ticket?: Awaited<ReturnType<typeof requestMainTicket>> } | undefined;
@@ -135,6 +136,7 @@ export class MainCall {
     this.#socket?.disconnect();
     this.#socket = undefined;
     this.#joined = undefined;
+    this.#resumeIntent = undefined;
     this.#projection = undefined;
     this.#leaving = false;
     this.#leaveIntent = undefined;
@@ -403,10 +405,15 @@ export class MainCall {
       this.#set({ phase: 'reconnecting' });
       this.owner.end(previous.identity);
       const socket = await this.#connect(await authApi.csrf(signal), signal);
-      const input = {
+      const intent = (this.#resumeIntent ??= {
         requestId: crypto.randomUUID(),
-        ...previous.identity,
+        identity: previous.identity,
         resumeTicket: previous.resumeTicket,
+      });
+      const input = {
+        requestId: intent.requestId,
+        ...intent.identity,
+        resumeTicket: intent.resumeTicket,
       };
       const { participantId: _participantId, ...command } = input;
       void _participantId;
@@ -414,6 +421,7 @@ export class MainCall {
         await mainCommand(socket, 'session.resume', command, signal),
       );
       if ('error' in ack) throw new MainCallError(ack.error.code);
+      this.#resumeIntent = undefined;
       await this.#activate(
         { ...previous.identity, callGeneration: ack.data.result.callGeneration },
         ack.data.result.resumeTicket,

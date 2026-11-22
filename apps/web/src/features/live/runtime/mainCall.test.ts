@@ -412,6 +412,34 @@ it('closes old ownership on disconnect and resumes into a new generation with de
     false,
   );
 });
+it('replays the same resume intent after both ACK attempts are lost and the socket reconnects', async () => {
+  await call.join(preferences);
+  sockets[0]!.disconnect();
+  vi.mocked(io).mockImplementationOnce(() => {
+    const socket = new TestSocket();
+    sockets.push(socket);
+    socket.responder = async () => {
+      generation = 2; // Server accepted the intent, but neither ACK reaches the client.
+      throw new Error('ACK lost');
+    };
+    return socket as unknown as Socket;
+  });
+  await call.resume();
+  expect(call.canResume()).toBe(true);
+  const lost = sockets[1]!.requests.filter(({ event }) => event === 'session.resume');
+  expect(lost).toHaveLength(2);
+  await call.resume();
+  const replay = sockets[2]!.requests.find(({ event }) => event === 'session.resume')!;
+  expect(replay.input).toEqual(lost[0]!.input);
+  expect(lost[1]!.input).toEqual(lost[0]!.input);
+  expect(call.getSnapshot().handle?.identity.callGeneration).toBe(2);
+  sockets[2]!.disconnect();
+  generation = 3;
+  await call.resume();
+  const next = sockets[3]!.requests.find(({ event }) => event === 'session.resume')!;
+  expect(next.input.requestId).not.toBe(replay.input.requestId);
+  expect(next.input.callGeneration).toBe(2);
+});
 it('retries a lost ACK with the same request and rejects cancellation before returning a late ACK', async () => {
   const socket = new TestSocket();
   socket.connected = true;

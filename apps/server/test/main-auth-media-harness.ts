@@ -518,6 +518,19 @@ export async function setup(
     join,
     disconnect,
     native,
+    loseResumeAcks(client: ClientSocket) {
+      const replies: unknown[] = [];
+      const socket = io.sockets.sockets.get(client.id!)!;
+      socket.use((packet, next) => {
+        if (packet[0] === 'session.resume' && replies.length < 2) {
+          packet[packet.length - 1] = (reply: unknown) => {
+            replies.push(reply);
+          };
+        }
+        next();
+      });
+      return replies;
+    },
     holdMainDelivery(client: ClientSocket) {
       const transport = io.sockets.sockets.get(client.id!)!.conn.transport;
       const original = transport.writable;

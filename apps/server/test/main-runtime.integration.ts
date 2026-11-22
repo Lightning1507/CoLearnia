@@ -457,6 +457,57 @@ it('closes resources on actual disconnect and resumes only the new socket genera
   expect(stale).toHaveProperty('error');
 });
 
+it('replays a lost resume intent after an actual socket disconnect with current authority', async () => {
+  const f = await setup({ productionRuntime: true });
+  const host = await enter(f);
+  host.socket.disconnect();
+  const socket = await f.connect(f.host);
+  const replies = f.loseResumeAcks(socket);
+  const command = {
+    requestId: randomUUID(),
+    ...host.context,
+    resumeTicket: host.result.resumeTicket,
+  };
+  for (let attempt = 0; attempt < 2; attempt++) {
+    await expect(socket.timeout(500).emitWithAck('session.resume', command)).rejects.toThrow();
+  }
+  expect(replies).toHaveLength(2);
+  const accepted = replies[0] as {
+    data: { result: { callGeneration: number; resumeTicket: string } };
+  };
+  expect(accepted.data.result.callGeneration).toBeGreaterThan(host.context.callGeneration);
+  expect(replies[1]).toMatchObject({
+    data: {
+      result: {
+        callGeneration: accepted.data.result.callGeneration,
+        resumeTicket: accepted.data.result.resumeTicket,
+      },
+    },
+  });
+  socket.disconnect();
+  const next = await f.connect(f.host);
+  const replay = await next.timeout(5000).emitWithAck('session.resume', command);
+  expect(replay.data?.status).toBe('completed');
+  // Each actual reconnect has a new generation; replay never revives the old socket.
+  expect(replay.data.result.callGeneration).toBeGreaterThan(accepted.data.result.callGeneration);
+  const duplicate = await next.timeout(5000).emitWithAck('session.resume', command);
+  expect(duplicate).toMatchObject({
+    data: {
+      result: {
+        callGeneration: replay.data.result.callGeneration,
+        resumeTicket: replay.data.result.resumeTicket,
+      },
+    },
+  });
+  const resync = await next.timeout(5000).emitWithAck('session.resync', {
+    requestId: randomUUID(),
+    ...host.context,
+    callGeneration: replay.data.result.callGeneration,
+    payload: {},
+  });
+  expect(resync.data?.status).toBe('completed');
+});
+
 it.each(['host', 'member'] as const)(
   'discards queued old media grants while confirming %s departure',
   async (role) => {

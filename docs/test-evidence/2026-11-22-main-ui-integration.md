@@ -98,3 +98,17 @@ Phát hiện FE yêu cầu cleanupPending=false ngay cả với ACK completed/EN
 Theo yêu cầu bỏ box trung gian, MainCallProvider hiển thị một dòng trạng thái khi leaving, không có nút Xem Workspace; ACK hoàn tất dẫn về route kênh qua điều hướng sẵn có. Màn lỗi/thử lại vẫn giữ nếu server chưa xác nhận. Web typecheck, ESLint, git diff --check và 20 test MainCall/ChannelWorkspace/AuthBoundary đạt. Chưa kiểm browser sau sửa: Computer Use bị dừng do không xác định chắc URL Windows để thực thi policy. Thay đổi còn trong working tree, chưa commit/push.
 
 Điều chỉnh tiếp theo yêu cầu mới: bỏ cả dòng chờ. Khi bắt đầu leaving, thu gọn call ngay, bỏ overlay/strip chờ và điều hướng về kênh Workspace; giữ operation/socket và intent ở nền đến khi server xác nhận. Pending không được đổi thành completed; nếu thất bại vẫn có lối mở lại để thử xác nhận, không cho tạo call cạnh tranh. Hồi quy kiểm leaving đã expanded=false trước ACK completed. 14 test MainCall, web typecheck, ESLint và git diff --check đạt; chưa có kiểm browser mới.
+
+## Sửa hai finding review PR #144
+
+Source: working tree trên commit 10bf1db, chưa commit bản sửa này. MainCall giữ resume intent (requestId, identity/generation đầu vào và ticket RAM) qua timeout/ACK mất và socket reconnect. ACK thành công thu intent để lần reconnect sau dùng binding mới; clear/logout/terminal refusal xóa intent. Không đổi replay/ACL của server, không takeover hoặc persist ticket.
+
+AuthBoundary chỉ cập nhật call auth khi query có kết quả xác định. Refetch 503/lỗi mạng không chuyển thành setAuth(null); null xác nhận mất phiên, đổi phiên, logout và timer hết hạn vẫn đi qua cleanup hiện có. Thêm jsdom 31.0.1 ở devDependencies để chạy effect React thật trong test; không thêm vào bundle runtime.
+
+PASS: hồi quy FE làm mất cả hai ACK resume rồi gọi lại qua socket mới, giữ nguyên command, nhận generation hợp lệ và dùng intent mới sau ACK xác định. PASS: DOM mount AuthBoundary + React Query + MainCall active (native media/acquire và socket/HTTP được mock ở biên): refetch 503/network error → cùng phiên phục hồi giữ call/resume binding; null xác định đóng socket và xóa khả năng resume. Test này chạy useEffect, không dùng static render làm bằng chứng effect.
+
+PASS: main-runtime integration qua HTTP/auth, Mongo test DB cô lập trên replica set port 27193, Socket.IO thật và native mediasoup: server chấp nhận resume, chủ động làm mất hai ACK, ngắt socket thực, nối socket khác và replay command cũ; resync generation mới hợp lệ. Retry cùng socket không tăng generation/ticket; mỗi lần ngắt/nối thực vẫn tăng generation theo contract backend. Tổng bộ integration 21/21 đạt. Đây là bằng chứng protocol, không phải browser mic/camera end-to-end.
+
+PASS: 1089 unit test trên 81 file; web/server typecheck; ESLint các file code thay đổi; media:smoke; git diff --check. Lệnh thử tsc với apps/server/test/tsconfig.json không chạy vì file không tồn tại; server typecheck đúng apps/server/tsconfig.json đã bao gồm src/scripts/test và đạt. Browser evidence hai chiều, share, leave/end, reconnect/revoke và outsider/PRIVATE gắn SHA/build cuối vẫn NOT RUN trong lượt sửa review; các giới hạn nghiệm thu bên trên còn hiệu lực. Chưa commit/push hoặc trả lời review trên GitHub.
+
+PASS: web build tạo index-DRfMDtX3.js, vẫn có cảnh báo chunk >500 kB; Prettier các file đổi đạt. check:harness đạt 54 test, skip 1 test symlink trên Windows, 140 required sources/links/runtime pins đạt. Không chạy lại toàn pnpm check trong lượt này; không coi các check riêng là toàn cổng đã đạt.

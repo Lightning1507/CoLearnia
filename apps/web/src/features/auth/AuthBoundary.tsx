@@ -25,7 +25,9 @@ export function AuthBoundary() {
   });
   const data = session.data;
   useEffect(() => {
-    if (!session.isPending) mainCall.setAuth(session.isError ? null : (data ?? null));
+    // A failed refetch is unknown, not evidence that the authenticated session ended.
+    // authApi.me returns null for confirmed AUTH_REQUIRED; expiry also clears the cache.
+    if (!session.isPending && !session.isError) mainCall.setAuth(data ?? null);
   }, [mainCall, data, session.isPending, session.isError]);
 
   const clearSession = useCallback(async () => {
