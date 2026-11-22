@@ -1,6 +1,7 @@
 import type { LiveContext } from '@colearnia/contracts';
 import { AudioGraph } from '../../audio';
 import { MediaSnapshotRuntime } from './mediaSnapshotRuntime';
+import { emptyCameraSnapshot } from './cameraProjection';
 
 export type CallIdentity = Readonly<
   Pick<LiveContext, 'sessionId' | 'epoch' | 'participantId' | 'callGeneration'>
@@ -24,7 +25,7 @@ class CallController {
   readonly identity: CallIdentity;
   readonly audio: AudioGraph;
   #abort = new AbortController();
-  #mediaSnapshots: MediaSnapshotRuntime;
+  readonly mediaSnapshots: MediaSnapshotRuntime;
   #disposeRuntime: DisposeRuntime | undefined;
 
   constructor(
@@ -33,13 +34,14 @@ class CallController {
   ) {
     this.identity = Object.freeze({ sessionId, epoch, participantId, callGeneration });
     this.audio = new AudioGraph(onAudioChange);
-    this.#mediaSnapshots = new MediaSnapshotRuntime(this.identity, this.#abort.signal, this.audio);
+    this.mediaSnapshots = new MediaSnapshotRuntime(this.identity, this.#abort.signal, this.audio);
+    this.mediaSnapshots.subscribeCameras(onAudioChange);
   }
 
   async initialize(initialize: InitializeRuntime) {
     const { signal } = this.#abort;
     signal.throwIfAborted();
-    const dispose = await initialize(this.identity, signal, this.#mediaSnapshots);
+    const dispose = await initialize(this.identity, signal, this.mediaSnapshots);
     if (signal.aborted) {
       dispose();
       signal.throwIfAborted();
@@ -84,6 +86,9 @@ export class CallControllerOwner {
   #listeners = new Set<() => void>();
 
   getSnapshot = () => this.#snapshot;
+
+  getCameraSnapshot = () =>
+    this.#current?.controller.mediaSnapshots.getCameraSnapshot() ?? emptyCameraSnapshot;
 
   getAudioBlocked = () => this.#current?.controller.audio.blocked ?? false;
 

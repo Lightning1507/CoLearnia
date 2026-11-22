@@ -2,7 +2,7 @@ import { mediaSourceEventSchemas } from '@colearnia/contracts';
 import type { MediaSourceEventName, MediaSourcesResyncInput } from '@colearnia/contracts';
 import type { MediaSnapshotRuntime } from './mediaSnapshotRuntime';
 
-type MediaEvent = MediaSourceEventName | 'media.sources.snapshot';
+type MediaEvent = MediaSourceEventName | 'media.sources.snapshot' | 'connect' | 'disconnect';
 type Listener = (packet: unknown) => void;
 type MediaSourceSocket = {
   readonly connected: boolean;
@@ -20,12 +20,15 @@ export function bindMediaSourceSocket(
 ) {
   if (signal.aborted) return () => {};
   const listeners = new Map<MediaEvent, Listener>();
+  listeners.set('disconnect', () => runtime.setSignalingAvailable(false));
+  listeners.set('connect', () => runtime.setSignalingAvailable(true));
   for (const name of Object.keys(mediaSourceEventSchemas) as MediaSourceEventName[]) {
     listeners.set(name, (packet) => runtime.acceptEvent(name, packet));
   }
   let acceptPart: Listener | undefined;
   listeners.set('media.sources.snapshot', (packet) => acceptPart?.(packet));
   for (const [name, listener] of listeners) socket.on(name, listener);
+  runtime.setSignalingAvailable(socket.connected);
   const unbind = runtime.bindResync((input, receive) => {
     if (!socket.connected) throw new Error('Media signaling socket is disconnected');
     acceptPart = (packet) => {
@@ -41,6 +44,7 @@ export function bindMediaSourceSocket(
   });
   const dispose = () => {
     signal.removeEventListener('abort', dispose);
+    runtime.setSignalingAvailable(false);
     unbind();
     acceptPart = undefined;
     for (const [name, listener] of listeners) socket.off(name, listener);

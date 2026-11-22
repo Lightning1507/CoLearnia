@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SCRUM-78 · Share stage và camera rail</title>
+    <style>
+      body {
+        display: flex;
+        min-height: 100dvh;
+        flex-direction: column;
+      }
+      #root {
+        display: flex;
+        flex: 1;
+      }
+      #root > .workspace-shell {
+        min-height: 0;
+        flex: 1;
+      }
+      .camera-layout-tools {
+        position: absolute;
+        top: 3px;
+        right: 18px;
+        z-index: 20;
+        max-width: min(420px, calc(100vw - 24px));
+        padding: 5px 12px;
+        border: 1px solid var(--cl-color-border-subtle);
+        border-radius: 8px;
+        background: var(--cl-color-surface);
+        color: var(--cl-color-text-secondary);
+        font:
+          12px/1.5 var(--cl-font-sans),
+          sans-serif;
+      }
+      .camera-layout-tools[open] {
+        max-height: 50dvh;
+        overflow-y: auto;
+      }
+      .camera-layout-tools summary {
+        cursor: pointer;
+      }
+      #fixture-controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        padding-top: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="camera-layout-demo-bar">
+      <span>Tình huống demo · cuộc họp mô phỏng</span>
+      <details class="camera-layout-tools">
+        <summary>Tình huống demo</summary>
+        <p>
+          SCRUM-78 · RoomShell/WorkspaceShell thật, snapshot và thiết bị mô phỏng, video canvas.
+          Không phải kiểm SFU/TURN.
+        </p>
+        <output id="result" role="status">Đang kiểm bố cục…</output>
+        <div id="fixture-controls"></div>
+      </details>
+    </div>
+    <div id="root"></div>
+    <script type="module" src="./cameraShareLayoutFixture.tsx"></script>
+  </body>
+</html>
