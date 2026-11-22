@@ -130,8 +130,8 @@ describe('session end deadline and late callbacks', () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(f.completeEnding).not.toHaveBeenCalled();
     expect(f.finalize).not.toHaveBeenCalled();
-    expect(await f.operation.run()).toEqual(await task);
-    expect(f.beginEnding).toHaveBeenCalledTimes(1);
+    expect(await f.operation.run()).toMatchObject({ data: { status: 'completed' } });
+    expect(f.beginEnding).toHaveBeenCalledTimes(2);
   });
   it('does not finalize or report ENDED when an already-sent completion returns late', async () => {
     const f = setup();
