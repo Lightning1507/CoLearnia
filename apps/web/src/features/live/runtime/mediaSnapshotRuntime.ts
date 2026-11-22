@@ -123,6 +123,22 @@ export class MediaSnapshotRuntime {
 
   getCameraSnapshot = () => this.#cameraSnapshot;
 
+  // Borrowed remote SCREEN track. A ready ACK alone never reveals a paused source.
+  getScreenTrack() {
+    if (!this.#cameraSnapshot.synchronized) return undefined;
+    const source = this.#snapshot?.payload.sources.find(
+      (item) => item.sourceKind === 'SCREEN' && item.publicationState === 'PUBLISHING',
+    );
+    if (!source) return undefined;
+    const local = this.#consumers.get(source.sourceId);
+    return local &&
+      sameSourceBinding(local.binding, source) &&
+      local.binding.ready &&
+      !local.binding.paused
+      ? local.handle.videoTrack
+      : undefined;
+  }
+
   subscribeCameras = (listener: () => void) => {
     this.#cameraListeners.add(listener);
     return () => {

@@ -14,7 +14,11 @@ export function createMediaBootstrapComposition(
 ) {
   const service = createMediaBootstrap({
     registry,
-    issueIceServers: createCloudflareTurnProvider(config),
+    // Explicit local-only profile, validated by loadConfig. No client fallback
+    // on a failing TURN request; the default/staging provider remains unchanged.
+    issueIceServers: config.MEDIA_LOCAL_DIRECT
+      ? async () => []
+      : createCloudflareTurnProvider(config),
   });
   return {
     router: createMediaBootstrapRouter(auth, service),

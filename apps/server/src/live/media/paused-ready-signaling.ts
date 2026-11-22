@@ -390,45 +390,70 @@ export function createPausedReadySignaling({
             const publicationKey =
               lease &&
               JSON.stringify([input.sessionId, input.epoch, lease.leaseId, lease.leaseGeneration]);
-            let publication = publicationKey ? publications.get(publicationKey) : undefined;
-            if (sourceKind === 'SCREEN' && share && lease && publicationKey) {
-              const ref = { ...lease, publicationId: input.requestId };
-              const reserved = share.leases.reservePublishHeld(share.held, ref, ref.publicationId);
-              if (!reserved.ok) return fail(reserved.errorCode);
-              if (!share.leases.canPublishHeld(share.held, sourceKind, 'CREATE', ref))
-                return fail('FORBIDDEN');
-              const entry: ScreenPublication = { ref, stopped: false, inFlight: 0 };
-              if (
-                !share.leases.bindPublicationHeld(share.held, ref, {
-                  isStopped: () => entry.stopped,
-                  close() {
-                    entry.stopped = true;
-                    entry.video?.close();
-                    entry.audio?.close();
-                    if (entry.inFlight) return false;
-                    publications.delete(publicationKey);
-                    return true;
-                  },
-                })
-              )
-                return fail('CONFLICT');
-              publication = entry;
-              publications.set(publicationKey, entry);
-            } else if (
-              screen &&
-              (!publication ||
-                publication.stopped ||
-                !publication.video ||
-                publication.video.closed ||
-                !share?.leases.canPublishHeld(share.held, sourceKind, 'CREATE', publication.ref))
-            ) {
-              return fail('FORBIDDEN');
+            let publication: ScreenPublication | undefined;
+            if (screen) {
+              const reserved = await withTransport(
+                socketId,
+                input,
+                transportId,
+                'SEND',
+                (current, _, currentPolicy, _transport, gate) => {
+                  if (operation.isCancelled() || !sameReceiver(owner, current))
+                    return fail('CONFLICT');
+                  if (!canPublishMedia(currentPolicy, sourceKind)) return fail('FORBIDDEN');
+                  publication = publicationKey ? publications.get(publicationKey) : undefined;
+                  if (sourceKind === 'SCREEN' && gate && lease && publicationKey) {
+                    const ref = { ...lease, publicationId: input.requestId };
+                    const reserved = gate.leases.reservePublishHeld(
+                      gate.held,
+                      ref,
+                      ref.publicationId,
+                    );
+                    if (!reserved.ok) return fail(reserved.errorCode);
+                    if (!gate.leases.canPublishHeld(gate.held, sourceKind, 'CREATE', ref))
+                      return fail('FORBIDDEN');
+                    const entry: ScreenPublication = { ref, stopped: false, inFlight: 0 };
+                    if (
+                      !gate.leases.bindPublicationHeld(gate.held, ref, {
+                        isStopped: () => entry.stopped,
+                        close() {
+                          entry.stopped = true;
+                          entry.video?.close();
+                          entry.audio?.close();
+                          if (entry.inFlight) return false;
+                          publications.delete(publicationKey);
+                          return true;
+                        },
+                      })
+                    )
+                      return fail('CONFLICT');
+                    publication = entry;
+                    publications.set(publicationKey, entry);
+                  } else if (
+                    screen &&
+                    (!publication ||
+                      publication.stopped ||
+                      !publication.video ||
+                      publication.video.closed ||
+                      !gate?.leases.canPublishHeld(
+                        gate.held,
+                        sourceKind,
+                        'CREATE',
+                        publication.ref,
+                      ))
+                  ) {
+                    return fail('FORBIDDEN');
+                  }
+                  if (publication) publication.inFlight++;
+                  return { ready: true };
+                },
+              );
+              if ('errorCode' in reserved) return reserved;
             }
             const retireScreen = () => {
               if (!publication || !share) return;
               void share.retire(publication.ref).catch(() => {});
             };
-            if (publication) publication.inFlight++;
             let native: MediaTypes.Producer | undefined;
             let published = false;
             try {
@@ -468,6 +493,7 @@ export function createPausedReadySignaling({
                       !gate ||
                       operation.isCancelled() ||
                       producer.closed ||
+                      !publication ||
                       publication.stopped ||
                       !sameReceiver(owner, current)
                     )

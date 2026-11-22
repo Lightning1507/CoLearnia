@@ -42,6 +42,7 @@ export class DeviceMedia {
   #listeners = new Set<() => void>();
   #attempts: Partial<Record<DeviceKind, Attempt>> = {};
   #deviceIds: Partial<Record<DeviceKind, string>>;
+  #allowed = { microphone: true, camera: true };
   #snapshot: Snapshot = {
     available: false,
     microphone: { phase: 'off' },
@@ -61,6 +62,14 @@ export class DeviceMedia {
   }
 
   getSnapshot = () => this.#snapshot;
+  isAllowed = (kind: DeviceKind) => this.#allowed[kind];
+  setPermissions(allowed: Record<DeviceKind, boolean>) {
+    if (kinds.every((kind) => allowed[kind] === this.#allowed[kind])) return;
+    this.#allowed = { ...allowed };
+    for (const kind of kinds) if (!allowed[kind]) void this.stop(kind);
+    this.#snapshot = { ...this.#snapshot };
+    this.#notify();
+  }
 
   subscribe = (listener: () => void) => {
     this.#listeners.add(listener);
@@ -82,7 +91,7 @@ export class DeviceMedia {
 
   async start(kind: DeviceKind) {
     const context = this.#context;
-    if (!context || this.#disposed || this.#attempts[kind]) return;
+    if (!context || this.#disposed || this.#attempts[kind] || !this.#allowed[kind]) return;
     const attempt: Attempt = { abort: new AbortController() };
     this.#attempts[kind] = attempt;
     this.#set(kind, { phase: 'starting' });

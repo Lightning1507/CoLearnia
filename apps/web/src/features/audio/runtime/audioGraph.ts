@@ -3,6 +3,7 @@ type AudioOutput = {
   node: MediaStreamAudioSourceNode;
   onEnded: () => void;
   references: number;
+  playback: HTMLAudioElement;
 };
 
 // The call owns this graph. Consumers own their tracks and the graph borrows them.
@@ -12,14 +13,31 @@ export class AudioGraph {
   #outputs = new Map<string, AudioOutput>();
   #blocked = false;
   #closed = false;
+  #resumeError: string | null = null;
 
   constructor(
     private readonly notify: () => void,
     private readonly createContext = () => new AudioContext(),
+    private readonly createPlayback = () => new Audio(),
   ) {}
 
   get blocked() {
     return this.#blocked;
+  }
+
+  getDiagnostics() {
+    return {
+      contextState: this.#context?.state ?? 'not-created',
+      blocked: this.#blocked,
+      remoteAudioTracks: this.#outputs.size,
+      resumeError: this.#resumeError,
+      gain: this.#mix?.gain.value ?? null,
+      tracks: [...this.#outputs.values()].map(({ track }) => ({
+        enabled: track.enabled,
+        muted: track.muted,
+        readyState: track.readyState,
+      })),
+    };
   }
 
   attach(track: MediaStreamTrack): () => void {
@@ -28,15 +46,29 @@ export class AudioGraph {
     let output = this.#outputs.get(track.id);
     if (!output) {
       const context = this.#getContext();
-      const node = context.createMediaStreamSource(new MediaStream([track]));
+      const stream = new MediaStream([track]);
+      // Chromium remote WebRTC audio can receive RTP without pulling decoded
+      // samples into WebAudio until a media element consumes the stream.
+      // This element stays muted: the graph remains the sole audible route.
+      const playback = this.createPlayback();
+      playback.muted = true;
+      playback.srcObject = stream;
+      let node: MediaStreamAudioSourceNode;
+      try {
+        node = context.createMediaStreamSource(stream);
+      } catch (error) {
+        playback.srcObject = null;
+        throw error;
+      }
       const mix = this.#mix!;
       const onEnded = () => this.#remove(track.id);
       track.addEventListener('ended', onEnded, { once: true });
-      output = { track, node, onEnded, references: 0 };
+      output = { track, node, playback, onEnded, references: 0 };
       this.#outputs.set(track.id, output);
       // Reserve headroom before adding another signal to the sum.
       mix.gain.value = 1 / this.#outputs.size;
       node.connect(mix);
+      this.#startPlayback(output);
     }
 
     output.references++;
@@ -54,7 +86,19 @@ export class AudioGraph {
   // Call directly from the user's click so the browser sees the activation.
   resume() {
     if (!this.#blocked || !this.#context) return;
-    void this.#context.resume().then(this.#updateBlocked, this.#updateBlocked);
+    this.#resumeError = null;
+    for (const output of this.#outputs.values()) this.#startPlayback(output);
+    try {
+      void this.#context.resume().then(this.#updateBlocked, (error: unknown) => {
+        if (this.#closed) return;
+        this.#resumeError = error instanceof Error ? error.name : 'UnknownError';
+        this.#updateBlocked();
+        this.notify();
+      });
+    } catch (error) {
+      this.#resumeError = error instanceof Error ? error.name : 'UnknownError';
+      this.notify();
+    }
   }
 
   dispose() {
@@ -86,14 +130,28 @@ export class AudioGraph {
     this.#outputs.delete(id);
     output.track.removeEventListener('ended', output.onEnded);
     output.node.disconnect();
+    output.playback.pause();
+    output.playback.srcObject = null;
+    if (this.#outputs.size === 0) this.#resumeError = null;
     if (this.#mix) this.#mix.gain.value = 1 / Math.max(1, this.#outputs.size);
     this.#updateBlocked();
   }
 
   #updateBlocked = () => {
-    const blocked = !this.#closed && this.#outputs.size > 0 && this.#context?.state !== 'running';
+    const blocked =
+      !this.#closed &&
+      this.#outputs.size > 0 &&
+      (this.#context?.state !== 'running' || this.#resumeError !== null);
     if (blocked === this.#blocked) return;
     this.#blocked = blocked;
     this.notify();
   };
+
+  #startPlayback(output: AudioOutput) {
+    void output.playback.play().catch((error: unknown) => {
+      if (this.#closed || this.#outputs.get(output.track.id) !== output) return;
+      this.#resumeError = error instanceof Error ? error.name : 'UnknownError';
+      this.#updateBlocked();
+    });
+  }
 }

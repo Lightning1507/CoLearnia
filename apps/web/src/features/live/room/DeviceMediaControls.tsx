@@ -40,7 +40,8 @@ function DeviceControl({ devices, kind }: { devices: DeviceMedia; kind: DeviceKi
   const { phase, error } = snapshot[kind];
   const helpId = useId();
   const canStop = phase === 'on' || phase === 'starting';
-  const disabled = phase === 'stopping' || (!snapshot.available && !canStop);
+  const disabled =
+    phase === 'stopping' || ((!snapshot.available || !devices.isAllowed(kind)) && !canStop);
   const label = labels[kind];
   const action = phase === 'starting' ? 'Hủy bật' : canStop ? 'Tắt' : 'Bật';
   const statusLabel = kind === 'microphone' ? 'Mic' : 'Camera';

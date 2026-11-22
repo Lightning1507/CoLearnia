@@ -30,6 +30,28 @@ function deferred<T>() {
 }
 
 describe('DeviceMedia', () => {
+  it('revokes only the denied device and never recaptures on permission restoration', async () => {
+    const microphone = media('audio');
+    const camera = media('video');
+    const capture = vi.fn(async (constraints: MediaStreamConstraints) =>
+      constraints.audio ? microphone.stream : camera.stream,
+    );
+    const close = vi.fn(async () => {});
+    const devices = new DeviceMedia(capture, async () => ({ close }));
+    devices.updateContext(context);
+    await devices.start('microphone');
+    await devices.start('camera');
+    devices.setPermissions({ microphone: true, camera: false });
+    await vi.waitFor(() => expect(devices.getSnapshot().camera.phase).toBe('off'));
+    expect(camera.track.stop).toHaveBeenCalled();
+    expect(microphone.track.stop).not.toHaveBeenCalled();
+    expect(devices.getSnapshot().microphone.phase).toBe('on');
+    await devices.start('camera');
+    expect(capture).toHaveBeenCalledTimes(2);
+    devices.setPermissions({ microphone: true, camera: true });
+    expect(capture).toHaveBeenCalledTimes(2);
+    devices.dispose();
+  });
   it('starts only on request, stops capture before remote close, and does not reopen on resync', async () => {
     const camera = media('video');
     const capture = vi.fn(async () => camera.stream);

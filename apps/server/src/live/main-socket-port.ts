@@ -12,7 +12,7 @@ export function bindMainAckCursor<T extends object>(ack: T, cursor: SessionProje
 
 export function createMainSocketPort(
   socket: Socket,
-  dispatch: (event: string, input: unknown, send: () => void) => Promise<boolean>,
+  dispatch: (event: string, input: unknown, send: () => void) => Promise<boolean | 'discard'>,
 ): Socket {
   type Packet = { event: string; input: unknown; send(): void; size: number; expires: number };
   const queue: Packet[] = [];
@@ -81,7 +81,7 @@ export function createMainSocketPort(
           break;
         }
         if (stopped) break;
-        if (sent) {
+        if (sent || authorized === 'discard') {
           queue.shift();
           bytes -= item.size;
         } else await waitDrain();

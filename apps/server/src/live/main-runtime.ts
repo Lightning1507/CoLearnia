@@ -177,6 +177,9 @@ export function createMainRuntime(options: {
           event === 'session.ended' ||
           event === 'session.end.ack' ||
           event === 'session.leave.ack' ||
+          event === 'screen.release.ack' ||
+          event === 'media.producer.close.ack' ||
+          event === 'media.consumer.close.ack' ||
           (response && typeof response === 'object' && 'error' in response)
         ) {
           send();
@@ -194,24 +197,33 @@ export function createMainRuntime(options: {
         if (!parsed.success) return false;
         const { auth: _auth, ...context } = parsed.data;
         void _auth;
-        return registry.withContext(rawSocket.id, context, (resolved) => {
-          if (!resolved.ok) return false;
-          if (
-            ((candidate.policyRevision ?? candidate.expectedPolicyRevision) !== undefined &&
-              (candidate.policyRevision ?? candidate.expectedPolicyRevision) !==
-                resolved.context.policyRevision) ||
-            (candidate.audienceEpoch !== undefined &&
-              candidate.audienceEpoch !== resolved.context.audienceEpoch) ||
-            (candidate.scope !== undefined &&
-              !sameSessionScope(
-                candidate.scope as typeof resolved.context.scope,
-                resolved.context.scope,
-              ))
-          )
-            return false;
-          send();
-          return true;
-        });
+        if (registry.isContextRetired(rawSocket.id, context)) return 'discard';
+        try {
+          return await registry.withContext(rawSocket.id, context, (resolved) => {
+            if (registry.isContextRetired(rawSocket.id, context)) return 'discard';
+            if (!resolved.ok) return false;
+            if (
+              ((candidate.policyRevision ?? candidate.expectedPolicyRevision) !== undefined &&
+                (candidate.policyRevision ?? candidate.expectedPolicyRevision) !==
+                  resolved.context.policyRevision) ||
+              (candidate.audienceEpoch !== undefined &&
+                candidate.audienceEpoch !== resolved.context.audienceEpoch) ||
+              (candidate.scope !== undefined &&
+                !sameSessionScope(
+                  candidate.scope as typeof resolved.context.scope,
+                  resolved.context.scope,
+                ))
+            )
+              return false;
+            send();
+            return true;
+          });
+        } catch (error) {
+          // End/leave can retire this generation while authority awaits its gate.
+          // Drop its queued grant, preserving the socket for the terminal ACK.
+          if (registry.isContextRetired(rawSocket.id, context)) return 'discard';
+          throw error;
+        }
       });
       attached.add(socket.id);
       sockets.set(socket.id, socket);
