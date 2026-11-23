@@ -264,7 +264,8 @@ describe('shared access revocation', () => {
               userId: kind === 'CHANNEL_DELETED' ? null : userId,
             };
     expect(f.messaging.fence).toHaveBeenCalledWith({
-      revocationId: command.operationId,
+      revocationId:
+        kind === 'USER_AUTH_SESSIONS' ? `${command.operationId}:0` : command.operationId,
       target: expected,
     });
     expect(f.messaging.revoke).toHaveBeenCalledWith(

@@ -126,7 +126,8 @@ Barrier không bảo vệ writer ghi DB ngoài giao thức.
   M4 port hiện không nhận signal. Promise hết budget vẫn được theo dõi: retry không mở
   thêm một lần gọi cho đến khi promise cũ kết thúc. Kết quả trễ không tự commit DB.
 - Adapter phải idempotent theo operation + target/watermark. M2 logout-all dùng từng
-  AUTH_SESSION, không target USER rộng. Watermark retry không đóng tài nguyên đăng ký sau.
+  AUTH_SESSION với mã fence riêng cho từng phiên trong cohort. Retry giữ nguyên mã và
+  watermark của từng phiên. M4 và bước commit DB vẫn dùng operation ID ban đầu.
   M4 giữ cohort, ownership/epoch/generation, transition token và các handle cleanup
   từ lần đầu. Retry tiếp tục phần chưa hoàn tất; phần đã xác nhận không gọi lại.
   Synchronous media cleanup được retry dưới Workspace gate; I/O M2/M5 chạy ngoài gate.

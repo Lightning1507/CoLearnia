@@ -16,6 +16,8 @@ import {
   origin,
   database,
   Channel,
+  Conversation,
+  textConversationSubscribeAckSchema,
   AuthSession,
   SessionParticipant,
 } from './main-auth-media-harness.js';
@@ -419,6 +421,139 @@ it('invalidates pending native create on logout, closes its late resource and ne
   expect(other.socket.connected).toBe(true);
   const reply = await pending;
   if (reply !== undefined) expect(reply).toHaveProperty('error');
+});
+
+it('retries logout-all on the captured cohort without revoking a later MAIN login', async () => {
+  const f = await setup({ productionRuntime: true, text: true });
+  const host = await enter(f);
+  const member = await f.signUp();
+  await f.member(member);
+  const otherOldSession = await f.loginStandalone(member);
+  const old = await enter(f, member);
+  const secondSocket = await f.connect(otherOldSession);
+  const channel = await Channel.create({
+    workspaceId: f.target.workspaceId,
+    name: 'Cohort TEXT',
+    type: 'TEXT',
+    accessMode: 'WORKSPACE',
+  });
+  await Conversation.create({
+    workspaceId: f.target.workspaceId,
+    kind: 'CHANNEL',
+    scope: { channelId: channel.id },
+  });
+  async function subscribe(socket: typeof old.socket) {
+    const ack = textConversationSubscribeAckSchema.parse(
+      await socket.timeout(5000).emitWithAck('conversation.subscribe', {
+        requestId: randomUUID(),
+        payload: { channelId: channel.id, rootMessageId: null },
+      }),
+    );
+    if ('error' in ack) throw new Error('TEXT subscribe failed: ' + ack.error.code);
+    return ack.data.subscriptionId;
+  }
+  const invalidated: unknown[] = [];
+  old.socket.on('conversation.invalidated', (packet) => invalidated.push(packet));
+  secondSocket.on('conversation.invalidated', (packet) => invalidated.push(packet));
+  const subscriptions = [await subscribe(old.socket), await subscribe(secondSocket)];
+  const userId = member.auth.userId;
+  const event = {
+    kind: 'USER_AUTH_SESSIONS' as const,
+    userId,
+    operationId: randomUUID(),
+    revision: 0,
+  };
+  // The trusted coordinator port accepts persistence from its caller. There is no
+  // public logout-all route. Use MongoDB here, and leave both cleanup ports real.
+  const activeSessions = () =>
+    AuthSession.find({ userId, revokedAt: null, expiresAt: { $gt: new Date() } })
+      .select('_id')
+      .lean();
+  const prepareHeld = vi.fn(async () => ({
+    authSessionIds: (await activeSessions()).map(({ _id }) => _id.toHexString()),
+  }));
+  const commitHeld = vi.fn(async (_held: unknown, ids: readonly string[]) => {
+    await AuthSession.updateMany(
+      { userId, _id: { $in: ids }, revokedAt: null },
+      { $set: { revokedAt: new Date() } },
+      { writeConcern: { w: 'majority' } },
+    );
+    return 'committed' as const;
+  });
+  const revoke = () =>
+    f.revocations.revoke({
+      userId,
+      event,
+      persistence: {
+        prepareHeld,
+        commitHeld,
+        reconcileHeld: async () => 'unknown' as const,
+      },
+    });
+  const transport = (binding: typeof old, direction: 'SEND' | 'RECV') =>
+    binding.socket.timeout(5000).emitWithAck('media.transport.create', {
+      ...binding.context,
+      requestId: randomUUID(),
+      expectedPolicyRevision: binding.snapshot.policyRevision,
+      payload: { direction },
+    });
+  const existing = await transport(old, 'RECV');
+  expect(existing.data?.status).toBe('completed');
+  const created = f.delayNext();
+  const pending = transport(old, 'SEND').catch(() => undefined);
+  await created;
+  const originalIds = [member.auth.authSessionId, otherOldSession.auth.authSessionId];
+  let nextLogin: typeof member;
+  try {
+    expect(await revoke()).toMatchObject({ operationId: event.operationId, cleanupPending: true });
+    expect(commitHeld).not.toHaveBeenCalled();
+    expect(f.native[0]!.closed).toBe(true);
+    await vi.waitFor(() => expect(invalidated).toHaveLength(2));
+    for (const subscriptionId of subscriptions)
+      expect(invalidated).toContainEqual(
+        expect.objectContaining({ subscriptionId, reason: 'ACCESS_REVOKED' }),
+      );
+    expect(f.revocations.revokedAuthSessions(event)).toEqual(expect.arrayContaining(originalIds));
+    expect(f.revocations.revokedAuthSessions(event)).toHaveLength(2);
+    expect((await ticket(f, member)).status).toBe(401);
+    expect((await ticket(f, otherOldSession)).status).toBe(401);
+    nextLogin = await f.loginStandalone(member);
+    expect(f.revocations.isSessionDenied(nextLogin.auth)).toBe(false);
+    expect((await ticket(f, nextLogin)).status).toBe(200);
+  } finally {
+    f.release();
+  }
+  await vi.waitFor(() => expect(f.native[1]!.closed).toBe(true));
+  const pendingReply = await pending;
+  if (pendingReply !== undefined) expect(pendingReply).toHaveProperty('error');
+  const [first, concurrent] = await Promise.all([revoke(), revoke()]);
+  expect(first).toMatchObject({
+    operationId: event.operationId,
+    permissionRevoked: true,
+    pendingInvalidated: true,
+    cleanupPending: false,
+  });
+  expect(concurrent).toEqual(first);
+  expect(prepareHeld).toHaveBeenCalledOnce();
+  expect(commitHeld).toHaveBeenCalledOnce();
+  expect(commitHeld.mock.calls[0]![1]).toHaveLength(2);
+  expect(commitHeld.mock.calls[0]![1]).toEqual(expect.arrayContaining(originalIds));
+  expect(
+    await AuthSession.countDocuments({ _id: { $in: originalIds }, revokedAt: { $ne: null } }),
+  ).toBe(2);
+  expect((await activeSessions()).map(({ _id }) => _id.toHexString())).toEqual([
+    nextLogin.auth.authSessionId,
+  ]);
+
+  const next = await enter(f, nextLogin);
+  expect(next.context.callGeneration).toBeGreaterThan(old.context.callGeneration);
+  const nextTransport = await transport(next, 'SEND');
+  expect(nextTransport.data?.status).toBe('completed');
+  expect(await revoke()).toEqual(first);
+  expect(commitHeld).toHaveBeenCalledOnce();
+  expect(f.native[2]!.closed).toBe(false);
+  expect(next.socket.connected).toBe(true);
+  expect(host.socket.connected).toBe(true);
 });
 
 it('closes resources on actual disconnect and resumes only the new socket generation', async () => {

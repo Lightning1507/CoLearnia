@@ -72,6 +72,7 @@ export type RevocationPersistence = {
 };
 
 type Leg = {
+  revocationId: string;
   target: MessagingRevocationTarget;
   generation?: number;
   done: boolean;
@@ -299,7 +300,16 @@ export function createAccessRevocationCoordinator(options: {
         if (record.event.kind !== 'USER_AUTH_SESSIONS' && record.cohort.length !== 0)
           throw new TypeError('Only logout-all captures a cohort');
         record.prepared = true;
-        record.legs = targets(record).map((target) => ({ target, done: false }));
+        // TEXT binds each fence ID to a single target. The captured cohort keeps
+        // this order for every retry, while LIVE and persistence keep the operation ID.
+        record.legs = targets(record).map((target, index) => ({
+          revocationId:
+            record.event.kind === 'USER_AUTH_SESSIONS'
+              ? `${record.event.operationId}:${index}`
+              : record.event.operationId,
+          target,
+          done: false,
+        }));
         // Install BEFORE fence, including when a synchronous adapter fence throws.
         record.installed = true;
       }
@@ -307,7 +317,7 @@ export function createAccessRevocationCoordinator(options: {
       for (const leg of record.legs) {
         if (leg.generation !== undefined) continue;
         const fence = adapters.messaging.fence({
-          revocationId: record.event.operationId,
+          revocationId: leg.revocationId,
           target: structuredClone(leg.target),
         });
         if (
@@ -328,13 +338,13 @@ export function createAccessRevocationCoordinator(options: {
       if (!leg.pending) {
         const pending = launch(async () => {
           const reply = await adapters.messaging.revoke({
-            revocationId: record.event.operationId,
+            revocationId: leg.revocationId,
             target: structuredClone(leg.target),
             throughResourceGeneration: leg.generation!,
             deadlineMs,
             signal: controller.signal,
           });
-          return reply.revocationId === record.event.operationId && reply.status === 'completed';
+          return reply.revocationId === leg.revocationId && reply.status === 'completed';
         });
         if (!pending) return;
         leg.pending = pending;
