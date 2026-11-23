@@ -65,7 +65,7 @@ Nguồn chi tiết: [ba use case và vòng đời khái niệm](product/scope.md
 | Web | React + TypeScript + Vite | Một app; giữ call controller khi đổi tab/panel |
 | UI | Tailwind, components chung | Mic/camera/scope/đích chat có trạng thái nhất quán |
 | State | Zustand + TanStack Query | Session projection và REST cache tách nhau; không persist track/transport |
-| Server | Node.js 26.12.1 + Express + TypeScript | Runtime pin đồng bộ local/CI/Docker; pnpm 11.5.2, cài theo lockfile |
+| Server | Node.js 26.13.1 + Express + TypeScript | Runtime pin đồng bộ local/CI/Docker; pnpm 11.5.2, cài theo lockfile |
 | Validation/contracts | Zod trong packages/contracts | Kiểm runtime ở biên; types không thay validation |
 | Database | MongoDB + Mongoose, replica set một node | Transaction cho thao tác nhiều bản ghi; không có HA |
 | Realtime | Socket.IO | Signaling, chat, board; ack/dedupe/snapshot do app xây |
@@ -78,7 +78,7 @@ Nguồn chi tiết: [ba use case và vòng đời khái niệm](product/scope.md
 
 Không cần Next.js, Kafka, Kubernetes hoặc một media microservice riêng cho topology đầu tiên. Framework web không giải quyết thay policy và vòng đời media.
 
-Runtime thực thi được xác định bởi `.node-version`, `package.json` (`engines`, `devEngines.runtime`, `packageManager`), lockfile và Dockerfiles. `devEngines.runtime` cho phép pnpm tải Node 26.12.1 và dùng runtime đó cho scripts của project. Kiểm sau cài bằng `pnpm exec node --version` và `pnpm doctor`; phiên bản trả về từ `node --version` ngoài pnpm có thể khác. Không bắt buộc thay Node mặc định của máy nếu pnpm chạy đúng runtime đã pin. Xem [runbook local](runbooks/local-development.md).
+Runtime thực thi được xác định bởi `.node-version`, `package.json` (`engines`, `devEngines.runtime`, `packageManager`), lockfile và Dockerfiles. `devEngines.runtime` cho phép pnpm tải Node 26.13.1 và dùng runtime đó cho scripts của project. Kiểm sau cài bằng `pnpm exec node --version` và `pnpm doctor`; phiên bản trả về từ `node --version` ngoài pnpm có thể khác. Không bắt buộc thay Node mặc định của máy nếu pnpm chạy đúng runtime đã pin. Xem [runbook local](runbooks/local-development.md).
 
 Khi đổi runtime, cập nhật các nguồn pin và `@types/node` tương thích trong cùng thay đổi; chạy `pnpm check`, `pnpm media:smoke` và Docker smoke trên Linux trước khi merge. Các kiểm tra local đã qua không thay bằng chứng chạy image Linux hoặc PoC media qua Internet. Dependency tiếp tục dùng phiên bản chính xác trong manifests/lockfile; không tự nâng chỉ để lấy phiên bản mới nhất.
 
@@ -490,7 +490,7 @@ Coturn cấu hình public/private address theo network thực, short-lived crede
 
 ### 17.3. Env và CI
 
-Danh mục env đích cần bổ sung theo feature vào `.env.example`: APP_ORIGIN, PUBLIC_BASE_URL, MONGO_URI/replicaSet, SESSION_SECRET, AUTH_TTL_SECONDS, TURN_SECRET/TURN_URLS, MEDIA_LISTEN_IP, MEDIA_ANNOUNCED_ADDRESS, MEDIA_PORT, FILE_ROOT/TEMP_ROOT, quotas/timeouts. Không coi mọi biến trong danh mục đã được scaffold sử dụng; contract cấu hình thực nằm ở schema env và `.env.example`. Secrets ở CI/server, không commit. Node 26.12.1/pnpm 11.5.2 đã được pin; mediasoup server/client, Mongo image và dependencies theo manifests/Compose/lockfile. Mỗi lần nâng phải kiểm tương thích; không dùng floating latest trong release.
+Danh mục env đích cần bổ sung theo feature vào `.env.example`: APP_ORIGIN, PUBLIC_BASE_URL, MONGO_URI/replicaSet, SESSION_SECRET, AUTH_TTL_SECONDS, TURN_SECRET/TURN_URLS, MEDIA_LISTEN_IP, MEDIA_ANNOUNCED_ADDRESS, MEDIA_PORT, FILE_ROOT/TEMP_ROOT, quotas/timeouts. Không coi mọi biến trong danh mục đã được scaffold sử dụng; contract cấu hình thực nằm ở schema env và `.env.example`. Secrets ở CI/server, không commit. Node 26.13.1/pnpm 11.5.2 đã được pin; mediasoup server/client, Mongo image và dependencies theo manifests/Compose/lockfile. Mỗi lần nâng phải kiểm tương thích; không dùng floating latest trong release.
 
 CI: install lockfile → lint/typecheck → policy/contract tests → integration với Mongo replica set → build web/server → build Linux image → tag commit SHA. Browser E2E đủ điều kiện chạy CI; test camera/audio/network thật có evidence staging bổ sung. Native mediasoup worker phải build/start được trên image Linux từ tuần 1.
 
