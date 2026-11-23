@@ -365,7 +365,7 @@ P2 tiếp tục mở. Runtime mặc định vẫn dùng đường hiện hành. 
 
 ### Đồng bộ subscribe-first TEXT (SCRUM-43)
 
-Main tiếp tục history-only: không bật gửi TEXT. Subscribe/snapshot/catch-up chỉ được admit khi đủ budget `handlers.history` và `handlers.subscription`, `TEXT_SYNC_LIMITS_JSON`, index sync và **chính** `textService.syncRevocation` đã bind cùng cleanup LIVE thật vào coordinator chung. Composition hiện tại chưa bind cặp port này, nên chỉ điền env vẫn trả `DEPENDENCY_UNAVAILABLE` khi subscribe; không thay bằng adapter no-op. M1/M4 review composition trước khi bật trên môi trường dùng chung.
+Main giữ cổng gửi TEXT tắt. Subscribe/snapshot/catch-up cần budget `handlers.history` và `handlers.subscription`, `TEXT_SYNC_LIMITS_JSON`, index sync và binding giữa `textService.syncRevocation` với cleanup LIVE trong coordinator chung. Binding được thiết lập khi MAIN khởi động. M1/M4 review các budget trước khi bật subscription trên môi trường dùng chung.
 
 `TEXT_SYNC_LIMITS_JSON` là server-only, không có mặc định bật. Hình dạng dùng trong test riêng (không phải giá trị rollout/capacity đã duyệt):
 

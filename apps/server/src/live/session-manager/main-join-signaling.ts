@@ -9,6 +9,7 @@ import type { AuthenticatedContext, SessionSnapshotPart } from '@colearnia/contr
 import { CoordinationError } from '../../lib/operation-coordinator.js';
 import { MainJoinError } from './main-join-registry.js';
 import type { createMainJoinRegistry } from './main-join-registry.js';
+import { bindMainAckCursor } from '../main-socket-port.js';
 
 type SocketPort = {
   id: string;
@@ -81,7 +82,7 @@ export function attachMainJoinSocket(
             fail('CONFLICT');
             return;
           }
-          reply(result.ack);
+          reply(bindMainAckCursor(result.ack, first));
           // Synchronous enqueue only, after current ownership/access revalidation.
           for (const part of result.parts) socket.emit('session.snapshot', part);
         },

@@ -74,6 +74,8 @@ export class ScreenSharePicker {
   ) {}
 
   getSnapshot = () => this.#snapshot;
+  // The stage borrows this stream; the picker remains its only resource owner.
+  getStream = () => (this.#snapshot.status === 'sharing' ? this.#attempt?.stream : undefined);
   subscribe = (listener: () => void) => {
     this.#listeners.add(listener);
     return () => this.#listeners.delete(listener);

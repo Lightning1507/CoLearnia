@@ -242,7 +242,7 @@ it('retries scheduled refresh after a Socket.IO proof ACK timeout', async () => 
     const socket = {
       connected: true,
       id: 'a',
-      volatile: { timeout: () => ({ emitWithAck }) },
+      timeout: () => ({ emitWithAck }),
     } as unknown as Parameters<typeof bindMediaBootstrapSocket>[0];
     const runtime = bindMediaBootstrapSocket(socket, () => f.context, {
       api: f.api.mockResolvedValue(response),

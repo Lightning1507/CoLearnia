@@ -28,7 +28,10 @@ export function bindScreenShareSocket(
   identity: CallIdentity,
   socket: Pick<Socket, 'connected' | 'timeout' | 'on' | 'off'>,
   signal: AbortSignal,
-  send: Pick<MediaTypes.Transport, 'id' | 'produce' | 'on' | 'off'>,
+  send: Pick<MediaTypes.Transport, 'id' | 'produce'> & {
+    on(event: 'produce', listener: ProduceListener): unknown;
+    off(event: 'produce', listener: ProduceListener): unknown;
+  },
   publishOther: ProduceListener,
 ) {
   const envelope = (context: SessionProjectionCursor) => ({

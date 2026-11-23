@@ -390,3 +390,23 @@ it('rejects a configuration that cannot encode an empty projection before any I/
   ).toThrow('empty projection');
   expect(f.historyQueries).toEqual([]);
 });
+
+it.each(['FORBIDDEN', 'CONFLICT'] as const)(
+  'withdraws stale history when an older-page request returns %s',
+  async (code) => {
+    const f = fixture();
+    f.rows.push(message(2));
+    const sync = createTextSynchronizer(f.port, channelId, { ...limits, pageSize: 1 }, () => {});
+    disposers.push(sync.stop);
+    await sync.reconcile();
+    expect(sync.snapshot().olderCursor).not.toBeNull();
+    f.hooks.error = { code, message: 'Page no longer authorized or current' };
+    await sync.loadOlder();
+    expect(sync.snapshot()).toMatchObject({
+      phase: code === 'FORBIDDEN' ? 'revoked' : 'resync',
+      messages: [],
+      checkpoint: undefined,
+      olderCursor: null,
+    });
+  },
+);

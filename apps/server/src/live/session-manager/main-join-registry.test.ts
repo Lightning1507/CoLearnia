@@ -220,6 +220,18 @@ async function endFixture(
 }
 
 describe('SCRUM-86 session end', () => {
+  it('retires delivery of the ending generation before cleanup completes', async () => {
+    const f = await endFixture();
+    const wait = deferred<SessionCleanupResult>();
+    f.messaging.mockImplementationOnce(() => wait.promise);
+    expect(f.registry.isContextRetired(f.socket.socketId, f.command)).toBe(false);
+    const ending = f.registry.end(f.socket, f.command);
+    await vi.waitFor(() => expect(f.messaging).toHaveBeenCalled());
+    expect(f.registry.isContextRetired(f.socket.socketId, f.command)).toBe(true);
+    wait.resolve(cleanupAck(f.messaging.mock.calls[0]![0]));
+    await ending;
+    expect(f.registry.isContextRetired(f.socket.socketId, f.command)).toBe(true);
+  });
   it('reclaims expired end replay records before admitting worker-failure cleanup', async () => {
     const f = await endFixture('END', { maxEndRecords: 1, endReplayTtlMs: 100 });
     await f.registry.end(f.socket, f.command);

@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
+import { useMainCall } from '../live/runtime/mainCallContext';
 import type {
   AuthenticatedData,
   ChannelSummary,
@@ -15,6 +16,7 @@ import { CreateChannelForm } from './CreateChannelForm';
 import { ChannelApiError } from './channel-api';
 import { channelListOptions } from './channel-list-query';
 import './channel-list.css';
+import { TextChannel } from '../text/TextChannel';
 
 function message(error: unknown) {
   if (error instanceof ChannelApiError) {
@@ -40,10 +42,19 @@ export function ChannelWorkspace({
   account: ReactNode;
   onAccessLost: (message: string) => void;
 }) {
+  const mainCall = useMainCall();
   const client = useQueryClient();
   const navigate = useNavigate();
+  const location = useLocation();
+  const { channelId } = useParams();
   const [manage, setManage] = useState(false);
-  const [panel, setPanel] = useState<WorkspacePanel>({ kind: 'empty' });
+  const [textAccessNotice, setTextAccessNotice] = useState('');
+  const withdrawText = useCallback(() => {
+    navigate(`/workspaces/${workspace.id}`, { replace: true });
+    setTextAccessNotice('Quyền truy cập chat đã thay đổi. Nội dung kênh đã được xóa khỏi bộ nhớ.');
+    void client.resetQueries({ queryKey: ['channels', userId, workspace.id, expiresAt] });
+    void client.invalidateQueries({ queryKey: sessionKey });
+  }, [client, userId, workspace.id, expiresAt, navigate]);
   const notified = useRef<unknown>(null);
   const canManage = workspace.role === 'OWNER' || workspace.role === 'ADMIN';
   const prefix = ['channels', userId, workspace.id, expiresAt] as const;
@@ -80,8 +91,80 @@ export function ChannelWorkspace({
           content.data?.pages.flatMap((page) => page.items).map((row) => [row.id, row]) ?? [],
         ).values(),
       ];
-  const selected =
-    panel.kind === 'empty' ? undefined : channels.find((row) => row.id === panel.channelId);
+  const selected = channels.find((row) => row.id === channelId);
+  const panel: WorkspacePanel = selected
+    ? { kind: selected.type === 'TEXT' ? 'text' : 'live', channelId: selected.id }
+    : { kind: 'empty' };
+  const liveRoute = location.pathname.endsWith('/live');
+  const handledLiveRoute = useRef<string | undefined>(undefined);
+  useEffect(
+    () => () => {
+      handledLiveRoute.current = undefined;
+    },
+    [],
+  );
+  useEffect(() => {
+    if (!liveRoute) {
+      handledLiveRoute.current = undefined;
+      return;
+    }
+    if (!selected || handledLiveRoute.current === location.key) return;
+    if (selected.type !== 'LIVE') {
+      navigate(`/workspaces/${workspace.id}/channels/${selected.id}`, { replace: true });
+      return;
+    }
+    const auth = client.getQueryData<AuthenticatedData | null>(sessionKey);
+    if (
+      auth?.user.id !== userId ||
+      auth.expiresAt !== expiresAt ||
+      Date.parse(expiresAt) <= Date.now()
+    )
+      return;
+    handledLiveRoute.current = location.key;
+    // Channel came from the current authenticated content list, never URL data alone.
+    mainCall.setAuth(auth);
+    const current = mainCall.getSnapshot();
+    if (
+      current.target &&
+      current.phase !== 'idle' &&
+      current.phase !== 'lobby' &&
+      current.target.channelId !== selected.id
+    ) {
+      navigate(
+        `/workspaces/${current.target.workspaceId}/channels/${current.target.channelId}/live`,
+        { replace: true },
+      );
+      return;
+    }
+    mainCall.open({
+      channelId: selected.id,
+      channelName: selected.name,
+      workspaceId: workspace.id,
+    });
+  }, [
+    liveRoute,
+    selected,
+    location.key,
+    client,
+    userId,
+    expiresAt,
+    mainCall,
+    workspace.id,
+    navigate,
+  ]);
+  // Resolve a deep link across bounded pages; the existing More button can continue.
+  useEffect(() => {
+    if (
+      channelId &&
+      /^[a-f\d]{24}$/i.test(channelId) &&
+      !selected &&
+      !content.isError &&
+      !content.isFetching &&
+      content.hasNextPage &&
+      (content.data?.pages.length ?? 0) < 10
+    )
+      void content.fetchNextPage({ cancelRefetch: false });
+  }, [channelId, selected, content]);
   const managed = management.isError
     ? []
     : [
@@ -90,14 +173,17 @@ export function ChannelWorkspace({
         ).values(),
       ];
   function select(channel: ChannelSummary) {
+    setTextAccessNotice('');
     setManage(false);
-    setPanel({ kind: channel.type === 'TEXT' ? 'text' : 'live', channelId: channel.id });
+    navigate(`/workspaces/${workspace.id}/channels/${channel.id}`);
   }
   function refresh() {
     void client.resetQueries({ queryKey: prefix });
   }
   const selectedPanel = selected && (
-    <section className="channel-detail">
+    <section
+      className={`channel-detail${selected.type === 'LIVE' ? ' flex min-h-80 flex-1 flex-col items-center justify-center text-center' : ''}`}
+    >
       <h2>{selected.type === 'TEXT' ? 'Kênh trò chuyện' : 'Phòng trực tiếp'}</h2>
       <p>
         {selected.accessMode === 'PRIVATE'
@@ -105,8 +191,18 @@ export function ChannelWorkspace({
           : 'Dành cho thành viên Workspace.'}
       </p>
       <p>Bạn có quyền truy cập kênh này.</p>
+      {selected.type === 'LIVE' && (
+        <button
+          type="button"
+          className="auth-primary mt-4"
+          onClick={() => navigate(`/workspaces/${workspace.id}/channels/${selected.id}/live`)}
+        >
+          Vào phòng trực tiếp
+        </button>
+      )}
     </section>
   );
+  const session = client.getQueryData<AuthenticatedData | null>(sessionKey);
   return (
     <WorkspaceShell
       workspace={workspace}
@@ -118,7 +214,18 @@ export function ChannelWorkspace({
       panel={manage && canManage ? { kind: 'empty' } : panel}
       onSelectChannel={select}
       onOpenWorkspaceList={() => navigate('/workspaces')}
-      chatPanel={selectedPanel}
+      chatPanel={
+        selected?.type === 'TEXT' && session?.user.id === userId ? (
+          <TextChannel
+            key={`${userId}:${expiresAt}:${selected.id}`}
+            channelId={selected.id}
+            session={session}
+            onAccessLost={withdrawText}
+          />
+        ) : (
+          selectedPanel
+        )
+      }
       callPanel={selectedPanel}
       persistentCallControls={account}
       sidebarControls={
@@ -150,6 +257,7 @@ export function ChannelWorkspace({
       }
       sidebarStatus={
         <div className="channel-sidebar-status">
+          {textAccessNotice && <p role="status">{textAccessNotice}</p>}
           {content.isPending && <p role="status">Đang tải kênh…</p>}
           {content.isError && <p role="alert">{message(content.error)}</p>}
           {content.isSuccess && channels.length === 0 && (
@@ -206,6 +314,28 @@ export function ChannelWorkspace({
                 {management.isFetchingNextPage ? 'Đang tải…' : 'Xem thêm kênh quản trị'}
               </button>
             )}
+          </section>
+        ) : channelId && !selected ? (
+          <section
+            className="grid min-h-80 flex-1 content-center gap-3 p-6 text-center"
+            role="status"
+          >
+            <h2 className="text-lg font-semibold">
+              {content.isPending || content.isFetching
+                ? 'Đang mở kênh…'
+                : content.hasNextPage
+                  ? 'Kênh chưa có trong các trang đã tải'
+                  : 'Kênh không còn khả dụng'}
+            </h2>
+            <p>
+              {content.isPending || content.isFetching
+                ? 'Đang kiểm tra kênh và quyền truy cập…'
+                : content.isError
+                  ? message(content.error)
+                  : content.hasNextPage
+                    ? 'Dùng Xem thêm kênh để tiếp tục kiểm tra quyền truy cập.'
+                    : 'Kênh không tồn tại hoặc bạn không có quyền truy cập.'}
+            </p>
           </section>
         ) : undefined
       }

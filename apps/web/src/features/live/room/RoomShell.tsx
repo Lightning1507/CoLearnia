@@ -3,7 +3,8 @@ import type { FocusEvent, ReactNode } from 'react';
 import type { CallHandle, CallIdentity, CallSnapshot } from '../runtime/callController';
 import { DeviceMediaControls } from './DeviceMediaControls';
 import type { DeviceMedia } from '../runtime/deviceMedia';
-import { useCallAudio, useCallSnapshot } from '../runtime/callControllerContext';
+import { useCallAudio, useCallCameras, useCallSnapshot } from '../runtime/callControllerContext';
+import { CameraTiles } from './CameraTiles';
 
 const statusLabels: Record<CallSnapshot['status'], string> = {
   idle: 'Chưa tham gia cuộc gọi',
@@ -17,10 +18,23 @@ type RoomShellProps = {
   useWorkspaceWidth?: boolean;
   stage?: ReactNode;
   stageMedia?: { call: CallHandle; stream: MediaStream } | undefined;
-  sidePanel?: { label: string; content: ReactNode; onBackToStage: () => void } | undefined;
+  sidePanel?:
+    | {
+        label: string;
+        content: ReactNode;
+        description?: string;
+        fillContent?: boolean;
+        onBackToStage: () => void;
+      }
+    | undefined;
   controls?: ReactNode;
   devices?: DeviceMedia;
   error?: string | undefined;
+  header?: { navigation?: ReactNode; description?: ReactNode; position?: ReactNode };
+  participantNames?: Readonly<Record<string, string>>;
+  shareLabel?: string;
+  secondaryControls?: ReactNode;
+  volumeControls?: ReactNode;
 };
 
 function StageVideo({ stream }: { stream: MediaStream }) {
@@ -41,7 +55,7 @@ function StageVideo({ stream }: { stream: MediaStream }) {
     <video
       ref={video}
       aria-label="Hình ảnh sân khấu"
-      className="block max-h-[55dvh] w-full object-contain"
+      className="block h-full min-h-0 w-full object-contain"
       autoPlay
       muted
       playsInline
@@ -59,14 +73,20 @@ export function RoomShell({
   controls,
   devices,
   error,
+  header,
+  participantNames,
+  shareLabel,
+  secondaryControls,
+  volumeControls,
 }: RoomShellProps) {
   const call = useCallSnapshot();
   const audio = useCallAudio();
+  const cameras = useCallCameras();
   const titleId = useId();
   const panelId = useId();
   const panelHeading = useRef<HTMLHeadingElement>(null);
   const roomElement = useRef<HTMLElement>(null);
-  const stageElement = useRef<HTMLElement>(null);
+  const stageElement = useRef<HTMLDivElement>(null);
   const backButton = useRef<HTMLButtonElement>(null);
   const toolbar = useRef<HTMLElement>(null);
   const audioButtonFocused = useRef(false);
@@ -134,96 +154,151 @@ export function RoomShell({
     roomCall?.status === 'active' && stageMedia?.call.identity === roomCall.identity
       ? stageMedia.stream
       : undefined;
+  const sharedStage = !error && roomCall?.status === 'active' && Boolean(stage || stream);
 
   return (
     <article
-      className={useWorkspaceWidth ? 'w-full min-w-0' : '@container/room-layout w-full min-w-0'}
+      className={`live-room-shell ${useWorkspaceWidth ? 'live-room-in-workspace' : '@container/room-layout live-room-standalone'}`}
       aria-labelledby={titleId}
       ref={roomElement}
     >
-      <div
-        className={`grid min-w-0 gap-4 bg-[var(--workspace-content-bg)] [overflow-wrap:anywhere] ${useWorkspaceWidth ? 'p-5' : 'rounded-2xl border border-[color:var(--workspace-border)] p-5'}`}
-      >
-        <header>
-          <h2 className={useWorkspaceWidth ? 'sr-only' : undefined} id={titleId}>
-            {channelName}
-          </h2>
-          <p className="mt-2 text-stone-600" role="status">
-            {statusLabels[roomCall?.status ?? 'idle']}
-          </p>
+      <div className="live-room-layout">
+        <header className="live-room-header">
+          <div className="live-room-navigation">{header?.navigation}</div>
+          <div className="live-room-heading">
+            <h2 className={useWorkspaceWidth ? 'sr-only' : undefined} id={titleId}>
+              {channelName}
+            </h2>
+            <p
+              className={header?.description ? 'sr-only' : 'live-room-call-status'}
+              role="status"
+              data-state={roomCall?.status ?? 'idle'}
+            >
+              {statusLabels[roomCall?.status ?? 'idle']}
+            </p>
+            {header?.description && <p className="live-room-description">{header.description}</p>}
+          </div>
+          <div className="live-room-position">{header?.position}</div>
         </header>
-        <div
-          className={
-            sidePanel
-              ? 'grid grid-cols-1 gap-4 @min-[1280px]/room-layout:grid-cols-[minmax(0,1fr)_320px]'
-              : 'grid grid-cols-1'
-          }
-        >
-          <section
-            className={`min-h-48 min-w-0 place-items-center rounded-xl bg-stone-50 text-center ${sidePanel ? 'hidden @min-[1280px]/room-layout:grid' : 'grid'}`}
-            aria-label="Sân khấu cuộc gọi"
+        <div className={sidePanel ? 'live-room-body live-room-has-panel' : 'live-room-body'}>
+          <div
+            className={`live-call-media min-w-0 ${sidePanel ? 'hidden @min-[1280px]/room-layout:block' : ''}`}
             ref={stageElement}
             onBlur={restorePanelFocus}
           >
-            {error ? (
-              <p role="alert">{error}</p>
-            ) : (
-              (stage ??
-              (stream ? <StageVideo stream={stream} /> : <p>Chưa có hình ảnh sân khấu.</p>))
-            )}
-          </section>
+            <div className={sharedStage ? 'live-call-share-layout' : 'live-call-grid-layout'}>
+              <section className="live-call-stage" aria-label="Sân khấu cuộc gọi">
+                {sharedStage && shareLabel && <p className="live-share-status">{shareLabel}</p>}
+                {error ? (
+                  <p role="alert">{error}</p>
+                ) : (
+                  (stage ??
+                  (stream ? (
+                    <StageVideo stream={stream} />
+                  ) : roomCall?.status === 'active' ? (
+                    <CameraTiles snapshot={cameras} participantNames={participantNames} />
+                  ) : (
+                    <p>Chưa có hình ảnh sân khấu.</p>
+                  )))
+                )}
+              </section>
+              {sharedStage && (
+                <CameraTiles snapshot={cameras} layout="rail" participantNames={participantNames} />
+              )}
+            </div>
+          </div>
           {sidePanel && (
-            <section className="grid min-w-0 content-start gap-2" aria-labelledby={panelId}>
-              <h3 className="text-base font-semibold" id={panelId} ref={panelHeading} tabIndex={-1}>
-                {sidePanel.label}
-              </h3>
+            <section className="live-room-panel" aria-labelledby={panelId}>
+              <header className="live-room-panel-header">
+                <div>
+                  <h3
+                    className="live-room-panel-heading"
+                    id={panelId}
+                    ref={panelHeading}
+                    tabIndex={-1}
+                  >
+                    {sidePanel.label}
+                  </h3>
+                  {sidePanel.description && <p>{sidePanel.description}</p>}
+                </div>
+                <button
+                  type="button"
+                  className="live-room-panel-close"
+                  aria-label="Đóng panel"
+                  onClick={sidePanel.onBackToStage}
+                >
+                  <svg
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    aria-hidden="true"
+                  >
+                    <path d="m6 6 12 12M18 6 6 18" />
+                  </svg>
+                </button>
+              </header>
               <button
                 type="button"
-                className="justify-self-start rounded-lg border border-stone-200 px-3 py-2 @min-[1280px]/room-layout:hidden"
+                className="live-room-panel-back @min-[1280px]/room-layout:hidden"
                 onClick={sidePanel.onBackToStage}
                 ref={backButton}
                 onBlur={restorePanelFocus}
               >
                 Về sân khấu
               </button>
-              {sidePanel.content}
+              <div
+                className={`live-room-panel-content${sidePanel.fillContent ? ' live-room-panel-content-fill' : ''}`}
+              >
+                {sidePanel.content}
+              </div>
             </section>
           )}
-        </div>
-        <footer
-          className="flex flex-wrap gap-3 border-t border-stone-200 pt-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--cl-color-focus-ring)]"
-          aria-label="Điều khiển cuộc gọi"
-          ref={toolbar}
-          tabIndex={-1}
-        >
-          {roomCall?.status === 'active' && devices && <DeviceMediaControls devices={devices} />}
-          {controls ?? (!devices && <p>Chưa có điều khiển cuộc gọi khả dụng.</p>)}
-          {showAudioRecovery && (
-            <div className="flex flex-wrap items-center gap-2">
-              <p className="text-sm text-[color:var(--workspace-muted)]" role="status">
-                Âm thanh cuộc gọi đang tạm dừng.
-              </p>
-              <button
-                type="button"
-                className="live-toolbar-control min-h-10 rounded-lg px-3 py-2 text-sm font-medium"
-                onFocus={() => {
-                  audioButtonFocused.current = true;
-                }}
-                onBlur={(event) => {
-                  if (
-                    event.relatedTarget &&
-                    event.relatedTarget !== event.currentTarget.ownerDocument.body
-                  ) {
-                    audioButtonFocused.current = false;
-                  }
-                }}
-                onClick={() => audio.enable(roomCall.identity)}
-              >
-                Bật âm thanh
-              </button>
+          <footer
+            className="live-room-toolbar"
+            aria-label="Điều khiển cuộc gọi"
+            ref={toolbar}
+            tabIndex={-1}
+          >
+            {volumeControls && <div className="live-room-volume">{volumeControls}</div>}
+            <div className="live-room-controls-main">
+              {roomCall?.status === 'active' && devices && (
+                <DeviceMediaControls devices={devices} />
+              )}
+              {controls ?? (!devices && <p>Chưa có điều khiển cuộc gọi khả dụng.</p>)}
             </div>
-          )}
-        </footer>
+            {secondaryControls && (
+              <div className="live-room-controls-side">{secondaryControls}</div>
+            )}
+            {showAudioRecovery && (
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="text-sm" role="status">
+                  Âm thanh cuộc gọi đang tạm dừng.
+                </p>
+                <button
+                  type="button"
+                  className="live-toolbar-control min-h-10 rounded-lg px-3 py-2 text-sm font-medium"
+                  onFocus={() => {
+                    audioButtonFocused.current = true;
+                  }}
+                  onBlur={(event) => {
+                    if (
+                      event.relatedTarget &&
+                      event.relatedTarget !== event.currentTarget.ownerDocument.body
+                    ) {
+                      audioButtonFocused.current = false;
+                    }
+                  }}
+                  onClick={() => audio.enable(roomCall.identity)}
+                >
+                  Bật âm thanh
+                </button>
+              </div>
+            )}
+          </footer>
+        </div>
       </div>
     </article>
   );
