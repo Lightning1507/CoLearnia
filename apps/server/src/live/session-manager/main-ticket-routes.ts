@@ -4,6 +4,7 @@ import { ZodError } from 'zod';
 import { authFailure, requireVerifiedSession } from '../../auth/http-auth.js';
 import type { AuthResponse, createHttpAuth } from '../../auth/http-auth.js';
 import type { Database } from '../../lib/database.js';
+import { logger } from '../../lib/logger.js';
 import { CoordinationError } from '../../lib/operation-coordinator.js';
 import { channelModels } from '../../workspaces/channel-models.js';
 import { MainJoinError } from './main-join-registry.js';
@@ -12,7 +13,7 @@ import type { createMainJoinRegistry } from './main-join-registry.js';
 export function createMainTicketRouter(
   auth: ReturnType<typeof createHttpAuth>,
   database: Database,
-  registry: Pick<ReturnType<typeof createMainJoinRegistry>, 'issue'>,
+  registry: Pick<ReturnType<typeof createMainJoinRegistry>, 'issue' | 'stats'>,
   isReady: () => boolean,
 ) {
   const { Channel } = channelModels(database.connection);
@@ -25,16 +26,20 @@ export function createMainTicketRouter(
       res.setHeader('Cache-Control', 'no-store');
       const actor = requireVerifiedSession(res);
       if (!actor) return;
+      let stage: 'readiness' | 'validation' | 'channel-read' | 'registry-issue' = 'readiness';
       try {
         if (!isReady()) throw new MainJoinError('DEPENDENCY_UNAVAILABLE');
+        stage = 'validation';
         const { channelId } = channelParamsSchema.parse(req.params);
         const input = sessionJoinTicketInputSchema.parse(req.body);
+        stage = 'channel-read';
         const channel = await Channel.findOne({ _id: channelId, deletedAt: null })
           .select('workspaceId')
           .maxTimeMS(2000)
           .lean();
         if (!channel) throw new MainJoinError('NOT_FOUND');
         if (res.destroyed || !isReady()) throw new MainJoinError('DEPENDENCY_UNAVAILABLE');
+        stage = 'registry-issue';
         const result = await registry.issue(
           actor.context,
           {
@@ -53,6 +58,18 @@ export function createMainTicketRouter(
               : error instanceof CoordinationError
                 ? 'SERVER_BUSY'
                 : 'DEPENDENCY_UNAVAILABLE';
+        if (code === 'DEPENDENCY_UNAVAILABLE' || code === 'SERVER_BUSY') {
+          // Explicit allowlist: never serialize the error, request, auth, or ticket.
+          logger.warn(
+            {
+              requestId: res.locals.requestId,
+              code,
+              stage,
+              registry: registry.stats(),
+            },
+            'MAIN join ticket unavailable',
+          );
+        }
         if (!res.headersSent) authFailure(res, code, 'Không thể chuẩn bị tham gia cuộc gọi.');
       }
     },
