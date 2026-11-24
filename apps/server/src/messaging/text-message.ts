@@ -8,6 +8,7 @@ import { authModels } from '../auth/models.js';
 import { DatabaseDeadlineError, databaseQueryOptions } from '../lib/database.js';
 import type { createDatabase, DatabaseDeadline, RecoverCommit } from '../lib/database.js';
 import { conversationModel } from './conversation.js';
+import type { TextSendLedger, TextSendScope } from './text-send-ledger.js';
 
 export const textMessageIndexes = [
   {
@@ -94,6 +95,7 @@ export class TextCommitBusyError extends Error {}
 export function createTextMessageRepository(
   database: ReturnType<typeof createDatabase>,
   recovery?: TextCommitRecovery,
+  durable?: TextSendLedger,
 ) {
   const Message = textMessageModel(database.connection);
   const Conversation = conversationModel(database.connection);
@@ -150,6 +152,7 @@ export function createTextMessageRepository(
         text: string;
         createdAt: Date;
         fenceAuthSessionId?: string;
+        sendScope?: TextSendScope;
       },
       remaining?: DatabaseDeadline,
     ) {
@@ -166,7 +169,7 @@ export function createTextMessageRepository(
           .readConcern('majority')
           .setOptions(databaseQueryOptions(deadline))
           .lean();
-      const previous = pending.get(key);
+      const previous = durable ? undefined : pending.get(key);
       if (previous) {
         if (previous.senderId !== sender || previous.clientMessageId !== clientMessageId)
           throw new TextCommitBusyError();
@@ -181,7 +184,8 @@ export function createTextMessageRepository(
         }
         throw new DatabaseDeadlineError();
       }
-      if (recovery && pending.size >= recovery.maxPending) throw new TextCommitBusyError();
+      if (recovery && !durable && pending.size >= recovery.maxPending)
+        throw new TextCommitBusyError();
       const id = new Types.ObjectId();
       const reservation = fingerprint
         ? {
@@ -193,11 +197,28 @@ export function createTextMessageRepository(
             confirmed: false,
           }
         : undefined;
-      if (reservation) pending.set(key, reservation);
+      if (reservation && !durable) pending.set(key, reservation);
+      let intent: Awaited<ReturnType<TextSendLedger['claim']>> | undefined;
+      if (durable) {
+        if (!input.sendScope || !remaining)
+          throw new Error('Durable TEXT send requires authority and a deadline');
+        intent = await durable.claim(
+          {
+            ...input.sendScope,
+            conversationId,
+            userId: sender,
+            clientMessageId,
+          },
+          text,
+          remaining,
+        );
+      }
       const scope = { _id: conversationId, kind: 'CHANNEL', closedAt: null };
       let inserted = false;
       const write = async (session: ClientSession, queryTime: DatabaseDeadline = () => 5000) => {
         inserted = false;
+        if (durable && intent && !(await durable.consume(intent, session, queryTime)))
+          return { outcome: 'session-denied' } as const;
         const conversation = await Conversation.findOne(scope)
           .session(session)
           .setOptions(databaseQueryOptions(queryTime))
@@ -279,18 +300,25 @@ export function createTextMessageRepository(
             }
             if (reservation.confirmed && pending.get(key) === reservation) pending.delete(key);
             // An exhausted attempt stays pending for the lifetime of this process.
-          })();
+          })().finally(() => {
+            if (durable && intent) durable.release(intent);
+          });
         });
       const append = database.transaction(write, remaining, recoverCommit);
       try {
         return await append;
       } catch (error) {
-        if (
-          !inserted ||
-          !remaining ||
-          !(error instanceof mongo.MongoError) ||
-          !error.hasErrorLabel('UnknownTransactionCommitResult')
-        ) {
+        const unknownCommit =
+          error instanceof mongo.MongoError &&
+          error.hasErrorLabel('UnknownTransactionCommitResult');
+        if (!unknownCommit && durable && intent && remaining) {
+          try {
+            await durable.fence(intent, remaining);
+          } catch {
+            // A failed fence leaves the reservation protected for the next retry.
+          }
+        }
+        if (!inserted || !remaining || !unknownCommit) {
           throw error;
         }
         // Only a majority-visible row for this exact attempt proves commit.
@@ -306,6 +334,7 @@ export function createTextMessageRepository(
         }
         throw error;
       } finally {
+        if (durable && intent && !reservation?.handedOff) durable.release(intent);
         if (reservation && !reservation.handedOff && pending.get(key) === reservation) {
           pending.delete(key);
         }

@@ -21,12 +21,13 @@ import { channelModels } from '../src/workspaces/channel-models.js';
 import { workspaceModels } from '../src/workspaces/workspace-models.js';
 import { conversationModel } from '../src/messaging/conversation.js';
 import { createTextMessageRepository } from '../src/messaging/text-message.js';
+import { textSendLedgerIndex } from '../src/messaging/text-send-ledger.js';
 
 beforeAll(initializeDatabase);
 afterEach(disposeFixtures);
 afterAll(closeDatabase);
 
-it('serves authenticated MAIN and TEXT history through the shared application entry', async () => {
+async function checkApplication(sendEnabled: boolean) {
   // This fixture supplies test identities/schema only. All requests below go to
   // a separate main.ts process, not to the fixture's application services.
   const f = await setup();
@@ -37,6 +38,11 @@ it('serves authenticated MAIN and TEXT history through the shared application en
   }
   for (const { collection, key, ...options } of workspaceCreationIndexRequirements)
     await db.collection(collection).createIndex(key, options);
+  if (sendEnabled) {
+    const { collection, name, key, unique } = textSendLedgerIndex;
+    await db.createCollection(collection);
+    await db.collection(collection).createIndex(key, { name, unique });
+  }
   const reserve = createServer();
   await new Promise<void>((done) => reserve.listen(0, '127.0.0.1', done));
   const address = reserve.address();
@@ -84,6 +90,9 @@ it('serves authenticated MAIN and TEXT history through the shared application en
         revocation: { reservedInFlight: 1, cleanupBatchSize: 8, executionMs: 1000 },
         handlers: { history: handler, subscription: handler, text: handler },
       }),
+      TEXT_SEND_RECOVERY_JSON: sendEnabled
+        ? JSON.stringify({ maxPending: 2, retryDelaysMs: [2500, 500, 1000, 1500] })
+        : '',
       TURN_KEY_ID: '',
       TURN_KEY_API_TOKEN: '',
     },
@@ -148,7 +157,7 @@ it('serves authenticated MAIN and TEXT history through the shared application en
     role: 'MEMBER',
     joinedAt: new Date(),
   });
-  // Seed a committed history row in the disposable database. Main's write gate stays closed.
+  // Seed a committed history row to test both startup configurations.
   const seeded = await createTextMessageRepository(database).append({
     conversationId: conversation._id,
     senderId: workspace.body.data.ownerId,
@@ -179,7 +188,7 @@ it('serves authenticated MAIN and TEXT history through the shared application en
     { text: 'existing general message', commitSeq: 1 },
   ]);
   const send = { clientMessageId: randomUUID(), text: 'staging feature gate regression' };
-  const assertRestSendDenied = (status: number) =>
+  const postMessage = (status: number) =>
     http
       .post(messagesPath)
       .set('Origin', origin)
@@ -187,13 +196,50 @@ it('serves authenticated MAIN and TEXT history through the shared application en
       .set('X-CSRF-Token', f.host.data.csrfToken)
       .send(send)
       .expect(status);
-  await assertRestSendDenied(503);
-  expect(
-    await socket.timeout(5000).emitWithAck('message.send', {
+  const sendFromSocket = (client: typeof socket, payload: typeof send) =>
+    client.timeout(5000).emitWithAck('message.send', {
       requestId: randomUUID(),
-      payload: { channelId: general.id, ...send },
-    }),
-  ).toMatchObject({ error: { code: 'DEPENDENCY_UNAVAILABLE' } });
+      payload: { channelId: general.id, ...payload },
+    });
+  const history = [...snapshot.body.data.items];
+  if (sendEnabled) {
+    const peer = io(`http://127.0.0.1:${port}`, {
+      transports: ['websocket'],
+      extraHeaders: { Origin: origin, Cookie: member.cookie },
+      auth: { csrfToken: member.data.csrfToken },
+      reconnection: false,
+      autoConnect: false,
+    });
+    registerDisposer(async () => {
+      peer.disconnect();
+    });
+    await new Promise<void>((done, reject) => {
+      peer.once('connect', done);
+      peer.once('connect_error', reject);
+      peer.connect();
+    });
+    const peerScope = await peer.timeout(5000).emitWithAck('conversation.subscribe', {
+      requestId: randomUUID(),
+      payload: { channelId: general.id, rootMessageId: null },
+    });
+    expect(peerScope).toHaveProperty('data.subscriptionId');
+    const deliveredToPeer = new Promise<unknown>((done) => peer.once('message.created', done));
+    const sent = await postMessage(201);
+    expect(await deliveredToPeer).toMatchObject({ message: { id: sent.body.data.message.id } });
+    expect(await sendFromSocket(socket, send)).toMatchObject({
+      data: { outcome: 'existing', message: { id: sent.body.data.message.id, commitSeq: 2 } },
+    });
+    const deliveredToHost = new Promise<unknown>((done) => socket.once('message.created', done));
+    const response = await sendFromSocket(peer, { clientMessageId: randomUUID(), text: 'reply' });
+    expect(response).toMatchObject({ data: { outcome: 'created', message: { commitSeq: 3 } } });
+    expect(await deliveredToHost).toMatchObject({ message: { id: response.data.message.id } });
+    history.unshift(response.data.message, sent.body.data.message);
+  } else {
+    await postMessage(503);
+    expect(await sendFromSocket(socket, send)).toMatchObject({
+      error: { code: 'DEPENDENCY_UNAVAILABLE' },
+    });
+  }
   const joined = await socket
     .timeout(5000)
     .emitWithAck('session.join', { requestId: randomUUID(), ticket: response.body.data.ticket });
@@ -244,7 +290,13 @@ it('serves authenticated MAIN and TEXT history through the shared application en
     .expect(200);
   await vi.waitFor(() => expect(socket.connected).toBe(false));
   await http.get(messagesPath).set('Cookie', f.host.cookie).expect(401);
-  await assertRestSendDenied(401);
+  await postMessage(401);
   const survivor = await http.get(messagesPath).set('Cookie', member.cookie).expect(200);
-  expect(survivor.body.data.items).toEqual(snapshot.body.data.items);
-}, 30_000);
+  expect(survivor.body.data.items).toEqual(history);
+}
+
+it.each([false, true])(
+  'serves authenticated MAIN and TEXT through the shared app (send=%s)',
+  checkApplication,
+  30_000,
+);

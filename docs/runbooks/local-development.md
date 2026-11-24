@@ -363,6 +363,23 @@ Cùng cấu hình trial ở trên, mỗi đợt tải ghép chạy hai lượt g
 
 P2 tiếp tục mở. Runtime mặc định vẫn dùng đường hiện hành. Recovery qua restart, deadline và các scope ngoài AUTH_SESSION cần được chốt trước quyết định merge.
 
+#### Kiểm gửi TEXT với sổ theo dõi lượt gửi
+
+Mặc định, để trống `TEXT_SEND_RECOVERY_JSON` và giữ rollout đọc/đồng bộ hiện có. Bản thử bật gửi khi có đủ cấu hình session, MAIN cleanup, các budget `history`, `subscription`, `text` và index của sổ lượt gửi. Ví dụ riêng cho test là `{"maxPending":2,"retryDelaysMs":[2500,500,1000,1500]}`. `maxPending` phải nhỏ hơn pool MongoDB để chừa chỗ cho cleanup.
+
+Provision collection `textSendIntents` và unique index theo [manifest](../../apps/server/src/messaging/text-send-ledger.ts) trên DB test trước khi chạy. Entry chỉ preflight. Một slot chứa định danh lượt gửi và fingerprint. Transaction tiêu thụ slot cùng lúc cấp sequence và chèn tin. Khi khởi động lại, app khóa và dọn slot cũ trước khi nhận ghi mới. Nếu chưa xác nhận được slot cũ đã đóng, readiness của chế độ gửi không lên. Giữ mô hình một app process, dừng process cũ trước khi cho process mới nhận ghi.
+
+Trên replica set test riêng, kiểm cả đường bật/tắt qua entry thật và các trường hợp restart, thu quyền và retry:
+
+```powershell
+pnpm --filter @colearnia/contracts build
+$env:COLEARNIA_DB_TEST_PORT='27147'
+$env:COLEARNIA_TEST_TEXT_DURABLE='1'
+pnpm exec vitest run --pool=threads --config vitest.database.config.ts apps/server/test/text-send-ledger.integration.ts apps/server/test/main-entry.integration.ts tests/integration/text-chat.integration.ts
+```
+
+Trước khi triển khai cấu hình bật gửi ở staging, M1/M4 review manifest, giới hạn chờ của driver, budget dùng chung và tích hợp thu quyền. Triển khai cần Compose chuyển biến mới vào API. Kiểm hai tài khoản bằng trình duyệt trên cùng Workspace sau khi rollout.
+
 ### Đồng bộ subscribe-first TEXT (SCRUM-43)
 
 Main giữ cổng gửi TEXT tắt. Subscribe/snapshot/catch-up cần budget `handlers.history` và `handlers.subscription`, `TEXT_SYNC_LIMITS_JSON`, index sync và binding giữa `textService.syncRevocation` với cleanup LIVE trong coordinator chung. Binding được thiết lập khi MAIN khởi động. M1/M4 review các budget trước khi bật subscription trên môi trường dùng chung.

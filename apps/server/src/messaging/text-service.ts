@@ -20,6 +20,8 @@ import type { createWorkspaceAccessService } from '../workspaces/access-service.
 import { conversationModel } from './conversation.js';
 import { createTextMessageRepository, TextCommitBusyError } from './text-message.js';
 import type { TextCommitRecovery } from './text-message.js';
+import { TextSendLedgerError } from './text-send-ledger.js';
+import type { TextSendLedger } from './text-send-ledger.js';
 import type { MessagingBudget } from './budget.js';
 import {
   createTextSyncRegistry,
@@ -38,7 +40,8 @@ export function textErrorCode(error: unknown): CommonErrorCode {
   if (
     error instanceof TextError ||
     error instanceof TextSyncError ||
-    error instanceof WorkspaceAccessError
+    error instanceof WorkspaceAccessError ||
+    error instanceof TextSendLedgerError
   )
     return error.code;
   if (error instanceof z.ZodError) return 'VALIDATION_ERROR';
@@ -78,13 +81,15 @@ export function createTextService(
   syncLimits?: TextSyncLimits,
   syncReady: () => boolean = () => false,
   commitRecovery?: TextCommitRecovery,
+  sendLedger?: TextSendLedger,
 ) {
   const { Channel } = channelModels(database.connection);
   const Conversation = conversationModel(database.connection);
-  const messages = createTextMessageRepository(database, commitRecovery);
+  const messages = createTextMessageRepository(database, commitRecovery, sendLedger);
   const sendBuckets = new Map<string, { tokens: number; at: number }>();
   const active = new Set<Slot>();
   const sync = syncLimits ? createTextSyncRegistry(secret, syncLimits) : undefined;
+  const syncRevocation = sync && (sendLedger?.bindRevocation(sync.revocation) ?? sync.revocation);
   const delivering = new Set<string>();
 
   // A bucket fully refills in two seconds. Bound idle state even during a burst of distinct users.
@@ -319,7 +324,7 @@ export function createTextService(
   }
 
   return {
-    syncRevocation: sync?.revocation,
+    syncRevocation,
     stop: () => sync?.stop(),
     closeSubscriptions: (owner: string) => sync?.closeOwner(owner),
     unsubscribe: (id: string, owner: string) => sync?.unsubscribe(id, owner),
@@ -376,6 +381,7 @@ export function createTextService(
       input: { clientMessageId: string; text: string; rootMessageId?: string | undefined },
     ) {
       if (input.rootMessageId !== undefined) throw new TextError('VALIDATION_ERROR');
+      if (sendLedger && !syncReady()) throw new TextError('DEPENDENCY_UNAVAILABLE');
       const result = await run(
         'text',
         actor,
@@ -391,6 +397,15 @@ export function createTextService(
               text: input.text,
               createdAt: new Date(),
               ...(authSessionFenceTrial ? { fenceAuthSessionId: actor.authSessionId } : {}),
+              ...(sendLedger
+                ? {
+                    sendScope: {
+                      workspaceId: scope.access.workspaceId,
+                      channelId,
+                      authSessionId: actor.authSessionId,
+                    },
+                  }
+                : {}),
             },
             remaining,
           );

@@ -24,6 +24,7 @@ import {
   createChannelConversationFactory,
 } from '../src/messaging/conversation.js';
 import { createTextMessageRepository, textMessageModel } from '../src/messaging/text-message.js';
+import { createTextSendLedger, textSendLedgerIndex } from '../src/messaging/text-send-ledger.js';
 import { createTextService, textErrorCode } from '../src/messaging/text-service.js';
 import { createTextRouter, createTextSocketSend } from '../src/messaging/text-transport.js';
 import { createRealtime } from '../src/realtime/server.js';
@@ -38,6 +39,10 @@ import { testReplicaUri } from './replica-uri.js';
 
 const name = 'colearnia_test_scrum42_' + randomUUID().replaceAll('-', '');
 const database = createProfiledDatabase(testReplicaUri(name), 2);
+const trialLedger =
+  scrum42Trial && process.env.COLEARNIA_TEST_TEXT_DURABLE === '1'
+    ? createTextSendLedger(database, 1)
+    : undefined;
 const { User, AuthSession } = authModels(database.connection);
 const { Workspace, Membership } = workspaceModels(database.connection);
 const { Channel, ChannelAccessGrant } = channelModels(database.connection);
@@ -149,6 +154,18 @@ beforeAll(async () => {
   ]) {
     await model.createCollection();
     await model.createIndexes();
+  }
+  if (trialLedger) {
+    const { collection, key, name: indexName, unique } = textSendLedgerIndex;
+    await database.connection.db!.createCollection(collection);
+    await database.connection
+      .db!.collection(collection)
+      .createIndex(key, { name: indexName, unique });
+    await trialLedger.start(() => 5000);
+    revocation.bindCleanupAdapters({
+      messaging: trialService.syncRevocation!,
+      live: { revoke: async ({ operationId }) => confirmedCleanup(operationId) },
+    });
   }
   await new Promise<void>((done) => server.listen(0, '127.0.0.1', done));
 });
@@ -520,7 +537,7 @@ const recoveryTrial = process.env.COLEARNIA_TEST_TEXT_COMMIT_RECOVERY === '1';
 const recoveryOptions = recoveryTrial
   ? { maxPending: 1, retryDelaysMs: [2500, 500, 1000, 1500] }
   : undefined;
-const trialService = createTextService(
+const trialService: ReturnType<typeof createTextService> = createTextService(
   database,
   coordinator,
   access,
@@ -532,9 +549,16 @@ const trialService = createTextService(
   },
   mark,
   false,
-  undefined,
-  undefined,
+  trialLedger
+    ? { subscriptions: 16, perUser: 4, leaseMs: 60_000, revocationRecords: 16 }
+    : undefined,
+  () =>
+    Boolean(
+      trialService.syncRevocation &&
+      revocation.isMessagingCleanupBound(trialService.syncRevocation),
+    ),
   recoveryOptions,
+  trialLedger,
 );
 
 function beginTrace() {
@@ -783,6 +807,13 @@ it.runIf(trialWithFaults).each(['commitTransaction', 'abortTransaction'] as cons
       expect(await Message.countDocuments(key)).toBe(1);
       expect(await Message.countDocuments({ conversationId: conversation._id })).toBe(1);
       expect((await Conversation.findById(conversation._id).orFail()).lastMessageCommitSeq).toBe(1);
+      if (trialLedger) {
+        expect(
+          await database.connection
+            .db!.collection(textSendLedgerIndex.collection)
+            .countDocuments({ conversationId: conversation._id }),
+        ).toBe(0);
+      }
     } finally {
       tracingTransactions = false;
       sessionSpy.mockRestore();
