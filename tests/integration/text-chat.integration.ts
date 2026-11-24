@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { afterAll, afterEach, beforeAll, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, expect, it, vi } from 'vitest';
 import {
   setup,
   initializeDatabase,
@@ -21,34 +21,57 @@ beforeAll(initializeDatabase);
 afterEach(disposeFixtures);
 afterAll(closeDatabase);
 
-it('sends, retries and catches up with two registered accounts, then clears only revoked PRIVATE scope', async () => {
+async function verifyChat(scope: 'WORKSPACE' | 'PRIVATE') {
   const f = await setup({ text: true });
   const bob = await f.signUp();
-  const membership = await f.member(bob);
-  const channel = await Channel.create({
-    workspaceId: f.target.workspaceId,
-    name: 'TEXT integration',
-    type: 'TEXT',
-    accessMode: 'PRIVATE',
+  const workspace = await f.http
+    .post('/api/v1/workspaces')
+    .set('Origin', origin)
+    .set('Cookie', f.host.cookie)
+    .set('X-CSRF-Token', f.host.data.csrfToken)
+    .send({ requestId: randomUUID(), name: 'Sprint TEXT' })
+    .expect(201);
+  const workspaceId = workspace.body.data.id;
+  const membership = await Membership.create({
+    workspaceId,
+    userId: bob.auth.userId,
+    role: 'MEMBER',
+    joinedAt: new Date(),
   });
-  const conversation = await Conversation.create({
-    workspaceId: f.target.workspaceId,
-    kind: 'CHANNEL',
-    scope: { channelId: channel.id },
-  });
-  const hostMembership = await Membership.findOne({
-    workspaceId: f.target.workspaceId,
-    userId: f.host.auth.userId,
-  }).orFail();
-  for (const member of [membership, hostMembership])
-    await ChannelAccessGrant.create({
-      workspaceId: f.target.workspaceId,
-      channelId: channel.id,
-      membershipId: member.id,
-      membershipIncarnation: member.incarnation,
-      grantedByUserId: f.host.auth.userId,
-      grantedAt: new Date(),
-    });
+  const channel =
+    scope === 'WORKSPACE'
+      ? await Channel.findOne({ workspaceId, name: 'general', type: 'TEXT' }).orFail()
+      : await Channel.create({
+          workspaceId,
+          name: 'TEXT integration',
+          type: 'TEXT',
+          accessMode: scope,
+        });
+  const conversationScope = { workspaceId, kind: 'CHANNEL', 'scope.channelId': channel.id };
+  const conversation =
+    scope === 'WORKSPACE'
+      ? await Conversation.findOne(conversationScope).orFail()
+      : await Conversation.create({
+          workspaceId,
+          kind: 'CHANNEL',
+          scope: { channelId: channel.id },
+        });
+  if (scope === 'PRIVATE') {
+    const hostMembership = await Membership.findOne({
+      workspaceId,
+      userId: f.host.auth.userId,
+    }).orFail();
+    for (const member of [membership, hostMembership]) {
+      await ChannelAccessGrant.create({
+        workspaceId,
+        channelId: channel.id,
+        membershipId: member.id,
+        membershipIncarnation: member.incarnation,
+        grantedByUserId: f.host.auth.userId,
+        grantedAt: new Date(),
+      });
+    }
+  }
   const a = await f.connect(f.host);
   const b = await f.connect(bob);
   const api = (socket: typeof a, account: typeof bob, loseAck = false) => {
@@ -79,12 +102,13 @@ it('sends, retries and catches up with two registered accounts, then clears only
   const aliceApi = api(a, f.host);
   const bobApi = api(b, bob);
   const limits = {
-    pageSize: 30,
+    // Two concurrent snapshots must fit the fixture's shared history byte budget.
+    pageSize: 10,
     events: 32,
     messages: 100,
     bytes: 1_000_000,
     pages: 20,
-    reconcileMs: 1000,
+    reconcileMs: 60_000, // Assert live delivery before the periodic reconciliation runs.
     roundMs: 5000,
   };
   const alice = createTextSynchronizer(aliceApi.sync, channel.id, limits, () => {});
@@ -156,17 +180,21 @@ it('sends, retries and catches up with two registered accounts, then clears only
     } finally {
       archive.stop();
     }
-    // The isolated DB fixture withdraws the grant under the shared Workspace/User gate.
+    // The isolated DB fixture withdraws access under the shared Workspace/User gate.
     // The normal history/subscription ACL then denies this scope at reconciliation.
-    await f.coordinator.run(
-      { userId: bob.auth.userId, workspaceId: f.target.workspaceId },
-      async () => {
+    await f.coordinator.run({ userId: bob.auth.userId, workspaceId }, async () => {
+      if (scope === 'WORKSPACE') {
+        await Membership.updateOne(
+          { _id: membership.id },
+          { $set: { status: 'REMOVED', removedAt: new Date() }, $inc: { revision: 1 } },
+        );
+      } else {
         await ChannelAccessGrant.updateOne(
           { channelId: channel.id, membershipId: membership.id },
           { $set: { revokedAt: new Date() } },
         );
-      },
-    );
+      }
+    });
     await reader.reconcile();
     expect(reader.snapshot()).toMatchObject({
       phase: 'revoked',
@@ -179,9 +207,17 @@ it('sends, retries and catches up with two registered accounts, then clears only
     ).rejects.toMatchObject({ code: 'NOT_FOUND' });
     await alice.reconcile();
     expect(alice.snapshot().messages).toHaveLength(3);
-    expect(await Message.countDocuments({ conversationId: conversation.id })).toBe(3);
+    const afterRevocation = vi.fn();
+    b.on('message.created', afterRevocation);
+    const last = await aliceApi.send(
+      { clientMessageId: randomUUID(), text: 'Chỉ thành viên còn quyền' },
+      signal,
+    );
+    await expect.poll(() => alice.snapshot().messages.at(-1)?.id).toBe(last.id);
+    expect(afterRevocation).not.toHaveBeenCalled();
+    expect(await Message.countDocuments({ conversationId: conversation.id })).toBe(4);
     console.info(
-      'PASS SCRUM-47: real registration/session, signed REST send/retry, Socket.IO delivery, offline catch-up, PRIVATE cache withdrawal; 3 persisted messages.',
+      `PASS SCRUM-47 fixture (${scope}): REST send/retry, Socket.IO delivery, catch-up, history and access withdrawal; 4 persisted messages.`,
     );
   } finally {
     alice.stop();
@@ -189,7 +225,12 @@ it('sends, retries and catches up with two registered accounts, then clears only
     a.disconnect();
     b.disconnect();
   }
-});
+}
+
+it.each(['WORKSPACE', 'PRIVATE'] as const)(
+  'sends, retries, reloads history and withdraws access for two registered accounts (%s)',
+  verifyChat,
+);
 
 // Optional local browser walkthrough. Owns only the randomized test database above.
 // Start Vite with PORT set to the printed server port and use its normal auth/workspace routes.

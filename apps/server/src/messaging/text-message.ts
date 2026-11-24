@@ -1,4 +1,4 @@
-import { Schema, Types } from 'mongoose';
+import { mongo, Schema, Types } from 'mongoose';
 import type { Connection } from 'mongoose';
 import { textHistoryMaxLimit, textMessageSendBodySchema } from '@colearnia/contracts';
 import type { IndexRequirement } from '../lib/database-preflight.js';
@@ -137,7 +137,9 @@ export function createTextMessageRepository(database: ReturnType<typeof createDa
       });
       const id = new Types.ObjectId();
       const scope = { _id: conversationId, kind: 'CHANNEL', closedAt: null };
-      return database.transaction(async (session, queryTime = () => 5000) => {
+      let inserted = false;
+      const append = database.transaction(async (session, queryTime = () => 5000) => {
+        inserted = false;
         const conversation = await Conversation.findOne(scope)
           .session(session)
           .setOptions(databaseQueryOptions(queryTime))
@@ -196,8 +198,38 @@ export function createTextMessageRepository(database: ReturnType<typeof createDa
         await message.validate();
         const row = message.toObject();
         await Message.collection.insertOne(row, { session, ...databaseQueryOptions(queryTime) });
+        inserted = true;
         return { outcome: 'created', message: row } as const;
       }, remaining);
+      try {
+        return await append;
+      } catch (error) {
+        if (
+          !inserted ||
+          !remaining ||
+          !(error instanceof mongo.MongoError) ||
+          !error.hasErrorLabel('UnknownTransactionCommitResult')
+        ) {
+          throw error;
+        }
+        // Only a majority-visible row for this exact attempt proves commit.
+        // Absence, another timeout or a failed probe leave the original result unknown.
+        try {
+          const message = await Message.findOne({
+            _id: id,
+            conversationId,
+            senderId,
+            clientMessageId,
+          })
+            .readConcern('majority')
+            .setOptions(databaseQueryOptions(remaining))
+            .lean();
+          if (message) return { outcome: 'created', message } as const;
+        } catch {
+          // Preserve the original commit error when the proof is unavailable.
+        }
+        throw error;
+      }
     },
     async listRoots(
       conversationId: Types.ObjectId,
