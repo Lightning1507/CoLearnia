@@ -18,7 +18,8 @@ import { channelModels } from '../workspaces/channel-models.js';
 import { WorkspaceAccessError } from '../workspaces/access-service.js';
 import type { createWorkspaceAccessService } from '../workspaces/access-service.js';
 import { conversationModel } from './conversation.js';
-import { createTextMessageRepository } from './text-message.js';
+import { createTextMessageRepository, TextCommitBusyError } from './text-message.js';
+import type { TextCommitRecovery } from './text-message.js';
 import type { MessagingBudget } from './budget.js';
 import {
   createTextSyncRegistry,
@@ -41,6 +42,7 @@ export function textErrorCode(error: unknown): CommonErrorCode {
   )
     return error.code;
   if (error instanceof z.ZodError) return 'VALIDATION_ERROR';
+  if (error instanceof TextCommitBusyError) return 'SERVER_BUSY';
   if (error instanceof CoordinationError && error.code !== 'INVALID_CONTEXT') return 'SERVER_BUSY';
   if (
     isDatabaseUnavailableError(error) ||
@@ -75,10 +77,11 @@ export function createTextService(
   authSessionFenceTrial = false,
   syncLimits?: TextSyncLimits,
   syncReady: () => boolean = () => false,
+  commitRecovery?: TextCommitRecovery,
 ) {
   const { Channel } = channelModels(database.connection);
   const Conversation = conversationModel(database.connection);
-  const messages = createTextMessageRepository(database);
+  const messages = createTextMessageRepository(database, commitRecovery);
   const sendBuckets = new Map<string, { tokens: number; at: number }>();
   const active = new Set<Slot>();
   const sync = syncLimits ? createTextSyncRegistry(secret, syncLimits) : undefined;

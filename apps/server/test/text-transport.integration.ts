@@ -516,6 +516,10 @@ it.each([true, false])(
 );
 
 const trialWithFaults = scrum42Trial && process.env.COLEARNIA_TEST_DB_FAILPOINTS === '1';
+const recoveryTrial = process.env.COLEARNIA_TEST_TEXT_COMMIT_RECOVERY === '1';
+const recoveryOptions = recoveryTrial
+  ? { maxPending: 1, retryDelaysMs: [2500, 500, 1000, 1500] }
+  : undefined;
 const trialService = createTextService(
   database,
   coordinator,
@@ -527,6 +531,10 @@ const trialService = createTextService(
     handlers: { text: { ...handler, executionMs: 650, processInFlight: 1 } },
   },
   mark,
+  false,
+  undefined,
+  undefined,
+  recoveryOptions,
 );
 
 function beginTrace() {
@@ -542,6 +550,76 @@ function beginTrace() {
     );
   };
 }
+
+it('keeps one write admission pending until the original commit is acknowledged', async () => {
+  const { owner, conversation } = await textChannel();
+  const other = await textChannel();
+  const repo = createTextMessageRepository(database, { maxPending: 1, retryDelaysMs: [0] });
+  const actor = identity(owner);
+  const input = {
+    conversationId: conversation._id,
+    senderId: owner.user._id,
+    fenceAuthSessionId: actor.authSessionId,
+    clientMessageId: randomUUID(),
+    text: 'Pending send',
+    createdAt: new Date(),
+  };
+  // Hold an application-level retry while using Mongo for the original insert
+  // and commit, so race checks do not depend on the timing of a server failpoint.
+  let release!: () => void;
+  const mayRetry = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let startRetry!: () => void;
+  const retryStarted = new Promise<void>((resolve) => {
+    startRetry = resolve;
+  });
+  let firstCommit = true;
+  const originalSession = new WeakSet<mongo.ClientSession>();
+  const commit = mongo.ClientSession.prototype.commitTransaction;
+  const spy = vi
+    .spyOn(mongo.ClientSession.prototype, 'commitTransaction')
+    .mockImplementation(async function (this: mongo.ClientSession) {
+      if (firstCommit) {
+        firstCommit = false;
+        originalSession.add(this);
+        throw new mongo.MongoNetworkError('No commit acknowledgement');
+      }
+      if (originalSession.has(this)) {
+        startRetry();
+        await mayRetry;
+      }
+      await commit.call(this);
+    });
+  const send = (payload = input) => repo.append(payload, () => 1000);
+  try {
+    expect(textErrorCode(await send().catch((error: unknown) => error))).toBe(
+      'DEPENDENCY_UNAVAILABLE',
+    );
+    await retryStarted;
+    expect(textErrorCode(await send().catch((error: unknown) => error))).toBe(
+      'DEPENDENCY_UNAVAILABLE',
+    );
+    await expect(send({ ...input, text: 'Changed payload' })).resolves.toEqual({
+      outcome: 'conflict',
+    });
+    for (const conversationId of [conversation._id, other.conversation._id]) {
+      const failure = await send({ ...input, conversationId, clientMessageId: randomUUID() }).catch(
+        (error: unknown) => error,
+      );
+      expect(textErrorCode(failure)).toBe('SERVER_BUSY');
+    }
+    expect(await Message.countDocuments({ conversationId: conversation._id })).toBe(0);
+    release();
+    await vi.waitFor(async () => {
+      expect(await send()).toMatchObject({ outcome: 'existing', message: { commitSeq: 1 } });
+    });
+    expect(await Message.countDocuments({ conversationId: conversation._id })).toBe(1);
+  } finally {
+    release();
+    spy.mockRestore();
+  }
+});
 
 type MongoErrorEvidence = {
   name: string;
@@ -683,6 +761,21 @@ it.runIf(trialWithFaults).each(['commitTransaction', 'abortTransaction'] as cons
       console.info('SCRUM42_TRANSACTIONS %s %s', phase, JSON.stringify(transactionTrace));
       tracingTransactions = false;
       expect(reply).toBeDefined();
+      if (recoveryTrial && phase === 'commitTransaction') {
+        const commits = transactionTrace.flatMap((event) =>
+          'commandName' in event &&
+          event.commandName === 'commitTransaction' &&
+          'lsid' in event &&
+          'txnNumber' in event &&
+          typeof event.lsid === 'string'
+            ? [{ lsid: event.lsid, txnNumber: event.txnNumber }]
+            : [],
+        );
+        const writeCommit = commits[1];
+        expect(writeCommit).toBeDefined();
+        expect(commits.slice(2)).toEqual(expect.arrayContaining([writeCommit]));
+        expect(reply?.outcome).toBe('existing');
+      }
       expect(await trialService.send(identity(owner), channel.id, payload)).toEqual({
         outcome: 'existing',
         message: reply?.message,
@@ -1049,6 +1142,9 @@ function fencedSessionTrial(cleanupTimeoutMs = 500) {
     },
     mark,
     true,
+    undefined,
+    undefined,
+    recoveryOptions,
   );
   return { control, closed, revoke, send };
 }
