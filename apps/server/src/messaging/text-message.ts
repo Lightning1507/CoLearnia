@@ -1,11 +1,14 @@
+import { createHash } from 'node:crypto';
 import { mongo, Schema, Types } from 'mongoose';
-import type { Connection } from 'mongoose';
+import { setTimeout as wait } from 'node:timers/promises';
+import type { ClientSession, Connection } from 'mongoose';
 import { textHistoryMaxLimit, textMessageSendBodySchema } from '@colearnia/contracts';
 import type { IndexRequirement } from '../lib/database-preflight.js';
 import { authModels } from '../auth/models.js';
-import { databaseQueryOptions } from '../lib/database.js';
-import type { createDatabase, DatabaseDeadline } from '../lib/database.js';
+import { DatabaseDeadlineError, databaseQueryOptions } from '../lib/database.js';
+import type { createDatabase, DatabaseDeadline, RecoverCommit } from '../lib/database.js';
 import { conversationModel } from './conversation.js';
+import type { TextSendLedger, TextSendScope } from './text-send-ledger.js';
 
 export const textMessageIndexes = [
   {
@@ -81,11 +84,33 @@ export type TextRootCursor = {
   id: Types.ObjectId;
 };
 
+export type TextCommitRecovery = {
+  maxPending: number;
+  retryDelaysMs: readonly number[];
+};
+
+export class TextCommitBusyError extends Error {}
+
 // Transport code must authorize the actor and resolve the open TEXT conversation first.
-export function createTextMessageRepository(database: ReturnType<typeof createDatabase>) {
+export function createTextMessageRepository(
+  database: ReturnType<typeof createDatabase>,
+  recovery?: TextCommitRecovery,
+  durable?: TextSendLedger,
+) {
   const Message = textMessageModel(database.connection);
   const Conversation = conversationModel(database.connection);
   const { AuthSession } = authModels(database.connection);
+  const pending = new Map<
+    string,
+    {
+      messageId: Types.ObjectId;
+      senderId: string;
+      clientMessageId: string;
+      fingerprint: string;
+      handedOff: boolean;
+      confirmed: boolean;
+    }
+  >();
 
   return {
     async highWater(conversationId: Types.ObjectId, remaining: DatabaseDeadline) {
@@ -127,6 +152,7 @@ export function createTextMessageRepository(database: ReturnType<typeof createDa
         text: string;
         createdAt: Date;
         fenceAuthSessionId?: string;
+        sendScope?: TextSendScope;
       },
       remaining?: DatabaseDeadline,
     ) {
@@ -135,11 +161,64 @@ export function createTextMessageRepository(database: ReturnType<typeof createDa
         clientMessageId: input.clientMessageId,
         text: input.text,
       });
+      const key = conversationId.toString();
+      const sender = senderId.toString();
+      const fingerprint = recovery && createHash('sha256').update(text).digest('hex');
+      const findReceipt = (receiptId: Types.ObjectId, deadline: DatabaseDeadline) =>
+        Message.findOne({ _id: receiptId, conversationId, senderId, clientMessageId })
+          .readConcern('majority')
+          .setOptions(databaseQueryOptions(deadline))
+          .lean();
+      const previous = durable ? undefined : pending.get(key);
+      if (previous) {
+        if (previous.senderId !== sender || previous.clientMessageId !== clientMessageId)
+          throw new TextCommitBusyError();
+        if (previous.fingerprint !== fingerprint) return { outcome: 'conflict' } as const;
+        if (previous.handedOff && remaining) {
+          const message = await findReceipt(previous.messageId, remaining);
+          if (message) {
+            previous.confirmed = true;
+            if (pending.get(key) === previous) pending.delete(key);
+            return { outcome: 'existing', message } as const;
+          }
+        }
+        throw new DatabaseDeadlineError();
+      }
+      if (recovery && !durable && pending.size >= recovery.maxPending)
+        throw new TextCommitBusyError();
       const id = new Types.ObjectId();
+      const reservation = fingerprint
+        ? {
+            messageId: id,
+            senderId: sender,
+            clientMessageId,
+            fingerprint,
+            handedOff: false,
+            confirmed: false,
+          }
+        : undefined;
+      if (reservation && !durable) pending.set(key, reservation);
+      let intent: Awaited<ReturnType<TextSendLedger['claim']>> | undefined;
+      if (durable) {
+        if (!input.sendScope || !remaining)
+          throw new Error('Durable TEXT send requires authority and a deadline');
+        intent = await durable.claim(
+          {
+            ...input.sendScope,
+            conversationId,
+            userId: sender,
+            clientMessageId,
+          },
+          text,
+          remaining,
+        );
+      }
       const scope = { _id: conversationId, kind: 'CHANNEL', closedAt: null };
       let inserted = false;
-      const append = database.transaction(async (session, queryTime = () => 5000) => {
+      const write = async (session: ClientSession, queryTime: DatabaseDeadline = () => 5000) => {
         inserted = false;
+        if (durable && intent && !(await durable.consume(intent, session, queryTime)))
+          return { outcome: 'session-denied' } as const;
         const conversation = await Conversation.findOne(scope)
           .session(session)
           .setOptions(databaseQueryOptions(queryTime))
@@ -200,35 +279,65 @@ export function createTextMessageRepository(database: ReturnType<typeof createDa
         await Message.collection.insertOne(row, { session, ...databaseQueryOptions(queryTime) });
         inserted = true;
         return { outcome: 'created', message: row } as const;
-      }, remaining);
+      };
+      const recoverCommit: RecoverCommit | undefined =
+        recovery &&
+        reservation &&
+        ((commitAgain, signal) => {
+          if (!inserted) return;
+          reservation.handedOff = true;
+          return (async () => {
+            for (const delay of recovery.retryDelaysMs) {
+              if (reservation.confirmed || signal.aborted) break;
+              await wait(delay, undefined, { signal, ref: false });
+              if (reservation.confirmed || signal.aborted) break;
+              try {
+                await commitAgain();
+                reservation.confirmed = true;
+              } catch {
+                // A command error does not prove rollback. Use only the same session.
+              }
+            }
+            if (reservation.confirmed && pending.get(key) === reservation) pending.delete(key);
+            // An exhausted attempt stays pending for the lifetime of this process.
+          })().finally(() => {
+            if (durable && intent) durable.release(intent);
+          });
+        });
+      const append = database.transaction(write, remaining, recoverCommit);
       try {
         return await append;
       } catch (error) {
-        if (
-          !inserted ||
-          !remaining ||
-          !(error instanceof mongo.MongoError) ||
-          !error.hasErrorLabel('UnknownTransactionCommitResult')
-        ) {
+        const unknownCommit =
+          error instanceof mongo.MongoError &&
+          error.hasErrorLabel('UnknownTransactionCommitResult');
+        if (!unknownCommit && durable && intent && remaining) {
+          try {
+            await durable.fence(intent, remaining);
+          } catch {
+            // A failed fence leaves the reservation protected for the next retry.
+          }
+        }
+        if (!inserted || !remaining || !unknownCommit) {
           throw error;
         }
         // Only a majority-visible row for this exact attempt proves commit.
         // Absence, another timeout or a failed probe leave the original result unknown.
         try {
-          const message = await Message.findOne({
-            _id: id,
-            conversationId,
-            senderId,
-            clientMessageId,
-          })
-            .readConcern('majority')
-            .setOptions(databaseQueryOptions(remaining))
-            .lean();
-          if (message) return { outcome: 'created', message } as const;
+          const message = await findReceipt(id, remaining);
+          if (message) {
+            if (reservation) reservation.confirmed = true;
+            return { outcome: 'created', message } as const;
+          }
         } catch {
           // Preserve the original commit error when the proof is unavailable.
         }
         throw error;
+      } finally {
+        if (durable && intent && !reservation?.handedOff) durable.release(intent);
+        if (reservation && !reservation.handedOff && pending.get(key) === reservation) {
+          pending.delete(key);
+        }
       }
     },
     async listRoots(

@@ -20,6 +20,7 @@ import {
   createTextSocketSync,
 } from './messaging/text-transport.js';
 import { textMessageIndexes, textSyncIndexes } from './messaging/text-message.js';
+import { createTextSendLedger } from './messaging/text-send-ledger.js';
 import { createChannelConversationFactory } from './messaging/conversation.js';
 import {
   createWorkspaceCreator,
@@ -48,12 +49,15 @@ const database = createDatabase(config.MONGO_URI, {
   waitQueueTimeoutMS: config.MONGO_WAIT_QUEUE_TIMEOUT_MS,
   socketTimeoutMS: config.MONGO_SOCKET_TIMEOUT_MS,
 });
+const sendRecovery = config.TEXT_SEND_RECOVERY_JSON;
+const sendLedger = sendRecovery && createTextSendLedger(database, sendRecovery.maxPending);
 let media: Awaited<ReturnType<typeof createMediaRuntime>> | undefined;
 let stopping = false;
 let authIndexesReady = false;
 let workspaceIndexesReady = false;
 let textIndexesReady = false;
 let textSyncIndexesReady = false;
+let textSendReady = !sendLedger;
 let acceptingLiveRuntime = false;
 let mainRuntime: ReturnType<typeof createMainRuntime> | undefined;
 const mediaRouter = Router();
@@ -92,6 +96,7 @@ const status = (): SystemStatus => ({
   ready:
     !stopping &&
     sessionBootstrap.isReady() &&
+    textSendReady &&
     database.isConnected() &&
     Boolean(media?.isReady()) &&
     (!config.SESSION_SECRET ||
@@ -115,6 +120,7 @@ const sessionRevocation = createSessionRevocation(
   canUseAuthIndexes,
   accessRevocations,
   connections.close,
+  Boolean(sendLedger),
 );
 const httpAuth = config.SESSION_SECRET
   ? createHttpAuth(config.APP_ORIGIN, config.SESSION_SECRET, readSession)
@@ -140,16 +146,16 @@ const workspaceAccess = createWorkspaceAccessService(
   accessRevocations.barrier,
   config.SESSION_SECRET,
 );
-// This rollout serves history only. Send remains in isolated integration fixtures
-// until unresolved commits and revoke/recovery have passed M1/M4 review.
+// With no explicit recovery settings the default rollout serves history only.
 const messagingBudget = config.MESSAGING_BUDGET_JSON;
-const historyBudget = messagingBudget && {
+const textBudget = messagingBudget && {
   ...messagingBudget,
   handlers: {
     ...(messagingBudget.handlers.history && { history: messagingBudget.handlers.history }),
     ...(messagingBudget.handlers.subscription && {
       subscription: messagingBudget.handlers.subscription,
     }),
+    ...(sendLedger && messagingBudget.handlers.text && { text: messagingBudget.handlers.text }),
   },
 };
 const textService: ReturnType<typeof createTextService> | undefined = config.SESSION_SECRET
@@ -159,9 +165,9 @@ const textService: ReturnType<typeof createTextService> | undefined = config.SES
       workspaceAccess,
       () => canUseAuthIndexes() && workspaceIndexesReady && textIndexesReady,
       config.SESSION_SECRET,
-      historyBudget,
+      textBudget,
       undefined,
-      false,
+      Boolean(sendLedger),
       config.TEXT_SYNC_LIMITS_JSON,
       () =>
         Boolean(
@@ -169,6 +175,8 @@ const textService: ReturnType<typeof createTextService> | undefined = config.SES
           textService?.syncRevocation &&
           accessRevocations.isMessagingCleanupBound(textService.syncRevocation),
         ),
+      sendRecovery,
+      sendLedger,
     )
   : undefined;
 const textRouter = httpAuth && textService ? createTextRouter(httpAuth, textService) : undefined;
@@ -261,6 +269,26 @@ async function start() {
       }
     } catch {
       logger.warn('Could not check TEXT indexes; messaging remains unavailable.');
+    }
+  }
+
+  if (
+    sendLedger &&
+    authIndexesReady &&
+    workspaceIndexesReady &&
+    textIndexesReady &&
+    textSyncIndexesReady
+  ) {
+    const deadline = performance.now() + 30_000;
+    try {
+      await sendLedger.start(() => {
+        const ms = Math.floor(deadline - performance.now());
+        if (ms < 1 || stopping) throw new Error('TEXT ledger startup exceeded its deadline');
+        return ms;
+      });
+      textSendReady = true;
+    } catch {
+      logger.warn('TEXT send ledger is unavailable; write admission and readiness remain closed.');
     }
   }
 

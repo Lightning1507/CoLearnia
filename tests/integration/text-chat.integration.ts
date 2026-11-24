@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 import { afterAll, afterEach, beforeAll, expect, it, vi } from 'vitest';
 import {
   setup,
+  database,
   initializeDatabase,
   disposeFixtures,
   closeDatabase,
@@ -16,13 +17,27 @@ import {
 } from '../../apps/server/test/main-auth-media-harness.js';
 import { createTextApi } from '../../apps/web/src/features/text/text-api.js';
 import { createTextSynchronizer } from '../../apps/web/src/features/text/text-sync.js';
+import {
+  createTextSendLedger,
+  textSendLedgerIndex,
+} from '../../apps/server/src/messaging/text-send-ledger.js';
 
-beforeAll(initializeDatabase);
+const durableText = process.env.COLEARNIA_TEST_TEXT_DURABLE === '1';
+beforeAll(async () => {
+  await initializeDatabase();
+  if (durableText) {
+    const { collection, key, name, unique } = textSendLedgerIndex;
+    await database.connection.db!.createCollection(collection);
+    await database.connection.db!.collection(collection).createIndex(key, { name, unique });
+  }
+});
 afterEach(disposeFixtures);
 afterAll(closeDatabase);
 
 async function verifyChat(scope: 'WORKSPACE' | 'PRIVATE') {
-  const f = await setup({ text: true });
+  const ledger = durableText ? createTextSendLedger(database, 4) : undefined;
+  await ledger?.start(() => 5000);
+  const f = await setup({ text: true, ...(ledger ? { textSendLedger: ledger } : {}) });
   const bob = await f.signUp();
   const workspace = await f.http
     .post('/api/v1/workspaces')

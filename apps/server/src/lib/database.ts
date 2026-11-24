@@ -53,6 +53,10 @@ async function commitTransaction(session: ClientSession): Promise<void> {
 
 export class DatabaseDeadlineError extends Error {}
 export type DatabaseDeadline = () => number;
+export type RecoverCommit = (
+  commitAgain: () => Promise<void>,
+  signal: AbortSignal,
+) => Promise<void> | undefined;
 
 export function databaseQueryOptions(remaining: DatabaseDeadline) {
   const maxTimeMS = remaining();
@@ -116,6 +120,8 @@ export function createDatabase(uri: string, options: DatabaseOptions = defaultDa
   });
   const connection = instance.createConnection();
   let activeTransactions = 0;
+  const recovering = new Set<Promise<void>>();
+  const closing = new AbortController();
 
   return {
     connection,
@@ -163,11 +169,13 @@ export function createDatabase(uri: string, options: DatabaseOptions = defaultDa
     async transaction<T>(
       work: (session: ClientSession, beforeQuery?: DatabaseDeadline) => Promise<T>,
       remaining?: DatabaseDeadline,
+      recoverCommit?: RecoverCommit,
     ): Promise<T> {
       if (connection.readyState !== 1) throw new Error('Database is not connected');
       // No hidden transaction queue. Workspace/User coordination remains caller-owned.
       if (activeTransactions >= limits.maxPoolSize) throw new DatabaseBusyError();
       activeTransactions += 1;
+      let transferred = false;
       try {
         const session = await connection.startSession();
         try {
@@ -200,6 +208,28 @@ export function createDatabase(uri: string, options: DatabaseOptions = defaultDa
                   await session.commitTransaction();
                 } catch (error) {
                   markAmbiguousCommit(error);
+                  const recovery = hasLabel(error, 'UnknownTransactionCommitResult')
+                    ? recoverCommit?.(() => session.commitTransaction(), closing.signal)
+                    : undefined;
+                  if (recovery) {
+                    // Keep this exact driver session and pool admission until recovery
+                    // returns. No request replay is allowed to re-run its write callback.
+                    const task = recovery
+                      .catch(() => {})
+                      .finally(async () => {
+                        try {
+                          await session.endSession();
+                        } finally {
+                          activeTransactions -= 1;
+                        }
+                      })
+                      .catch(() => {})
+                      .finally(() => {
+                        recovering.delete(task);
+                      });
+                    recovering.add(task);
+                    transferred = true;
+                  }
                   throw error;
                 }
               } else {
@@ -224,14 +254,19 @@ export function createDatabase(uri: string, options: DatabaseOptions = defaultDa
           }
         } finally {
           // The driver aborts any active transaction when ending the session.
-          await session.endSession();
+          if (!transferred) await session.endSession();
         }
       } finally {
-        activeTransactions -= 1;
+        if (!transferred) activeTransactions -= 1;
       }
     },
     async close() {
-      await connection.close();
+      closing.abort();
+      try {
+        await connection.close();
+      } finally {
+        await Promise.allSettled(recovering);
+      }
     },
   };
 }

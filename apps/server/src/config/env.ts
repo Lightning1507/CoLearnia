@@ -43,6 +43,23 @@ const envSchema = z
           return z.NEVER;
         }
       }),
+    TEXT_SEND_RECOVERY_JSON: z
+      .string()
+      .optional()
+      .transform((value, ctx) => {
+        if (!value) return undefined;
+        try {
+          return z
+            .strictObject({
+              maxPending: z.number().int().positive(),
+              retryDelaysMs: z.array(z.number().int().positive().max(60_000)).min(1).max(8),
+            })
+            .parse(JSON.parse(value));
+        } catch {
+          ctx.addIssue({ code: 'custom', message: 'Invalid TEXT send recovery JSON' });
+          return z.NEVER;
+        }
+      }),
     SESSION_SECRET: z.preprocess(
       (value) =>
         value === '' || value === 'replace-with-at-least-32-random-characters' ? undefined : value,
@@ -68,6 +85,25 @@ const envSchema = z
     TURN_KEY_API_TOKEN: z.string().trim().optional(),
   })
   .superRefine((config, context) => {
+    if (config.TEXT_SEND_RECOVERY_JSON) {
+      const handlers = config.MESSAGING_BUDGET_JSON?.handlers;
+      if (
+        !config.SESSION_SECRET ||
+        !config.MEDIA_ENABLED ||
+        !config.TEXT_SYNC_LIMITS_JSON ||
+        !handlers?.text ||
+        !handlers.history ||
+        !handlers.subscription ||
+        config.TEXT_SEND_RECOVERY_JSON.maxPending >= config.MONGO_MAX_POOL_SIZE
+      ) {
+        context.addIssue({
+          code: 'custom',
+          path: ['TEXT_SEND_RECOVERY_JSON'],
+          message:
+            'TEXT send recovery requires auth, MAIN cleanup, all TEXT budgets and a reserved DB slot',
+        });
+      }
+    }
     if (!config.MEDIA_LOCAL_DIRECT) return;
     const loopback = new Set(['127.0.0.1', '::1', '[::1]', 'localhost']);
     if (

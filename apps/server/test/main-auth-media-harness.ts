@@ -11,6 +11,7 @@ import { Router } from 'express';
 import { conversationModel } from '../src/messaging/conversation.js';
 import { textMessageModel } from '../src/messaging/text-message.js';
 import { createTextService } from '../src/messaging/text-service.js';
+import type { TextSendLedger } from '../src/messaging/text-send-ledger.js';
 import {
   createTextRouter,
   createTextSocketSend,
@@ -139,7 +140,13 @@ async function isolatedDomainCleanup(value: SessionCleanupRequest): Promise<Sess
 }
 
 export async function setup(
-  options: { productionRuntime?: boolean; text?: boolean; origin?: string; port?: number } = {},
+  options: {
+    productionRuntime?: boolean;
+    text?: boolean;
+    textSendLedger?: TextSendLedger;
+    origin?: string;
+    port?: number;
+  } = {},
 ) {
   const config = { ...baseConfig, APP_ORIGIN: options.origin ?? baseConfig.APP_ORIGIN };
   const origin = config.APP_ORIGIN;
@@ -215,6 +222,8 @@ export async function setup(
             textService?.syncRevocation &&
             revocations.isMessagingCleanupBound(textService.syncRevocation),
           ),
+        undefined,
+        options.textSendLedger,
       )
     : undefined;
   const server = createServer(
