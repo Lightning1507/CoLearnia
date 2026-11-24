@@ -469,34 +469,51 @@ it.runIf(!scrum42Trial && process.env.COLEARNIA_TEST_DB_FAILPOINTS === '1')(
   },
 );
 
-it('reconciles a write when commit succeeded but the application lost the acknowledgement', async () => {
-  const { owner, channel, conversation } = await textChannel();
-  const payload = { clientMessageId: randomUUID(), text: 'lost acknowledgement' };
-  const original = mongo.ClientSession.prototype.commitTransaction;
-  let commits = 0;
-  const spy = vi
-    .spyOn(mongo.ClientSession.prototype, 'commitTransaction')
-    .mockImplementation(async function (this: mongo.ClientSession, ...args) {
-      await original.apply(this, args);
-      if (++commits === 2)
+it.each([true, false])(
+  'uses majority proof for an unknown message commit (committed=%s)',
+  async (committed) => {
+    const { owner, channel, conversation } = await textChannel();
+    const payload = { clientMessageId: randomUUID(), text: 'lost acknowledgement' };
+    const original = mongo.ClientSession.prototype.commitTransaction;
+    let commits = 0;
+    const spy = vi
+      .spyOn(mongo.ClientSession.prototype, 'commitTransaction')
+      .mockImplementation(async function (this: mongo.ClientSession, ...args) {
+        if (++commits !== 2) return original.apply(this, args);
+        if (!committed) throw new mongo.MongoNetworkError('fixture no commit acknowledgement');
+        await original.apply(this, args);
         throw new mongo.MongoWriteConcernError({
           ok: 1,
           writeConcernError: { code: 64, errmsg: 'fixture lost ACK' },
         });
+      });
+    try {
+      if (committed) {
+        await expect(service.send(identity(owner), channel.id, payload)).resolves.toMatchObject({
+          outcome: 'created',
+          message: { commitSeq: 1 },
+        });
+      } else {
+        const failure = await service
+          .send(identity(owner), channel.id, payload)
+          .catch((error: unknown) => error);
+        expect(textErrorCode(failure)).toBe('DEPENDENCY_UNAVAILABLE');
+        expect(await Message.countDocuments({ conversationId: conversation._id })).toBe(0);
+      }
+    } finally {
+      spy.mockRestore();
+    }
+    const replay = await service.send(identity(owner), channel.id, payload);
+    expect(replay).toMatchObject({
+      outcome: committed ? 'existing' : 'created',
+      message: { commitSeq: 1 },
     });
-  try {
-    const failure = await service.send(identity(owner), channel.id, payload).then(
-      () => undefined,
-      (error: unknown) => error,
-    );
-    expect(textErrorCode(failure)).toBe('DEPENDENCY_UNAVAILABLE');
-  } finally {
-    spy.mockRestore();
-  }
-  const replay = await service.send(identity(owner), channel.id, payload);
-  expect(replay).toMatchObject({ outcome: 'existing', message: { commitSeq: 1 } });
-  expect(await Message.countDocuments({ conversationId: conversation._id })).toBe(1);
-});
+    await expect(
+      service.send(identity(owner), channel.id, { ...payload, text: 'different' }),
+    ).rejects.toMatchObject({ code: 'CONFLICT' });
+    expect(await Message.countDocuments({ conversationId: conversation._id })).toBe(1);
+  },
+);
 
 const trialWithFaults = scrum42Trial && process.env.COLEARNIA_TEST_DB_FAILPOINTS === '1';
 const trialService = createTextService(
