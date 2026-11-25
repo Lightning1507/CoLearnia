@@ -32,6 +32,8 @@ export type TextSyncState = {
 class SnapshotRequired extends Error {}
 class ProjectionCapacityError extends Error {}
 
+const subscriptionRetryDelays = [100, 250, 500];
+
 type Limits = {
   events: number;
   messages: number;
@@ -47,6 +49,7 @@ export function createTextSynchronizer(
   channelId: string,
   limits: Limits,
   changed: (state: TextSyncState) => void,
+  releaseHiddenSubscription?: () => (() => boolean) | undefined,
 ) {
   const { pageSize, ...budgets } = limits;
   for (const value of [...Object.values(budgets), pageSize ?? textHistoryMaxLimit])
@@ -201,12 +204,25 @@ export function createTextSynchronizer(
     state = { ...state, phase: 'syncing' };
     notify();
     try {
-      const ack = textConversationSubscribeAckSchema.parse(
-        await port.subscribe(
-          { channelId, rootMessageId: null, ...(after && { afterCheckpoint: after }) },
-          controller.signal,
-        ),
-      );
+      const subscribe = async () =>
+        textConversationSubscribeAckSchema.parse(
+          await port.subscribe(
+            { channelId, rootMessageId: null, ...(after && { afterCheckpoint: after }) },
+            controller.signal,
+          ),
+        );
+      let ack = await subscribe();
+      if (valid() && 'error' in ack && ack.error.code === 'SERVER_BUSY') {
+        const canRetry = releaseHiddenSubscription?.();
+        for (const delay of subscriptionRetryDelays) {
+          if (!canRetry?.()) break;
+          // The retired socket may still be releasing its server-side slot.
+          await new Promise((resolve) => setTimeout(resolve, delay));
+          if (!valid() || !canRetry()) break;
+          ack = await subscribe();
+          if (!valid() || !('error' in ack) || ack.error.code !== 'SERVER_BUSY') break;
+        }
+      }
       if (!valid()) {
         if ('data' in ack) port.unsubscribe(ack.data.subscriptionId);
         return;

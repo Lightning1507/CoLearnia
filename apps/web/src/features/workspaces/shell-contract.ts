@@ -20,6 +20,7 @@ export type WorkspaceShellProps = {
   workspaceMenuTriggerRef?: RefObject<HTMLButtonElement | null>;
   // M2 owns chat rendering; M3/M4 own call state outside the selected panel.
   chatPanel: ReactNode;
+  retainedChatPanel?: ReactNode;
   callPanel: ReactNode;
   persistentCallControls: ReactNode;
   sidebarControls?: ReactNode;
