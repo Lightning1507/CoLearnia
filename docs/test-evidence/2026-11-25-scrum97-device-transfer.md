@@ -36,3 +36,11 @@ Kiểm trên working tree sau commit `2ff5e32`, chưa commit/push bản sửa. N
 - Bốn regression mới: đích mất trong cleanup với callback; mất không callback; mất sau cleanup trong lúc commit chờ authority; callback cũ bị chờ gate rồi đến sau reservation thay thế. Kiểm resume/grant nguồn còn bị chặn, old ticket không replay, không nhân cleanup/ownership và binding đích mới vẫn dùng được.
 - `pnpm test`: 82 file, 1.109 test đạt. `main-runtime.integration.ts`: 23/23 đạt trên Mongo test riêng port 27193. Server typecheck, ESLint hai file code thay đổi và media smoke đạt. Đây vẫn không phải bằng chứng browser/RTP thật.
 - Kiểm cặp image web/server cùng SHA trên staging HTTPS/Socket.IO, chuyển qua lại khi còn peer và đích mất kết nối: chưa chạy; chưa deploy hoặc đóng review/gate.
+
+### Follow-up — ticket đích hết hạn khi socket vẫn mở
+
+Working tree sau `92c30e1`, chưa commit/push bản sửa. Tái hiện trước sửa bằng hai regression registry thật: ticket B còn 1 ms khi bắt đầu chuyển, hết hạn đúng lúc board cleanup bị giữ, socket B vẫn mở. C có ticket mới/generation nguồn đúng vẫn bị CONFLICT trong cả hai thứ tự: B đã trả lỗi trước và C bắt đầu trước khi continuation B hoàn tất.
+
+`abandonTransferHeld()` hiện bỏ reservation khi socket đích mất kết nối **hoặc ticket hết hạn**, dưới cùng gate và đối chiếu ownership/reservation/generation như trước. Giữ deny/cleanup nguồn, không cấp lại resume/grant A, không kéo dài ticket/grace. C xác nhận mới được dùng lại cleanup nguồn; continuation B không chạm reservation mới.
+
+Sau sửa: cả hai regression đạt, B vẫn mở, C được đúng một ownership/generation mới, giữ host, không end phiên hoặc nhân media revoke. `pnpm test`: 82 file, 1.111 test đạt; MAIN entry/runtime integration: 25/25 đạt trên Mongo test riêng port 27193. Server typecheck/build, ESLint code thay đổi và native media smoke đạt. Không suy thành bằng chứng browser/TURN/staging; không deploy hoặc tự resolve review.

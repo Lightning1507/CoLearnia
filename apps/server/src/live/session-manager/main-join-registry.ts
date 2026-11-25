@@ -415,11 +415,12 @@ export function createMainJoinRegistry(options: {
       ownerships.get(transfer.binding.auth.userId) !== owner ||
       owner.transfer !== transfer ||
       owner.participant.callGeneration !== transfer.generation ||
-      transfer.binding.isConnected()
+      (transfer.binding.isConnected() && transfer.intent.expiresAt > clock())
     )
       return;
     // Keep the old-generation deny until another confirmed handoff commits.
-    // Release only this destination's reservation, never its cleanup or fence.
+    // Release only this disconnected/expired destination's reservation, never
+    // its cleanup or fence. Socket liveness does not extend the ticket lifetime.
     transfer.abandoned = true;
     transfer.intent.failed = true;
   }

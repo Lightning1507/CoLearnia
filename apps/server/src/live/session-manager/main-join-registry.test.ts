@@ -2161,6 +2161,68 @@ async function reconnectFixture(
 }
 
 describe('explicit same-meeting device transfer', () => {
+  it.each([true, false])(
+    'recovers an expired transfer ticket with its destination still connected (old commit first: %s)',
+    async (oldCommitFirst) => {
+      const f = await reconnectFixture();
+      const pending = deferred<SessionCleanupResult>();
+      f.board.mockImplementation(() => pending.promise);
+      const ticket = await f.issue();
+      // Expire the ticket during cleanup without exhausting source reconnect grace.
+      f.advance(59_999);
+      const first = f.registry.join(f.next, {
+        requestId: randomUUID(),
+        ticket: ticket.ticket,
+        takeover: { confirmed: true, expectedCallGeneration: f.command.callGeneration },
+      });
+      const refused = expect(first).rejects.toMatchObject({ code: 'CONFLICT' });
+      await vi.waitFor(() => expect(f.board).toHaveBeenCalledOnce());
+      f.advance(1);
+      expect(f.next.isConnected()).toBe(true);
+      if (oldCommitFirst) {
+        pending.resolve(cleanupAck(f.board.mock.calls[0]![0]));
+        await refused;
+      }
+      expect(
+        await f.registry.withContext(f.socket.socketId, f.context, (value) => value),
+      ).toMatchObject({ ok: false });
+      expect(
+        await f.registry.withContext(f.next.socketId, f.context, (value) => value),
+      ).toMatchObject({ ok: false });
+      await expect(
+        f.registry.resume(f.socket, { ...f.command, requestId: randomUUID() }),
+      ).rejects.toMatchObject({ code: 'CONFLICT' });
+      const nextTicket = await f.issue();
+      const next = f.binding();
+      const command = {
+        requestId: randomUUID(),
+        ticket: nextTicket.ticket,
+        takeover: { confirmed: true, expectedCallGeneration: f.command.callGeneration },
+      };
+      const recovered = expect(f.registry.join(next, command)).resolves.toBeDefined();
+      pending.resolve(cleanupAck(f.board.mock.calls[0]![0]));
+      await Promise.all([refused, recovered]);
+      const replay = await f.registry.join(next, command);
+      expect(replay.ack.data.result.callGeneration).toBeGreaterThan(f.command.callGeneration);
+      expect(projection(replay).viewer.role).toBe('HOST');
+      expect(
+        await f.registry.withContext(
+          next.socketId,
+          {
+            ...f.context,
+            callGeneration: replay.ack.data.result.callGeneration,
+          },
+          (value) => value,
+        ),
+      ).toMatchObject({ ok: true });
+      expect(f.next.isConnected()).toBe(true);
+      expect(f.registry.isContextRetired(f.socket.socketId, f.context)).toBe(true);
+      expect(f.media).toHaveBeenCalledOnce();
+      expect(f.publishTransferred).toHaveBeenCalledOnce();
+      expect(f.registry.stats().ownerships).toBe(1);
+      expect(f.repository.beginEnding).not.toHaveBeenCalled();
+    },
+  );
   it('converges a dead destination after cleanup and before commit without a disconnect callback', async () => {
     const f = await reconnectFixture();
     let connected = true;
