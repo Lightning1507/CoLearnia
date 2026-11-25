@@ -488,6 +488,7 @@ it('replays the same resume intent after both ACK attempts are lost and the sock
   expect(call.canResume()).toBe(true);
   const lost = sockets[1]!.requests.filter(({ event }) => event === 'session.resume');
   expect(lost).toHaveLength(2);
+  sockets[1]!.disconnect();
   await call.resume();
   const replay = sockets[2]!.requests.find(({ event }) => event === 'session.resume')!;
   expect(replay.input).toEqual(lost[0]!.input);
@@ -554,6 +555,52 @@ it('reconnects and retries departure with the new generation when the old socket
   expect(commands[1]!.input.requestId).not.toBe(old.requests.at(-1)!.input.requestId);
   expect(initializeMainMedia).toHaveBeenCalledTimes(1);
   expect(startDevices).toHaveBeenCalledTimes(1);
+  expect(call.getSnapshot()).toMatchObject({ phase: 'idle', cleanupPending: false });
+});
+it('replays an unconfirmed resume on the same socket before retrying departure', async () => {
+  await call.join(preferences);
+  const old = sockets[0]!;
+  old.responder = async () => {
+    old.disconnect();
+    throw new Error('Disconnected before departure ACK');
+  };
+  await call.leave();
+
+  vi.mocked(io).mockImplementationOnce(() => {
+    const socket = new TestSocket();
+    sockets.push(socket);
+    socket.responder = async () => {
+      generation = 2;
+      throw new Error('Resume committed but ACK lost');
+    };
+    return socket as unknown as Socket;
+  });
+  await call.retryDeparture();
+
+  const socket = sockets[1]!;
+  expect(socket.connected).toBe(true);
+  expect(call.getSnapshot()).toMatchObject({ phase: 'error', cleanupPending: true });
+  expect(socket.requests.map(({ event }) => event)).toEqual(['session.resume', 'session.resume']);
+  socket.responder = async (event, input) => {
+    if (event === 'session.end' && input.callGeneration !== generation)
+      return { requestId: input.requestId, error: { code: 'CONFLICT', message: 'Stale' } };
+    return socket.answer(event, input);
+  };
+
+  await call.retryDeparture();
+
+  expect(sockets).toHaveLength(2);
+  const commands = socket.requests.filter(({ event }) => event !== 'session.resync');
+  expect(commands.map(({ event }) => event)).toEqual([
+    'session.resume',
+    'session.resume',
+    'session.resume',
+    'session.end',
+  ]);
+  expect(commands[1]!.input).toEqual(commands[0]!.input);
+  expect(commands[2]!.input).toEqual(commands[0]!.input);
+  expect(commands[3]!.input.callGeneration).toBe(2);
+  expect(initializeMainMedia).toHaveBeenCalledTimes(1);
   expect(call.getSnapshot()).toMatchObject({ phase: 'idle', cleanupPending: false });
 });
 it('ignores a late leave ACK after logout without restoring old pending UI', async () => {

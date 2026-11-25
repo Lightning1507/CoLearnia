@@ -428,7 +428,12 @@ export class MainCall {
         ...(departing && { message: 'Đang kết nối lại để xác nhận rời cuộc gọi…' }),
       });
       this.owner.end(previous.identity);
-      const socket = await this.#connect(await authApi.csrf(signal), signal);
+      // A committed resume with a lost ACK can only replay on the same
+      // socket while that socket is still connected.
+      const socket =
+        this.#resumeIntent && this.#socket?.connected
+          ? this.#socket
+          : await this.#connect(await authApi.csrf(signal), signal);
       const intent = (this.#resumeIntent ??= {
         requestId: crypto.randomUUID(),
         identity: previous.identity,
@@ -487,11 +492,11 @@ export class MainCall {
   }
   async retryDeparture() {
     if (this.#state.phase !== 'error' || !this.#state.cleanupPending) return;
-    if (this.#socket?.connected) await this.leave();
-    else await this.resume();
+    if (this.#resumeIntent || !this.#socket?.connected) await this.resume();
+    else await this.leave();
   }
   async leave() {
-    if (!this.#joined || !this.#socket || this.#leaving) return;
+    if (!this.#joined || !this.#socket || this.#leaving || this.#resumeIntent) return;
     const ownership = this.#joined;
     // Cancel bootstrap/capture immediately without aborting the independent
     // departure command or discarding its server ownership/replay identity.
