@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useMainCall } from '../live/runtime/mainCallContext';
 import type {
@@ -11,7 +11,7 @@ import type {
 } from '@colearnia/contracts';
 import { WorkspaceShell } from '../workspaces/WorkspaceShell';
 import type { WorkspacePanel } from '../workspaces/shell-contract';
-import { sessionKey } from '../auth/session';
+import { sessionKey, sessionOptions } from '../auth/session';
 import { CreateChannelForm } from './CreateChannelForm';
 import { ChannelApiError } from './channel-api';
 import { channelListOptions } from './channel-list-query';
@@ -48,13 +48,25 @@ export function ChannelWorkspace({
   const location = useLocation();
   const { channelId } = useParams();
   const [manage, setManage] = useState(false);
+  const [recentText, setRecentText] = useState<string[]>([]);
   const [textAccessNotice, setTextAccessNotice] = useState('');
-  const withdrawText = useCallback(() => {
-    navigate(`/workspaces/${workspace.id}`, { replace: true });
-    setTextAccessNotice('Quyền truy cập chat đã thay đổi. Nội dung kênh đã được xóa khỏi bộ nhớ.');
-    void client.resetQueries({ queryKey: ['channels', userId, workspace.id, expiresAt] });
-    void client.invalidateQueries({ queryKey: sessionKey });
-  }, [client, userId, workspace.id, expiresAt, navigate]);
+  const withdrawText = useCallback(
+    (revokedChannelId: string) => {
+      setRecentText((ids) => ids.filter((id) => id !== revokedChannelId));
+      setTextAccessNotice(
+        'Quyền truy cập chat đã thay đổi. Nội dung kênh đã được xóa khỏi bộ nhớ.',
+      );
+      const queryKey = ['channels', userId, workspace.id, expiresAt];
+      if (channelId === revokedChannelId) {
+        navigate(`/workspaces/${workspace.id}`, { replace: true });
+        void client.resetQueries({ queryKey });
+      } else {
+        void client.invalidateQueries({ queryKey });
+      }
+      void client.invalidateQueries({ queryKey: sessionKey });
+    },
+    [channelId, client, userId, workspace.id, expiresAt, navigate],
+  );
   const notified = useRef<unknown>(null);
   const canManage = workspace.role === 'OWNER' || workspace.role === 'ADMIN';
   const prefix = ['channels', userId, workspace.id, expiresAt] as const;
@@ -92,6 +104,24 @@ export function ChannelWorkspace({
         ).values(),
       ];
   const selected = channels.find((row) => row.id === channelId);
+  const { data: session } = useQuery({ ...sessionOptions, enabled: false });
+  const hasSession = session?.user.id === userId && session.expiresAt === expiresAt;
+  const selectedTextId = selected?.type === 'TEXT' ? selected.id : undefined;
+  // Keep only the current and most recently visited authorized TEXT channels mounted.
+  const retainedText = hasSession
+    ? [
+        ...(selectedTextId ? [selectedTextId] : []),
+        ...recentText.filter(
+          (id) =>
+            id !== selectedTextId && channels.some((row) => row.id === id && row.type === 'TEXT'),
+        ),
+      ].slice(0, 2)
+    : [];
+  if (
+    retainedText.length !== recentText.length ||
+    retainedText.some((id, i) => id !== recentText[i])
+  )
+    setRecentText(retainedText);
   const panel: WorkspacePanel = selected
     ? { kind: selected.type === 'TEXT' ? 'text' : 'live', channelId: selected.id }
     : { kind: 'empty' };
@@ -202,7 +232,6 @@ export function ChannelWorkspace({
       )}
     </section>
   );
-  const session = client.getQueryData<AuthenticatedData | null>(sessionKey);
   return (
     <WorkspaceShell
       workspace={workspace}
@@ -214,17 +243,22 @@ export function ChannelWorkspace({
       panel={manage && canManage ? { kind: 'empty' } : panel}
       onSelectChannel={select}
       onOpenWorkspaceList={() => navigate('/workspaces')}
-      chatPanel={
-        selected?.type === 'TEXT' && session?.user.id === userId ? (
-          <TextChannel
-            key={`${userId}:${expiresAt}:${selected.id}`}
-            channelId={selected.id}
-            session={session}
-            onAccessLost={withdrawText}
-          />
-        ) : (
-          selectedPanel
-        )
+      chatPanel={selectedPanel}
+      retainedChatPanel={
+        hasSession && retainedText.length > 0
+          ? retainedText.map((id) => {
+              const visible = id === selectedTextId && !(manage && canManage);
+              return (
+                <div
+                  key={`${userId}:${expiresAt}:${id}`}
+                  hidden={!visible}
+                  className={visible ? 'flex min-h-0 flex-1 flex-col' : undefined}
+                >
+                  <TextChannel channelId={id} session={session} onAccessLost={withdrawText} />
+                </div>
+              );
+            })
+          : undefined
       }
       callPanel={selectedPanel}
       persistentCallControls={account}

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useEffectEvent, useRef, useState } from 'react';
 import type { AuthenticatedData } from '@colearnia/contracts';
 import { io } from 'socket.io-client';
 import { TextTimeline } from './TextTimeline';
@@ -23,7 +23,7 @@ export function TextChannel({
 }: {
   channelId: string;
   session: AuthenticatedData;
-  onAccessLost: () => void;
+  onAccessLost: (channelId: string) => void;
 }) {
   const [state, setState] = useState<TextSyncState>({
     phase: 'idle',
@@ -39,6 +39,7 @@ export function TextChannel({
   const [opened, setOpened] = useState(false);
   const [error, setError] = useState('');
   const connectionRef = useRef<ReturnType<typeof createTextConnection> | null>(null);
+  const reportAccessLost = useEffectEvent(() => onAccessLost(channelId));
   useEffect(() => {
     let active = true;
     const origin = new URL(import.meta.env.VITE_API_BASE_URL ?? '/api/v1', window.location.href)
@@ -65,7 +66,7 @@ export function TextChannel({
         if (value.phase === 'live') setOpened(true);
         if (value.phase === 'revoked' || value.phase === 'blocked')
           connectionRef.current?.disconnect();
-        if (value.phase === 'revoked') onAccessLost();
+        if (value.phase === 'revoked') reportAccessLost();
       }
     });
     const connection = createTextConnection(socket, controller, {
@@ -80,7 +81,7 @@ export function TextChannel({
       accessLost() {
         if (!active) return;
         setState({ phase: 'revoked', messages: [], checkpoint: undefined, olderCursor: null });
-        onAccessLost();
+        reportAccessLost();
       },
     });
     connectionRef.current = connection;
@@ -90,7 +91,7 @@ export function TextChannel({
       if (connectionRef.current === connection) connectionRef.current = null;
       connection.dispose();
     };
-  }, [channelId, session.csrfToken, onAccessLost]);
+  }, [channelId, session.csrfToken]);
 
   if (state.phase === 'revoked') return <p role="alert">Bạn không còn quyền đọc kênh này.</p>;
   if (state.phase === 'blocked')
@@ -106,7 +107,7 @@ export function TextChannel({
       {state.olderCursor && state.phase === 'live' && (
         <button onClick={() => void runtime?.controller.loadOlder()}>Xem tin nhắn cũ</button>
       )}
-      {state.phase !== 'live' && (
+      {(state.phase === 'resync' || (!opened && state.phase !== 'live')) && (
         <div role="status">
           <p>
             {state.phase === 'resync'
@@ -135,7 +136,7 @@ export function TextChannel({
                 ) {
                   runtime.controller.stop();
                   runtime.disconnect();
-                  onAccessLost();
+                  onAccessLost(channelId);
                   setState({
                     phase: 'revoked',
                     messages: [],

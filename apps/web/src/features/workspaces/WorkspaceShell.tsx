@@ -197,6 +197,7 @@ export function WorkspaceShell({
   onOpenWorkspaceList,
   workspaceMenuTriggerRef,
   chatPanel,
+  retainedChatPanel,
   callPanel,
   persistentCallControls,
   sidebarControls,
@@ -293,9 +294,10 @@ export function WorkspaceShell({
               </div>
             ) : (
               <Fragment key={`${workspace.id}:${selected.channel.id}`}>
-                {panel.kind === 'text' ? chatPanel : callPanel}
+                {panel.kind === 'text' ? (retainedChatPanel ? null : chatPanel) : callPanel}
               </Fragment>
             ))}
+          {retainedChatPanel}
         </section>
       </main>
     </div>
