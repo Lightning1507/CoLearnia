@@ -25,3 +25,14 @@ Sandbox ban đầu chặn HTTP/Mongo loopback bằng EACCES; đã chạy lại u
 Chưa có bằng chứng browser/mic/camera thật cho handoff của working tree này. Chưa restart backend local đang mở của tester hoặc deploy AWS. Sau khi backend tải code mới, kiểm cùng tài khoản ở hai tab: A đang gọi → B chọn chuyển → A dừng mic/camera/share, B vào; A chọn chuyển trở lại → B dừng. Kiểm host và member với người thứ hai vẫn ở phiên, thiết bị thực, stale callback, quyền bị thu, cleanup lỗi và thao tác đồng thời. Khác browser/profile còn phụ thuộc chính sách phiên đăng nhập M1; không thay chính sách đó trong task này.
 
 Không có bằng chứng hai mạng/TURN/năm người; không đóng gate SCRUM-89 hoặc các ticket ICE/recovery riêng từ kết quả này. Không commit/push/merge/deploy trong lượt triển khai.
+
+## Follow-up review PR #153 — đích mất kết nối trước commit
+
+Kiểm trên working tree sau commit `2ff5e32`, chưa commit/push bản sửa. Nội dung review lấy từ ảnh người dùng đính kèm; không truy cập được trang PR qua web và máy này không có GitHub CLI trong PATH. Không gửi phản hồi hoặc resolve review trên GitHub.
+
+- Tái hiện trước sửa: hai ca registry thật với adapter board cleanup giữ chậm đều thất bại, tab C hợp lệ nhận CONFLICT sau khi B đã mất kết nối (có/không có callback disconnect).
+- Sửa nhận diện cả socket đích đang giữ reservation. Dưới User → Workspace gate, bỏ riêng lượt chuyển đã mất đích nếu đúng ownership/reservation/generation; vô hiệu ticket cũ, giữ deny/cleanup nguồn. Xác nhận mới với ticket và quyền hợp lệ được tiếp tục trên cùng cleanup nguồn.
+- Prepare/commit hội tụ được khi callback thiếu hoặc đến muộn. Continuation chụp socket nguồn và reservation, không đọc binding mới rồi disconnect nhầm đời mới.
+- Bốn regression mới: đích mất trong cleanup với callback; mất không callback; mất sau cleanup trong lúc commit chờ authority; callback cũ bị chờ gate rồi đến sau reservation thay thế. Kiểm resume/grant nguồn còn bị chặn, old ticket không replay, không nhân cleanup/ownership và binding đích mới vẫn dùng được.
+- `pnpm test`: 82 file, 1.109 test đạt. `main-runtime.integration.ts`: 23/23 đạt trên Mongo test riêng port 27193. Server typecheck, ESLint hai file code thay đổi và media smoke đạt. Đây vẫn không phải bằng chứng browser/RTP thật.
+- Kiểm cặp image web/server cùng SHA trên staging HTTPS/Socket.IO, chuyển qua lại khi còn peer và đích mất kết nối: chưa chạy; chưa deploy hoặc đóng review/gate.

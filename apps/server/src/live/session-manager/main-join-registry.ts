@@ -87,7 +87,14 @@ type EndRecord = {
   expiresAt: number;
 };
 type Ownership = {
-  transfer?: { intent: Intent; requestId: string; socketId: string; generation: number };
+  transfer?: {
+    intent: Intent;
+    requestId: string;
+    binding: Binding;
+    sourceSocketId: string;
+    generation: number;
+    abandoned?: boolean;
+  };
   binding: Binding;
   room: Room;
   participant: PolicyParticipant;
@@ -394,6 +401,27 @@ export function createMainJoinRegistry(options: {
     } catch {
       fail('DEPENDENCY_UNAVAILABLE');
     }
+  }
+  function abandonTransferHeld(
+    owner: Ownership,
+    transfer: NonNullable<Ownership['transfer']>,
+    held: CoordinationContext,
+  ) {
+    held.assertHeld({
+      userId: transfer.binding.auth.userId,
+      workspaceId: owner.room.state.workspaceId,
+    });
+    if (
+      ownerships.get(transfer.binding.auth.userId) !== owner ||
+      owner.transfer !== transfer ||
+      owner.participant.callGeneration !== transfer.generation ||
+      transfer.binding.isConnected()
+    )
+      return;
+    // Keep the old-generation deny until another confirmed handoff commits.
+    // Release only this destination's reservation, never its cleanup or fence.
+    transfer.abandoned = true;
+    transfer.intent.failed = true;
   }
   function usable(room: Room) {
     if (room.mediaFailed || room.uncertain || room.router.closed) fail('DEPENDENCY_UNAVAILABLE');
@@ -989,6 +1017,15 @@ export function createMainJoinRegistry(options: {
     // Trusted socket lifecycle callback; never accept a client-supplied socket id.
     async disconnect(socketId: string) {
       assertRunning();
+      const abandoned = [...ownerships.values()].find(
+        (value) => value.transfer?.binding.socketId === socketId,
+      );
+      const transfer = abandoned?.transfer;
+      if (abandoned && transfer) {
+        await run(transfer.binding.auth, abandoned.room.state, async (held) => {
+          abandonTransferHeld(abandoned, transfer, held);
+        });
+      }
       const owner = [...ownerships.values()].find((value) => value.binding.socketId === socketId);
       if (!owner) return;
       const leaving = [...leaves.values()].find(
@@ -1483,6 +1520,7 @@ export function createMainJoinRegistry(options: {
         channelId: intent.room.state.channelId,
       };
       if (input.takeover) {
+        let reservation: NonNullable<Ownership['transfer']> | undefined;
         // Explicit same-meeting handoff. Validate before touching the old owner;
         // never route host handoff through leave/end.
         const owner = await run(auth, destination, async (held) => {
@@ -1519,11 +1557,13 @@ export function createMainJoinRegistry(options: {
             owned.participant.blocked
           )
             fail('CONFLICT');
+          if (owned.transfer) abandonTransferHeld(owned, owned.transfer, held);
           if (
             owned.transfer &&
+            !owned.transfer.abandoned &&
             (owned.transfer.intent !== intent ||
               owned.transfer.requestId !== input.requestId ||
-              owned.transfer.socketId !== binding.socketId)
+              owned.transfer.binding.socketId !== binding.socketId)
           )
             fail('CONFLICT');
           if ([...leaves.values()].some((leave) => leave.owner === owned && !leave.completed))
@@ -1535,23 +1575,34 @@ export function createMainJoinRegistry(options: {
             fail('FORBIDDEN');
           if (!options.reconnectCleanup || typeof options.reconnectCleanup.media === 'function')
             fail('DEPENDENCY_UNAVAILABLE');
-          owned.transfer ??= {
-            intent,
-            requestId: input.requestId,
-            socketId: binding.socketId,
-            generation: owned.participant.callGeneration,
-          };
+          if (!owned.transfer || owned.transfer.abandoned)
+            owned.transfer = {
+              intent,
+              requestId: input.requestId,
+              binding,
+              sourceSocketId: owned.binding.socketId,
+              generation: owned.participant.callGeneration,
+            };
+          reservation = owned.transfer;
           return owned;
         });
         if (!intent.consumed) {
-          await registry.disconnect(owner.binding.socketId);
+          if (!reservation) fail('CONFLICT');
+          await registry.disconnect(reservation.sourceSocketId);
           // Retry unfinished adapter cleanup outside all ownership gates. Never
           // grant the destination merely because permission revocation started.
-          if (owner.reconnect?.handle?.inspect().cleanupPending)
-            await owner.reconnect.handle.retryCleanup();
+          const record = owner.reconnect;
+          if (
+            owner.transfer === reservation &&
+            record?.generation === reservation.generation &&
+            record.handle?.inspect().cleanupPending
+          )
+            await record.handle.retryCleanup();
         }
         return run(auth, destination, async (held) => {
+          if (reservation) abandonTransferHeld(owner, reservation, held);
           const current = await authority(auth, destination, held);
+          if (reservation) abandonTransferHeld(owner, reservation, held);
           if (
             ownerships.get(auth.userId) !== owner ||
             !binding.isConnected() ||
@@ -1574,9 +1625,11 @@ export function createMainJoinRegistry(options: {
           const record = owner.reconnect;
           if (
             !transfer ||
+            transfer !== reservation ||
+            transfer.abandoned ||
             transfer.intent !== intent ||
             transfer.requestId !== input.requestId ||
-            transfer.socketId !== binding.socketId ||
+            transfer.binding.socketId !== binding.socketId ||
             owner.participant.callGeneration !== transfer.generation ||
             !record
           )
@@ -1608,6 +1661,7 @@ export function createMainJoinRegistry(options: {
               isCurrent: () =>
                 !closed &&
                 owner.transfer === transfer &&
+                !transfer.abandoned &&
                 owner.reconnect === record &&
                 ownerships.get(auth.userId) === owner &&
                 binding.isConnected() &&
