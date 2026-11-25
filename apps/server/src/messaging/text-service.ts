@@ -363,6 +363,7 @@ export function createTextService(
       owner: string,
       emit: SyncEntry['emit'],
       afterCheckpoint?: string,
+      persistOnSocket = false,
     ) {
       if (!sync || !syncReady()) throw new TextError('DEPENDENCY_UNAVAILABLE');
       let entry: SyncEntry | undefined;
@@ -389,6 +390,7 @@ export function createTextService(
               },
               through,
               afterCheckpoint,
+              persistOnSocket,
             );
             return {
               scope: entry.scope,
@@ -490,7 +492,7 @@ export function createTextService(
                 remaining,
               );
               const names = await namesFor(page.items);
-              sync.current(entry, actor, scope.access);
+              sync.currentHistory(entry, actor, scope.access);
               return {
                 mode: 'catch-up',
                 scope: entry.scope,
@@ -511,7 +513,7 @@ export function createTextService(
               entry.through,
             );
             const names = await namesFor(page.items);
-            sync.current(entry, actor, scope.access);
+            sync.currentHistory(entry, actor, scope.access);
             const next = page.nextCursor;
             return {
               mode: 'snapshot',

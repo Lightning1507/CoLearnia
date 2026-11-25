@@ -143,6 +143,7 @@ export async function setup(
   options: {
     productionRuntime?: boolean;
     text?: boolean;
+    textHistoryLeaseMs?: number;
     textSendLedger?: TextSendLedger;
     origin?: string;
     port?: number;
@@ -216,7 +217,12 @@ export async function setup(
         },
         undefined,
         false,
-        { subscriptions: 16, perUser: 4, leaseMs: 60_000, revocationRecords: 16 },
+        {
+          subscriptions: 16,
+          perUser: 4,
+          leaseMs: options.textHistoryLeaseMs ?? 60_000,
+          revocationRecords: 16,
+        },
         () =>
           Boolean(
             textService?.syncRevocation &&
@@ -453,11 +459,14 @@ export async function setup(
     credentials.set(independent, input);
     return independent;
   }
-  async function connect(account: Awaited<ReturnType<typeof signUp>>, textSenderNames = false) {
+  async function connect(
+    account: Awaited<ReturnType<typeof signUp>>,
+    textCapabilities: { textSenderNames?: boolean; textPersistentSubscription?: boolean } = {},
+  ) {
     const socket = connectSocket(`http://127.0.0.1:${(server.address() as AddressInfo).port}`, {
       transports: ['websocket'],
       extraHeaders: { Cookie: account.cookie, Origin: origin },
-      auth: { csrfToken: account.data.csrfToken, ...(textSenderNames && { textSenderNames }) },
+      auth: { csrfToken: account.data.csrfToken, ...textCapabilities },
       reconnection: false,
       autoConnect: false,
       timeout: 3000,

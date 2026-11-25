@@ -124,6 +124,7 @@ export function createTextSocketSync(service: Service) {
     actor: AuthenticatedContext,
     owner: string,
     emit: Parameters<Service['subscribe']>[3],
+    persistOnSocket = false,
   ) => {
     let closed = false;
     return {
@@ -149,6 +150,7 @@ export function createTextSocketSync(service: Service) {
             owner,
             emit,
             afterCheckpoint,
+            persistOnSocket,
           );
           if (closed) {
             service.closeSubscriptions(owner);

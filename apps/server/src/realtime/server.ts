@@ -94,21 +94,27 @@ export function createRealtime(
       const includeSenderNames = socket.handshake.auth?.textSenderNames === true;
       if (textSend) socket.on('message.send', textSend(auth, includeSenderNames));
       if (textSync) {
-        const sync = textSync(auth, socket.id, (event, payload) => {
-          // Never accumulate private events in Socket.IO's disconnected/slow-client buffer.
-          if (!socket.connected || !socket.conn.transport.writable) {
-            socket.disconnect(true);
-            return false;
-          }
-          if (event === 'message.created') {
-            const parsed = textMessageCreatedEventSchema.parse(payload);
-            socket.volatile.emit(event, {
-              ...parsed,
-              message: textMessageForClient(parsed.message, includeSenderNames),
-            });
-          } else socket.volatile.emit(event, textConversationInvalidatedEventSchema.parse(payload));
-          return true;
-        });
+        const sync = textSync(
+          auth,
+          socket.id,
+          (event, payload) => {
+            // Never accumulate private events in Socket.IO's disconnected/slow-client buffer.
+            if (!socket.connected || !socket.conn.transport.writable) {
+              socket.disconnect(true);
+              return false;
+            }
+            if (event === 'message.created') {
+              const parsed = textMessageCreatedEventSchema.parse(payload);
+              socket.volatile.emit(event, {
+                ...parsed,
+                message: textMessageForClient(parsed.message, includeSenderNames),
+              });
+            } else
+              socket.volatile.emit(event, textConversationInvalidatedEventSchema.parse(payload));
+            return true;
+          },
+          socket.handshake.auth?.textPersistentSubscription === true,
+        );
         let awaitingAck = false;
         let cancelDrain: (() => void) | undefined;
         socket.once('disconnect', () => {
