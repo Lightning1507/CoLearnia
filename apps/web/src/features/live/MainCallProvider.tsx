@@ -103,7 +103,11 @@ function MainCallHost({ call }: { call: MainCall }) {
       <aside className="main-call-strip" aria-label="Trạng thái rời cuộc gọi">
         <span role="status">{state.message}</span>
         {state.phase === 'error' && (
-          <button type="button" className="auth-secondary" onClick={() => void call.leave()}>
+          <button
+            type="button"
+            className="auth-secondary"
+            onClick={() => void call.retryDeparture()}
+          >
             Thử xác nhận rời lại
           </button>
         )}
@@ -230,7 +234,11 @@ function MainCallHost({ call }: { call: MainCall }) {
           {state.message && <p role="alert">{state.message}</p>}
           {state.phase === 'error' &&
             (state.cleanupPending ? (
-              <button type="button" className="auth-primary" onClick={() => void call.leave()}>
+              <button
+                type="button"
+                className="auth-primary"
+                onClick={() => void call.retryDeparture()}
+              >
                 Thử xác nhận rời lại
               </button>
             ) : (
@@ -238,7 +246,7 @@ function MainCallHost({ call }: { call: MainCall }) {
                 Thử vào lại cùng yêu cầu
               </button>
             ))}
-          {state.phase === 'error' && call.canResume() && (
+          {state.phase === 'error' && !state.cleanupPending && call.canResume() && (
             <button type="button" className="auth-secondary" onClick={() => void call.resume()}>
               Thử kết nối lại
             </button>

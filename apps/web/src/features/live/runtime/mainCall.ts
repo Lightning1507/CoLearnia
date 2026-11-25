@@ -310,7 +310,7 @@ export class MainCall {
     identity: CallIdentity,
     resumeTicket: string,
     signal: AbortSignal,
-    preferences: LobbyDevicePreferences,
+    preferences?: LobbyDevicePreferences,
   ) {
     signal.throwIfAborted();
     const socket = this.#socket!;
@@ -326,6 +326,18 @@ export class MainCall {
           this.#projection = projection;
         },
         initialize: async (acceptedIdentity, lifetime, media) => {
+          if (!preferences) {
+            const projection = this.#projection!;
+            await waitForMain(
+              () =>
+                projection.getSnapshot().status === 'ready'
+                  ? (projection.getSnapshot().cursor ?? undefined)
+                  : undefined,
+              projection.subscribe,
+              AbortSignal.any([lifetime, signal]),
+            );
+            return;
+          }
           resources = await initializeMainMedia({
             identity: acceptedIdentity,
             socket,
@@ -363,7 +375,7 @@ export class MainCall {
     signal.throwIfAborted();
     if (this.#joined?.identity !== identity) throw new DOMException('Superseded', 'AbortError');
     this.#resumeFailures = 0;
-    this.#set({ phase: 'active', handle, resources, ...view, message: undefined });
+    if (preferences) this.#set({ phase: 'active', handle, resources, ...view, message: undefined });
     void resources?.startDevices().catch((error: unknown) => {
       if (!signal.aborted && this.#joined?.identity === identity)
         this.#set({ message: mainCallMessage(error) });
@@ -403,13 +415,17 @@ export class MainCall {
   async resume() {
     const previous = this.#joined;
     if (!previous || !this.#auth || this.#leaving) return;
+    const departing = this.#state.cleanupPending;
     clearTimeout(this.#retry);
     this.#attempt?.abort();
     const attempt = new AbortController();
     this.#attempt = attempt;
     const signal = attempt.signal;
     try {
-      this.#set({ phase: 'reconnecting' });
+      this.#set({
+        phase: 'reconnecting',
+        ...(departing && { message: 'Đang kết nối lại để xác nhận rời cuộc gọi…' }),
+      });
       this.owner.end(previous.identity);
       const socket = await this.#connect(await authApi.csrf(signal), signal);
       const intent = (this.#resumeIntent ??= {
@@ -429,16 +445,25 @@ export class MainCall {
       );
       if ('error' in ack) throw new MainCallError(ack.error.code);
       this.#resumeIntent = undefined;
+      this.#leaveIntent = undefined;
       await this.#activate(
         { ...previous.identity, callGeneration: ack.data.result.callGeneration },
         ack.data.result.resumeTicket,
         signal,
-        {
-          microphone: { deviceId: this.#preferences?.microphone.deviceId ?? '', enabled: false },
-          camera: { deviceId: this.#preferences?.camera.deviceId ?? '', enabled: false },
-        },
+        departing
+          ? undefined
+          : {
+              microphone: {
+                deviceId: this.#preferences?.microphone.deviceId ?? '',
+                enabled: false,
+              },
+              camera: { deviceId: this.#preferences?.camera.deviceId ?? '', enabled: false },
+            },
       );
-      this.#leaveIntent = undefined;
+      if (departing) {
+        await this.leave();
+        return;
+      }
       this.#set({
         cleanupPending: false,
         message: 'Đã nối lại. Mic và camera vẫn tắt; bạn có thể bật khi sẵn sàng.',
@@ -458,6 +483,11 @@ export class MainCall {
         this.#scheduleResume();
       }
     }
+  }
+  async retryDeparture() {
+    if (this.#state.phase !== 'error' || !this.#state.cleanupPending) return;
+    if (this.#socket?.connected) await this.leave();
+    else await this.resume();
   }
   async leave() {
     if (!this.#joined || !this.#socket || this.#leaving) return;

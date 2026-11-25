@@ -534,6 +534,28 @@ it('does not send reliable MAIN commands through the disposable volatile port', 
     mainCommand(socket, 'session.join', input, new AbortController().signal),
   ).resolves.toEqual({ requestId: input.requestId });
 });
+it('reconnects and retries departure with the new generation when the old socket loses its ACK', async () => {
+  await call.join(preferences);
+  const old = sockets[0]!;
+  old.responder = async () => {
+    old.disconnect();
+    throw new Error('Disconnected before ACK');
+  };
+  await call.leave();
+  expect(call.getSnapshot()).toMatchObject({ phase: 'error', cleanupPending: true });
+
+  generation = 2;
+  await Promise.all([call.retryDeparture(), call.retryDeparture()]);
+
+  expect(sockets).toHaveLength(2);
+  const commands = sockets[1]!.requests.filter(({ event }) => event !== 'session.resync');
+  expect(commands.map(({ event }) => event)).toEqual(['session.resume', 'session.end']);
+  expect(commands[1]!.input).toMatchObject({ callGeneration: 2, expectedPolicyRevision: 1 });
+  expect(commands[1]!.input.requestId).not.toBe(old.requests.at(-1)!.input.requestId);
+  expect(initializeMainMedia).toHaveBeenCalledTimes(1);
+  expect(startDevices).toHaveBeenCalledTimes(1);
+  expect(call.getSnapshot()).toMatchObject({ phase: 'idle', cleanupPending: false });
+});
 it('ignores a late leave ACK after logout without restoring old pending UI', async () => {
   await call.join(preferences);
   let reply!: (value: unknown) => void;
