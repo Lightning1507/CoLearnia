@@ -206,16 +206,17 @@ export function WorkspaceShell({
 }: WorkspaceShellProps) {
   const readable = readableSidebarChannels(channels, workspace.id);
   const selected = resolvePanelChannel(channels, workspace.id, panel);
+  const showChat = selected && panel.kind === 'text' && !contentOverride;
   const textChannels = readable.map(({ channel }) => channel).filter(({ type }) => type === 'TEXT');
   const liveChannels = readable.map(({ channel }) => channel).filter(({ type }) => type === 'LIVE');
 
   return (
     <div
-      className="workspace-shell @container/room-layout grid min-h-dvh min-w-0 grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] bg-[var(--workspace-content-bg)] text-[color:var(--workspace-text)] min-[721px]:grid-cols-[256px_minmax(0,1fr)] min-[721px]:grid-rows-1"
+      className={`workspace-shell @container/room-layout grid min-w-0 grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] bg-[var(--workspace-content-bg)] text-[color:var(--workspace-text)] min-[721px]:grid-cols-[256px_minmax(0,1fr)] min-[721px]:grid-rows-1 ${showChat ? 'h-dvh overflow-hidden min-[721px]:grid-rows-[minmax(0,1fr)]' : 'min-h-dvh'}`}
       data-testid="workspace-shell"
     >
       <aside
-        className="workspace-sidebar min-w-0 border-b border-[color:var(--workspace-border)] bg-[var(--workspace-sidebar-bg)] min-[721px]:border-r min-[721px]:border-b-0"
+        className={`workspace-sidebar min-w-0 border-b border-[color:var(--workspace-border)] bg-[var(--workspace-sidebar-bg)] min-[721px]:border-r min-[721px]:border-b-0 ${showChat ? 'max-h-[42dvh] overflow-y-auto min-[721px]:max-h-none' : ''}`}
         aria-label={`Kênh của ${workspace.name}`}
       >
         <WorkspaceMenu
@@ -253,8 +254,10 @@ export function WorkspaceShell({
         {sidebarStatus}
       </aside>
 
-      <main className="workspace-main flex min-w-0 flex-col bg-[var(--workspace-content-bg)]">
-        <header className="workspace-topbar flex min-h-16 min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-[color:var(--workspace-border)] px-5 py-3">
+      <main
+        className={`workspace-main flex min-w-0 flex-col bg-[var(--workspace-content-bg)] ${showChat ? 'min-h-0' : ''}`}
+      >
+        <header className="workspace-topbar flex min-h-16 min-w-0 shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-[color:var(--workspace-border)] px-5 py-3">
           <div className="flex min-w-0 flex-1 items-center gap-2.5">
             {selected && <ChannelIcon channel={selected.channel} />}
             <div className="min-w-0">
@@ -273,7 +276,10 @@ export function WorkspaceShell({
           <div className="min-w-0 max-w-full">{persistentCallControls}</div>
         </header>
 
-        <section className="workspace-panel-host flex min-w-0 flex-1 flex-col" aria-live="polite">
+        <section
+          className={`workspace-panel-host flex min-w-0 flex-1 flex-col ${showChat ? 'min-h-0' : ''}`}
+          aria-live="polite"
+        >
           {contentOverride ??
             (panel.kind === 'empty' ? (
               <div className="grid min-h-80 flex-1 content-center gap-2 px-5 py-6 text-center">
