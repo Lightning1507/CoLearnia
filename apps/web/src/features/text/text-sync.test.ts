@@ -10,7 +10,6 @@ const limits = {
   messages: 200,
   bytes: 100_000,
   pages: 20,
-  reconcileMs: 100,
   roundMs: 1000,
 };
 const disposers: (() => void)[] = [];
@@ -134,7 +133,7 @@ it('buffers events before ACK, drains all catch-up pages, deduplicates and keeps
   ).toBe(true);
 });
 
-it('periodically repairs a dropped event while the connection remains open', async () => {
+it('keeps the channel live without polling and catches up after reconnect', async () => {
   vi.useFakeTimers();
   const f = fixture();
   await f.sync.reconcile();
@@ -143,7 +142,12 @@ it('periodically repairs a dropped event while the connection remains open', asy
   f.rows.push(dropped, delivered);
   f.push(delivered);
   expect(f.sync.snapshot().checkpoint).toBe('cp.1');
-  await vi.advanceTimersByTimeAsync(100);
+  await vi.advanceTimersByTimeAsync(60_000);
+  expect(f.historyQueries).toHaveLength(1);
+  expect(f.sync.snapshot().phase).toBe('live');
+  expect(f.sync.snapshot().messages.map((row) => row.id)).toEqual([f.rows[0]!.id, delivered.id]);
+  f.disconnect();
+  await f.sync.reconcile();
   expect(f.sync.snapshot().messages.map((row) => row.id)).toEqual([
     f.rows[0]!.id,
     dropped.id,
@@ -151,6 +155,31 @@ it('periodically repairs a dropped event while the connection remains open', asy
   ]);
   expect(f.sync.snapshot().checkpoint).toBe('cp.3');
 });
+
+it.each([false, true])(
+  'bounds quota recovery and skips retries when the channel is no longer selected (%s)',
+  async (switchAway) => {
+    vi.useFakeTimers();
+    const f = fixture();
+    const subscribe = vi.spyOn(f.port, 'subscribe').mockResolvedValue({
+      requestId: randomUUID(),
+      error: { code: 'SERVER_BUSY', message: 'Quota full' },
+    });
+    let selected = true;
+    const releaseHidden = vi.fn(() => () => selected);
+    const sync = createTextSynchronizer(f.port, channelId, limits, () => {}, releaseHidden);
+    disposers.push(sync.stop);
+    const pending = sync.reconcile();
+    await vi.advanceTimersByTimeAsync(0);
+    if (switchAway) selected = false;
+    await vi.advanceTimersByTimeAsync(5000);
+    await pending;
+    expect(releaseHidden).toHaveBeenCalledTimes(1);
+    expect(subscribe).toHaveBeenCalledTimes(switchAway ? 1 : 4);
+    expect(f.historyQueries).toHaveLength(0);
+    expect(sync.snapshot().phase).toBe('resync');
+  },
+);
 
 it.each(['AUTH_REQUIRED', 'FORBIDDEN', 'NOT_FOUND'])(
   'clears private cache and refuses completion on %s between catch-up pages',
@@ -227,8 +256,7 @@ it('opens a new turn after RESYNC_REQUIRED but never automatically reopens revok
   await f.sync.reconcile();
   f.rows.push(message(2));
   f.invalidate('RESYNC_REQUIRED');
-  expect(f.sync.snapshot()).toMatchObject({ phase: 'resync', checkpoint: 'cp.1' });
-  await vi.advanceTimersByTimeAsync(100);
+  await f.sync.reconcile();
   expect(f.sync.snapshot()).toMatchObject({ phase: 'live', checkpoint: 'cp.2' });
   f.invalidate('ACCESS_REVOKED');
   const count = f.historyQueries.length;
@@ -242,15 +270,12 @@ it('opens a new turn after RESYNC_REQUIRED but never automatically reopens revok
 });
 
 it('falls back to a bounded snapshot after catch-up exceeds the projection capacity', async () => {
-  vi.useFakeTimers();
   const f = fixture();
   const bounded = createTextSynchronizer(f.port, channelId, { ...limits, messages: 3 }, () => {});
   disposers.push(bounded.stop);
   await bounded.reconcile();
   for (let seq = 2; seq <= 6; seq++) f.rows.push(message(seq));
   await bounded.reconcile();
-  expect(bounded.snapshot()).toMatchObject({ phase: 'resync', checkpoint: undefined });
-  await vi.advanceTimersByTimeAsync(100);
   expect(bounded.snapshot()).toMatchObject({ phase: 'live', checkpoint: 'cp.6' });
   expect(bounded.snapshot().messages.map((row) => row.commitSeq)).toEqual([4, 5, 6]);
   expect(bounded.snapshot().olderCursor).not.toBeNull();

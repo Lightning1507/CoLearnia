@@ -1,20 +1,31 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { textMessageSendBodySchema, type TextHistoryMessage } from '@colearnia/contracts';
 import { mergeTextMessage, newTextIntent, type OutgoingText } from './text-intent';
 import { createTextFixture, type FixtureSendMode, type TextPort } from './text-fixture';
 import './text-timeline.css';
+
+const messageTime = new Intl.DateTimeFormat('vi-VN', {
+  day: '2-digit',
+  month: '2-digit',
+  year: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+  hourCycle: 'h23',
+});
 
 export function TextTimeline({
   port,
   senderId,
   displayName,
   projection,
+  visible = true,
   connected = true,
 }: {
   port: TextPort;
   senderId: string;
   displayName: string;
   projection?: TextHistoryMessage[];
+  visible?: boolean;
   connected?: boolean;
 }) {
   const [messages, setMessages] = useState<TextHistoryMessage[]>([]);
@@ -27,9 +38,18 @@ export function TextTimeline({
   const [draft, setDraft] = useState('');
   const [validation, setValidation] = useState('');
   const [draftNotice, setDraftNotice] = useState('');
+  const composerId = useId();
   const input = useRef<HTMLTextAreaElement>(null);
+  const history = useRef<HTMLDivElement>(null);
+  const followingLatest = useRef(true);
   const lifetime = useRef<AbortController | null>(null);
   const sending = useRef(new Set<string>());
+
+  useLayoutEffect(() => {
+    const panel = history.current;
+    if (visible && panel?.clientHeight && followingLatest.current)
+      panel.scrollTop = panel.scrollHeight;
+  }, [displayed, outbox, visible]);
 
   // Resolve an outbox row when the committed event wins the race with its ACK.
   if (projection !== previousProjection) {
@@ -122,7 +142,20 @@ export function TextTimeline({
 
   return (
     <section className="text-chat" aria-label="Tin nhắn văn bản">
-      <div className="text-chat-scroll" aria-busy={state === 'loading'}>
+      <div
+        className="text-chat-scroll"
+        ref={history}
+        aria-label="Vùng cuộn tin nhắn"
+        role="region"
+        tabIndex={0}
+        aria-busy={state === 'loading'}
+        onScroll={({ currentTarget }) => {
+          if (currentTarget.clientHeight)
+            followingLatest.current =
+              currentTarget.scrollHeight - currentTarget.clientHeight - currentTarget.scrollTop <
+              32;
+        }}
+      >
         {state === 'loading' && (
           <p role="status" className="text-chat-state">
             Đang tải tin nhắn…
@@ -150,35 +183,31 @@ export function TextTimeline({
               </div>
             )}
             <ol className="text-message-list" aria-label="Lịch sử tin nhắn">
-              {displayed.map((message) => (
-                <li key={message.id} className="text-message">
-                  <span className="text-avatar" aria-hidden="true">
-                    {message.senderId === senderId
-                      ? displayName.slice(0, 1)
-                      : projection
-                        ? 'T'
-                        : 'L'}
-                  </span>
-                  <div>
-                    <div className="text-message-meta">
-                      <strong>
-                        {message.senderId === senderId
-                          ? displayName
-                          : projection
-                            ? `Thành viên ${message.senderId.slice(-6)}`
-                            : 'Linh · Fixture'}
-                      </strong>
-                      <time dateTime={message.createdAt}>
-                        {new Date(message.createdAt).toLocaleTimeString('vi-VN', {
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })}
-                      </time>
+              {displayed.map((message) => {
+                const authorName =
+                  message.senderDisplayName ??
+                  (message.senderId === senderId
+                    ? displayName
+                    : projection
+                      ? `Thành viên ${message.senderId.slice(-6)}`
+                      : 'Linh · Fixture');
+                return (
+                  <li key={message.id} className="text-message">
+                    <span className="text-avatar" aria-hidden="true">
+                      {Array.from(authorName)[0]}
+                    </span>
+                    <div>
+                      <div className="text-message-meta">
+                        <strong>{authorName}</strong>
+                        <time dateTime={message.createdAt}>
+                          {messageTime.format(new Date(message.createdAt))}
+                        </time>
+                      </div>
+                      <p>{message.text}</p>
                     </div>
-                    <p>{message.text}</p>
-                  </div>
-                </li>
-              ))}
+                  </li>
+                );
+              })}
               {outbox.map((intent) => (
                 <li key={intent.payload.clientMessageId} className="text-message">
                   <span className="text-avatar" aria-hidden="true">
@@ -228,48 +257,56 @@ export function TextTimeline({
           submit();
         }}
       >
-        <label htmlFor="text-composer-input">Tin nhắn mới</label>
-        <textarea
-          ref={input}
-          id="text-composer-input"
-          rows={3}
-          value={draft}
-          disabled={state !== 'ready' || !connected}
-          aria-invalid={!!validation}
-          aria-describedby={validation ? 'text-validation' : 'text-composer-help'}
-          placeholder="Viết tin nhắn cho nhóm…"
-          onChange={(event) => {
-            setDraft(event.target.value);
-            setDraftNotice('');
-            setValidation('');
-          }}
-          onKeyDown={(event) => {
-            if (
-              event.key === 'Enter' &&
-              (event.ctrlKey || event.metaKey) &&
-              !event.nativeEvent.isComposing
-            ) {
-              event.preventDefault();
-              submit();
-            }
-          }}
-        />
+        <div className="text-composer-row">
+          <label className="sr-only" htmlFor={composerId}>
+            Tin nhắn mới
+          </label>
+          <textarea
+            ref={input}
+            id={composerId}
+            rows={1}
+            value={draft}
+            disabled={state !== 'ready' || !connected}
+            aria-invalid={!!validation}
+            aria-describedby={validation ? `${composerId}-validation` : `${composerId}-help`}
+            placeholder="Viết tin nhắn cho nhóm…"
+            onChange={(event) => {
+              setDraft(event.target.value);
+              setDraftNotice('');
+              setValidation('');
+            }}
+            onKeyDown={(event) => {
+              if (
+                event.key === 'Enter' &&
+                (event.ctrlKey || event.metaKey) &&
+                !event.nativeEvent.isComposing
+              ) {
+                event.preventDefault();
+                submit();
+              }
+            }}
+          />
+          <small className="sr-only" id={`${composerId}-help`}>
+            Ctrl / ⌘ + Enter để gửi. Enter xuống dòng.
+          </small>
+          <button
+            type="submit"
+            aria-label="Gửi tin nhắn"
+            disabled={state !== 'ready' || !connected || !draft.trim()}
+          >
+            Gửi
+          </button>
+        </div>
         {draftNotice && (
           <p className="text-draft-notice" role="status">
             {draftNotice}
           </p>
         )}
         {validation && (
-          <p id="text-validation" role="alert">
+          <p id={`${composerId}-validation`} className="text-composer-validation" role="alert">
             {validation}
           </p>
         )}
-        <div className="text-composer-footer">
-          <small id="text-composer-help">Ctrl / ⌘ + Enter để gửi · Enter xuống dòng</small>
-          <button type="submit" disabled={state !== 'ready' || !connected || !draft.trim()}>
-            Gửi tin nhắn
-          </button>
-        </div>
       </form>
     </section>
   );
