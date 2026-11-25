@@ -14,6 +14,8 @@ Source schema ở `packages/contracts/src`, frontend và backend import qua `@co
 
 **MAIN reconnect/resync (SCRUM-84):** [resume ticket, grace và socket generation](main-reconnect.md); thu tài nguyên đời cũ trước khi nối lại, snapshot dựng từ quyền hiện hành. M3 review schema ack join/resume và M4–FE ghép adapter theo contract này.
 
+**MAIN phục hồi sau F5 (SCRUM-98):** [đề xuất contract và ma trận nghiệm thu](main-reload-recovery.md). M1 và M3 review trước khi triển khai.
+
 **Kết thúc phiên (SCRUM-86):** [host end/rời, idempotency và cleanup](session-end.md); schema `session-end.ts`, adapter `session.end` dùng cùng registry MAIN. Chưa mount vào app production; xem giới hạn tích hợp trong contract.
 
 **Đối chiếu và phiên rỗng (SCRUM-87):** [read-back mutation và ordering join/end](session-reconciliation.md); đọc snapshot session/participation, không ghi lặp khi mất ACK; ownership hết grace không giữ phiên bằng ticket cũ.
