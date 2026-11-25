@@ -6,10 +6,11 @@ import {
   textMessageHistoryQuerySchema,
   textMessageSendBodySchema,
   textMessageSendInputSchema,
+  textSenderNamesHeader,
   textConversationSubscribeInputSchema,
   textConversationUnsubscribeInputSchema,
 } from '@colearnia/contracts';
-import type { AuthenticatedContext } from '@colearnia/contracts';
+import type { AuthenticatedContext, TextHistoryMessage } from '@colearnia/contracts';
 import { authFailure, requireVerifiedSession } from '../auth/http-auth.js';
 import type { AuthResponse, createHttpAuth } from '../auth/http-auth.js';
 import { logger } from '../lib/logger.js';
@@ -17,6 +18,17 @@ import { textErrorCode } from './text-service.js';
 import type { createTextService } from './text-service.js';
 
 type Service = ReturnType<typeof createTextService>;
+
+// Older web builds use a strict message schema, so only send names to opted-in clients.
+export function textMessageForClient<T extends TextHistoryMessage>(
+  message: T,
+  includeSenderNames: boolean,
+): T {
+  if (includeSenderNames) return message;
+  const legacyMessage = { ...message };
+  delete legacyMessage.senderDisplayName;
+  return legacyMessage;
+}
 export type TextSocketEvents = {
   'message.send': (input: unknown, reply?: (result: unknown) => void) => void;
   'conversation.subscribe': (input: unknown, reply?: (result: unknown) => void) => void;
@@ -61,9 +73,13 @@ export function createTextRouter(auth: ReturnType<typeof createHttpAuth>, servic
         channelId.toLowerCase(),
         textMessageSendBodySchema.parse(req.body),
       );
-      res
-        .status(data.outcome === 'created' ? 201 : 200)
-        .json({ data, requestId: res.locals.requestId });
+      res.status(data.outcome === 'created' ? 201 : 200).json({
+        data: {
+          ...data,
+          message: textMessageForClient(data.message, req.get(textSenderNamesHeader) === '1'),
+        },
+        requestId: res.locals.requestId,
+      });
     } catch (error) {
       reject(res, error);
     }
@@ -81,7 +97,12 @@ export function createTextRouter(auth: ReturnType<typeof createHttpAuth>, servic
       try {
         const { channelId } = channelParamsSchema.parse(req.params);
         const query = textMessageHistoryQuerySchema.parse(req.query);
-        const data = await service.history(actor.context, channelId.toLowerCase(), query);
+        const data = await service.history(
+          actor.context,
+          channelId.toLowerCase(),
+          query,
+          req.get(textSenderNamesHeader) === '1',
+        );
         res.json({ data, requestId: res.locals.requestId });
       } catch (error) {
         reject(res, error);
@@ -160,7 +181,10 @@ export function createTextSocketSync(service: Service) {
 }
 
 export function createTextSocketSend(service: Service) {
-  return (actor: AuthenticatedContext): TextSocketEvents['message.send'] =>
+  return (
+      actor: AuthenticatedContext,
+      includeSenderNames = false,
+    ): TextSocketEvents['message.send'] =>
     async (input, reply) => {
       if (typeof reply !== 'function') return;
       const parsed = textMessageSendInputSchema.safeParse(input);
@@ -179,7 +203,11 @@ export function createTextSocketSend(service: Service) {
         payload: { channelId, ...body },
       } = parsed.data;
       try {
-        reply({ data: await service.send(actor, channelId.toLowerCase(), body), requestId });
+        const data = await service.send(actor, channelId.toLowerCase(), body);
+        reply({
+          data: { ...data, message: textMessageForClient(data.message, includeSenderNames) },
+          requestId,
+        });
       } catch (error) {
         reply({ error: failure(error, requestId), requestId });
       }

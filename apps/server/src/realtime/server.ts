@@ -11,6 +11,7 @@ import type { createSessionReader } from '../auth/read-session.js';
 import { authCookie } from '../auth/session-credentials.js';
 import type { AppConfig } from '../config/env.js';
 import { logger } from '../lib/logger.js';
+import { textMessageForClient } from '../messaging/text-transport.js';
 
 import type {
   createTextSocketSend,
@@ -90,7 +91,8 @@ export function createRealtime(
       }
       const untrack = connections?.track(auth, () => socket.disconnect(true));
       if (untrack) socket.once('disconnect', untrack);
-      if (textSend) socket.on('message.send', textSend(auth));
+      const includeSenderNames = socket.handshake.auth?.textSenderNames === true;
+      if (textSend) socket.on('message.send', textSend(auth, includeSenderNames));
       if (textSync) {
         const sync = textSync(auth, socket.id, (event, payload) => {
           // Never accumulate private events in Socket.IO's disconnected/slow-client buffer.
@@ -98,9 +100,13 @@ export function createRealtime(
             socket.disconnect(true);
             return false;
           }
-          if (event === 'message.created')
-            socket.volatile.emit(event, textMessageCreatedEventSchema.parse(payload));
-          else socket.volatile.emit(event, textConversationInvalidatedEventSchema.parse(payload));
+          if (event === 'message.created') {
+            const parsed = textMessageCreatedEventSchema.parse(payload);
+            socket.volatile.emit(event, {
+              ...parsed,
+              message: textMessageForClient(parsed.message, includeSenderNames),
+            });
+          } else socket.volatile.emit(event, textConversationInvalidatedEventSchema.parse(payload));
           return true;
         });
         let awaitingAck = false;

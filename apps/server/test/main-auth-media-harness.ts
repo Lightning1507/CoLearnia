@@ -404,7 +404,7 @@ export async function setup(
     const auth = (await readSession(token))!.context;
     return { data, cookie, auth };
   }
-  async function signUp() {
+  async function signUp(displayName = 'Sinh viên') {
     const input = {
       email: `${randomUUID()}@example.test`,
       password: randomBytes(24).toString('hex'),
@@ -415,7 +415,7 @@ export async function setup(
       .set('Origin', origin)
       .set('Cookie', cookies(csrf))
       .set('X-CSRF-Token', csrfResponseSchema.parse(csrf.body).data.csrfToken)
-      .send({ ...input, displayName: 'Sinh viên' })
+      .send({ ...input, displayName })
       .expect(201);
     const account = await accountFrom(response);
     credentials.set(account, input);
@@ -453,11 +453,11 @@ export async function setup(
     credentials.set(independent, input);
     return independent;
   }
-  async function connect(account: Awaited<ReturnType<typeof signUp>>) {
+  async function connect(account: Awaited<ReturnType<typeof signUp>>, textSenderNames = false) {
     const socket = connectSocket(`http://127.0.0.1:${(server.address() as AddressInfo).port}`, {
       transports: ['websocket'],
       extraHeaders: { Cookie: account.cookie, Origin: origin },
-      auth: { csrfToken: account.data.csrfToken },
+      auth: { csrfToken: account.data.csrfToken, ...(textSenderNames && { textSenderNames }) },
       reconnection: false,
       autoConnect: false,
       timeout: 3000,
