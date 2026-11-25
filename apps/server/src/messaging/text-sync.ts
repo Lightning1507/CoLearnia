@@ -29,6 +29,7 @@ export type SyncEntry = {
   token: string;
   generation: number;
   expiresAt: number;
+  historyExpiresAt: number;
   through: number;
   after: number | undefined;
   throughCheckpoint: string;
@@ -106,6 +107,14 @@ export function createTextSyncRegistry(secret: string, limits: TextSyncLimits) {
       throw new TextSyncError('CONFLICT');
     }
   }
+  function currentHistory(
+    entry: SyncEntry,
+    actor: AuthenticatedContext,
+    access: ChannelAccessSnapshot,
+  ) {
+    current(entry, actor, access);
+    if (Date.now() >= entry.historyExpiresAt) throw new TextSyncError('CONFLICT');
+  }
   const matches = (entry: SyncEntry, target: MessagingRevocationTarget) => {
     if (target.kind === 'RUNTIME') return false;
     if (target.userId !== null && target.userId !== entry.actor.userId) return false;
@@ -152,6 +161,7 @@ export function createTextSyncRegistry(secret: string, limits: TextSyncLimits) {
     revocation,
     close,
     current,
+    currentHistory,
     cursor(entry: SyncEntry, position: number) {
       return checkpoint({ ...entry.scope, channelId: 'page:' + entry.id }, position);
     },
@@ -172,6 +182,7 @@ export function createTextSyncRegistry(secret: string, limits: TextSyncLimits) {
       input: Pick<SyncEntry, 'actor' | 'scope' | 'access' | 'owner' | 'emit'>,
       through: number,
       afterCheckpoint?: string,
+      persistOnSocket = false,
     ) {
       if (
         entries.size >= limits.subscriptions ||
@@ -184,29 +195,35 @@ export function createTextSyncRegistry(secret: string, limits: TextSyncLimits) {
         afterCheckpoint === undefined ? undefined : sequence(afterCheckpoint, input.scope);
       if (after !== undefined && after > through) throw new TextSyncError('CONFLICT');
       const id = randomUUID();
-      const expiresAt = Math.min(Date.parse(input.actor.expiresAt), Date.now() + limits.leaseMs);
+      const authExpiresAt = Date.parse(input.actor.expiresAt);
+      const historyExpiresAt = Math.min(authExpiresAt, Date.now() + limits.leaseMs);
+      const expiresAt = persistOnSocket ? authExpiresAt : historyExpiresAt;
       if (expiresAt <= Date.now()) throw new TextSyncError('CONFLICT');
+      // History tokens keep their original deadline. Opted-in sockets keep only fanout after it.
+      const scheduleExpiry = (): ReturnType<typeof setTimeout> =>
+        setTimeout(
+          () => {
+            if (Date.now() < expiresAt) {
+              entry.timer = scheduleExpiry();
+              return;
+            }
+            close(entry, Date.now() >= authExpiresAt ? 'ACCESS_REVOKED' : 'RESYNC_REQUIRED');
+          },
+          Math.min(expiresAt - Date.now(), 2_147_483_647),
+        ).unref();
       const entry: SyncEntry = {
         ...input,
         id,
         token: randomBytes(32).toString('base64url'),
         generation: ++generation,
         expiresAt,
+        historyExpiresAt,
         through,
         after,
         throughCheckpoint: checkpoint(input.scope, through),
         afterCheckpoint,
         pending: false,
-        timer: setTimeout(
-          () =>
-            close(
-              entry,
-              Date.now() >= Date.parse(entry.actor.expiresAt)
-                ? 'ACCESS_REVOKED'
-                : 'RESYNC_REQUIRED',
-            ),
-          expiresAt - Date.now(),
-        ).unref(),
+        timer: scheduleExpiry(),
       };
       entries.set(id, entry);
       return entry;
@@ -219,7 +236,7 @@ export function createTextSyncRegistry(secret: string, limits: TextSyncLimits) {
           e.actor.userId === actor.userId,
       );
       if (!entry) throw new TextSyncError('CONFLICT');
-      current(entry, actor, access);
+      currentHistory(entry, actor, access);
       return entry;
     },
     unsubscribe(id: string, owner: string) {

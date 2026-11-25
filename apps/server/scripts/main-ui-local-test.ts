@@ -12,6 +12,7 @@ const port = Number(process.env.COLEARNIA_DB_TEST_PORT ?? 27193);
 if (!Number.isInteger(port) || port < 1024 || port > 65535 || port === 27017)
   throw new Error('Use a separate disposable Mongo test port');
 const retainedDatabase = process.env.COLEARNIA_MAIN_UI_TEST_DB;
+const createNamedDatabase = process.env.COLEARNIA_MAIN_UI_TEST_CREATE === 'true';
 if (retainedDatabase && !/^colearnia_test_main_ui_[a-f\d]{32}$/.test(retainedDatabase))
   throw new Error('Only a named disposable MAIN UI database can be reused');
 const name = retainedDatabase ?? `colearnia_test_main_ui_${randomUUID().replaceAll('-', '')}`;
@@ -20,11 +21,13 @@ const database = createDatabase(uri);
 await database.connect();
 const db = database.connection.db!;
 const existingCollections = await db.listCollections().toArray();
-if (retainedDatabase ? !existingCollections.length : existingCollections.length > 0)
+if (retainedDatabase && !existingCollections.length && !createNamedDatabase)
   throw new Error(
-    retainedDatabase ? 'Expected the existing test database' : 'Expected a new empty test DB',
+    'Test database is missing. Set COLEARNIA_MAIN_UI_TEST_CREATE=true to create this named test database explicitly.',
   );
-if (!retainedDatabase) {
+if (!retainedDatabase && existingCollections.length > 0)
+  throw new Error('Expected a new empty test DB');
+if (!existingCollections.length) {
   for (const collection of [
     'users',
     'authSessions',
@@ -84,6 +87,7 @@ const child = spawn(
 console.log(
   `Disposable MAIN UI server: http://127.0.0.1:3193; web origin http://localhost:5193; Mongo test port ${port}`,
 );
+if (retainedDatabase) console.log(`Retained test database: ${name}; kept when the server stops.`);
 let closing = false;
 async function close() {
   if (closing) return;

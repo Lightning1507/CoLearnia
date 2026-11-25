@@ -10,7 +10,7 @@ import { io } from 'socket.io-client';
 import { MainCall } from './mainCall';
 import { CallControllerOwner } from './callController';
 import { authApi } from '../../auth/session';
-import { requestMainTicket, mainCommand, waitForMain } from './mainConnection';
+import { requestMainTicket, readMainOwnership, mainCommand, waitForMain } from './mainConnection';
 import { initializeMainMedia } from './mainMedia';
 
 vi.mock('socket.io-client', () => ({ io: vi.fn() }));
@@ -18,6 +18,7 @@ vi.mock('./mainMedia', () => ({ initializeMainMedia: vi.fn() }));
 vi.mock('./mainConnection', async (original) => ({
   ...(await original<typeof import('./mainConnection')>()),
   requestMainTicket: vi.fn(),
+  readMainOwnership: vi.fn(async () => ({})),
 }));
 
 const identity = {
@@ -212,6 +213,72 @@ it('joins once, keeps the call when minimized, and ends using the server role', 
   expect(sockets[0]!.requests.filter(({ event }) => event === 'session.end')).toHaveLength(1);
   expect(owner.getSnapshot().status).toBe('idle');
 });
+it('reads server ownership in the lobby without joining or capturing devices', async () => {
+  vi.mocked(readMainOwnership).mockResolvedValueOnce({ activeCallGeneration: 4 });
+  call.open(target);
+  await vi.waitFor(() => expect(call.getSnapshot().transferAvailable).toBe(true));
+  expect(requestMainTicket).not.toHaveBeenCalled();
+  expect(initializeMainMedia).not.toHaveBeenCalled();
+});
+it('sends takeover only after explicit confirmation, then terminates the old tab without leave/end', async () => {
+  await call.join(preferences);
+  const socket = sockets[0]!;
+  const context = {
+    sessionId: identity.sessionId,
+    epoch: identity.epoch,
+    callGeneration: generation,
+  };
+  socket.emit('session.transferred', { ...context, callGeneration: generation + 1 });
+  expect(call.getSnapshot().phase).toBe('active');
+  socket.emit('session.transferred', context);
+  expect(call.getSnapshot().phase).toBe('transferred');
+  expect(call.getSnapshot().target).toEqual(target);
+  expect(dispose).toHaveBeenCalledOnce();
+  expect(
+    socket.requests.some(({ event }) => event === 'session.end' || event === 'session.leave'),
+  ).toBe(false);
+  vi.mocked(requestMainTicket).mockResolvedValueOnce({
+    sessionId: identity.sessionId,
+    epoch: identity.epoch,
+    ticket: 'new-ticket',
+    expiresAt: '2099-01-01T00:00:00.000Z',
+    activeCallGeneration: generation + 1,
+  });
+  generation += 2;
+  await call.join(preferences, true);
+  expect(call.getSnapshot().phase).toBe('active');
+  expect(
+    sockets[1]!.requests.find(({ event }) => event === 'session.join')?.input.takeover,
+  ).toEqual({ confirmed: true, expectedCallGeneration: generation - 1 });
+});
+it('blocks a known active tab before requesting a ticket and clears account-specific hints on logout', async () => {
+  call.clear();
+  let receive: ((event: { data: unknown }) => void) | null = null;
+  const post = vi.fn();
+  const close = vi.fn();
+  vi.stubGlobal('window', {
+    ...window,
+    BroadcastChannel: class {
+      set onmessage(listener: (event: { data: unknown }) => void) {
+        receive = listener;
+      }
+      postMessage = post;
+      close = close;
+    },
+  });
+  call.setAuth(auth);
+  call.open(target);
+  receive!({ data: { type: 'active', id: 'other-tab' } });
+  await call.join(preferences);
+  expect(call.getSnapshot()).toMatchObject({ phase: 'lobby', otherTabActive: true });
+  expect(requestMainTicket).not.toHaveBeenCalled();
+  expect(io).not.toHaveBeenCalled();
+  receive!({ data: { type: 'release', id: 'other-tab' } });
+  expect(call.getSnapshot().otherTabActive).toBe(false);
+  call.setAuth(null);
+  expect(close).toHaveBeenCalledOnce();
+  expect(call.getSnapshot().otherTabActive).toBe(false);
+});
 it('waits after reload-like ownership refusal, refreshes the unconsumed ticket, then joins without takeover', async () => {
   vi.useFakeTimers();
   vi.mocked(io).mockImplementationOnce(() => {
@@ -233,7 +300,7 @@ it('waits after reload-like ownership refusal, refreshes the unconsumed ticket, 
   const joining = call.join(preferences);
   await vi.advanceTimersByTimeAsync(0);
   expect(call.getSnapshot().phase).toBe('joining');
-  expect(call.getSnapshot().message).toContain('Đang chờ kết nối trước');
+  expect(call.getSnapshot().ownershipConflict).toBe(true);
   expect(startDevices).not.toHaveBeenCalled();
   await vi.advanceTimersByTimeAsync(5000);
   await joining;
@@ -261,7 +328,7 @@ it('keeps an active ownership protected and stops waiting after a bounded reload
   const joining = call.join(preferences);
   await vi.advanceTimersByTimeAsync(35000);
   await joining;
-  expect(call.getSnapshot().phase).toBe('error');
+  expect(call.getSnapshot()).toMatchObject({ phase: 'lobby', ownershipConflict: true });
   expect(sockets[0]!.requests).toHaveLength(8);
   expect(startDevices).not.toHaveBeenCalled();
   expect(owner.getSnapshot().status).toBe('idle');

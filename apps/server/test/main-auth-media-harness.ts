@@ -143,6 +143,7 @@ export async function setup(
   options: {
     productionRuntime?: boolean;
     text?: boolean;
+    textHistoryLeaseMs?: number;
     textSendLedger?: TextSendLedger;
     origin?: string;
     port?: number;
@@ -216,7 +217,12 @@ export async function setup(
         },
         undefined,
         false,
-        { subscriptions: 16, perUser: 4, leaseMs: 60_000, revocationRecords: 16 },
+        {
+          subscriptions: 16,
+          perUser: 4,
+          leaseMs: options.textHistoryLeaseMs ?? 60_000,
+          revocationRecords: 16,
+        },
         () =>
           Boolean(
             textService?.syncRevocation &&
@@ -404,7 +410,7 @@ export async function setup(
     const auth = (await readSession(token))!.context;
     return { data, cookie, auth };
   }
-  async function signUp() {
+  async function signUp(displayName = 'Sinh viên') {
     const input = {
       email: `${randomUUID()}@example.test`,
       password: randomBytes(24).toString('hex'),
@@ -415,7 +421,7 @@ export async function setup(
       .set('Origin', origin)
       .set('Cookie', cookies(csrf))
       .set('X-CSRF-Token', csrfResponseSchema.parse(csrf.body).data.csrfToken)
-      .send({ ...input, displayName: 'Sinh viên' })
+      .send({ ...input, displayName })
       .expect(201);
     const account = await accountFrom(response);
     credentials.set(account, input);
@@ -453,11 +459,14 @@ export async function setup(
     credentials.set(independent, input);
     return independent;
   }
-  async function connect(account: Awaited<ReturnType<typeof signUp>>) {
+  async function connect(
+    account: Awaited<ReturnType<typeof signUp>>,
+    textCapabilities: { textSenderNames?: boolean; textPersistentSubscription?: boolean } = {},
+  ) {
     const socket = connectSocket(`http://127.0.0.1:${(server.address() as AddressInfo).port}`, {
       transports: ['websocket'],
       extraHeaders: { Cookie: account.cookie, Origin: origin },
-      auth: { csrfToken: account.data.csrfToken },
+      auth: { csrfToken: account.data.csrfToken, ...textCapabilities },
       reconnection: false,
       autoConnect: false,
       timeout: 3000,

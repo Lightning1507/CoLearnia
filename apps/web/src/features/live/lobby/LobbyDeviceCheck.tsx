@@ -66,6 +66,7 @@ export type LobbyDeviceCheckProps = {
   /** Supply only from the authorized join flow. This callback does not imply join success. */
   onContinue?: (preferences: LobbyDevicePreferences) => void;
   continuePending?: boolean;
+  transfer?: boolean;
 };
 
 function CameraPreview({
@@ -129,6 +130,7 @@ export function LobbyDeviceCheck({
   onBack,
   onContinue,
   continuePending = false,
+  transfer = false,
 }: LobbyDeviceCheckProps) {
   const { state, preview } = useLobbyPreview();
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -219,9 +221,13 @@ export function LobbyDeviceCheck({
         </section>
         <section className="lobby-settings" aria-labelledby={`${id}-title`}>
           <p className="lobby-channel">{channelName}</p>
-          <h1 id={`${id}-title`}>Sẵn sàng tham gia?</h1>
+          <h1 id={`${id}-title`}>
+            {transfer ? 'Chuyển cuộc gọi sang thiết bị này?' : 'Sẵn sàng tham gia?'}
+          </h1>
           <p className="lobby-description">
-            Kiểm tra thiết bị trước khi vào phòng. Chỉ bật camera hoặc micro khi bạn muốn.
+            {transfer
+              ? 'Cuộc gọi đang mở trên tab hoặc thiết bị khác. Khi chuyển, kết nối cũ sẽ ngắt và bạn tiếp tục cuộc gọi tại đây. Mic và camera bật theo lựa chọn của bạn.'
+              : 'Kiểm tra thiết bị trước khi vào phòng. Chỉ bật camera hoặc micro khi bạn muốn.'}
           </p>
           {notice && (
             <p className="lobby-device-message" role="status">
@@ -308,7 +314,11 @@ export function LobbyDeviceCheck({
                 disabled={continuePending || deviceRequestPending}
                 aria-describedby={`${id}-continue-status`}
               >
-                {continuePending ? 'Đang vào phòng…' : 'Tham gia cuộc họp'}
+                {continuePending
+                  ? 'Đang vào phòng…'
+                  : transfer
+                    ? 'Chuyển qua thiết bị này'
+                    : 'Tham gia cuộc họp'}
               </button>
             </>
           )}

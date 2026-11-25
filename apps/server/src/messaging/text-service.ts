@@ -8,10 +8,16 @@ import type {
   TextMessageHistoryPage,
   ChannelAccessSnapshot,
 } from '@colearnia/contracts';
-import { textMessageMaxCodePoints, workspaceDocumentIdSchema } from '@colearnia/contracts';
+import {
+  displayNameSchema,
+  textMessageMaxCodePoints,
+  workspaceDocumentIdSchema,
+} from '@colearnia/contracts';
 import { z } from 'zod';
 import type { Database } from '../lib/database.js';
 import { databaseQueryOptions, isDatabaseUnavailableError } from '../lib/database.js';
+import type { DatabaseDeadline } from '../lib/database.js';
+import { authModels } from '../auth/models.js';
 import { CoordinationError } from '../lib/operation-coordinator.js';
 import type { OperationCoordinator } from '../lib/operation-coordinator.js';
 import { channelModels } from '../workspaces/channel-models.js';
@@ -84,6 +90,7 @@ export function createTextService(
   sendLedger?: TextSendLedger,
 ) {
   const { Channel } = channelModels(database.connection);
+  const { User } = authModels(database.connection);
   const Conversation = conversationModel(database.connection);
   const messages = createTextMessageRepository(database, commitRecovery, sendLedger);
   const sendBuckets = new Map<string, { tokens: number; at: number }>();
@@ -258,13 +265,35 @@ export function createTextService(
     Awaited<ReturnType<typeof messages.listRoots>>['items'][number],
     '_id' | 'senderId' | 'clientMessageId' | 'text' | 'createdAt' | 'replyCount' | 'commitSeq'
   >;
-  function toDto(scope: Scope, row: Stored): TextHistoryMessage {
+  async function senderNames(ids: readonly Types.ObjectId[], remaining: DatabaseDeadline) {
+    if (!ids.length) return new Map<string, string>();
+    const unique = [...new Set(ids.map((id) => id.toHexString()))];
+    const users = await User.find({ _id: { $in: unique } })
+      .select('_id displayName')
+      .setOptions(databaseQueryOptions(remaining))
+      .lean();
+    const names = new Map<string, string>();
+    for (const user of users) {
+      const name = displayNameSchema.safeParse(user.displayName);
+      if (name.success) names.set(user._id.toHexString(), name.data);
+    }
+    return names;
+  }
+
+  function toDto(
+    scope: Scope,
+    row: Stored,
+    names: ReadonlyMap<string, string>,
+  ): TextHistoryMessage {
+    const senderId = row.senderId.toHexString();
+    const senderDisplayName = names.get(senderId);
     return {
       channelId: scope.channelId,
       conversationId: scope.conversationId.toHexString(),
       rootMessageId: null,
       id: row._id.toHexString(),
-      senderId: row.senderId.toHexString(),
+      senderId,
+      ...(senderDisplayName && { senderDisplayName }),
       clientMessageId: row.clientMessageId,
       text: row.text,
       createdAt: row.createdAt.toISOString(),
@@ -334,6 +363,7 @@ export function createTextService(
       owner: string,
       emit: SyncEntry['emit'],
       afterCheckpoint?: string,
+      persistOnSocket = false,
     ) {
       if (!sync || !syncReady()) throw new TextError('DEPENDENCY_UNAVAILABLE');
       let entry: SyncEntry | undefined;
@@ -360,6 +390,7 @@ export function createTextService(
               },
               through,
               afterCheckpoint,
+              persistOnSocket,
             );
             return {
               scope: entry.scope,
@@ -389,10 +420,13 @@ export function createTextService(
         Buffer.byteLength(JSON.stringify(input)),
         0,
         async (scope, remaining) => {
+          const senderId = new Types.ObjectId(actor.userId);
+          // Resolve the display name before writing so this read cannot obscure a successful send.
+          const names = await senderNames([senderId], remaining);
           const result = await messages.append(
             {
               conversationId: scope.conversationId,
-              senderId: new Types.ObjectId(actor.userId),
+              senderId,
               clientMessageId: input.clientMessageId,
               text: input.text,
               createdAt: new Date(),
@@ -412,7 +446,7 @@ export function createTextService(
           if (result.outcome === 'session-denied') throw new TextError('AUTH_REQUIRED');
           if (result.outcome === 'not-found') throw new TextError('NOT_FOUND');
           if (result.outcome === 'conflict') throw new TextError('CONFLICT');
-          return { outcome: result.outcome, message: toDto(scope, result.message) };
+          return { outcome: result.outcome, message: toDto(scope, result.message, names) };
         },
       );
       if (result.outcome === 'created') void publishCommitted(result.message);
@@ -422,6 +456,7 @@ export function createTextService(
       actor: AuthenticatedContext,
       channelId: string,
       query: TextMessageHistoryQuery | { limit: number; cursor?: string | undefined },
+      includeSenderNames = false,
     ) {
       return run(
         'history',
@@ -432,6 +467,8 @@ export function createTextService(
         // A supplementary scalar can need 12 bytes in escaped JSON.
         4096 + (query.limit + 1) * (textMessageMaxCodePoints * 20 + 1024),
         async (scope, remaining): Promise<TextMessageHistoryPage> => {
+          const namesFor = (rows: Stored[]) =>
+            senderNames(includeSenderNames ? rows.map((row) => row.senderId) : [], remaining);
           const conversationId = scope.conversationId.toHexString();
           const mode = 'mode' in query ? query.mode : 'history';
           if (mode !== 'history' && 'syncToken' in query) {
@@ -454,13 +491,14 @@ export function createTextService(
                 query.limit,
                 remaining,
               );
-              sync.current(entry, actor, scope.access);
+              const names = await namesFor(page.items);
+              sync.currentHistory(entry, actor, scope.access);
               return {
                 mode: 'catch-up',
                 scope: entry.scope,
                 throughCheckpoint: entry.throughCheckpoint,
                 items: page.items.map((row) => ({
-                  ...toDto(scope, row),
+                  ...toDto(scope, row, names),
                   commitSeq: row.commitSeq!,
                 })),
                 nextCursor: page.more ? sync.cursor(entry, page.items.at(-1)!.commitSeq!) : null,
@@ -474,13 +512,14 @@ export function createTextService(
               remaining(),
               entry.through,
             );
-            sync.current(entry, actor, scope.access);
+            const names = await namesFor(page.items);
+            sync.currentHistory(entry, actor, scope.access);
             const next = page.nextCursor;
             return {
               mode: 'snapshot',
               scope: entry.scope,
               throughCheckpoint: entry.throughCheckpoint,
-              items: page.items.map((row) => toDto(scope, row)),
+              items: page.items.map((row) => toDto(scope, row, names)),
               nextCursor: next
                 ? encodeCursor([
                     channelId,
@@ -503,11 +542,12 @@ export function createTextService(
             remaining(),
             cursor?.through,
           );
+          const names = await namesFor(page.items);
           const next = page.nextCursor;
           return {
             mode: 'history' as const,
             scope: { channelId, conversationId, rootMessageId: null },
-            items: page.items.map((row) => toDto(scope, row)),
+            items: page.items.map((row) => toDto(scope, row, names)),
             nextCursor: next
               ? encodeCursor([
                   channelId,

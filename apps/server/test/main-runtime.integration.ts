@@ -141,6 +141,52 @@ it('updates the existing MAIN client before its next media command', async () =>
   expect(JSON.stringify(changes[1]!.projection)).not.toContain(member.result.participantId);
 });
 
+it('hands the host call to another authenticated socket, closes old native media and supports switching back', async () => {
+  const f = await setup({ productionRuntime: true });
+  const host = await enter(f);
+  const status = await f.http
+    .get(`/api/v1/channels/${f.channel.id}/live-session/ownership`)
+    .set('Cookie', f.host.cookie)
+    .expect(200);
+  expect(status.body.data.activeCallGeneration).toBe(host.context.callGeneration);
+  const created = await host.socket.timeout(5000).emitWithAck('media.transport.create', {
+    ...host.context,
+    requestId: randomUUID(),
+    expectedPolicyRevision: 1,
+    payload: { direction: 'SEND' },
+  });
+  expect(created.data?.status).toBe('completed');
+  const oldTransport = f.native[0]!;
+  const next = await f.connect(f.host);
+  const notices: unknown[] = [];
+  host.socket.on('session.transferred', (notice: unknown) => notices.push(notice));
+  const response = await ticket(f);
+  const join = await next.timeout(5000).emitWithAck('session.join', {
+    requestId: randomUUID(),
+    ticket: response.body.data.ticket,
+    takeover: { confirmed: true, expectedCallGeneration: host.context.callGeneration },
+  });
+  expect(join.data?.status).toBe('completed');
+  expect(join.data.result.participantId).toBe(host.result.participantId);
+  await vi.waitFor(() => expect(host.socket.connected).toBe(false));
+  expect(notices).toEqual([host.context]);
+  expect(oldTransport.closed).toBe(true);
+  expect(f.registry.stats().ownerships).toBe(1);
+  expect(
+    await SessionParticipant.countDocuments({ sessionId: host.context.sessionId, leftAt: null }),
+  ).toBe(1);
+  const backSocket = await f.connect(f.host);
+  const backTicket = await ticket(f);
+  const back = await backSocket.timeout(5000).emitWithAck('session.join', {
+    requestId: randomUUID(),
+    ticket: backTicket.body.data.ticket,
+    takeover: { confirmed: true, expectedCallGeneration: join.data.result.callGeneration },
+  });
+  expect(back.data?.status).toBe('completed');
+  await vi.waitFor(() => expect(next.connected).toBe(false));
+  expect(f.registry.stats().ownerships).toBe(1);
+});
+
 it('reports closed native transport to its owner and preserves the replacement', async () => {
   const f = await setup({ productionRuntime: true });
   const host = await enter(f);

@@ -4,12 +4,16 @@ import { sessionEpochSchema, sessionIdSchema, sessionParticipantIdSchema } from 
 import { sessionSnapshotDescriptorSchema } from './session-projection.js';
 
 export const sessionJoinTicketInputSchema = z.strictObject({ requestId: requestIdSchema });
+export const sessionOwnershipResponseSchema = apiResponseSchema(
+  z.strictObject({ activeCallGeneration: z.number().int().positive().optional() }),
+);
 export const sessionJoinTicketResponseSchema = apiResponseSchema(
   z.strictObject({
     sessionId: sessionIdSchema,
     epoch: sessionEpochSchema,
     ticket: z.string().min(1).max(512),
     expiresAt: z.iso.datetime(),
+    activeCallGeneration: z.number().int().positive().optional(),
   }),
 );
 export const sessionJoinInputSchema = z.strictObject({
@@ -45,3 +49,10 @@ export const sessionResumeInputSchema = z.strictObject({
   resumeTicket: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
 });
 export type SessionResumeInput = z.infer<typeof sessionResumeInputSchema>;
+
+// Terminal only for the previous connection, not an end of the shared meeting.
+export const sessionTransferredEventSchema = z.strictObject({
+  sessionId: sessionIdSchema,
+  epoch: sessionEpochSchema,
+  callGeneration: z.number().int().positive(),
+});

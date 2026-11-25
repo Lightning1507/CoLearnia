@@ -1,4 +1,8 @@
-import { apiErrorSchema, sessionJoinTicketResponseSchema } from '@colearnia/contracts';
+import {
+  apiErrorSchema,
+  sessionJoinTicketResponseSchema,
+  sessionOwnershipResponseSchema,
+} from '@colearnia/contracts';
 import type { Socket } from 'socket.io-client';
 import { authApi } from '../../auth/session';
 
@@ -48,6 +52,19 @@ export async function mainCommand<T extends { requestId: string }>(
     }
   }
   throw new MainCallError('DEPENDENCY_UNAVAILABLE');
+}
+
+export async function readMainOwnership(channelId: string, signal: AbortSignal) {
+  const response = await fetch(
+    `${import.meta.env.VITE_API_BASE_URL ?? '/api/v1'}/channels/${encodeURIComponent(channelId)}/live-session/ownership`,
+    {
+      credentials: 'include',
+      cache: 'no-store',
+      signal: AbortSignal.any([signal, AbortSignal.timeout(10000)]),
+    },
+  );
+  if (!response.ok) throw new MainCallError('DEPENDENCY_UNAVAILABLE');
+  return sessionOwnershipResponseSchema.parse(await response.json()).data;
 }
 
 export async function requestMainTicket(channelId: string, requestId: string, signal: AbortSignal) {

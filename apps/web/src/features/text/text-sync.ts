@@ -32,12 +32,13 @@ export type TextSyncState = {
 class SnapshotRequired extends Error {}
 class ProjectionCapacityError extends Error {}
 
+const subscriptionRetryDelays = [100, 250, 500];
+
 type Limits = {
   events: number;
   messages: number;
   bytes: number;
   pages: number;
-  reconcileMs: number;
   roundMs: number;
   pageSize?: number;
 };
@@ -48,6 +49,7 @@ export function createTextSynchronizer(
   channelId: string,
   limits: Limits,
   changed: (state: TextSyncState) => void,
+  releaseHiddenSubscription?: () => (() => boolean) | undefined,
 ) {
   const { pageSize, ...budgets } = limits;
   for (const value of [...Object.values(budgets), pageSize ?? textHistoryMaxLimit])
@@ -65,7 +67,6 @@ export function createTextSynchronizer(
   };
   let generation = 0;
   let cleanup: (() => void) | undefined;
-  let timer: ReturnType<typeof setTimeout> | undefined;
   let inFlight: Promise<void> | undefined;
   let readOlder: (() => Promise<void>) | undefined;
   let olderInFlight: Promise<void> | undefined;
@@ -73,7 +74,6 @@ export function createTextSynchronizer(
   const notify = () => changed({ ...state, messages: [...state.messages] });
   function stop() {
     generation++;
-    clearTimeout(timer);
     cleanup?.();
     cleanup = undefined;
     inFlight = undefined;
@@ -85,7 +85,6 @@ export function createTextSynchronizer(
   async function run() {
     readOlder = undefined;
     const turn = ++generation;
-    clearTimeout(timer);
     cleanup?.();
     const controller = new AbortController();
     let subscriptionId: string | undefined;
@@ -94,6 +93,7 @@ export function createTextSynchronizer(
     let bufferBytes = 0;
     const valid = () => turn === generation && !controller.signal.aborted;
     const after = state.checkpoint;
+    const initialSnapshotLimit = snapshotLimit;
     const rows = new Map(state.messages.map((row) => [row.id, row]));
     let rowBytes = bytes(state.messages);
     const ordered = () =>
@@ -105,13 +105,11 @@ export function createTextSynchronizer(
     let unlisten = () => {};
     function invalidate(revoked: boolean, forgetCheckpoint = false, capacityBlocked = false) {
       if (!valid()) return;
-      clearTimeout(timer);
-      clearTimeout(deadline);
-      controller.abort();
+      cleanup?.();
+      cleanup = undefined;
+      inFlight = undefined;
       buffered = [];
       bufferBytes = 0;
-      unlisten();
-      if (subscriptionId) port.unsubscribe(subscriptionId);
       if (revoked)
         state = { phase: 'revoked', messages: [], checkpoint: undefined, olderCursor: null };
       else if (capacityBlocked)
@@ -129,10 +127,6 @@ export function createTextSynchronizer(
           ...(forgetCheckpoint && { checkpoint: undefined, messages: [], olderCursor: null }),
         };
       notify();
-      if (!revoked && !capacityBlocked)
-        timer = setTimeout(() => {
-          void reconcile();
-        }, limits.reconcileMs);
     }
     function merge(message: TextHistoryMessage) {
       if (
@@ -170,7 +164,10 @@ export function createTextSynchronizer(
       }
       if (parsed.data.subscriptionId !== subscriptionId) return;
       if ('reason' in parsed.data) {
-        invalidate(parsed.data.reason === 'ACCESS_REVOKED');
+        const revoked = parsed.data.reason === 'ACCESS_REVOKED';
+        const recover = !revoked && state.phase === 'live';
+        invalidate(revoked);
+        if (recover) void reconcile();
         return;
       }
       if (!completed) {
@@ -188,6 +185,7 @@ export function createTextSynchronizer(
           notify();
         } catch (error) {
           invalidate(false, error instanceof SnapshotRequired);
+          if (turn === generation) void reconcile();
         }
       }
     }
@@ -206,12 +204,25 @@ export function createTextSynchronizer(
     state = { ...state, phase: 'syncing' };
     notify();
     try {
-      const ack = textConversationSubscribeAckSchema.parse(
-        await port.subscribe(
-          { channelId, rootMessageId: null, ...(after && { afterCheckpoint: after }) },
-          controller.signal,
-        ),
-      );
+      const subscribe = async () =>
+        textConversationSubscribeAckSchema.parse(
+          await port.subscribe(
+            { channelId, rootMessageId: null, ...(after && { afterCheckpoint: after }) },
+            controller.signal,
+          ),
+        );
+      let ack = await subscribe();
+      if (valid() && 'error' in ack && ack.error.code === 'SERVER_BUSY') {
+        const canRetry = releaseHiddenSubscription?.();
+        for (const delay of subscriptionRetryDelays) {
+          if (!canRetry?.()) break;
+          // The retired socket may still be releasing its server-side slot.
+          await new Promise((resolve) => setTimeout(resolve, delay));
+          if (!valid() || !canRetry()) break;
+          ack = await subscribe();
+          if (!valid() || !('error' in ack) || ack.error.code !== 'SERVER_BUSY') break;
+        }
+      }
       if (!valid()) {
         if ('data' in ack) port.unsubscribe(ack.data.subscriptionId);
         return;
@@ -355,10 +366,6 @@ export function createTextSynchronizer(
           }
         }
       };
-      timer = setTimeout(() => {
-        inFlight = undefined;
-        void reconcile();
-      }, limits.reconcileMs);
     } catch (error) {
       if (error instanceof ProjectionCapacityError) {
         invalidate(false, true, true);
@@ -369,6 +376,10 @@ export function createTextSynchronizer(
         ['AUTH_REQUIRED', 'FORBIDDEN', 'NOT_FOUND'].includes(String(code)),
         code === 'CONFLICT' || error instanceof SnapshotRequired,
       );
+      const needsSnapshot =
+        (after !== undefined && (code === 'CONFLICT' || error instanceof SnapshotRequired)) ||
+        (error instanceof SnapshotRequired && snapshotLimit < initialSnapshotLimit);
+      if (turn === generation && needsSnapshot) await reconcile();
     }
   }
   function reconcile() {

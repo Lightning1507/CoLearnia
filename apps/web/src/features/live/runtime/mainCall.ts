@@ -4,6 +4,7 @@ import {
   sessionEndAckSchema,
   sessionLeaveAckSchema,
   sessionEndedEventSchema,
+  sessionTransferredEventSchema,
 } from '@colearnia/contracts';
 import type { AuthenticatedData, SessionProjection } from '@colearnia/contracts';
 import { authApi } from '../../auth/session';
@@ -11,18 +12,21 @@ import type { CallControllerOwner, CallIdentity, CallHandle } from './callContro
 import type { LobbyDevicePreferences } from '../lobby/LobbyDeviceCheck';
 import { createSessionProjectionInitializer } from './sessionProjectionSocket';
 import { initializeMainMedia, type MainMediaView } from './mainMedia';
+import { createCallTabPresence } from './callTabPresence';
 import {
   mainCommand,
   mainCallMessage,
   MainCallError,
   requestMainTicket,
+  readMainOwnership,
   waitForMain,
 } from './mainConnection';
 
 export type MainCallTarget = { channelId: string; channelName: string; workspaceId: string };
 type Resources = Awaited<ReturnType<typeof initializeMainMedia>>;
 export type MainCallState = {
-  phase: 'idle' | 'lobby' | 'joining' | 'active' | 'reconnecting' | 'leaving' | 'error';
+  phase:
+    'idle' | 'lobby' | 'joining' | 'active' | 'reconnecting' | 'leaving' | 'error' | 'transferred';
   expanded: boolean;
   target?: MainCallTarget | undefined;
   message?: string | undefined;
@@ -32,6 +36,10 @@ export type MainCallState = {
   stream?: MediaStream | undefined;
   shareLabel?: string | undefined;
   cleanupPending?: boolean;
+  otherTabActive?: boolean;
+  ownershipConflict?: boolean;
+  transferPending?: boolean;
+  transferAvailable?: boolean;
 };
 type Joined = { identity: CallIdentity; resumeTicket: string };
 
@@ -63,6 +71,8 @@ export class MainCall {
   #ticketIntent:
     { requestId: string; ticket?: Awaited<ReturnType<typeof requestMainTicket>> } | undefined;
   #joinId: string | undefined;
+  #takeover: { confirmed: true; expectedCallGeneration: number } | undefined;
+  #ownershipProbe: AbortController | undefined;
   #leaveIntent:
     | {
         event: 'session.end' | 'session.leave';
@@ -82,6 +92,7 @@ export class MainCall {
   #leaving = false;
   #leaveAbort: AbortController | undefined;
   #terminalEnded = false;
+  #tabs: ReturnType<typeof createCallTabPresence> | undefined;
   constructor(private readonly owner: CallControllerOwner) {}
   getSnapshot = () => this.#state;
   canResume = () => Boolean(this.#joined);
@@ -98,23 +109,68 @@ export class MainCall {
   };
   #set(value: Partial<MainCallState>) {
     this.#state = { ...this.#state, ...value };
+    this.#tabs?.setActive(Boolean(this.#joined));
     for (const listener of this.#listeners) listener();
   }
   setAuth(auth: AuthenticatedData | null) {
     if (this.#auth?.user.id !== auth?.user.id || this.#auth?.expiresAt !== auth?.expiresAt)
       this.clear();
     this.#auth = auth;
+    this.#ensureTabs();
   }
+  #ensureTabs() {
+    if (this.#tabs || !this.#auth) return;
+    this.#tabs = createCallTabPresence(
+      this.#auth.user.id,
+      (active) => {
+        if (this.#state.otherTabActive !== active) this.#set({ otherTabActive: active });
+      },
+      () => {
+        if (this.#joined) {
+          window.focus();
+          this.expand(true);
+        }
+      },
+    );
+  }
+  focusOtherTab = () => this.#tabs?.focusOther();
+  checkOtherTab = () => this.#tabs?.probe();
   open(target: MainCallTarget) {
     if (!this.#auth) return;
     if (this.#state.cleanupPending) return;
+    this.#ensureTabs();
+    this.#tabs?.probe();
     if (this.#joined || this.#state.phase === 'joining') {
       this.expand(true);
       return;
     }
     this.#ticketIntent = undefined;
     this.#joinId = undefined;
-    this.#set({ phase: 'lobby', target, expanded: true, message: undefined });
+    this.#takeover = undefined;
+    this.#set({
+      phase: 'lobby',
+      target,
+      expanded: true,
+      message: undefined,
+      ownershipConflict: false,
+      transferPending: false,
+      transferAvailable: false,
+    });
+    this.#ownershipProbe?.abort();
+    const probe = new AbortController();
+    this.#ownershipProbe = probe;
+    void readMainOwnership(target.channelId, probe.signal)
+      .then((result) => {
+        if (
+          !probe.signal.aborted &&
+          this.#ownershipProbe === probe &&
+          this.#state.phase === 'lobby'
+        )
+          this.#set({ transferAvailable: !!result.activeCallGeneration });
+      })
+      .catch(() => {
+        /* A hint failure never decides ownership; join still checks server authority. */
+      });
   }
   expand(expanded: boolean) {
     this.#set({ expanded });
@@ -127,6 +183,10 @@ export class MainCall {
     this.clear();
   }
   clear() {
+    this.#ownershipProbe?.abort();
+    this.#ownershipProbe = undefined;
+    this.#tabs?.dispose();
+    this.#tabs = undefined;
     clearTimeout(this.#retry);
     this.#leaveAbort?.abort();
     this.#leaveAbort = undefined;
@@ -143,6 +203,7 @@ export class MainCall {
     this.#leaveIntent = undefined;
     this.#ticketIntent = undefined;
     this.#joinId = undefined;
+    this.#takeover = undefined;
     this.#terminalEnded = false;
     this.#set({
       phase: 'idle',
@@ -154,15 +215,20 @@ export class MainCall {
       shareLabel: undefined,
       cleanupPending: false,
       message: undefined,
+      otherTabActive: false,
+      ownershipConflict: false,
+      transferPending: false,
+      transferAvailable: false,
     });
   }
-  async join(preferences: LobbyDevicePreferences) {
+  async join(preferences: LobbyDevicePreferences, transfer = false) {
     if (
       !this.#auth ||
       !this.#state.target ||
       this.#state.phase === 'joining' ||
       this.#state.cleanupPending ||
-      this.#joined
+      this.#joined ||
+      (this.#state.otherTabActive && !transfer)
     )
       return;
     this.#preferences = preferences;
@@ -170,13 +236,24 @@ export class MainCall {
     const attempt = new AbortController();
     this.#attempt = attempt;
     const signal = attempt.signal;
-    this.#set({ phase: 'joining', expanded: true, message: undefined });
+    this.#ensureTabs();
+    this.#set({
+      phase: 'joining',
+      expanded: true,
+      message: undefined,
+      ownershipConflict: false,
+      transferPending: transfer,
+    });
     try {
       const csrf = await authApi.csrf(signal);
       signal.throwIfAborted();
       const socket = this.#socket?.connected ? this.#socket : await this.#connect(csrf, signal);
       let ownershipWaitDeadline: number | undefined;
       for (let retry = 0; ; retry++) {
+        if (this.#state.otherTabActive && !transfer) {
+          this.#set({ phase: 'lobby', ownershipConflict: false });
+          return;
+        }
         this.#ticketIntent ??= { requestId: crypto.randomUUID() };
         const intent = this.#ticketIntent;
         if (!intent.ticket)
@@ -186,27 +263,44 @@ export class MainCall {
             signal,
           );
         signal.throwIfAborted();
+        if (this.#state.otherTabActive && !transfer) {
+          this.#ticketIntent = undefined;
+          this.#joinId = undefined;
+          this.#set({ phase: 'lobby', ownershipConflict: false });
+          return;
+        }
         this.#joinId ??= crypto.randomUUID();
+        if (transfer && !this.#takeover && intent.ticket.activeCallGeneration) {
+          this.#takeover = {
+            confirmed: true,
+            expectedCallGeneration: intent.ticket.activeCallGeneration,
+          };
+        }
         const joined = sessionJoinAckSchema.parse(
           await mainCommand(
             socket,
             'session.join',
-            { requestId: this.#joinId, ticket: intent.ticket.ticket },
+            {
+              requestId: this.#joinId,
+              ticket: intent.ticket.ticket,
+              ...(this.#takeover ? { takeover: this.#takeover } : {}),
+            },
             signal,
           ),
         );
         if ('error' in joined) {
           if (joined.error.code !== 'CALL_ALREADY_ACTIVE')
             throw new MainCallError(joined.error.code);
+          if (intent.ticket.activeCallGeneration) this.#set({ transferAvailable: true });
+          if (transfer || intent.ticket.activeCallGeneration)
+            throw new MainCallError('CALL_ALREADY_ACTIVE');
           ownershipWaitDeadline ??= Date.now() + 35000;
           if (retry >= 7 || Date.now() >= ownershipWaitDeadline)
             throw new MainCallError('CALL_ALREADY_ACTIVE');
           this.#set({
-            message:
-              'Đang chờ kết nối trước được giải phóng để tham gia lại (tối đa khoảng 35 giây). Bạn có thể hủy; nếu còn cuộc gọi ở cửa sổ khác, hãy rời ở đó.',
+            ownershipConflict: true,
+            message: 'Tài khoản đang có kết nối cuộc gọi chưa được giải phóng.',
           });
-          // Explicit refusal means this ticket was not consumed. Obtain a fresh one
-          // after waiting: the old room/epoch may end when its last ownership expires.
           this.#ticketIntent = undefined;
           this.#joinId = undefined;
           await waitForRetry(Math.min(5000, ownershipWaitDeadline - Date.now()), signal);
@@ -225,10 +319,37 @@ export class MainCall {
           preferences,
         );
         this.#leaveIntent = undefined;
+        this.#takeover = undefined;
+        this.#set({ transferPending: false });
         break;
       }
     } catch (error) {
       if (signal.aborted || this.#attempt !== attempt) return;
+      if (error instanceof MainCallError && error.code === 'CALL_ALREADY_ACTIVE') {
+        this.#ticketIntent = undefined;
+        this.#joinId = undefined;
+        this.#takeover = undefined;
+        this.#set({
+          phase: 'lobby',
+          ownershipConflict: true,
+          message: transfer
+            ? 'Không thể chuyển vào phòng này. Hãy kiểm tra cuộc gọi đang mở trên thiết bị khác.'
+            : undefined,
+        });
+        return;
+      }
+      if (transfer && error instanceof MainCallError && error.code === 'CONFLICT') {
+        this.#ticketIntent = undefined;
+        this.#joinId = undefined;
+        this.#takeover = undefined;
+        this.#set({
+          phase: 'lobby',
+          transferPending: false,
+          message:
+            'Cuộc gọi đã thay đổi. Hãy kiểm tra và bấm chuyển lại nếu bạn vẫn muốn tiếp tục.',
+        });
+        return;
+      }
       if (this.#joined) {
         await this.leave();
         if (signal.aborted || this.#attempt !== attempt) return;
@@ -237,8 +358,14 @@ export class MainCall {
     }
   }
   retryJoin() {
-    if (this.#preferences) void this.join(this.#preferences);
+    if (this.#preferences) void this.join(this.#preferences, this.#state.transferPending);
   }
+  transferHere = () => {
+    void this.join(
+      { microphone: { enabled: false, deviceId: '' }, camera: { enabled: false, deviceId: '' } },
+      true,
+    );
+  };
   async #connect(csrf: string, signal: AbortSignal) {
     signal.throwIfAborted();
     this.#socket?.removeAllListeners();
@@ -303,6 +430,22 @@ export class MainCall {
     });
     socket.on('disconnect', () => {
       if (this.#socket === socket && this.#joined && !this.#leaving) this.#disconnected();
+    });
+    socket.on('session.transferred', (raw: unknown) => {
+      const notice = sessionTransferredEventSchema.safeParse(raw);
+      const identity = this.#joined?.identity;
+      if (
+        !notice.success ||
+        !identity ||
+        this.#socket !== socket ||
+        notice.data.sessionId !== identity.sessionId ||
+        notice.data.epoch !== identity.epoch ||
+        notice.data.callGeneration !== identity.callGeneration
+      )
+        return;
+      const target = this.#state.target;
+      this.clear();
+      this.#set({ phase: 'transferred', target, expanded: true });
     });
     return socket;
   }

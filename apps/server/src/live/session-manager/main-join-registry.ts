@@ -87,6 +87,14 @@ type EndRecord = {
   expiresAt: number;
 };
 type Ownership = {
+  transfer?: {
+    intent: Intent;
+    requestId: string;
+    binding: Binding;
+    sourceSocketId: string;
+    generation: number;
+    abandoned?: boolean;
+  };
   binding: Binding;
   room: Room;
   participant: PolicyParticipant;
@@ -110,7 +118,7 @@ type Intent = {
   authority: Authority;
   expiresAt: number;
   failed?: boolean;
-  consumed?: { ownership: Ownership; requestId: string };
+  consumed?: { ownership: Ownership; requestId: string; transferGeneration?: number };
 };
 type Revocation = {
   event: LiveAccessRevocation;
@@ -180,6 +188,10 @@ export function createMainJoinRegistry(options: {
     typeof import('./session-repository.js').createSessionRepository
   >['leave'];
   publishEnded?(socketId: string, notice: import('@colearnia/contracts').SessionEndedEvent): void;
+  publishTransferred?(
+    socketId: string,
+    notice: { sessionId: string; epoch: string; callGeneration: number },
+  ): void;
   publishProjection?(socketId: string, event: SessionProjectionEvent): void;
   projectionFailed?(socketId: string): void;
   resolveAuthority(
@@ -389,6 +401,28 @@ export function createMainJoinRegistry(options: {
     } catch {
       fail('DEPENDENCY_UNAVAILABLE');
     }
+  }
+  function abandonTransferHeld(
+    owner: Ownership,
+    transfer: NonNullable<Ownership['transfer']>,
+    held: CoordinationContext,
+  ) {
+    held.assertHeld({
+      userId: transfer.binding.auth.userId,
+      workspaceId: owner.room.state.workspaceId,
+    });
+    if (
+      ownerships.get(transfer.binding.auth.userId) !== owner ||
+      owner.transfer !== transfer ||
+      owner.participant.callGeneration !== transfer.generation ||
+      (transfer.binding.isConnected() && transfer.intent.expiresAt > clock())
+    )
+      return;
+    // Keep the old-generation deny until another confirmed handoff commits.
+    // Release only this disconnected/expired destination's reservation, never
+    // its cleanup or fence. Socket liveness does not extend the ticket lifetime.
+    transfer.abandoned = true;
+    transfer.intent.failed = true;
   }
   function usable(room: Room) {
     if (room.mediaFailed || room.uncertain || room.router.closed) fail('DEPENDENCY_UNAVAILABLE');
@@ -984,6 +1018,15 @@ export function createMainJoinRegistry(options: {
     // Trusted socket lifecycle callback; never accept a client-supplied socket id.
     async disconnect(socketId: string) {
       assertRunning();
+      const abandoned = [...ownerships.values()].find(
+        (value) => value.transfer?.binding.socketId === socketId,
+      );
+      const transfer = abandoned?.transfer;
+      if (abandoned && transfer) {
+        await run(transfer.binding.auth, abandoned.room.state, async (held) => {
+          abandonTransferHeld(abandoned, transfer, held);
+        });
+      }
       const owner = [...ownerships.values()].find((value) => value.binding.socketId === socketId);
       if (!owner) return;
       const leaving = [...leaves.values()].find(
@@ -1103,7 +1146,8 @@ export function createMainJoinRegistry(options: {
       const binding = { ...rawBinding, auth };
       if (!binding.socketId || binding.socketId.length > 256) fail('VALIDATION_ERROR');
       const owner = ownerships.get(auth.userId);
-      if (!owner || owner.participant.auth.authSessionId !== auth.authSessionId) fail('CONFLICT');
+      if (!owner || owner.transfer || owner.participant.auth.authSessionId !== auth.authSessionId)
+        fail('CONFLICT');
       const digest = hash(input.resumeTicket);
       const replay = owner.resumeReplay;
       const isReplay =
@@ -1272,6 +1316,24 @@ export function createMainJoinRegistry(options: {
       );
     },
 
+    async inspectOwnership(rawAuth: AuthenticatedContext, rawTarget: Target) {
+      const auth = identity(rawAuth);
+      const destination = target(rawTarget);
+      return run(auth, destination, async (held) => {
+        await authority(auth, destination, held);
+        const owner = ownerships.get(auth.userId);
+        if (
+          !owner ||
+          owner.room.state.workspaceId !== destination.workspaceId ||
+          owner.room.state.channelId !== destination.channelId ||
+          owner.participant.blocked ||
+          owner.room.state.state !== 'ACTIVE'
+        )
+          return {};
+        return { activeCallGeneration: owner.participant.callGeneration };
+      });
+    },
+
     async issue(rawAuth: AuthenticatedContext, rawTarget: Target, raw: unknown) {
       const timing = createSessionTransitionTiming();
       const deadline = clock() + 10_000;
@@ -1316,6 +1378,9 @@ export function createMainJoinRegistry(options: {
               epoch: existing.room.state.epoch,
               ticket: existing.token,
               expiresAt: new Date(existing.expiresAt).toISOString(),
+              ...(ownerships.get(auth.userId)?.room === existing.room
+                ? { activeCallGeneration: ownerships.get(auth.userId)!.participant.callGeneration }
+                : {}),
             };
           }
           if (
@@ -1428,6 +1493,9 @@ export function createMainJoinRegistry(options: {
             epoch: room.state.epoch,
             ticket: token,
             expiresAt: new Date(intent.expiresAt).toISOString(),
+            ...(ownerships.get(auth.userId)?.room === room
+              ? { activeCallGeneration: ownerships.get(auth.userId)!.participant.callGeneration }
+              : {}),
           };
         });
         if ('ending' in outcome) {
@@ -1441,7 +1509,7 @@ export function createMainJoinRegistry(options: {
       fail('DEPENDENCY_UNAVAILABLE');
     },
 
-    async join(rawBinding: Binding, raw: unknown) {
+    async join(rawBinding: Binding, raw: unknown): Promise<Awaited<ReturnType<typeof delivery>>> {
       const input = sessionJoinInputSchema.parse(raw);
       const auth = identity(rawBinding.auth);
       const binding: Binding = {
@@ -1459,6 +1527,184 @@ export function createMainJoinRegistry(options: {
         workspaceId: intent.room.state.workspaceId,
         channelId: intent.room.state.channelId,
       };
+      if (input.takeover) {
+        let reservation: NonNullable<Ownership['transfer']> | undefined;
+        // Explicit same-meeting handoff. Validate before touching the old owner;
+        // never route host handoff through leave/end.
+        const owner = await run(auth, destination, async (held) => {
+          const current = await authority(auth, destination, held);
+          if (
+            !binding.isConnected() ||
+            tickets.get(intent.digest) !== intent ||
+            intent.expiresAt <= clock()
+          )
+            fail('CONFLICT');
+          if (
+            intent.authority.auth.userId !== auth.userId ||
+            intent.authority.auth.authSessionId !== auth.authSessionId
+          )
+            fail('FORBIDDEN');
+          if (intent.failed || !sameStamp(intent.authority.access, current.access))
+            fail('CONFLICT');
+          usable(intent.room);
+          const owned = ownerships.get(auth.userId);
+          if (!owned || owned.room !== intent.room) fail('CALL_ALREADY_ACTIVE');
+          if (intent.consumed) {
+            if (
+              intent.consumed.ownership !== owned ||
+              intent.consumed.requestId !== input.requestId ||
+              intent.consumed.transferGeneration !== owned.participant.callGeneration ||
+              owned.binding.socketId !== binding.socketId
+            )
+              fail('CONFLICT');
+            return owned;
+          }
+          if (
+            owned.participant.callGeneration !== input.takeover!.expectedCallGeneration ||
+            owned.binding.socketId === binding.socketId ||
+            owned.participant.blocked
+          )
+            fail('CONFLICT');
+          if (owned.transfer) abandonTransferHeld(owned, owned.transfer, held);
+          if (
+            owned.transfer &&
+            !owned.transfer.abandoned &&
+            (owned.transfer.intent !== intent ||
+              owned.transfer.requestId !== input.requestId ||
+              owned.transfer.binding.socketId !== binding.socketId)
+          )
+            fail('CONFLICT');
+          if ([...leaves.values()].some((leave) => leave.owner === owned && !leave.completed))
+            fail('CONFLICT');
+          if (
+            !sameStamp(owned.participant.access, current.access) ||
+            !currentFence(current, held, owned.participant.access)
+          )
+            fail('FORBIDDEN');
+          if (!options.reconnectCleanup || typeof options.reconnectCleanup.media === 'function')
+            fail('DEPENDENCY_UNAVAILABLE');
+          if (!owned.transfer || owned.transfer.abandoned)
+            owned.transfer = {
+              intent,
+              requestId: input.requestId,
+              binding,
+              sourceSocketId: owned.binding.socketId,
+              generation: owned.participant.callGeneration,
+            };
+          reservation = owned.transfer;
+          return owned;
+        });
+        if (!intent.consumed) {
+          if (!reservation) fail('CONFLICT');
+          await registry.disconnect(reservation.sourceSocketId);
+          // Retry unfinished adapter cleanup outside all ownership gates. Never
+          // grant the destination merely because permission revocation started.
+          const record = owner.reconnect;
+          if (
+            owner.transfer === reservation &&
+            record?.generation === reservation.generation &&
+            record.handle?.inspect().cleanupPending
+          )
+            await record.handle.retryCleanup();
+        }
+        return run(auth, destination, async (held) => {
+          if (reservation) abandonTransferHeld(owner, reservation, held);
+          const current = await authority(auth, destination, held);
+          if (reservation) abandonTransferHeld(owner, reservation, held);
+          if (
+            ownerships.get(auth.userId) !== owner ||
+            !binding.isConnected() ||
+            tickets.get(intent.digest) !== intent ||
+            intent.expiresAt <= clock()
+          )
+            fail('CONFLICT');
+          usable(owner.room);
+          if (intent.consumed) {
+            if (
+              intent.consumed.ownership !== owner ||
+              intent.consumed.requestId !== input.requestId ||
+              intent.consumed.transferGeneration !== owner.participant.callGeneration ||
+              owner.binding.socketId !== binding.socketId
+            )
+              fail('CONFLICT');
+            return delivery(owner, input.requestId, held);
+          }
+          const transfer = owner.transfer;
+          const record = owner.reconnect;
+          if (
+            !transfer ||
+            transfer !== reservation ||
+            transfer.abandoned ||
+            transfer.intent !== intent ||
+            transfer.requestId !== input.requestId ||
+            transfer.binding.socketId !== binding.socketId ||
+            owner.participant.callGeneration !== transfer.generation ||
+            !record
+          )
+            fail('CONFLICT');
+          if (
+            owner.participant.blocked ||
+            !sameStamp(owner.participant.access, current.access) ||
+            !currentFence(current, held, owner.participant.access)
+          )
+            fail('FORBIDDEN');
+          const cleanup = record.handle?.inspect();
+          if (!cleanup?.permissionRevoked || !cleanup.pendingInvalidated || cleanup.cleanupPending)
+            fail('DEPENDENCY_UNAVAILABLE');
+          if (
+            nextGeneration >= Number.MAX_SAFE_INTEGER ||
+            owner.room.state.policyRevision >= Number.MAX_SAFE_INTEGER
+          )
+            fail('SERVER_BUSY');
+          const oldSocketId = owner.binding.socketId;
+          const notice = {
+            sessionId: owner.room.state.sessionId,
+            epoch: owner.room.state.epoch,
+            callGeneration: transfer.generation,
+          };
+          const committed = record.handle!.commitHeld(
+            {
+              assertHeld: () =>
+                held.assertHeld({ userId: auth.userId, workspaceId: destination.workspaceId }),
+              isCurrent: () =>
+                !closed &&
+                owner.transfer === transfer &&
+                !transfer.abandoned &&
+                owner.reconnect === record &&
+                ownerships.get(auth.userId) === owner &&
+                binding.isConnected() &&
+                !owner.participant.blocked &&
+                currentFence(current, held, owner.participant.access),
+            },
+            () => {
+              owner.binding = binding;
+              owner.participant.auth = current.auth;
+              owner.participant.access = { ...current.access };
+              owner.participant.currentAccess = { ...current.access };
+              owner.participant.callGeneration = ++nextGeneration;
+              owner.participant.scope = { type: 'MAIN' };
+              owner.participant.connected = true;
+              owner.resumeTicket = randomBytes(32).toString('base64url');
+              delete owner.resumeReplay;
+              delete owner.reconnect;
+              delete owner.transfer;
+              delete owner.projectionSequence;
+              delete owner.projectionRevision;
+              intent.consumed = {
+                ownership: owner,
+                requestId: input.requestId,
+                transferGeneration: owner.participant.callGeneration,
+              };
+              owner.room.state.policyRevision++;
+              scheduleProjection(owner.room);
+              return true;
+            },
+          );
+          if (!committed.ok) fail(committed.errorCode);
+          options.publishTransferred?.(oldSocketId, notice);
+          return delivery(owner, input.requestId, held);
+        });
+      }
       return run(auth, destination, async (held) => {
         const current = await authority(auth, destination, held);
         if (!binding.isConnected()) fail('CONFLICT');
@@ -1483,13 +1729,11 @@ export function createMainJoinRegistry(options: {
           return delivery(owned, input.requestId, held);
         }
         if (!sameStamp(intent.authority.access, current.access)) fail('CONFLICT');
-        // Full takeover waits for old-generation cleanup/end (SCRUM-83/86).
-        // A confirmation never bypasses that barrier in this minimal registry.
         if (owned) {
           // A fresh ticket may recover the SAME socket/epoch after an earlier ack
           // failed and its replay ticket expired. Never transfer a different call.
           if (
-            input.takeover ||
+            owned.transfer ||
             owned.room !== intent.room ||
             owned.binding.socketId !== binding.socketId ||
             owned.participant.auth.authSessionId !== auth.authSessionId
@@ -1893,6 +2137,7 @@ export function createMainJoinRegistry(options: {
           usable(room);
           if (
             ownerships.get(auth.userId) !== owner ||
+            owner.transfer ||
             owner.binding.socketId !== rawBinding.socketId ||
             owner.participant.auth.authSessionId !== auth.authSessionId ||
             !rawBinding.isConnected() ||
@@ -2091,7 +2336,8 @@ export function createMainJoinRegistry(options: {
           owner.participant.auth.authSessionId !== auth.authSessionId ||
           owner.room.state.sessionId !== input.sessionId ||
           owner.room.state.epoch !== input.epoch ||
-          owner.participant.callGeneration !== input.callGeneration
+          owner.participant.callGeneration !== input.callGeneration ||
+          owner.transfer
         )
           fail('CONFLICT');
         const currentRoom = owner.room;
@@ -2141,6 +2387,7 @@ export function createMainJoinRegistry(options: {
       const owner = [...ownerships.values()].find((value) => value.binding.socketId === socketId);
       return (
         !owner ||
+        Boolean(owner.transfer) ||
         owner.room.state.sessionId !== input.sessionId ||
         owner.room.state.epoch !== input.epoch ||
         owner.participant.callGeneration !== input.callGeneration ||
@@ -2160,7 +2407,7 @@ export function createMainJoinRegistry(options: {
       ) => T,
     ): Promise<T> {
       const owner = [...ownerships.values()].find((value) => value.binding.socketId === socketId);
-      if (!owner) return use({ ok: false, errorCode: 'CONFLICT' });
+      if (!owner || owner.transfer) return use({ ok: false, errorCode: 'CONFLICT' });
       return run(
         owner.participant.auth,
         { workspaceId: owner.room.state.workspaceId, channelId: owner.room.state.channelId },
@@ -2169,7 +2416,8 @@ export function createMainJoinRegistry(options: {
             ownerships.get(owner.participant.auth.userId) !== owner ||
             input.sessionId !== owner.room.state.sessionId ||
             input.epoch !== owner.room.state.epoch ||
-            input.callGeneration !== owner.participant.callGeneration
+            input.callGeneration !== owner.participant.callGeneration ||
+            owner.transfer
           )
             return use({ ok: false, errorCode: 'CONFLICT' });
           usable(owner.room);

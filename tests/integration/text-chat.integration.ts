@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
+import { setTimeout as delay } from 'node:timers/promises';
 import { afterAll, afterEach, beforeAll, expect, it, vi } from 'vitest';
 import {
   setup,
@@ -23,6 +24,7 @@ import {
 } from '../../apps/server/src/messaging/text-send-ledger.js';
 
 const durableText = process.env.COLEARNIA_TEST_TEXT_DURABLE === '1';
+const historyLeaseMs = 3_000;
 beforeAll(async () => {
   await initializeDatabase();
   if (durableText) {
@@ -37,8 +39,12 @@ afterAll(closeDatabase);
 async function verifyChat(scope: 'WORKSPACE' | 'PRIVATE') {
   const ledger = durableText ? createTextSendLedger(database, 4) : undefined;
   await ledger?.start(() => 5000);
-  const f = await setup({ text: true, ...(ledger ? { textSendLedger: ledger } : {}) });
-  const bob = await f.signUp();
+  const f = await setup({
+    text: true,
+    textHistoryLeaseMs: historyLeaseMs,
+    ...(ledger ? { textSendLedger: ledger } : {}),
+  });
+  const bob = await f.signUp('Demo 2');
   const workspace = await f.http
     .post('/api/v1/workspaces')
     .set('Origin', origin)
@@ -87,8 +93,9 @@ async function verifyChat(scope: 'WORKSPACE' | 'PRIVATE') {
       });
     }
   }
-  const a = await f.connect(f.host);
-  const b = await f.connect(bob);
+  const capabilities = { textSenderNames: true, textPersistentSubscription: true };
+  const a = await f.connect(f.host, capabilities);
+  const b = await f.connect(bob, capabilities);
   const api = (socket: typeof a, account: typeof bob, loseAck = false) => {
     let dropNextAck = loseAck;
     return createTextApi(
@@ -123,7 +130,6 @@ async function verifyChat(scope: 'WORKSPACE' | 'PRIVATE') {
     messages: 100,
     bytes: 1_000_000,
     pages: 20,
-    reconcileMs: 60_000, // Assert live delivery before the periodic reconciliation runs.
     roundMs: 5000,
   };
   const alice = createTextSynchronizer(aliceApi.sync, channel.id, limits, () => {});
@@ -147,6 +153,11 @@ async function verifyChat(scope: 'WORKSPACE' | 'PRIVATE') {
     bobApi.sync.unsubscribe(probe.data.subscriptionId);
     await Promise.all([alice.reconcile(), reader.reconcile()]);
     expect(reader.snapshot().phase).toBe('live');
+    const unexpectedInvalidation = vi.fn();
+    b.on('conversation.invalidated', unexpectedInvalidation);
+    await delay(historyLeaseMs + 100);
+    b.off('conversation.invalidated', unexpectedInvalidation);
+    expect(unexpectedInvalidation).not.toHaveBeenCalled();
     const intent = { clientMessageId: randomUUID(), text: 'Hai tài khoản thật' };
     await expect(api(a, f.host, true).send(intent, signal)).rejects.toThrow(
       'lost HTTP acknowledgement',
@@ -154,7 +165,9 @@ async function verifyChat(scope: 'WORKSPACE' | 'PRIVATE') {
     const first = await aliceApi.send(intent, signal);
     const retry = await aliceApi.send(intent, signal);
     expect(retry.id).toBe(first.id);
+    expect(retry.senderDisplayName).toBe('Sinh viên');
     await expect.poll(() => reader.snapshot().messages.map((row) => row.id)).toEqual([first.id]);
+    expect(reader.snapshot().messages[0]?.senderDisplayName).toBe(first.senderDisplayName);
     b.disconnect();
     const offline = await aliceApi.send(
       { clientMessageId: randomUUID(), text: 'Khi bạn mất kết nối' },
@@ -173,6 +186,13 @@ async function verifyChat(scope: 'WORKSPACE' | 'PRIVATE') {
     await expect
       .poll(() => alice.snapshot().messages.map((row) => row.id))
       .toEqual([first.id, offline.id, reply.id]);
+    expect(alice.snapshot().messages.at(-1)?.senderDisplayName).toBe('Demo 2');
+    const legacy = await f.http
+      .get(`/api/v1/channels/${channel.id}/messages`)
+      .set('Cookie', bob.cookie)
+      .expect(200);
+    expect(legacy.body.data.items).toHaveLength(3);
+    expect(legacy.body.data.items.every((row: object) => !('senderDisplayName' in row))).toBe(true);
     const archive = createTextSynchronizer(
       aliceApi.sync,
       channel.id,
@@ -192,6 +212,11 @@ async function verifyChat(scope: 'WORKSPACE' | 'PRIVATE') {
       ]);
       expect(archive.snapshot().checkpoint).toBe(checkpoint);
       expect(archive.snapshot().olderCursor).toBeNull();
+      expect(archive.snapshot().messages.map((row) => row.senderDisplayName)).toEqual([
+        'Sinh viên',
+        'Sinh viên',
+        'Demo 2',
+      ]);
     } finally {
       archive.stop();
     }
