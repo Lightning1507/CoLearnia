@@ -34,7 +34,7 @@ class ChatSocket extends EventEmitter {
   }
 }
 
-it('reopens a visited channel immediately, keeps only two, and removes revoked or signed-out chat', async () => {
+it.each([1, 2])('opens channels with subscription quota %i', async (perUser) => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
   const auth: AuthenticatedData = {
     user: {
@@ -65,6 +65,8 @@ it('reopens a visited channel immediately, keeps only two, and removes revoked o
     { invalidate(): void; unsubscribe: ReturnType<typeof vi.fn> }
   >();
   const sockets: ChatSocket[] = [];
+  const subscriptions = new Set<string>();
+  const denied = vi.fn();
   vi.mocked(io).mockImplementation(() => {
     const socket = new ChatSocket();
     sockets.push(socket);
@@ -76,7 +78,9 @@ it('reopens a visited channel immediately, keeps only two, and removes revoked o
     const scope = { channelId, conversationId: 'f'.repeat(24), rootMessageId: null };
     const subscriptionId = crypto.randomUUID();
     const throughCheckpoint = 'cp.1';
-    const unsubscribe = vi.fn();
+    const unsubscribe = vi.fn(() => {
+      subscriptions.delete(channelId);
+    });
     return {
       send: vi.fn(),
       sync: {
@@ -90,10 +94,21 @@ it('reopens a visited channel immediately, keeps only two, and removes revoked o
             if (listeners.get(channelId) === entry) listeners.delete(channelId);
           };
         },
-        subscribe: async () => ({
-          requestId: crypto.randomUUID(),
-          data: { scope, subscriptionId, throughCheckpoint, syncToken: 'test.token' },
-        }),
+        subscribe: async () => {
+          const requestId = crypto.randomUUID();
+          if (subscriptions.size >= perUser) {
+            denied(channelId);
+            return {
+              requestId,
+              error: { code: 'SERVER_BUSY', message: 'Subscription quota full' },
+            };
+          }
+          subscriptions.add(channelId);
+          return {
+            requestId,
+            data: { scope, subscriptionId, throughCheckpoint, syncToken: 'test.token' },
+          };
+        },
         history: async () => ({
           requestId: crypto.randomUUID(),
           data: {
@@ -168,11 +183,30 @@ it('reopens a visited channel immediately, keeps only two, and removes revoked o
     });
     expect(shown()).toContain('Tin ở general');
     await clickChannel('chat-demo');
+    if (perUser === 1) {
+      expect(denied).toHaveBeenCalledExactlyOnceWith(demo!.id);
+      expect(subscriptions.has(general!.id)).toBe(false);
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 150));
+      });
+      expect(shown()).toContain('Tin ở chat-demo');
+      expect([...subscriptions]).toEqual([demo!.id]);
+      await clickChannel('study');
+      expect(denied).toHaveBeenNthCalledWith(2, study!.id);
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 150));
+      });
+      expect(shown()).toContain('Tin ở study');
+      expect([...subscriptions]).toEqual([study!.id]);
+      expect(sockets.filter(({ connected }) => connected)).toHaveLength(1);
+      return;
+    }
     expect(shown()).toContain('Tin ở chat-demo');
     await clickChannel('general');
     expect(shown()).toContain('Tin ở general');
     expect(rootElement.textContent).not.toContain('Đang kết nối và đồng bộ tin nhắn');
     expect(sockets).toHaveLength(2);
+    expect(denied).not.toHaveBeenCalled();
 
     await clickChannel('study');
     expect(shown()).toContain('Tin ở study');

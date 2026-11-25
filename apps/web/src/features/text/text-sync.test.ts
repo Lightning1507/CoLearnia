@@ -156,6 +156,31 @@ it('keeps the channel live without polling and catches up after reconnect', asyn
   expect(f.sync.snapshot().checkpoint).toBe('cp.3');
 });
 
+it.each([false, true])(
+  'bounds quota recovery and skips retries when the channel is no longer selected (%s)',
+  async (switchAway) => {
+    vi.useFakeTimers();
+    const f = fixture();
+    const subscribe = vi.spyOn(f.port, 'subscribe').mockResolvedValue({
+      requestId: randomUUID(),
+      error: { code: 'SERVER_BUSY', message: 'Quota full' },
+    });
+    let selected = true;
+    const releaseHidden = vi.fn(() => () => selected);
+    const sync = createTextSynchronizer(f.port, channelId, limits, () => {}, releaseHidden);
+    disposers.push(sync.stop);
+    const pending = sync.reconcile();
+    await vi.advanceTimersByTimeAsync(0);
+    if (switchAway) selected = false;
+    await vi.advanceTimersByTimeAsync(5000);
+    await pending;
+    expect(releaseHidden).toHaveBeenCalledTimes(1);
+    expect(subscribe).toHaveBeenCalledTimes(switchAway ? 1 : 4);
+    expect(f.historyQueries).toHaveLength(0);
+    expect(sync.snapshot().phase).toBe('resync');
+  },
+);
+
 it.each(['AUTH_REQUIRED', 'FORBIDDEN', 'NOT_FOUND'])(
   'clears private cache and refuses completion on %s between catch-up pages',
   async (code) => {

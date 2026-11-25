@@ -122,6 +122,12 @@ export function ChannelWorkspace({
     retainedText.some((id, i) => id !== recentText[i])
   )
     setRecentText(retainedText);
+
+  function releaseHiddenText(requestedChannelId: string) {
+    if (requestedChannelId !== selectedTextId || retainedText.length < 2) return false;
+    setRecentText([requestedChannelId]);
+    return true;
+  }
   const panel: WorkspacePanel = selected
     ? { kind: selected.type === 'TEXT' ? 'text' : 'live', channelId: selected.id }
     : { kind: 'empty' };
@@ -254,7 +260,13 @@ export function ChannelWorkspace({
                   hidden={!visible}
                   className={visible ? 'flex min-h-0 flex-1 flex-col' : undefined}
                 >
-                  <TextChannel channelId={id} session={session} onAccessLost={withdrawText} />
+                  <TextChannel
+                    channelId={id}
+                    session={session}
+                    selected={visible}
+                    onAccessLost={withdrawText}
+                    onSubscriptionBusy={releaseHiddenText}
+                  />
                 </div>
               );
             })

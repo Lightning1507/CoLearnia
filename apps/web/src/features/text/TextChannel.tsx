@@ -19,11 +19,15 @@ const limits = {
 export function TextChannel({
   channelId,
   session,
+  selected,
   onAccessLost,
+  onSubscriptionBusy,
 }: {
   channelId: string;
   session: AuthenticatedData;
+  selected: boolean;
   onAccessLost: (channelId: string) => void;
+  onSubscriptionBusy: (channelId: string) => boolean;
 }) {
   const [state, setState] = useState<TextSyncState>({
     phase: 'idle',
@@ -40,6 +44,8 @@ export function TextChannel({
   const [error, setError] = useState('');
   const connectionRef = useRef<ReturnType<typeof createTextConnection> | null>(null);
   const reportAccessLost = useEffectEvent(() => onAccessLost(channelId));
+  const isSelected = useEffectEvent(() => selected);
+  const releaseHidden = useEffectEvent(() => selected && onSubscriptionBusy(channelId));
   useEffect(() => {
     let active = true;
     const origin = new URL(import.meta.env.VITE_API_BASE_URL ?? '/api/v1', window.location.href)
@@ -60,15 +66,21 @@ export function TextChannel({
       session.csrfToken,
       import.meta.env.VITE_API_BASE_URL ?? '/api/v1',
     );
-    const controller = createTextSynchronizer(api.sync, channelId, limits, (value) => {
-      if (active) {
-        setState(value);
-        if (value.phase === 'live') setOpened(true);
-        if (value.phase === 'revoked' || value.phase === 'blocked')
-          connectionRef.current?.disconnect();
-        if (value.phase === 'revoked') reportAccessLost();
-      }
-    });
+    const controller = createTextSynchronizer(
+      api.sync,
+      channelId,
+      limits,
+      (value) => {
+        if (active) {
+          setState(value);
+          if (value.phase === 'live') setOpened(true);
+          if (value.phase === 'revoked' || value.phase === 'blocked')
+            connectionRef.current?.disconnect();
+          if (value.phase === 'revoked') reportAccessLost();
+        }
+      },
+      () => (active && releaseHidden() ? () => isSelected() : undefined),
+    );
     const connection = createTextConnection(socket, controller, {
       connected() {
         if (!active) return;
