@@ -13,7 +13,6 @@ const limits = {
   bytes: 2_000_000,
   pages: 64,
   pageSize: 30,
-  reconcileMs: 5000,
   roundMs: 12_000,
 };
 
@@ -48,7 +47,11 @@ export function TextChannel({
       autoConnect: false,
       transports: ['websocket'],
       withCredentials: true,
-      auth: { csrfToken: session.csrfToken },
+      auth: {
+        csrfToken: session.csrfToken,
+        textSenderNames: true,
+        textPersistentSubscription: true,
+      },
     });
     const api = createTextApi(
       socket,

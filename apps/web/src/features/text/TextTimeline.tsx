@@ -150,35 +150,34 @@ export function TextTimeline({
               </div>
             )}
             <ol className="text-message-list" aria-label="Lịch sử tin nhắn">
-              {displayed.map((message) => (
-                <li key={message.id} className="text-message">
-                  <span className="text-avatar" aria-hidden="true">
-                    {message.senderId === senderId
-                      ? displayName.slice(0, 1)
-                      : projection
-                        ? 'T'
-                        : 'L'}
-                  </span>
-                  <div>
-                    <div className="text-message-meta">
-                      <strong>
-                        {message.senderId === senderId
-                          ? displayName
-                          : projection
-                            ? `Thành viên ${message.senderId.slice(-6)}`
-                            : 'Linh · Fixture'}
-                      </strong>
-                      <time dateTime={message.createdAt}>
-                        {new Date(message.createdAt).toLocaleTimeString('vi-VN', {
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })}
-                      </time>
+              {displayed.map((message) => {
+                const authorName =
+                  message.senderDisplayName ??
+                  (message.senderId === senderId
+                    ? displayName
+                    : projection
+                      ? `Thành viên ${message.senderId.slice(-6)}`
+                      : 'Linh · Fixture');
+                return (
+                  <li key={message.id} className="text-message">
+                    <span className="text-avatar" aria-hidden="true">
+                      {Array.from(authorName)[0]}
+                    </span>
+                    <div>
+                      <div className="text-message-meta">
+                        <strong>{authorName}</strong>
+                        <time dateTime={message.createdAt}>
+                          {new Date(message.createdAt).toLocaleTimeString('vi-VN', {
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
+                        </time>
+                      </div>
+                      <p>{message.text}</p>
                     </div>
-                    <p>{message.text}</p>
-                  </div>
-                </li>
-              ))}
+                  </li>
+                );
+              })}
               {outbox.map((intent) => (
                 <li key={intent.payload.clientMessageId} className="text-message">
                   <span className="text-avatar" aria-hidden="true">

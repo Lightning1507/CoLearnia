@@ -1,10 +1,12 @@
 import { z } from 'zod';
+import { displayNameSchema } from './auth.js';
 import { apiResponseSchema, commandAckSchema, requestIdSchema } from './common.js';
 import { channelParamsSchema, workspaceDocumentIdSchema } from './workspace.js';
 
 export const textMessageMaxCodePoints = 4000;
 export const textHistoryMaxLimit = 50;
 export const textHistoryDefaultLimit = 30;
+export const textSenderNamesHeader = 'X-CoLearnia-Text-Sender-Names';
 
 // Preserve the submitted text, including whitespace around nonblank content.
 const messageTextSchema = z.string().refine((value) => {
@@ -53,6 +55,7 @@ export const textHistoryMessageSchema = textMessageScopeSchema
   .extend({
     id: workspaceDocumentIdSchema,
     senderId: workspaceDocumentIdSchema,
+    senderDisplayName: displayNameSchema.optional(),
     clientMessageId: z.uuid(),
     text: messageTextSchema,
     createdAt: z.iso.datetime(),

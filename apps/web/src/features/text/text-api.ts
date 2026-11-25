@@ -3,6 +3,7 @@ import {
   textConversationSubscribeAckSchema,
   textMessageSendBodySchema,
   textMessageSendResponseSchema,
+  textSenderNamesHeader,
 } from '@colearnia/contracts';
 import type { TextMessageSendBody } from '@colearnia/contracts';
 import type { Socket } from 'socket.io-client';
@@ -27,8 +28,11 @@ export function createTextApi(
       credentials: 'include',
       cache: 'no-store',
       signal: AbortSignal.any([signal, AbortSignal.timeout(12_000)]),
+      headers: {
+        [textSenderNamesHeader]: '1',
+        ...(payload && { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken }),
+      },
       ...(payload && {
-        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
         body: JSON.stringify(textMessageSendBodySchema.parse(payload)),
       }),
     });
