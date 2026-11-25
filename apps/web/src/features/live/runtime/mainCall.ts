@@ -336,7 +336,8 @@ export class MainCall {
               projection.subscribe,
               AbortSignal.any([lifetime, signal]),
             );
-            return;
+            // The projection initializer owns cleanup in the absence of media.
+            return () => {};
           }
           resources = await initializeMainMedia({
             identity: acceptedIdentity,
