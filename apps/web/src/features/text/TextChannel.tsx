@@ -167,6 +167,7 @@ export function TextChannel({
           senderId={session.user.id}
           displayName={session.user.displayName}
           projection={state.messages}
+          visible={selected}
           connected={state.phase === 'live'}
         />
       )}
