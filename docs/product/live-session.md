@@ -13,6 +13,7 @@ Nguồn ban đầu được trích chuyển từ [technical plan v2.1](../techni
 2. Cấp join ticket một lần, hạn 60 giây, gắn auth session/user/channel/session epoch. API retry cùng requestId không tạo phiên/ticket dùng song song.
 3. `session.join` consume ticket, kiểm lại quyền, giữ khóa theo user để cấp callGeneration. Nếu tài khoản đã gọi nơi khác, trả `CALL_ALREADY_ACTIVE`, UI yêu cầu người dùng chủ động chuyển phiên.
 4. Chuyển phiên: deny nguồn cũ → đóng tài nguyên cũ → tăng generation → bind participant mới. Late event từ socket cũ không đóng call mới. Unique participant theo session không thay registry toàn user.
+   Chuyển thiết bị trong cùng phiên là thao tác người dùng xác nhận tại lobby bằng **Chuyển qua thiết bị này**: giữ participantId và vai trò host hiện hành, thu kết nối/media cũ rồi bind generation mới; không gọi hành vi host chủ động rời/kết thúc cho mọi người. Tab nguồn hiển thị đã chuyển, có thể chủ động **Chuyển trở lại**. Không tự takeover hoặc phục hồi xuyên F5; contract triển khai tại [MAIN join registry](../contracts/main-join-registry.md).
 5. Trả projection, RTP capabilities, tham số send/recv transport. Client tạo transport, connect và xin publish nguồn được phép.
 6. Consumer server tạo paused → client gắn track và báo ready → server kiểm lại quyền/generation → resume hoặc close. [mediasoup communication](https://mediasoup.org/documentation/v3/communication-between-client-and-server/).
 

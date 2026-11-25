@@ -28,6 +28,34 @@ URL kênh là `/workspaces/:workspaceId/channels/:channelId`; lobby/MAIN dùng h
 
 SEND/RECV được tạo khi có nguồn cần phát/nhận, tránh hết hạn DTLS trên transport chưa dùng. Bootstrap/ICE đi qua HTTP context proof của socket hiện hành. Khi mất kết nối, đóng media generation cũ, thử `session.resume` có giới hạn và resync; mic/camera vẫn tắt sau nối lại. Khi máy chủ chưa xác nhận cleanup, giao diện giữ cảnh báo và cùng request để thử lại, không coi tắt track local là đã rời thành công.
 
+### Chuyển cuộc gọi sang tab/thiết bị này — SCRUM-97
+
+Lobby nhận tín hiệu UX qua BroadcastChannel cùng origin, tách theo user hiện hành.
+Chỉ truyền ID ngẫu nhiên của tab và loại probe/active/release/focus; không truyền
+cookie, ticket, tên phòng, projection hoặc credential. Tab đang giữ call gửi heartbeat
+mỗi 2 giây; tín hiệu không cập nhật quá 10 giây được bỏ. Đây không phải nguồn quyền:
+tab ngủ/crash, khác profile hoặc BroadcastChannel không hoạt động vẫn cần server
+kiểm ownership ở mọi join. Không lưu resume ticket hoặc phục hồi xuyên F5.
+
+Lobby đọc ownership của chính tài khoản qua endpoint chỉ đọc; khi có cuộc gọi cùng
+phòng hoặc tín hiệu liên tab, giữ preview/chọn thiết bị và hiện **Chuyển qua thiết bị
+này**. Không tự join hoặc lấy quyền. Chỉ khi người dùng bấm, gửi ticket mới cùng
+xác nhận generation nguồn để server thực hiện handoff. Auth/access và cleanup đúng
+đời vẫn là điều kiện bắt buộc; không dùng BroadcastChannel để yêu cầu tab cũ leave.
+
+Sau handoff, tab cũ dừng media và hiện **Đã chuyển cuộc gọi sang thiết bị khác**, nút
+**Chuyển trở lại** và **Về Workspace**. Giữ cùng participant/host, không kết thúc phiên
+cho người khác. Mic/camera ở đích theo lựa chọn tại lobby; nút chuyển trở lại mặc định
+tắt cả hai. Nếu chỉ server trả CALL_ALREADY_ACTIVE mà không xác định cùng phòng,
+hiện thông báo trung lập; không tự chuyển từ cuộc họp khác. F5/grace không đổi và
+không lưu hoặc truyền resume ticket giữa tab.
+
+Kiểm browser: A join rồi mở B cùng tài khoản; B có nút chuyển và không tự join.
+B bấm chuyển → A dừng mic/camera/share, B vào đúng phòng, người khác vẫn trong phiên.
+A bấm chuyển trở lại → B dừng, A vào; không trùng participant/transport. Kiểm cả host,
+member, hai đích cạnh tranh, khác profile, auth/access bị thu và cleanup chưa xong.
+Native smoke/integration fixture không thay bằng chứng mic/camera/browser thật.
+
 ### Kiểm local trên cùng máy, không dùng TURN
 
 `MEDIA_LOCAL_DIRECT=true` là lựa chọn **tường minh**, mặc định `false`. Chỉ hợp lệ ngoài production và khi `HOST`, `MEDIA_LISTEN_IP`, `MEDIA_ANNOUNCED_ADDRESS`, hostname `APP_ORIGIN` đều là loopback. ICE endpoint vẫn kiểm cookie/CSRF/context proof, nhưng trả danh sách ICE server rỗng để dùng kết nối trực tiếp. Không tự chuyển sang chế độ này khi Cloudflare lỗi. Không dùng cho thiết bị khác, hai mạng hoặc bằng chứng TURN của SCRUM-89.
@@ -39,6 +67,8 @@ pnpm --filter @colearnia/server exec tsx scripts/main-ui-local-test.ts
 ```
 
 Terminal web riêng:
+
+Muốn giữ tài khoản/Workspace qua các lần dừng backend, đặt `COLEARNIA_MAIN_UI_TEST_DB` thành tên test dạng `colearnia_test_main_ui_` + 32 ký tự hex. Lần tạo mới phải đặt thêm `COLEARNIA_MAIN_UI_TEST_CREATE=true`; đây là opt-in tạo DB test có tên, không reset DB đã có. Chạy lại cùng tên sẽ dùng lại collection/index và giữ DB khi thoát. Nếu chỉ định tên DB chưa tồn tại mà chưa opt-in tạo, script báo lỗi rõ. Chạy không có tên vẫn tạo DB ngẫu nhiên và xóa DB đó khi thoát như trước. Đăng nhập lại sau restart vì session secret local được tạo mới.
 
 ```powershell
 $env:PORT = '3193'
