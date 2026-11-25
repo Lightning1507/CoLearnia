@@ -103,7 +103,9 @@ function setup(
   const coordinator = createOperationCoordinator();
   const revocations = createAccessRevocationCoordinator({ coordinator });
   const revocationCohort = vi.fn(revokedAuthSessions ?? (() => [auth.authSessionId]));
+  const publishTransferred = vi.fn();
   const registry = createMainJoinRegistry({
+    publishTransferred,
     coordinator,
     accessRevocations: {
       ...revocations,
@@ -138,6 +140,7 @@ function setup(
     registry.issue(identity, destination, { requestId });
   return {
     registry,
+    publishTransferred,
     coordinator,
     revocations,
     revocationCohort,
@@ -2156,6 +2159,364 @@ async function reconnectFixture(
   };
   return { ...f, socket, next, command, joined, context, media, messaging, board };
 }
+
+describe('explicit same-meeting device transfer', () => {
+  it.each([true, false])(
+    'recovers an expired transfer ticket with its destination still connected (old commit first: %s)',
+    async (oldCommitFirst) => {
+      const f = await reconnectFixture();
+      const pending = deferred<SessionCleanupResult>();
+      f.board.mockImplementation(() => pending.promise);
+      const ticket = await f.issue();
+      // Expire the ticket during cleanup without exhausting source reconnect grace.
+      f.advance(59_999);
+      const first = f.registry.join(f.next, {
+        requestId: randomUUID(),
+        ticket: ticket.ticket,
+        takeover: { confirmed: true, expectedCallGeneration: f.command.callGeneration },
+      });
+      const refused = expect(first).rejects.toMatchObject({ code: 'CONFLICT' });
+      await vi.waitFor(() => expect(f.board).toHaveBeenCalledOnce());
+      f.advance(1);
+      expect(f.next.isConnected()).toBe(true);
+      if (oldCommitFirst) {
+        pending.resolve(cleanupAck(f.board.mock.calls[0]![0]));
+        await refused;
+      }
+      expect(
+        await f.registry.withContext(f.socket.socketId, f.context, (value) => value),
+      ).toMatchObject({ ok: false });
+      expect(
+        await f.registry.withContext(f.next.socketId, f.context, (value) => value),
+      ).toMatchObject({ ok: false });
+      await expect(
+        f.registry.resume(f.socket, { ...f.command, requestId: randomUUID() }),
+      ).rejects.toMatchObject({ code: 'CONFLICT' });
+      const nextTicket = await f.issue();
+      const next = f.binding();
+      const command = {
+        requestId: randomUUID(),
+        ticket: nextTicket.ticket,
+        takeover: { confirmed: true, expectedCallGeneration: f.command.callGeneration },
+      };
+      const recovered = expect(f.registry.join(next, command)).resolves.toBeDefined();
+      pending.resolve(cleanupAck(f.board.mock.calls[0]![0]));
+      await Promise.all([refused, recovered]);
+      const replay = await f.registry.join(next, command);
+      expect(replay.ack.data.result.callGeneration).toBeGreaterThan(f.command.callGeneration);
+      expect(projection(replay).viewer.role).toBe('HOST');
+      expect(
+        await f.registry.withContext(
+          next.socketId,
+          {
+            ...f.context,
+            callGeneration: replay.ack.data.result.callGeneration,
+          },
+          (value) => value,
+        ),
+      ).toMatchObject({ ok: true });
+      expect(f.next.isConnected()).toBe(true);
+      expect(f.registry.isContextRetired(f.socket.socketId, f.context)).toBe(true);
+      expect(f.media).toHaveBeenCalledOnce();
+      expect(f.publishTransferred).toHaveBeenCalledOnce();
+      expect(f.registry.stats().ownerships).toBe(1);
+      expect(f.repository.beginEnding).not.toHaveBeenCalled();
+    },
+  );
+  it('converges a dead destination after cleanup and before commit without a disconnect callback', async () => {
+    const f = await reconnectFixture();
+    let connected = true;
+    const destination = { ...f.next, isConnected: () => connected };
+    const ticket = await f.issue();
+    const entered = deferred<void>();
+    const release = deferred<void>();
+    const resolve = f.resolveAuthority.getMockImplementation()!;
+    f.resolveAuthority.mockImplementationOnce(resolve);
+    f.resolveAuthority.mockImplementationOnce(async (...args) => {
+      entered.resolve();
+      await release.promise;
+      return resolve(...args);
+    });
+    const command = {
+      requestId: randomUUID(),
+      ticket: ticket.ticket,
+      takeover: { confirmed: true, expectedCallGeneration: f.command.callGeneration },
+    };
+    const firstRefused = expect(f.registry.join(destination, command)).rejects.toMatchObject({
+      code: 'CONFLICT',
+    });
+    await entered.promise;
+    expect(f.board).toHaveBeenCalledOnce();
+    connected = false;
+    release.resolve();
+    await firstRefused;
+    expect(
+      await f.registry.withContext(f.socket.socketId, f.context, (value) => value),
+    ).toMatchObject({ ok: false });
+    await expect(
+      f.registry.resume(f.socket, { ...f.command, requestId: randomUUID() }),
+    ).rejects.toMatchObject({ code: 'CONFLICT' });
+    const nextTicket = await f.issue();
+    const recovered = await f.registry.join(f.binding(), {
+      requestId: randomUUID(),
+      ticket: nextTicket.ticket,
+      takeover: { confirmed: true, expectedCallGeneration: f.command.callGeneration },
+    });
+    expect(recovered.ack.data.result.callGeneration).toBeGreaterThan(f.command.callGeneration);
+    expect(f.media).toHaveBeenCalledOnce();
+    expect(f.repository.beginEnding).not.toHaveBeenCalled();
+  });
+
+  it('does not let a queued abandoned-destination callback remove the replacement reservation', async () => {
+    const f = await reconnectFixture();
+    const pending = deferred<SessionCleanupResult>();
+    f.board.mockImplementation(() => pending.promise);
+    let connected = true;
+    const destination = { ...f.next, isConnected: () => connected };
+    const firstTicket = await f.issue();
+    const firstCommand = {
+      requestId: randomUUID(),
+      ticket: firstTicket.ticket,
+      takeover: { confirmed: true, expectedCallGeneration: f.command.callGeneration },
+    };
+    const refused = expect(f.registry.join(destination, firstCommand)).rejects.toMatchObject({
+      code: 'CONFLICT',
+    });
+    await vi.waitFor(() => expect(f.board).toHaveBeenCalledOnce());
+    const nextTicket = await f.issue();
+    connected = false;
+    const entered = deferred<void>();
+    const release = deferred<void>();
+    const resolve = f.resolveAuthority.getMockImplementation()!;
+    f.resolveAuthority.mockImplementationOnce(async (...args) => {
+      entered.resolve();
+      await release.promise;
+      return resolve(...args);
+    });
+    const next = f.binding();
+    const recovered = f.registry.join(next, {
+      requestId: randomUUID(),
+      ticket: nextTicket.ticket,
+      takeover: { confirmed: true, expectedCallGeneration: f.command.callGeneration },
+    });
+    await entered.promise;
+    const staleDisconnect = f.registry.disconnect(destination.socketId);
+    release.resolve();
+    await staleDisconnect;
+    expect(f.publishTransferred).not.toHaveBeenCalled();
+    pending.resolve(cleanupAck(f.board.mock.calls[0]![0]));
+    const [, joined] = await Promise.all([refused, recovered]);
+    await f.registry.disconnect(destination.socketId);
+    await expect(f.registry.join(destination, firstCommand)).rejects.toMatchObject({
+      code: 'CONFLICT',
+    });
+    expect(
+      await f.registry.withContext(
+        next.socketId,
+        {
+          ...f.context,
+          callGeneration: joined.ack.data.result.callGeneration,
+        },
+        (value) => value,
+      ),
+    ).toMatchObject({ ok: true });
+    expect(f.publishTransferred).toHaveBeenCalledOnce();
+    expect(f.media).toHaveBeenCalledOnce();
+  });
+
+  it.each([true, false])(
+    'recovers an abandoned destination during cleanup (disconnect callback: %s)',
+    async (notifyDisconnect) => {
+      const f = await reconnectFixture();
+      const pending = deferred<SessionCleanupResult>();
+      f.board.mockImplementation(() => pending.promise);
+      let connected = true;
+      const destination = { ...f.next, isConnected: () => connected };
+      const ticket = await f.issue();
+      const first = f.registry.join(destination, {
+        requestId: randomUUID(),
+        ticket: ticket.ticket,
+        takeover: { confirmed: true, expectedCallGeneration: f.command.callGeneration },
+      });
+      const firstRefused = expect(first).rejects.toMatchObject({ code: 'CONFLICT' });
+      await vi.waitFor(() => expect(f.board).toHaveBeenCalledOnce());
+      connected = false;
+      if (notifyDisconnect) await f.registry.disconnect(destination.socketId);
+      expect(
+        await f.registry.withContext(f.socket.socketId, f.context, (value) => value),
+      ).toMatchObject({ ok: false });
+      await expect(
+        f.registry.resume(f.socket, { ...f.command, requestId: randomUUID() }),
+      ).rejects.toMatchObject({ code: 'CONFLICT' });
+      const nextTicket = await f.issue();
+      const next = f.binding();
+      const second = f.registry.join(next, {
+        requestId: randomUUID(),
+        ticket: nextTicket.ticket,
+        takeover: { confirmed: true, expectedCallGeneration: f.command.callGeneration },
+      });
+      // Attach rejection handling immediately; the unfixed implementation refuses C.
+      const recovered = expect(second).resolves.toBeDefined();
+      pending.resolve(cleanupAck(f.board.mock.calls[0]![0]));
+      await Promise.all([firstRefused, recovered]);
+      expect(f.media).toHaveBeenCalledOnce();
+      expect(f.publishTransferred).toHaveBeenCalledOnce();
+      expect(f.registry.stats().ownerships).toBe(1);
+      await f.registry.disconnect(destination.socketId);
+      expect(f.media).toHaveBeenCalledOnce();
+      expect(
+        await f.registry.withContext(f.socket.socketId, f.context, (value) => value),
+      ).toMatchObject({ ok: false });
+    },
+  );
+  it('revokes the old generation, preserves host/participant, replays ACK and permits switching back', async () => {
+    const f = await reconnectFixture();
+    const ticket = await f.issue();
+    expect(ticket.activeCallGeneration).toBe(f.command.callGeneration);
+    const command = {
+      requestId: randomUUID(),
+      ticket: ticket.ticket,
+      takeover: { confirmed: true, expectedCallGeneration: f.command.callGeneration },
+    };
+    const joined = await f.registry.join(f.next, command);
+    expect(joined.ack.data.result.participantId).toBe(f.joined.ack.data.result.participantId);
+    expect(joined.ack.data.result.callGeneration).toBeGreaterThan(f.command.callGeneration);
+    expect(projection(joined).viewer.role).toBe('HOST');
+    expect(f.repository.join).toHaveBeenCalledOnce();
+    expect(f.repository.beginEnding).not.toHaveBeenCalled();
+    expect(f.media).toHaveBeenCalledOnce();
+    expect(f.publishTransferred).toHaveBeenCalledWith(f.socket.socketId, f.context);
+    expect(f.registry.isContextRetired(f.socket.socketId, f.context)).toBe(true);
+    const replay = await f.registry.join(f.next, command);
+    expect(replay.ack.data.result).toMatchObject({
+      participantId: joined.ack.data.result.participantId,
+      callGeneration: joined.ack.data.result.callGeneration,
+      resumeTicket: joined.ack.data.result.resumeTicket,
+    });
+    expect(f.media).toHaveBeenCalledOnce();
+    await f.registry.disconnect(f.socket.socketId);
+    expect(f.media).toHaveBeenCalledOnce();
+    const backTicket = await f.issue();
+    const back = await f.registry.join(f.socket, {
+      requestId: randomUUID(),
+      ticket: backTicket.ticket,
+      takeover: { confirmed: true, expectedCallGeneration: joined.ack.data.result.callGeneration },
+    });
+    expect(projection(back).viewer.role).toBe('HOST');
+    expect(f.media).toHaveBeenCalledTimes(2);
+    expect(f.repository.beginEnding).not.toHaveBeenCalled();
+  });
+
+  it('rejects stale generation and cross-user confirmation before revoking the old call', async () => {
+    const f = await reconnectFixture();
+    const ticket = await f.issue();
+    await expect(
+      f.registry.join(f.next, {
+        requestId: randomUUID(),
+        ticket: ticket.ticket,
+        takeover: { confirmed: true, expectedCallGeneration: f.command.callGeneration + 1 },
+      }),
+    ).rejects.toMatchObject({ code: 'CONFLICT' });
+    await expect(
+      f.registry.join(f.binding(f.principal()), {
+        requestId: randomUUID(),
+        ticket: ticket.ticket,
+        takeover: { confirmed: true, expectedCallGeneration: f.command.callGeneration },
+      }),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    expect(f.media).not.toHaveBeenCalled();
+    expect(f.publishTransferred).not.toHaveBeenCalled();
+  });
+
+  it('allows only one simultaneous destination to acquire ownership', async () => {
+    const f = await reconnectFixture();
+    const tickets = await Promise.all([f.issue(), f.issue()]);
+    const results = await Promise.allSettled(
+      tickets.map((ticket) =>
+        f.registry.join(f.binding(), {
+          requestId: randomUUID(),
+          ticket: ticket.ticket,
+          takeover: { confirmed: true, expectedCallGeneration: f.command.callGeneration },
+        }),
+      ),
+    );
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    expect(f.media).toHaveBeenCalledOnce();
+    expect(f.publishTransferred).toHaveBeenCalledOnce();
+  });
+
+  it('waits for cleanup outside the gate and rejects old commands while waiting', async () => {
+    const f = await reconnectFixture();
+    const pending = deferred<SessionCleanupResult>();
+    f.board.mockImplementation(() => pending.promise);
+    const ticket = await f.issue();
+    const transfer = f.registry.join(f.next, {
+      requestId: randomUUID(),
+      ticket: ticket.ticket,
+      takeover: { confirmed: true, expectedCallGeneration: f.command.callGeneration },
+    });
+    await vi.waitFor(() => expect(f.board).toHaveBeenCalledOnce());
+    expect(f.registry.isContextRetired(f.socket.socketId, f.context)).toBe(true);
+    const result = await f.registry.withContext(f.socket.socketId, f.context, (value) => value);
+    expect(result.ok).toBe(false);
+    expect(f.publishTransferred).not.toHaveBeenCalled();
+    pending.resolve(cleanupAck(f.board.mock.calls[0]![0]));
+    await expect(transfer).resolves.toBeDefined();
+    expect(f.publishTransferred).toHaveBeenCalledOnce();
+  });
+
+  it('reads only the authenticated user ownership in this channel without creating a call', async () => {
+    const f = setup();
+    await expect(f.registry.inspectOwnership(f.auth, f.target)).resolves.toEqual({});
+    expect(f.createRouter).not.toHaveBeenCalled();
+    const ticket = await f.issue();
+    const joined = await f.registry.join(f.binding(), {
+      requestId: randomUUID(),
+      ticket: ticket.ticket,
+    });
+    await expect(f.registry.inspectOwnership(f.auth, f.target)).resolves.toEqual({
+      activeCallGeneration: joined.ack.data.result.callGeneration,
+    });
+    await expect(f.registry.inspectOwnership(f.principal(), f.target)).resolves.toEqual({});
+    await expect(
+      f.registry.inspectOwnership(f.auth, { ...f.target, channelId: id() }),
+    ).resolves.toEqual({});
+  });
+  it('does not grant transfer on incomplete cleanup, and retries the same confirmed intent', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const f = await reconnectFixture();
+      f.board.mockImplementation(async (request) => ({
+        ...cleanupAck(request),
+        outcome: {
+          permissionRevoked: false,
+          pendingInvalidated: false,
+          cleanupPending: true,
+          errorCode: 'DEPENDENCY_UNAVAILABLE',
+          retryable: false,
+        },
+      }));
+      const ticket = await f.issue();
+      const command = {
+        requestId: randomUUID(),
+        ticket: ticket.ticket,
+        takeover: { confirmed: true, expectedCallGeneration: f.command.callGeneration },
+      };
+      const refused = expect(f.registry.join(f.next, command)).rejects.toMatchObject({
+        code: 'DEPENDENCY_UNAVAILABLE',
+      });
+      await vi.advanceTimersByTimeAsync(60000);
+      await refused;
+      expect(f.publishTransferred).not.toHaveBeenCalled();
+      f.board.mockImplementation(async (request) => cleanupAck(request));
+      await expect(f.registry.join(f.next, command)).resolves.toBeDefined();
+      expect(f.media).toHaveBeenCalledOnce();
+      expect(f.publishTransferred).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
 
 describe('screen picker commands through the MAIN registry', () => {
   it('checks revision and only releases the exact pending lease', async () => {

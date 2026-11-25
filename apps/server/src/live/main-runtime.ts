@@ -56,6 +56,7 @@ export function createMainRuntime(options: {
   const { media } = options;
   let closed = false;
   const sockets = new Map<string, Socket>();
+  const rawSockets = new Map<string, Socket>();
   const projections = new Map<
     string,
     ReturnType<ReturnType<typeof createMediaSourceSync>['attach']>
@@ -124,6 +125,13 @@ export function createMainRuntime(options: {
       const socket = sockets.get(socketId);
       if (socket?.connected) socket.emit('session.ended', notice);
     },
+    publishTransferred: (socketId, notice) => {
+      const socket = rawSockets.get(socketId);
+      if (!socket?.connected) return;
+      // No grant/projection: notify only the old authenticated connection, then close it.
+      socket.emit('session.transferred', notice);
+      socket.disconnect(true);
+    },
     ...createMainAuthority(options.database, options.access, options.barrier),
     createRouter: media.createSessionRouter,
     revocationCleanup: cleanup,
@@ -162,6 +170,8 @@ export function createMainRuntime(options: {
     attach(socket: Socket & { data: { auth: AuthenticatedContext } }) {
       if (closed || attached.has(socket.id) || !socket.connected) return;
       const rawSocket = socket;
+      rawSockets.set(socket.id, rawSocket);
+      rawSocket.once('disconnect', () => rawSockets.delete(rawSocket.id));
       socket = createMainSocketPort(rawSocket, async (event, input, send) => {
         if (
           !ready() ||
@@ -282,6 +292,7 @@ export function createMainRuntime(options: {
       registry.close();
       attached.clear();
       sockets.clear();
+      rawSockets.clear();
       projections.clear();
     },
   };

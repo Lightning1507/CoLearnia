@@ -41,6 +41,23 @@ function deviceButton(markup: string, label: string) {
 }
 
 describe('lobby device state during acquisition', () => {
+  it('offers explicit transfer with device controls and explains the old connection will close', () => {
+    const preview = new LobbyPreview({ secure: true });
+    vi.mocked(useLobbyPreview).mockReturnValue({ preview, state: preview.getSnapshot() });
+    const markup = renderToStaticMarkup(
+      createElement(LobbyDeviceCheck, {
+        channelName: 'Phòng học',
+        onBack: vi.fn(),
+        onContinue: vi.fn(),
+        transfer: true,
+      }),
+    );
+    expect(markup).toContain('Chuyển qua thiết bị này');
+    expect(markup).toContain('kết nối cũ sẽ ngắt');
+    expect(markup).toContain('aria-label="Bật microphone"');
+    expect(markup).toContain('aria-label="Bật camera"');
+    expect(markup).not.toContain('Quay lại cuộc gọi');
+  });
   it.each(['camera', 'microphone'] as const)(
     'shows %s as on while replacing its live track',
     (kind) => {

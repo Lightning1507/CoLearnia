@@ -13,11 +13,45 @@ import type { createMainJoinRegistry } from './main-join-registry.js';
 export function createMainTicketRouter(
   auth: ReturnType<typeof createHttpAuth>,
   database: Database,
-  registry: Pick<ReturnType<typeof createMainJoinRegistry>, 'issue' | 'stats'>,
+  registry: Pick<ReturnType<typeof createMainJoinRegistry>, 'issue' | 'stats' | 'inspectOwnership'>,
   isReady: () => boolean,
 ) {
   const { Channel } = channelModels(database.connection);
   const router = Router();
+  router.get(
+    '/:channelId/live-session/ownership',
+    auth.requireAuth,
+    async (req, res: AuthResponse) => {
+      res.setHeader('Cache-Control', 'no-store');
+      const actor = requireVerifiedSession(res);
+      if (!actor) return;
+      try {
+        if (!isReady()) throw new MainJoinError('DEPENDENCY_UNAVAILABLE');
+        const { channelId } = channelParamsSchema.parse(req.params);
+        const channel = await Channel.findOne({ _id: channelId, deletedAt: null })
+          .select('workspaceId')
+          .maxTimeMS(2000)
+          .lean();
+        if (!channel) throw new MainJoinError('NOT_FOUND');
+        if (res.destroyed || !isReady()) throw new MainJoinError('DEPENDENCY_UNAVAILABLE');
+        const data = await registry.inspectOwnership(actor.context, {
+          workspaceId: channel.workspaceId.toHexString(),
+          channelId: channelId.toLowerCase(),
+        });
+        if (!res.destroyed) res.json({ data, requestId: res.locals.requestId });
+      } catch (error) {
+        const code =
+          error instanceof MainJoinError
+            ? error.code
+            : error instanceof ZodError
+              ? 'VALIDATION_ERROR'
+              : error instanceof CoordinationError
+                ? 'SERVER_BUSY'
+                : 'DEPENDENCY_UNAVAILABLE';
+        if (!res.headersSent) authFailure(res, code, 'Không thể kiểm tra cuộc gọi hiện tại.');
+      }
+    },
+  );
   router.post(
     '/:channelId/live-session/join',
     auth.requireAuth,

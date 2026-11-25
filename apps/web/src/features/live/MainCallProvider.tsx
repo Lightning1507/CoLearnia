@@ -120,17 +120,53 @@ function MainCallHost({ call }: { call: MainCall }) {
       ref={screen}
     >
       {state.phase === 'lobby' || state.phase === 'joining' ? (
-        <LobbyDeviceCheck
-          key={target.channelId}
-          channelName={target.channelName}
-          notice="Nếu vừa tải lại trang, bạn cần tham gia lại; mic và camera không tự bật. Nếu báo đang có cuộc gọi khác, hãy đợi kết nối cũ được dọn rồi thử lại."
-          onBack={() => {
-            call.cancel();
-            showCall(false);
-          }}
-          onContinue={(preferences) => void call.join(preferences)}
-          continuePending={state.phase === 'joining'}
-        />
+        state.otherTabActive || state.transferAvailable || state.transferPending ? (
+          <LobbyDeviceCheck
+            channelName={target.channelName}
+            transfer
+            {...(state.message ? { notice: state.message } : {})}
+            onContinue={(preferences) => void call.join(preferences, true)}
+            continuePending={state.phase === 'joining'}
+            onBack={() => {
+              call.cancel();
+              showCall(false);
+            }}
+          />
+        ) : (
+          <LobbyDeviceCheck
+            key={target.channelId}
+            channelName={target.channelName}
+            {...(state.ownershipConflict
+              ? {
+                  notice:
+                    'Tài khoản đang có một kết nối cuộc gọi khác. Hãy kiểm tra cuộc gọi đang mở rồi thử lại.',
+                }
+              : {})}
+            onBack={() => {
+              call.cancel();
+              showCall(false);
+            }}
+            onContinue={(preferences) => void call.join(preferences)}
+            continuePending={state.phase === 'joining'}
+          />
+        )
+      ) : state.phase === 'transferred' ? (
+        <section className="main-call-progress">
+          <h1>Đã chuyển cuộc gọi sang thiết bị khác</h1>
+          <button className="auth-primary" type="button" onClick={call.transferHere}>
+            Chuyển trở lại
+          </button>
+          <button
+            className="auth-secondary"
+            type="button"
+            onClick={() => {
+              call.cancel();
+              showCall(false);
+            }}
+          >
+            Về Workspace
+          </button>
+        </section>
       ) : state.handle && state.resources ? (
         <RoomShell
           channelName={target.channelName}
