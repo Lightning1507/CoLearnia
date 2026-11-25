@@ -364,6 +364,7 @@ it('retains the same leave intent after pending cleanup, blocks a new join, then
   expect(dispose).toHaveBeenCalled();
   call.open({ ...target, channelId: '6'.repeat(24) });
   expect(call.getSnapshot().target?.channelId).toBe(target.channelId);
+  expect(call.getSnapshot().expanded).toBe(false);
   socket.responder = async (event, input) => socket.answer(event, input);
   await call.leave();
   const requests = socket.requests.filter(({ event }) => event === 'session.end');
@@ -374,6 +375,27 @@ it('retains the same leave intent after pending cleanup, blocks a new join, then
     ),
   ).toBe(true);
   expect(call.getSnapshot().phase).toBe('idle');
+});
+it('keeps the workspace visible and replays the departure after both ACKs are lost', async () => {
+  await call.join(preferences);
+  const socket = sockets[0]!;
+  socket.responder = async () => {
+    throw new Error('ACK lost');
+  };
+  await call.leave();
+  call.open(target);
+  expect(call.getSnapshot()).toMatchObject({
+    phase: 'error',
+    expanded: false,
+    cleanupPending: true,
+  });
+  socket.responder = async (event, input) => socket.answer(event, input);
+  await call.leave();
+  const requests = socket.requests.filter(({ event }) => event === 'session.end');
+  expect(requests).toHaveLength(3);
+  expect(requests[1]?.input).toEqual(requests[0]?.input);
+  expect(requests[2]?.input).toEqual(requests[0]?.input);
+  expect(call.getSnapshot()).toMatchObject({ phase: 'idle', cleanupPending: false });
 });
 it('accepts a confirmed ENDED acknowledgement while adapter finalization remains pending', async () => {
   await call.join(preferences);

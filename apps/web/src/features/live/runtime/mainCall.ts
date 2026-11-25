@@ -107,7 +107,8 @@ export class MainCall {
   }
   open(target: MainCallTarget) {
     if (!this.#auth) return;
-    if (this.#joined || this.#state.phase === 'joining' || this.#state.cleanupPending) {
+    if (this.#state.cleanupPending) return;
+    if (this.#joined || this.#state.phase === 'joining') {
       this.expand(true);
       return;
     }
@@ -551,7 +552,8 @@ export class MainCall {
       else if (
         error instanceof MainCallError &&
         error.code === 'CONFLICT' &&
-        this.#projection?.getSnapshot().status !== 'closed'
+        this.#projection &&
+        this.#projection.getSnapshot().status !== 'closed'
       ) {
         this.#leaveIntent = undefined;
         this.#projection!.resync();
@@ -562,7 +564,7 @@ export class MainCall {
                 ? (this.#projection.getSnapshot().cursor ?? undefined)
                 : undefined,
             this.#projection!.subscribe,
-            new AbortController().signal,
+            leaveAbort.signal,
           );
         } catch {
           /* Remain pending; a later explicit retry can reconcile. */

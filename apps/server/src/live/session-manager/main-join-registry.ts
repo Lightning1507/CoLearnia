@@ -1285,6 +1285,12 @@ export function createMainJoinRegistry(options: {
           sweep();
           let current = await authority(auth, destination, held);
           const pendingRoom = rooms.get(destination.channelId);
+          if (pendingRoom?.state.state === 'ENDING' && !pendingRoom.mediaFailed) {
+            const ending = endRecords.get(
+              JSON.stringify([pendingRoom.state.sessionId, pendingRoom.state.epoch]),
+            );
+            if (ending) return { ending };
+          }
           if (pendingRoom?.metadata) {
             await settleMetadata(pendingRoom);
             current = await authority(auth, destination, held);
@@ -1425,9 +1431,10 @@ export function createMainJoinRegistry(options: {
           };
         });
         if ('ending' in outcome) {
+          if (outcome.ending.operation.isRunning()) fail('SESSION_END_PENDING');
           const result = await outcome.ending.operation.run();
           if (!('data' in result) || result.data.status !== 'completed')
-            fail('DEPENDENCY_UNAVAILABLE');
+            fail('SESSION_END_PENDING');
           outcome.ending.expiresAt = clock() + limits.endReplayTtlMs;
         } else return outcome;
       }

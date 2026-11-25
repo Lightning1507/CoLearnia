@@ -109,6 +109,7 @@ export function createSessionEndOperation(options: {
     return active;
   }
   return {
+    isRunning: () => active !== undefined,
     run() {
       if (completed) return Promise.resolve(completed);
       if (active) return active;

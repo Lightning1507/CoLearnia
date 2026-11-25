@@ -629,7 +629,7 @@ describe('SCRUM-86 session end', () => {
     const first = f.registry.end(f.socket, f.command);
     await vi.waitFor(() => expect(f.messaging).toHaveBeenCalled());
     expect(f.routers[0]!.closed).toBe(true);
-    await expect(f.issue(f.principal())).rejects.toMatchObject({ code: 'DEPENDENCY_UNAVAILABLE' });
+    await expect(f.issue(f.principal())).rejects.toMatchObject({ code: 'SESSION_END_PENDING' });
     await expect(
       f.registry.withContext(f.socket.socketId, f.command, () => true),
     ).rejects.toThrow();
@@ -2295,7 +2295,7 @@ describe('MAIN reconnect and resync', () => {
     await expect(
       f.registry.join(f.binding(other), { ticket: waiting.ticket, requestId: randomUUID() }),
     ).rejects.toThrow();
-    await expect(f.issue(other)).rejects.toMatchObject({ code: 'DEPENDENCY_UNAVAILABLE' });
+    await expect(f.issue(other)).rejects.toMatchObject({ code: 'SESSION_END_PENDING' });
     pending.resolve(cleanupAck(board.mock.calls[0]![0]));
     await ending;
     const next = await f.issue(other);
