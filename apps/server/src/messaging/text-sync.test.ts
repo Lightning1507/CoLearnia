@@ -105,6 +105,24 @@ it('expires token/resources and enforces subscription caps, disconnect and unsub
   expect(() => sync.find(first.token, actor, access)).toThrow('CONFLICT');
 });
 
+it('keeps an opted-in socket subscribed after history expires and revokes it when auth expires', () => {
+  vi.useFakeTimers();
+  const sync = registry();
+  const session = { ...actor, expiresAt: new Date(Date.now() + 3000).toISOString() };
+  const source = { ...input(), actor: session };
+  const entry = sync.open(source, 0, undefined, true);
+  vi.advanceTimersByTime(1500);
+  expect(() => sync.find(entry.token, session, access)).toThrow('CONFLICT');
+  expect(() => sync.current(entry, session, access)).not.toThrow();
+  expect(source.emit).not.toHaveBeenCalled();
+  vi.advanceTimersByTime(1500);
+  expect(sync.entries()).toHaveLength(0);
+  expect(source.emit).toHaveBeenCalledWith('conversation.invalidated', {
+    subscriptionId: entry.id,
+    reason: 'ACCESS_REVOKED',
+  });
+});
+
 it('fences immediately and repeated cleanup never closes a newer resource or peer session', async () => {
   const sync = registry();
   const first = sync.open(input(), 0);
