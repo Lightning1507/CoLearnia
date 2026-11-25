@@ -48,7 +48,7 @@ export function TextChannel({
       autoConnect: false,
       transports: ['websocket'],
       withCredentials: true,
-      auth: { csrfToken: session.csrfToken },
+      auth: { csrfToken: session.csrfToken, textSenderNames: true },
     });
     const api = createTextApi(
       socket,

@@ -38,7 +38,7 @@ async function verifyChat(scope: 'WORKSPACE' | 'PRIVATE') {
   const ledger = durableText ? createTextSendLedger(database, 4) : undefined;
   await ledger?.start(() => 5000);
   const f = await setup({ text: true, ...(ledger ? { textSendLedger: ledger } : {}) });
-  const bob = await f.signUp();
+  const bob = await f.signUp('Demo 2');
   const workspace = await f.http
     .post('/api/v1/workspaces')
     .set('Origin', origin)
@@ -87,8 +87,8 @@ async function verifyChat(scope: 'WORKSPACE' | 'PRIVATE') {
       });
     }
   }
-  const a = await f.connect(f.host);
-  const b = await f.connect(bob);
+  const a = await f.connect(f.host, true);
+  const b = await f.connect(bob, true);
   const api = (socket: typeof a, account: typeof bob, loseAck = false) => {
     let dropNextAck = loseAck;
     return createTextApi(
@@ -154,7 +154,9 @@ async function verifyChat(scope: 'WORKSPACE' | 'PRIVATE') {
     const first = await aliceApi.send(intent, signal);
     const retry = await aliceApi.send(intent, signal);
     expect(retry.id).toBe(first.id);
+    expect(retry.senderDisplayName).toBe('Sinh viên');
     await expect.poll(() => reader.snapshot().messages.map((row) => row.id)).toEqual([first.id]);
+    expect(reader.snapshot().messages[0]?.senderDisplayName).toBe(first.senderDisplayName);
     b.disconnect();
     const offline = await aliceApi.send(
       { clientMessageId: randomUUID(), text: 'Khi bạn mất kết nối' },
@@ -173,6 +175,13 @@ async function verifyChat(scope: 'WORKSPACE' | 'PRIVATE') {
     await expect
       .poll(() => alice.snapshot().messages.map((row) => row.id))
       .toEqual([first.id, offline.id, reply.id]);
+    expect(alice.snapshot().messages.at(-1)?.senderDisplayName).toBe('Demo 2');
+    const legacy = await f.http
+      .get(`/api/v1/channels/${channel.id}/messages`)
+      .set('Cookie', bob.cookie)
+      .expect(200);
+    expect(legacy.body.data.items).toHaveLength(3);
+    expect(legacy.body.data.items.every((row: object) => !('senderDisplayName' in row))).toBe(true);
     const archive = createTextSynchronizer(
       aliceApi.sync,
       channel.id,
@@ -192,6 +201,11 @@ async function verifyChat(scope: 'WORKSPACE' | 'PRIVATE') {
       ]);
       expect(archive.snapshot().checkpoint).toBe(checkpoint);
       expect(archive.snapshot().olderCursor).toBeNull();
+      expect(archive.snapshot().messages.map((row) => row.senderDisplayName)).toEqual([
+        'Sinh viên',
+        'Sinh viên',
+        'Demo 2',
+      ]);
     } finally {
       archive.stop();
     }
