@@ -74,6 +74,8 @@ class TestSocket extends EventEmitter {
   connected = false;
   id = crypto.randomUUID();
   volatile = this;
+  dropSnapshots = false;
+  resyncForbidden = false;
   requests: { event: string; input: Record<string, unknown> }[] = [];
   responder: ((event: string, input: Record<string, unknown>) => Promise<unknown>) | undefined;
   connect() {
@@ -128,10 +130,18 @@ class TestSocket extends EventEmitter {
         policyRevision,
       };
       queueMicrotask(() => {
+        if (this.resyncForbidden) {
+          ack({
+            requestId: input.requestId,
+            error: { code: 'FORBIDDEN', message: 'Channel access revoked' },
+          });
+          return;
+        }
         ack({
           requestId: input.requestId,
           data: { status: 'completed', result: { snapshotId, partCount: 1 } },
         });
+        if (this.dropSnapshots) return;
         super.emit('session.snapshot', {
           ...cursor,
           event: 'session.snapshot',
@@ -431,6 +441,7 @@ it('retains the same leave intent after pending cleanup, blocks a new join, then
   expect(dispose).toHaveBeenCalled();
   call.open({ ...target, channelId: '6'.repeat(24) });
   expect(call.getSnapshot().target?.channelId).toBe(target.channelId);
+  expect(call.getSnapshot().expanded).toBe(false);
   socket.responder = async (event, input) => socket.answer(event, input);
   await call.leave();
   const requests = socket.requests.filter(({ event }) => event === 'session.end');
@@ -441,6 +452,27 @@ it('retains the same leave intent after pending cleanup, blocks a new join, then
     ),
   ).toBe(true);
   expect(call.getSnapshot().phase).toBe('idle');
+});
+it('keeps the workspace visible and replays the departure after both ACKs are lost', async () => {
+  await call.join(preferences);
+  const socket = sockets[0]!;
+  socket.responder = async () => {
+    throw new Error('ACK lost');
+  };
+  await call.leave();
+  call.open(target);
+  expect(call.getSnapshot()).toMatchObject({
+    phase: 'error',
+    expanded: false,
+    cleanupPending: true,
+  });
+  socket.responder = async (event, input) => socket.answer(event, input);
+  await call.leave();
+  const requests = socket.requests.filter(({ event }) => event === 'session.end');
+  expect(requests).toHaveLength(3);
+  expect(requests[1]?.input).toEqual(requests[0]?.input);
+  expect(requests[2]?.input).toEqual(requests[0]?.input);
+  expect(call.getSnapshot()).toMatchObject({ phase: 'idle', cleanupPending: false });
 });
 it('accepts a confirmed ENDED acknowledgement while adapter finalization remains pending', async () => {
   await call.join(preferences);
@@ -533,6 +565,7 @@ it('replays the same resume intent after both ACK attempts are lost and the sock
   expect(call.canResume()).toBe(true);
   const lost = sockets[1]!.requests.filter(({ event }) => event === 'session.resume');
   expect(lost).toHaveLength(2);
+  sockets[1]!.disconnect();
   await call.resume();
   const replay = sockets[2]!.requests.find(({ event }) => event === 'session.resume')!;
   expect(replay.input).toEqual(lost[0]!.input);
@@ -578,6 +611,178 @@ it('does not send reliable MAIN commands through the disposable volatile port', 
   await expect(
     mainCommand(socket, 'session.join', input, new AbortController().signal),
   ).resolves.toEqual({ requestId: input.requestId });
+});
+it('reconnects and retries departure with the new generation when the old socket loses its ACK', async () => {
+  await call.join(preferences);
+  const old = sockets[0]!;
+  old.responder = async () => {
+    old.disconnect();
+    throw new Error('Disconnected before ACK');
+  };
+  await call.leave();
+  expect(call.getSnapshot()).toMatchObject({ phase: 'error', cleanupPending: true });
+
+  generation = 2;
+  await Promise.all([call.retryDeparture(), call.retryDeparture()]);
+
+  expect(sockets).toHaveLength(2);
+  const commands = sockets[1]!.requests.filter(({ event }) => event !== 'session.resync');
+  expect(commands.map(({ event }) => event)).toEqual(['session.resume', 'session.end']);
+  expect(commands[1]!.input).toMatchObject({ callGeneration: 2, expectedPolicyRevision: 1 });
+  expect(commands[1]!.input.requestId).not.toBe(old.requests.at(-1)!.input.requestId);
+  expect(initializeMainMedia).toHaveBeenCalledTimes(1);
+  expect(startDevices).toHaveBeenCalledTimes(1);
+  expect(call.getSnapshot()).toMatchObject({ phase: 'idle', cleanupPending: false });
+});
+it('replays an unconfirmed resume on the same socket before retrying departure', async () => {
+  await call.join(preferences);
+  const old = sockets[0]!;
+  old.responder = async () => {
+    old.disconnect();
+    throw new Error('Disconnected before departure ACK');
+  };
+  await call.leave();
+
+  vi.mocked(io).mockImplementationOnce(() => {
+    const socket = new TestSocket();
+    sockets.push(socket);
+    socket.responder = async () => {
+      generation = 2;
+      throw new Error('Resume committed but ACK lost');
+    };
+    return socket as unknown as Socket;
+  });
+  await call.retryDeparture();
+
+  const socket = sockets[1]!;
+  expect(socket.connected).toBe(true);
+  expect(call.getSnapshot()).toMatchObject({ phase: 'error', cleanupPending: true });
+  expect(socket.requests.map(({ event }) => event)).toEqual(['session.resume', 'session.resume']);
+  socket.responder = async (event, input) => {
+    if (event === 'session.end' && input.callGeneration !== generation)
+      return { requestId: input.requestId, error: { code: 'CONFLICT', message: 'Stale' } };
+    return socket.answer(event, input);
+  };
+
+  await call.retryDeparture();
+
+  expect(sockets).toHaveLength(2);
+  const commands = socket.requests.filter(({ event }) => event !== 'session.resync');
+  expect(commands.map(({ event }) => event)).toEqual([
+    'session.resume',
+    'session.resume',
+    'session.resume',
+    'session.end',
+  ]);
+  expect(commands[1]!.input).toEqual(commands[0]!.input);
+  expect(commands[2]!.input).toEqual(commands[0]!.input);
+  expect(commands[3]!.input.callGeneration).toBe(2);
+  expect(initializeMainMedia).toHaveBeenCalledTimes(1);
+  expect(call.getSnapshot()).toMatchObject({ phase: 'idle', cleanupPending: false });
+});
+it('honors the workspace leave action while waiting for resume ACK', async () => {
+  await call.join(preferences);
+  call.expand(false);
+  sockets[0]!.disconnect();
+  generation = 2;
+  let ackResume!: () => void;
+  vi.mocked(io).mockImplementationOnce(() => {
+    const socket = new TestSocket();
+    sockets.push(socket);
+    socket.responder = async (event, input) =>
+      event === 'session.resume'
+        ? new Promise((resolve) => {
+            ackResume = () => resolve(socket.answer(event, input));
+          })
+        : socket.answer(event, input);
+    return socket as unknown as Socket;
+  });
+  const phases: string[] = [];
+  const unsubscribe = call.subscribe(() => phases.push(call.getSnapshot().phase));
+  const resuming = call.resume();
+  await vi.waitFor(() => expect(ackResume).toBeDefined());
+  call.cancel();
+  ackResume();
+  await resuming;
+  unsubscribe();
+
+  expect(sockets[1]!.requests.map(({ event }) => event)).toEqual(['session.resume', 'session.end']);
+  expect(sockets[1]!.requests[1]!.input.callGeneration).toBe(2);
+  expect(phases).not.toContain('active');
+  expect(initializeMainMedia).toHaveBeenCalledTimes(1);
+  expect(call.getSnapshot()).toMatchObject({ phase: 'idle', cleanupPending: false });
+});
+it('resyncs the confirmed generation before retrying departure after a snapshot timeout', async () => {
+  vi.useFakeTimers();
+  await call.join(preferences);
+  const old = sockets[0]!;
+  old.responder = async () => {
+    old.disconnect();
+    throw new Error('Disconnected before departure ACK');
+  };
+  await call.leave();
+  generation = 2;
+  policyRevision = 2;
+  vi.mocked(io).mockImplementationOnce(() => {
+    const socket = new TestSocket();
+    sockets.push(socket);
+    socket.dropSnapshots = true;
+    return socket as unknown as Socket;
+  });
+  const first = call.retryDeparture();
+  await vi.advanceTimersByTimeAsync(10000);
+  await first;
+  const socket = sockets[1]!;
+  expect(call.getSnapshot()).toMatchObject({ phase: 'error', cleanupPending: true });
+  expect(socket.requests.map(({ event }) => event)).toEqual(['session.resume']);
+
+  socket.dropSnapshots = false;
+  await call.retryDeparture();
+
+  expect(sockets).toHaveLength(2);
+  expect(socket.requests.map(({ event }) => event)).toEqual(['session.resume', 'session.end']);
+  expect(socket.requests[1]!.input).toMatchObject({
+    callGeneration: 2,
+    expectedPolicyRevision: 2,
+  });
+  expect(initializeMainMedia).toHaveBeenCalledTimes(1);
+  expect(call.getSnapshot()).toMatchObject({ phase: 'idle', cleanupPending: false });
+});
+it('releases the pending departure when channel access is revoked before snapshot resync', async () => {
+  vi.useFakeTimers();
+  await call.join(preferences);
+  const old = sockets[0]!;
+  old.responder = async () => {
+    old.disconnect();
+    throw new Error('Disconnected before departure ACK');
+  };
+  await call.leave();
+  generation = 2;
+  vi.mocked(io).mockImplementationOnce(() => {
+    const socket = new TestSocket();
+    sockets.push(socket);
+    socket.resyncForbidden = true;
+    return socket as unknown as Socket;
+  });
+
+  const retry = call.retryDeparture();
+  await vi.advanceTimersByTimeAsync(10000);
+  await retry;
+
+  const socket = sockets[1]!;
+  expect(socket.requests.map(({ event }) => event)).toEqual(['session.resume']);
+  expect(initializeMainMedia).toHaveBeenCalledTimes(1);
+  expect(socket.connected).toBe(false);
+  expect(call.getSnapshot()).toMatchObject({
+    phase: 'idle',
+    cleanupPending: false,
+    message: 'Bạn không còn quyền vào phòng này.',
+  });
+  expect(call.canResume()).toBe(false);
+  expect(owner.getSnapshot().status).toBe('idle');
+  const nextTarget = { ...target, channelId: '6'.repeat(24) };
+  call.open(nextTarget);
+  expect(call.getSnapshot()).toMatchObject({ phase: 'lobby', target: nextTarget });
 });
 it('ignores a late leave ACK after logout without restoring old pending UI', async () => {
   await call.join(preferences);

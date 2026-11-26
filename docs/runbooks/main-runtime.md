@@ -18,6 +18,8 @@
 
 Các lệnh dùng schema trong [package contracts](../../packages/contracts/src/index.ts). Khi server đóng socket do không thể gửi dữ liệu đúng hạn, mở kết nối đã xác thực và resync trước khi hiển thị lại trạng thái phòng.
 
+Nếu phòng trước đang kết thúc, endpoint cấp vé trả HTTP 409 `SESSION_END_PENDING` khi kết quả chưa được xác nhận. Khi không còn thao tác kết thúc đang chạy, yêu cầu cấp vé có thể tiếp tục đối soát đúng thao tác cũ. Vé của epoch mới chỉ được cấp sau khi việc kết thúc phiên cũ đã được xác nhận.
+
 Chat trong phiên và board cần adapter của miền phụ trách khi bật. Guard xác nhận truy vấn MongoDB và giữ cleanup pending khi còn dữ liệu chưa được xử lý. Nghiệm thu thay phiên đăng nhập cần SCRUM-94. SCRUM-89 kiểm cuộc gọi thật trên hai mạng và TURN.
 
 ## Giao diện Workspace → MAIN (SCRUM-93)

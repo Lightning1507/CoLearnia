@@ -33,14 +33,22 @@ export function MainCallProvider({
     const channel = `/workspaces/${state.target.workspaceId}/channels/${state.target.channelId}`;
     const live = channel + '/live';
     lastRoute.current = { channel, live };
-    if (state.phase === 'leaving') {
+    if (state.cleanupPending) {
       if (location.pathname === live) navigate(channel, { replace: true });
       return;
     }
     // URL controls the visible panel, never native ownership or automatic capture.
     if (location.pathname === live && !state.expanded) call.expand(true);
     else if (location.pathname !== live && state.expanded) call.expand(false);
-  }, [call, state.phase, state.target, state.expanded, location.pathname, navigate]);
+  }, [
+    call,
+    state.phase,
+    state.target,
+    state.expanded,
+    state.cleanupPending,
+    location.pathname,
+    navigate,
+  ]);
   useEffect(() => () => call.clear(), [call]);
   useEffect(() => {
     if (!import.meta.env.DEV) return;
@@ -90,7 +98,21 @@ function MainCallHost({ call }: { call: MainCall }) {
     ) : null;
   const target = state.target;
   if (!target) return null;
-  if (state.phase === 'leaving') return null;
+  if (!state.expanded && state.cleanupPending)
+    return (
+      <aside className="main-call-strip" aria-label="Trạng thái rời cuộc gọi">
+        <span role="status">{state.message}</span>
+        {state.phase === 'error' && (
+          <button
+            type="button"
+            className="auth-secondary"
+            onClick={() => void call.retryDeparture()}
+          >
+            Thử xác nhận rời lại
+          </button>
+        )}
+      </aside>
+    );
   if (!state.expanded)
     return (
       <aside className="main-call-strip" aria-label="Cuộc gọi đang mở">
@@ -248,7 +270,11 @@ function MainCallHost({ call }: { call: MainCall }) {
           {state.message && <p role="alert">{state.message}</p>}
           {state.phase === 'error' &&
             (state.cleanupPending ? (
-              <button type="button" className="auth-primary" onClick={() => void call.leave()}>
+              <button
+                type="button"
+                className="auth-primary"
+                onClick={() => void call.retryDeparture()}
+              >
                 Thử xác nhận rời lại
               </button>
             ) : (
@@ -256,7 +282,7 @@ function MainCallHost({ call }: { call: MainCall }) {
                 Thử vào lại cùng yêu cầu
               </button>
             ))}
-          {state.phase === 'error' && call.canResume() && (
+          {state.phase === 'error' && !state.cleanupPending && call.canResume() && (
             <button type="button" className="auth-secondary" onClick={() => void call.resume()}>
               Thử kết nối lại
             </button>

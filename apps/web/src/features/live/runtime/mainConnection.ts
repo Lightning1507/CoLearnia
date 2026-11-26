@@ -19,6 +19,8 @@ export function mainCallMessage(error: unknown) {
   if (code === 'CALL_ALREADY_ACTIVE')
     return 'Kết nối trước chưa được giải phóng sau khi chờ. Nếu còn cuộc gọi ở cửa sổ khác, hãy rời ở đó; nếu vừa tải lại trang, hãy thử lại sau khi máy chủ hoàn tất dọn kết nối cũ.';
   if (code === 'SESSION_ENDED') return 'Phiên gọi đã kết thúc.';
+  if (code === 'SESSION_END_PENDING')
+    return 'Máy chủ đang xác nhận kết thúc phiên trước. Hãy thử tham gia lại sau.';
   if (code === 'CONFLICT') return 'Trạng thái phòng đã thay đổi. Hãy đồng bộ và thử lại.';
   return 'Chưa kết nối được cuộc gọi. Kiểm tra kết nối, cấu hình media/ICE phía máy chủ và thử lại.';
 }

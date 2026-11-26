@@ -299,24 +299,35 @@ it('enters MAIN through the mounted HTTP ticket and authenticated socket using t
   expect(transport).toMatchObject({ data: { status: 'completed' } });
 });
 
-it('allows a member to leave without disconnecting its auth socket or waiting reconnect grace', async () => {
+it('lets a member leave and rejoin MAIN three times without waiting for reconnect grace', async () => {
   const f = await setup({ productionRuntime: true });
-  const host = await f.connect(f.host);
-  await f.join(f.host, host);
+  const host = await enter(f);
   const peer = await f.signUp();
   await f.member(peer);
-  const socket = await f.connect(peer);
-  const joined = await f.join(peer, socket);
-  const result = await socket.timeout(5000).emitWithAck('session.leave', {
-    requestId: randomUUID(),
-    sessionId: joined.ticket.sessionId,
-    epoch: joined.ticket.epoch,
-    callGeneration: joined.result.callGeneration,
-    expectedPolicyRevision: 2,
-  });
-  expect(result).toMatchObject({ data: { status: 'completed', result: { left: true } } });
-  expect(socket.connected).toBe(true);
-  expect(f.registry.stats().ownerships).toBe(1);
+  let joined = await enter(f, peer);
+  for (let i = 0; i < 3; i++) {
+    const previous = joined;
+    const command = {
+      ...previous.context,
+      requestId: randomUUID(),
+      expectedPolicyRevision: previous.snapshot.policyRevision,
+    };
+    const leave = () => previous.socket.timeout(5000).emitWithAck('session.leave', command);
+    expect(await leave()).toMatchObject({ data: { status: 'completed', result: { left: true } } });
+    expect(previous.socket.connected).toBe(true);
+    expect(f.registry.stats().ownerships).toBe(1);
+    joined = await enter(f, peer);
+    expect(joined.context.epoch).toBe(host.context.epoch);
+    expect(joined.context.callGeneration).toBeGreaterThan(previous.context.callGeneration);
+    expect(await leave()).toMatchObject({ data: { status: 'completed', result: { left: true } } });
+    const media = await joined.socket.timeout(5000).emitWithAck('media.transport.create', {
+      ...joined.context,
+      requestId: randomUUID(),
+      expectedPolicyRevision: joined.snapshot.policyRevision,
+      payload: { direction: 'SEND' },
+    });
+    expect(media.data?.status).toBe('completed');
+  }
 });
 
 it('returns correlated schema-valid errors for malformed leave commands and explicit host leave', async () => {
@@ -898,6 +909,9 @@ it.each(['messaging', 'board'] as const)(
         data: { status: 'pending', result: { cleanupPending: true } },
       });
       expect(f.registry.stats().ownerships).toBe(1);
+      const blocked = await ticket(f, f.host);
+      expect(blocked.status).toBe(409);
+      expect(blocked.body.error.code).toBe('SESSION_END_PENDING');
       if (domain === 'board') {
         for (const scheduled of [
           { state: 'READY', cleanupAfter: new Date() },
@@ -917,9 +931,12 @@ it.each(['messaging', 'board'] as const)(
     } finally {
       await collection.deleteOne({ _id: artifact.insertedId });
     }
+    // A fresh join can progress the previous end even if its ACK was never observed.
+    const next = await enter(f);
+    expect(next.context.epoch).not.toBe(host.context.epoch);
     const complete = await host.socket.timeout(5000).emitWithAck('session.end', command);
     expect(complete).toMatchObject({ data: { status: 'completed' } });
-    expect(f.registry.stats().ownerships).toBe(0);
+    expect(f.registry.stats().ownerships).toBe(1);
   },
 );
 
