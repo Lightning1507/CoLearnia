@@ -1,6 +1,7 @@
 import { useId, useSyncExternalStore } from 'react';
 import type { DeviceMedia } from '../runtime/deviceMedia';
 import type { DeviceKind } from '../lobby/lobbyPreview';
+import { useTransientNotice } from '../../../app/useTransientNotice';
 
 const labels = { microphone: 'mic', camera: 'camera' };
 
@@ -47,6 +48,7 @@ function DeviceControl({
     devices.getSnapshot,
   );
   const { phase, error } = snapshot[kind];
+  const feedback = useTransientNotice(error);
   const helpId = useId();
   const canStop = phase === 'on' || phase === 'starting';
   const disabled =
@@ -55,7 +57,7 @@ function DeviceControl({
   const action = phase === 'starting' ? 'Hủy bật' : canStop ? 'Tắt' : 'Bật';
   const statusLabel = kind === 'microphone' ? 'Mic' : 'Camera';
   const help =
-    error ??
+    feedback ??
     (phase === 'starting'
       ? 'Đang mở thiết bị. Bạn có thể hủy.'
       : phase === 'stopping'
@@ -74,7 +76,7 @@ function DeviceControl({
         aria-pressed={phase === 'on'}
         aria-disabled={disabled}
         aria-describedby={help ? helpId : undefined}
-        data-state={phase === 'off' ? 'off' : undefined}
+        data-state={phase === 'off' ? 'off' : phase === 'on' ? 'active' : undefined}
         onClick={() => {
           if (disabled) return;
           if (canStop) void devices.stop(kind);
@@ -89,7 +91,7 @@ function DeviceControl({
       <span
         id={helpId}
         role="status"
-        className={compact && !error ? 'sr-only' : 'text-sm empty:sr-only'}
+        className={compact && !feedback ? 'sr-only' : 'text-sm empty:sr-only'}
       >
         {help}
       </span>

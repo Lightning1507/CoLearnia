@@ -13,6 +13,9 @@ vi.mock('react', async (importOriginal) => ({
   useRef: () => ({ current: null }),
 }));
 vi.mock('./useLobbyPreview', () => ({ useLobbyPreview: vi.fn() }));
+vi.mock('../../../app/useTransientNotice', () => ({
+  useTransientNotice: (notice: unknown) => notice,
+}));
 afterEach(() => vi.restoreAllMocks());
 
 type ButtonProps = { children?: ReactNode; disabled?: boolean; onClick?: () => void };

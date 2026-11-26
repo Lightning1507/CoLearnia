@@ -1,5 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
+import { createPortal } from 'react-dom';
+import { useTransientNotice } from '../../app/useTransientNotice';
 import { useLocation, useNavigate } from 'react-router-dom';
 import type { CallControllerOwner } from './runtime/callController';
 import { MainCall } from './runtime/mainCall';
@@ -9,10 +11,12 @@ import { ScreenShareControls } from './share/ScreenShareControls';
 import { DeviceMediaControls } from './room/DeviceMediaControls';
 import { useWorkspaceTheme } from '../workspaces/workspace-appearance';
 import { WorkspaceIcon } from '../workspaces/WorkspaceIcon';
-import { MeetingNavigation } from '../workspaces/meeting-navigation';
+import { CallDockRegistration, MeetingNavigation } from '../workspaces/meeting-navigation';
 import './live-v11.css';
 
 import { MainCallContext } from './runtime/mainCallContext';
+
+const workspaceBrowseRoute = /^\/workspaces(?:\/[a-f0-9]{24}(?:\/channels\/[a-f0-9]{24})?)?$/i;
 
 export function MainCallProvider({
   owner,
@@ -23,38 +27,56 @@ export function MainCallProvider({
 }) {
   const [call] = useState(() => new MainCall(owner));
   const state = useSyncExternalStore(call.subscribe, call.getSnapshot, call.getSnapshot);
-  const location = useLocation();
+  const { pathname, key: locationKey } = useLocation();
   const navigate = useNavigate();
   const [navigationOpen, setNavigationOpen] = useState(false);
+  const [dock, setDock] = useState<HTMLDivElement | null>(null);
   const meetingFocused = state.expanded && state.phase === 'active';
   if (!meetingFocused && navigationOpen) setNavigationOpen(false);
-  const lastRoute = useRef<{ channel: string; live: string } | undefined>(undefined);
+  const browsePath = useRef<string | undefined>(undefined);
+  const lastRoute = useRef<{ live: string; returnTo: string; entryKey?: string } | undefined>(
+    undefined,
+  );
   useEffect(() => {
-    if (state.phase === 'idle') {
-      const previous = lastRoute.current;
-      lastRoute.current = undefined;
-      if (previous && location.pathname === previous.live)
-        navigate(previous.channel, { replace: true });
-      return;
+    // The channel route can open the lobby in its effect before this effect runs.
+    const current = call.getSnapshot();
+    if (workspaceBrowseRoute.test(pathname)) browsePath.current = pathname;
+    if (current.target) {
+      const workspace = `/workspaces/${current.target.workspaceId}`;
+      const channel = `${workspace}/channels/${current.target.channelId}`;
+      const live = channel + '/live';
+      const previous = browsePath.current;
+      const entryKey =
+        pathname === live && !current.cleanupPending
+          ? locationKey
+          : lastRoute.current?.live === live
+            ? lastRoute.current.entryKey
+            : undefined;
+      lastRoute.current = {
+        live,
+        returnTo: previous && previous !== channel ? previous : workspace,
+        ...(entryKey && { entryKey }),
+      };
     }
-    if (!state.target) return;
-    const channel = `/workspaces/${state.target.workspaceId}/channels/${state.target.channelId}`;
-    const live = channel + '/live';
-    lastRoute.current = { channel, live };
-    if (state.cleanupPending) {
-      if (location.pathname === live) navigate(channel, { replace: true });
+    const route = lastRoute.current;
+    if (!route) return;
+    if (current.phase === 'idle' || current.cleanupPending) {
+      if (pathname === route.live && (current.cleanupPending || route.entryKey === locationKey))
+        navigate(route.returnTo, { replace: true });
+      if (current.phase === 'idle') lastRoute.current = undefined;
       return;
     }
     // URL controls the visible panel, never native ownership or automatic capture.
-    if (location.pathname === live && !state.expanded) call.expand(true);
-    else if (location.pathname !== live && state.expanded) call.expand(false);
+    if (pathname === route.live && !current.expanded) call.expand(true);
+    else if (pathname !== route.live && current.expanded) call.expand(false);
   }, [
     call,
     state.phase,
     state.target,
     state.expanded,
     state.cleanupPending,
-    location.pathname,
+    pathname,
+    locationKey,
     navigate,
   ]);
   useEffect(() => () => call.clear(), [call]);
@@ -82,12 +104,18 @@ export function MainCallProvider({
             inert={state.expanded && !(meetingFocused && navigationOpen)}
             data-meeting-focus={meetingFocused}
           >
-            {children}
+            <CallDockRegistration.Provider value={setDock}>
+              {children}
+            </CallDockRegistration.Provider>
           </div>
           <MainCallHost
             call={call}
             navigationOpen={navigationOpen}
             onOpenNavigation={() => setNavigationOpen(true)}
+            dock={dock}
+            onReturnToWorkspace={() => {
+              if (lastRoute.current) navigate(lastRoute.current.returnTo, { replace: true });
+            }}
           />
         </MeetingNavigation.Provider>
       </div>
@@ -99,25 +127,31 @@ function MainCallHost({
   call,
   navigationOpen,
   onOpenNavigation,
+  dock,
+  onReturnToWorkspace,
 }: {
   call: MainCall;
   navigationOpen: boolean;
   onOpenNavigation: () => void;
+  dock: HTMLDivElement | null;
+  onReturnToWorkspace: () => void;
 }) {
   const { theme } = useWorkspaceTheme();
   const state = useSyncExternalStore(call.subscribe, call.getSnapshot, call.getSnapshot);
+  const notice = useTransientNotice(
+    state.phase === 'idle' || (state.phase === 'active' && !state.cleanupPending)
+      ? state.message
+      : undefined,
+  );
   const [panel, setPanel] = useState<'participants' | 'chat'>();
   const screen = useRef<HTMLDivElement>(null);
   const departure = useRef<HTMLDialogElement>(null);
   const [departureRole, setDepartureRole] = useState<'HOST' | 'MEMBER'>();
   const navigate = useNavigate();
-  const showCall = (expanded: boolean) => {
+  const showCall = () => {
     const target = call.getSnapshot().target;
     if (!target) return;
-    call.expand(expanded);
-    navigate(
-      `/workspaces/${target.workspaceId}/channels/${target.channelId}${expanded ? '/live' : ''}`,
-    );
+    navigate(`/workspaces/${target.workspaceId}/channels/${target.channelId}/live`);
   };
   useLayoutEffect(() => {
     if (!state.expanded) return;
@@ -128,17 +162,18 @@ function MainCallHost({
     };
   }, [state.expanded]);
   if (state.phase === 'idle')
-    return state.message ? (
+    return notice ? (
       <p role="status" className="main-call-notice">
-        {state.message}
+        {notice}
       </p>
     ) : null;
   const target = state.target;
   if (!target) return null;
   const host = state.projection?.viewer.role === 'HOST';
   const leaveLabel = host ? 'Kết thúc phiên' : 'Rời cuộc họp';
+  const renderDock = (content: ReactNode) => (dock ? createPortal(content, dock) : content);
   if (!state.expanded && state.cleanupPending)
-    return (
+    return renderDock(
       <aside
         className="main-call-strip"
         data-workspace-theme={theme}
@@ -154,16 +189,16 @@ function MainCallHost({
             Thử xác nhận rời lại
           </button>
         )}
-      </aside>
+      </aside>,
     );
   if (!state.expanded)
-    return (
+    return renderDock(
       <aside className="main-call-strip" data-workspace-theme={theme} aria-label="Cuộc gọi đang mở">
         <button
           type="button"
           className="main-call-return"
           aria-label={'Về cuộc gọi ' + target.channelName}
-          onClick={() => showCall(true)}
+          onClick={showCall}
         >
           <WorkspaceIcon name="video" />
           <span>
@@ -184,7 +219,7 @@ function MainCallHost({
         >
           {state.phase === 'joining' || state.phase === 'lobby' ? 'Hủy tham gia' : 'Rời'}
         </button>
-      </aside>
+      </aside>,
     );
   const closePanel = () => {
     setPanel(undefined);
@@ -208,10 +243,7 @@ function MainCallHost({
             {...(state.message ? { notice: state.message } : {})}
             onContinue={(preferences) => void call.join(preferences, true)}
             continuePending={state.phase === 'joining'}
-            onBack={() => {
-              call.cancel();
-              showCall(false);
-            }}
+            onBack={() => call.cancel()}
           />
         ) : (
           <LobbyDeviceCheck
@@ -223,10 +255,7 @@ function MainCallHost({
                     'Tài khoản đang có một kết nối cuộc gọi khác. Hãy kiểm tra cuộc gọi đang mở rồi thử lại.',
                 }
               : {})}
-            onBack={() => {
-              call.cancel();
-              showCall(false);
-            }}
+            onBack={() => call.cancel()}
             onContinue={(preferences) => void call.join(preferences)}
             continuePending={state.phase === 'joining'}
           />
@@ -237,14 +266,7 @@ function MainCallHost({
           <button className="auth-primary" type="button" onClick={call.transferHere}>
             Chuyển trở lại
           </button>
-          <button
-            className="auth-secondary"
-            type="button"
-            onClick={() => {
-              call.cancel();
-              showCall(false);
-            }}
-          >
+          <button className="auth-secondary" type="button" onClick={() => call.cancel()}>
             Về Workspace
           </button>
         </section>
@@ -275,9 +297,10 @@ function MainCallHost({
                 className="meeting-icon"
                 title="Thu gọn về Workspace"
                 aria-label="Thu gọn về Workspace"
-                onClick={() => showCall(false)}
+                onClick={onReturnToWorkspace}
               >
                 <WorkspaceIcon name="minimize" />
+                <span>Thu gọn</span>
               </button>
             ),
           }}
@@ -390,7 +413,7 @@ function MainCallHost({
               Hủy và về Workspace
             </button>
           )}
-          <button type="button" className="auth-secondary" onClick={() => showCall(false)}>
+          <button type="button" className="auth-secondary" onClick={onReturnToWorkspace}>
             Xem Workspace
           </button>
         </section>
@@ -439,9 +462,9 @@ function MainCallHost({
           </div>
         </dialog>
       )}
-      {state.handle && state.message && (
+      {state.handle && notice && (
         <p role="alert" className="main-call-notice">
-          {state.message}
+          {notice}
         </p>
       )}
     </div>

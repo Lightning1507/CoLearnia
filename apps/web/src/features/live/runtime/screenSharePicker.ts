@@ -17,9 +17,7 @@ type Snapshot = Readonly<{
     | 'unavailable'
     | 'idle'
     | 'acquiring'
-    | 'reserved'
     | 'choosing'
-    | 'selected'
     | 'publishing'
     | 'sharing'
     | 'stopping'
@@ -31,7 +29,7 @@ type PickerPorts = {
   acquire(context: SessionProjectionCursor): Promise<ScreenPickerLease>;
   release(context: SessionProjectionCursor, lease: ScreenPickerLease): Promise<void>;
   capture(): Promise<MediaStream>;
-  publish?(
+  publish(
     context: SessionProjectionCursor,
     lease: ScreenPickerLease,
     stream: MediaStream,
@@ -40,7 +38,6 @@ type PickerPorts = {
 };
 type Attempt = {
   context: SessionProjectionCursor;
-  deadline: number;
   abort: AbortController;
   lease?: ScreenPickerLease;
   timer?: ReturnType<typeof setTimeout>;
@@ -123,66 +120,25 @@ export class ScreenSharePicker {
     }
   }
 
-  async reserve() {
+  // The browser requires capture to start in the button's user activation.
+  async start() {
     if (this.#disposed || this.#attempt || this.#pendingStop || !this.#context) return;
     const attempt: Attempt = {
       context: this.#context,
-      // The server cannot reserve before this request. Using its fixed TTL from
-      // dispatch is conservative and does not depend on synchronized wall clocks.
-      deadline: this.now() + screenPickerLeaseMs,
       abort: new AbortController(),
     };
     this.#attempt = attempt;
-    this.#publish({ status: 'acquiring' });
-    let lease: ScreenPickerLease;
-    try {
-      lease = await this.ports.acquire(attempt.context);
-    } catch (error) {
-      if (this.#attempt === attempt)
-        this.#finish(
-          attempt,
-          error instanceof Error && error.message === 'SHARE_BUSY'
-            ? 'Đang có người chia sẻ. Hãy thử lại khi chỗ trống.'
-            : 'Không giữ được chỗ chia sẻ. Hãy thử lại.',
-        );
-      return;
-    }
-    if (this.#attempt !== attempt) {
-      this.#release(attempt.context, lease);
-      return;
-    }
-    attempt.lease = lease;
-    const remaining = attempt.deadline - this.now();
-    if (remaining <= 0) {
-      this.#finish(attempt, 'Đã hết thời gian chọn màn hình. Hãy thử lại.');
-      return;
-    }
-    attempt.timer = setTimeout(() => {
-      this.#finish(attempt, 'Đã hết thời gian chọn màn hình. Hãy thử lại.');
-    }, remaining);
-    this.#publish({ status: 'reserved' });
-  }
-
-  // Call directly from a click. There is no network request or await before capture().
-  async choose() {
-    const attempt = this.#attempt;
-    if (!attempt?.lease || this.#snapshot.status !== 'reserved') return;
-    if (this.now() >= attempt.deadline) {
-      this.#finish(attempt, 'Đã hết thời gian chọn màn hình. Hãy thử lại.');
-      return;
-    }
     let stream: MediaStream;
     try {
       const selection = this.ports.capture();
       this.#publish({ status: 'choosing' });
       stream = await selection;
     } catch {
-      this.#finish(attempt, 'Chưa chọn được màn hình. Hãy thử lại.');
+      this.#finish(attempt, 'Bạn chưa chọn nội dung chia sẻ.');
       return;
     }
-    if (this.#attempt !== attempt || this.now() >= attempt.deadline) {
+    if (this.#attempt !== attempt) {
       for (const track of stream.getTracks()) track.stop();
-      this.#finish(attempt, 'Đã hết thời gian chọn màn hình. Hãy thử lại.');
       return;
     }
     attempt.stream = stream;
@@ -194,30 +150,52 @@ export class ScreenSharePicker {
     const ended = () => this.#finish(attempt, 'Đã dừng chia sẻ màn hình.');
     video.addEventListener('ended', ended, { once: true });
     attempt.detachEnded = () => video.removeEventListener('ended', ended);
-    this.#publish({ status: 'selected' });
-    if (!this.ports.publish) return this.getSelection();
-    // After capture the server checks the reservation at SCREEN commit. A local
-    // picker timeout could otherwise stop an already committed SCREEN before its ACK.
-    clearTimeout(attempt.timer);
+
+    // Reserve with the latest accepted cursor after the user selects a source.
+    // The server is still the authority for exclusivity and SCREEN publication.
+    const context = this.#context;
+    if (!context) {
+      this.#finish(attempt, 'Bạn không còn quyền chia sẻ màn hình.');
+      return;
+    }
+    attempt.context = context;
+    const deadline = this.now() + screenPickerLeaseMs;
+    this.#publish({ status: 'acquiring' });
+    let lease: ScreenPickerLease;
+    try {
+      lease = await this.ports.acquire(context);
+    } catch (error) {
+      this.#finish(
+        attempt,
+        error instanceof Error && error.message === 'SHARE_BUSY'
+          ? 'Đang có người chia sẻ. Hãy thử lại khi chỗ trống.'
+          : 'Không thể bắt đầu chia sẻ. Hãy thử lại.',
+      );
+      return;
+    }
+    if (this.#attempt !== attempt) {
+      this.#release(context, lease);
+      return;
+    }
+    attempt.lease = lease;
+    if (this.now() >= deadline) {
+      this.#finish(attempt, 'Đã hết thời gian bắt đầu chia sẻ. Hãy thử lại.');
+      return;
+    }
+    // SCREEN commit checks the lease. Finishing after the commit, such as
+    // publishing screen audio, has its own deadline.
     attempt.timer = setTimeout(() => {
       this.#finish(attempt, 'Không thể xác nhận nội dung chia sẻ. Hãy thử lại.');
     }, sessionControlBudget.foregroundTransitionTimeoutMs);
     this.#publish({ status: 'publishing' });
     try {
-      await this.ports.publish(attempt.context, attempt.lease, stream, attempt.abort.signal);
+      await this.ports.publish(context, lease, stream, attempt.abort.signal);
       if (this.#attempt !== attempt) return;
       clearTimeout(attempt.timer);
       this.#publish({ status: 'sharing' });
     } catch {
       this.#finish(attempt, 'Không thể phát nội dung chia sẻ. Hãy thử lại.');
     }
-  }
-
-  // The stream is borrowed. The picker still owns cleanup until publication is integrated.
-  getSelection() {
-    const attempt = this.#attempt;
-    if (!attempt?.lease || !attempt.stream || this.now() >= attempt.deadline) return;
-    return { lease: attempt.lease, stream: attempt.stream, signal: attempt.abort.signal };
   }
 
   cancel() {

@@ -5,3 +5,7 @@ export const MeetingNavigation = createContext<{
   open: boolean;
   close: () => void;
 } | null>(null);
+
+export const CallDockRegistration = createContext<
+  ((element: HTMLDivElement | null) => void) | null
+>(null);

@@ -1,5 +1,14 @@
-import { Fragment, useContext, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
-import type { ReactNode } from 'react';
+import {
+  Fragment,
+  useCallback,
+  useContext,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react';
+import type { MouseEvent, ReactNode } from 'react';
 import type { ChannelSummary } from '@colearnia/contracts';
 import type { WorkspaceShellProps } from './shell-contract';
 import { readableSidebarChannels, resolvePanelChannel } from './shell-contract';
@@ -7,9 +16,35 @@ import { WorkspaceIcon } from './WorkspaceIcon';
 import { WorkspaceSearch } from './WorkspaceSearch';
 import { useWorkspaceDrawer, useWorkspaceTheme, workspaceInitials } from './workspace-appearance';
 import './workspace-shell.css';
-import { MeetingNavigation } from './meeting-navigation';
+import { CallDockRegistration, MeetingNavigation } from './meeting-navigation';
 
 const roleNames = { OWNER: 'Chủ Workspace', ADMIN: 'Quản trị viên', MEMBER: 'Thành viên' };
+
+function openSidebarDialog(dialog: HTMLDialogElement | null, trigger: HTMLButtonElement) {
+  if (!dialog || dialog.open) return;
+  const anchor = trigger.getBoundingClientRect();
+  const edge = 10;
+  dialog.showModal();
+  const left = Math.max(edge, Math.min(anchor.left, window.innerWidth - dialog.offsetWidth - edge));
+  const below = anchor.bottom + 6;
+  const above = anchor.top - dialog.offsetHeight - 6;
+  const bottom = window.innerHeight - dialog.offsetHeight - edge;
+  const top = below > bottom && above >= edge ? above : Math.max(edge, Math.min(below, bottom));
+  dialog.style.setProperty('--ws-dialog-left', left + 'px');
+  dialog.style.setProperty('--ws-dialog-top', top + 'px');
+}
+
+function closeOnBackdrop(event: MouseEvent<HTMLDialogElement>) {
+  if (event.target !== event.currentTarget) return;
+  const { left, right, top, bottom } = event.currentTarget.getBoundingClientRect();
+  if (
+    event.clientX < left ||
+    event.clientX > right ||
+    event.clientY < top ||
+    event.clientY > bottom
+  )
+    event.currentTarget.close();
+}
 
 function ChannelIcon({ channel }: { channel: ChannelSummary }) {
   return (
@@ -93,12 +128,18 @@ export function WorkspaceShell({
   const selected = resolvePanelChannel(channels, workspace.id, panel)?.channel;
   const mobile = useWorkspaceDrawer();
   const meeting = useContext(MeetingNavigation);
+  const registerDock = useContext(CallDockRegistration);
+  const dockRef = useCallback(
+    (element: HTMLDivElement | null) => registerDock?.(element),
+    [registerDock],
+  );
   const meetingFocused = meeting?.focused === true;
   const meetingDrawerOpen = meeting?.open === true;
   const useDrawer = mobile || meetingFocused;
   const { theme, toggle } = useWorkspaceTheme();
   const [context, setContext] = useState<'members' | 'channel'>();
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [optionsOpen, setOptionsOpen] = useState(false);
   const drawer = useRef<HTMLDialogElement>(null);
   const focusChannelAfterDrawer = useRef(false);
   const navigationButton = useRef<HTMLButtonElement>(null);
@@ -114,6 +155,7 @@ export function WorkspaceShell({
   const heading = useRef<HTMLHeadingElement>(null);
   const navigationId = useId();
   const contextId = useId();
+  const optionsId = useId();
   useLayoutEffect(() => {
     const dialog = drawer.current;
     if (meetingFocused && meetingDrawerOpen && dialog && !dialog.open) dialog.showModal();
@@ -198,9 +240,9 @@ export function WorkspaceShell({
           ref={workspaceMenuTriggerRef}
           aria-label={'Mở menu Workspace ' + workspace.name}
           aria-haspopup="dialog"
-          onClick={() => {
+          onClick={(event) => {
             onPickerOpen?.();
-            workspacePicker.current?.showModal();
+            openSidebarDialog(workspacePicker.current, event.currentTarget);
           }}
         >
           <span className="ws-monogram" aria-hidden="true">
@@ -214,7 +256,12 @@ export function WorkspaceShell({
           className="ws-icon-button"
           aria-label={'Tùy chọn Workspace ' + workspace.name}
           aria-haspopup="dialog"
-          onClick={() => options.current?.showModal()}
+          aria-controls={optionsId}
+          aria-expanded={optionsOpen}
+          onClick={(event) => {
+            openSidebarDialog(options.current, event.currentTarget);
+            setOptionsOpen(true);
+          }}
         >
           <WorkspaceIcon name="more" />
         </button>
@@ -274,6 +321,7 @@ export function WorkspaceShell({
           <WorkspaceIcon name={theme === 'dark' ? 'sun' : 'moon'} />
         </button>
       </div>
+      {!useDrawer && registerDock && <div className="ws-call-dock" ref={dockRef} />}
     </>
   );
 
@@ -303,12 +351,7 @@ export function WorkspaceShell({
             focusChannelAfterDrawer.current = false;
             focusTarget.current?.focus();
           }}
-          onClick={(event) => {
-            if (event.target === event.currentTarget) {
-              const { left, right } = event.currentTarget.getBoundingClientRect();
-              if (event.clientX < left || event.clientX > right) event.currentTarget.close();
-            }
-          }}
+          onClick={closeOnBackdrop}
         >
           {sidebar}
         </dialog>
@@ -488,7 +531,12 @@ export function WorkspaceShell({
           )}
         </div>
       </main>
-      <dialog ref={workspacePicker} className="ws-dialog ws-picker" aria-label="Menu Workspace">
+      <dialog
+        ref={workspacePicker}
+        className="ws-dialog ws-picker ws-sidebar-dialog"
+        aria-label="Menu Workspace"
+        onClick={closeOnBackdrop}
+      >
         <div className="ws-dialog-heading">
           <h2>Chuyển Workspace</h2>
           <button
@@ -555,9 +603,19 @@ export function WorkspaceShell({
           Danh sách Workspace
         </button>
       </dialog>
-      <dialog ref={options} className="ws-dialog ws-options" aria-label="Tùy chọn Workspace">
+      <dialog
+        id={optionsId}
+        ref={options}
+        className="ws-dialog ws-options ws-sidebar-dialog"
+        aria-label="Tùy chọn Workspace"
+        onClose={() => setOptionsOpen(false)}
+        onClick={closeOnBackdrop}
+      >
         <div className="ws-dialog-heading">
-          <h2>{workspace.name}</h2>
+          <div className="ws-option-title">
+            <h2>{workspace.name}</h2>
+            {user && <p className="ws-muted">{roleNames[user.role]}</p>}
+          </div>
           <button
             type="button"
             className="ws-icon-button"
@@ -567,7 +625,6 @@ export function WorkspaceShell({
             <WorkspaceIcon name="close" />
           </button>
         </div>
-        {user && <p className="ws-muted">{roleNames[user.role]}</p>}
         <div
           className="ws-option-actions"
           onClick={(event) => {
