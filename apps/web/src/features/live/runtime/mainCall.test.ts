@@ -74,6 +74,7 @@ class TestSocket extends EventEmitter {
   connected = false;
   id = crypto.randomUUID();
   volatile = this;
+  dropSnapshots = false;
   requests: { event: string; input: Record<string, unknown> }[] = [];
   responder: ((event: string, input: Record<string, unknown>) => Promise<unknown>) | undefined;
   connect() {
@@ -132,6 +133,7 @@ class TestSocket extends EventEmitter {
           requestId: input.requestId,
           data: { status: 'completed', result: { snapshotId, partCount: 1 } },
         });
+        if (this.dropSnapshots) return;
         super.emit('session.snapshot', {
           ...cursor,
           event: 'session.snapshot',
@@ -667,6 +669,74 @@ it('replays an unconfirmed resume on the same socket before retrying departure',
   expect(commands[1]!.input).toEqual(commands[0]!.input);
   expect(commands[2]!.input).toEqual(commands[0]!.input);
   expect(commands[3]!.input.callGeneration).toBe(2);
+  expect(initializeMainMedia).toHaveBeenCalledTimes(1);
+  expect(call.getSnapshot()).toMatchObject({ phase: 'idle', cleanupPending: false });
+});
+it('honors the workspace leave action while waiting for resume ACK', async () => {
+  await call.join(preferences);
+  call.expand(false);
+  sockets[0]!.disconnect();
+  generation = 2;
+  let ackResume!: () => void;
+  vi.mocked(io).mockImplementationOnce(() => {
+    const socket = new TestSocket();
+    sockets.push(socket);
+    socket.responder = async (event, input) =>
+      event === 'session.resume'
+        ? new Promise((resolve) => {
+            ackResume = () => resolve(socket.answer(event, input));
+          })
+        : socket.answer(event, input);
+    return socket as unknown as Socket;
+  });
+  const phases: string[] = [];
+  const unsubscribe = call.subscribe(() => phases.push(call.getSnapshot().phase));
+  const resuming = call.resume();
+  await vi.waitFor(() => expect(ackResume).toBeDefined());
+  call.cancel();
+  ackResume();
+  await resuming;
+  unsubscribe();
+
+  expect(sockets[1]!.requests.map(({ event }) => event)).toEqual(['session.resume', 'session.end']);
+  expect(sockets[1]!.requests[1]!.input.callGeneration).toBe(2);
+  expect(phases).not.toContain('active');
+  expect(initializeMainMedia).toHaveBeenCalledTimes(1);
+  expect(call.getSnapshot()).toMatchObject({ phase: 'idle', cleanupPending: false });
+});
+it('resyncs the confirmed generation before retrying departure after a snapshot timeout', async () => {
+  vi.useFakeTimers();
+  await call.join(preferences);
+  const old = sockets[0]!;
+  old.responder = async () => {
+    old.disconnect();
+    throw new Error('Disconnected before departure ACK');
+  };
+  await call.leave();
+  generation = 2;
+  policyRevision = 2;
+  vi.mocked(io).mockImplementationOnce(() => {
+    const socket = new TestSocket();
+    sockets.push(socket);
+    socket.dropSnapshots = true;
+    return socket as unknown as Socket;
+  });
+  const first = call.retryDeparture();
+  await vi.advanceTimersByTimeAsync(10000);
+  await first;
+  const socket = sockets[1]!;
+  expect(call.getSnapshot()).toMatchObject({ phase: 'error', cleanupPending: true });
+  expect(socket.requests.map(({ event }) => event)).toEqual(['session.resume']);
+
+  socket.dropSnapshots = false;
+  await call.retryDeparture();
+
+  expect(sockets).toHaveLength(2);
+  expect(socket.requests.map(({ event }) => event)).toEqual(['session.resume', 'session.end']);
+  expect(socket.requests[1]!.input).toMatchObject({
+    callGeneration: 2,
+    expectedPolicyRevision: 2,
+  });
   expect(initializeMainMedia).toHaveBeenCalledTimes(1);
   expect(call.getSnapshot()).toMatchObject({ phase: 'idle', cleanupPending: false });
 });

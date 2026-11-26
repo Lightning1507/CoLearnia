@@ -460,65 +460,57 @@ export class MainCall {
     this.#joined = { identity, resumeTicket };
     let resources: Resources | undefined;
     let view: MainMediaView = { projection: null, stream: undefined, shareLabel: undefined };
-    const handle = await this.owner.acquire(
+    const handle = await this.#acquireProjection(
       identity,
-      createSessionProjectionInitializer({
-        owner: this.owner,
-        socket,
-        onRuntime: (projection) => {
-          this.#projection = projection;
-        },
-        initialize: async (acceptedIdentity, lifetime, media) => {
-          if (!preferences) {
-            const projection = this.#projection!;
-            await waitForMain(
-              () =>
-                projection.getSnapshot().status === 'ready'
-                  ? (projection.getSnapshot().cursor ?? undefined)
-                  : undefined,
-              projection.subscribe,
-              AbortSignal.any([lifetime, signal]),
-            );
-            // The projection initializer owns cleanup in the absence of media.
-            return () => {};
-          }
-          resources = await initializeMainMedia({
-            identity: acceptedIdentity,
-            socket,
-            signal: AbortSignal.any([lifetime, signal]),
-            media,
-            projection: this.#projection!,
-            preferences,
-            onView: (next) => {
-              view = next;
-              if (this.#joined?.identity === identity && !signal.aborted) this.#set(next);
-            },
-            onError: (error) => {
-              if (this.#joined?.identity === identity && !signal.aborted) {
+      socket,
+      preferences
+        ? async (acceptedIdentity, lifetime, media) => {
+            resources = await initializeMainMedia({
+              identity: acceptedIdentity,
+              socket,
+              signal: AbortSignal.any([lifetime, signal]),
+              media,
+              projection: this.#projection!,
+              preferences,
+              onView: (next) => {
+                view = next;
                 if (
-                  this.#state.phase === 'active' &&
-                  !this.#leaving &&
-                  error instanceof MainCallError &&
-                  error.code === 'FORBIDDEN'
+                  this.#joined?.identity === identity &&
+                  !signal.aborted &&
+                  !this.#state.cleanupPending
                 )
-                  this.clear();
-                this.#set({ message: mainCallMessage(error) });
-              }
-            },
-          });
-          // A provider may finish after cancellation. Never hand its resources to
-          // the owner or publish active/capture after the departure intent began.
-          if (signal.aborted || this.#leaving || this.#joined?.identity !== identity) {
-            resources.dispose();
-            throw new DOMException('Activation cancelled', 'AbortError');
+                  this.#set(next);
+              },
+              onError: (error) => {
+                if (this.#joined?.identity === identity && !signal.aborted) {
+                  if (
+                    this.#state.phase === 'active' &&
+                    !this.#leaving &&
+                    error instanceof MainCallError &&
+                    error.code === 'FORBIDDEN'
+                  )
+                    this.clear();
+                  this.#set({ message: mainCallMessage(error) });
+                }
+              },
+            });
+            // A provider may finish after cancellation. Never hand its resources to
+            // the owner or publish active/capture after the departure intent began.
+            if (signal.aborted || this.#leaving || this.#joined?.identity !== identity) {
+              resources.dispose();
+              throw new DOMException('Activation cancelled', 'AbortError');
+            }
+            return resources.dispose;
           }
-          return resources.dispose;
-        },
-      }),
+        : undefined,
     );
     signal.throwIfAborted();
     if (this.#joined?.identity !== identity) throw new DOMException('Superseded', 'AbortError');
     this.#resumeFailures = 0;
+    if (this.#state.cleanupPending) {
+      resources?.dispose();
+      return;
+    }
     if (preferences) this.#set({ phase: 'active', handle, resources, ...view, message: undefined });
     void resources?.startDevices().catch((error: unknown) => {
       if (!signal.aborted && this.#joined?.identity === identity)
@@ -526,6 +518,23 @@ export class MainCall {
     });
   }
   #projection: import('./sessionProjectionRuntime').SessionProjectionRuntime | undefined;
+  #acquireProjection(
+    identity: CallIdentity,
+    socket: Socket,
+    initialize?: Parameters<CallControllerOwner['acquire']>[1],
+  ) {
+    return this.owner.acquire(
+      identity,
+      createSessionProjectionInitializer({
+        owner: this.owner,
+        socket,
+        onRuntime: (projection) => {
+          this.#projection = projection;
+        },
+        ...(initialize && { initialize }),
+      }),
+    );
+  }
   #disconnected() {
     if (!this.#joined) return;
     this.owner.end(this.#joined.identity);
@@ -599,7 +608,7 @@ export class MainCall {
         { ...previous.identity, callGeneration: ack.data.result.callGeneration },
         ack.data.result.resumeTicket,
         signal,
-        departing
+        this.#state.cleanupPending
           ? undefined
           : {
               microphone: {
@@ -609,8 +618,8 @@ export class MainCall {
               camera: { deviceId: this.#preferences?.camera.deviceId ?? '', enabled: false },
             },
       );
-      if (departing) {
-        await this.leave();
+      if (this.#state.cleanupPending) {
+        await this.#depart();
         return;
       }
       this.#set({
@@ -629,49 +638,39 @@ export class MainCall {
         this.#set({ message: mainCallMessage(error) });
       } else {
         this.#set({ message: mainCallMessage(error) });
-        this.#scheduleResume();
+        if (this.#state.cleanupPending && this.#joined !== previous && this.#socket?.connected)
+          this.#set({ phase: 'error' });
+        else this.#scheduleResume();
       }
     }
   }
   async retryDeparture() {
     if (this.#state.phase !== 'error' || !this.#state.cleanupPending) return;
-    if (this.#resumeIntent || !this.#socket?.connected) await this.resume();
-    else await this.leave();
+    await this.leave();
   }
   async leave() {
-    if (!this.#joined || !this.#socket || this.#leaving || this.#resumeIntent) return;
+    if (!this.#joined || this.#leaving) return;
+    if (this.#state.phase === 'reconnecting' || this.#resumeIntent || !this.#socket?.connected) {
+      const reconnecting = this.#state.phase === 'reconnecting';
+      this.#set({
+        expanded: false,
+        cleanupPending: true,
+        message: 'Đang kết nối lại để xác nhận rời cuộc gọi…',
+      });
+      if (!reconnecting) await this.resume();
+      return;
+    }
+    await this.#depart();
+  }
+  async #depart() {
+    const socket = this.#socket;
     const ownership = this.#joined;
+    if (!socket || !ownership || this.#leaving || this.#resumeIntent) return;
+    const retrying = this.#state.phase === 'error';
     // Cancel bootstrap/capture immediately without aborting the independent
     // departure command or discarding its server ownership/replay identity.
     this.#attempt?.abort();
     this.#state.resources?.dispose();
-    try {
-      this.#leaveIntent ??= (() => {
-        const { identity } = this.#joined!;
-        const projection = this.#projection?.getSnapshot().projection ?? this.#state.projection;
-        if (!projection) throw new MainCallError('CONFLICT');
-        const host = projection.viewer.role === 'HOST';
-        return {
-          event: host ? ('session.end' as const) : ('session.leave' as const),
-          input: {
-            requestId: crypto.randomUUID(),
-            sessionId: identity.sessionId,
-            epoch: identity.epoch,
-            callGeneration: identity.callGeneration,
-            expectedPolicyRevision: projection.policyRevision,
-            ...(host ? { action: 'HOST_LEAVE' as const } : {}),
-          },
-        };
-      })();
-    } catch {
-      this.#set({
-        phase: 'error',
-        cleanupPending: true,
-        message: 'Chưa xác nhận được trạng thái phiên để rời an toàn. Hãy kết nối lại rồi thử rời.',
-      });
-      return;
-    }
-    const intent = this.#leaveIntent;
     this.#leaving = true;
     const leaveAbort = new AbortController();
     this.#leaveAbort = leaveAbort;
@@ -686,10 +685,39 @@ export class MainCall {
       message: 'Đang xác nhận dọn tài nguyên trên máy chủ…',
     });
     try {
+      if (!this.#leaveIntent) {
+        const { identity } = ownership;
+        if (!this.#projection || this.#projection.getSnapshot().status === 'closed') {
+          this.owner.end(identity);
+          await this.#acquireProjection(identity, socket);
+        }
+        const runtime = this.#projection!;
+        const readProjection = () => {
+          const snapshot = runtime.getSnapshot();
+          return snapshot.status === 'ready' ? (snapshot.projection ?? undefined) : undefined;
+        };
+        if (!readProjection() && (retrying || runtime.getSnapshot().status === 'error'))
+          runtime.resync();
+        const projection = await waitForMain(readProjection, runtime.subscribe, leaveAbort.signal);
+        leaveAbort.signal.throwIfAborted();
+        const host = projection.viewer.role === 'HOST';
+        this.#leaveIntent = {
+          event: host ? 'session.end' : 'session.leave',
+          input: {
+            requestId: crypto.randomUUID(),
+            sessionId: identity.sessionId,
+            epoch: identity.epoch,
+            callGeneration: identity.callGeneration,
+            expectedPolicyRevision: projection.policyRevision,
+            ...(host ? { action: 'HOST_LEAVE' as const } : {}),
+          },
+        };
+      }
+      const intent = this.#leaveIntent;
       for (let attempt = 0; attempt < 3; attempt++) {
         const ack = (
           intent.event === 'session.end' ? sessionEndAckSchema : sessionLeaveAckSchema
-        ).parse(await mainCommand(this.#socket, intent.event, intent.input, leaveAbort.signal));
+        ).parse(await mainCommand(socket, intent.event, intent.input, leaveAbort.signal));
         if (this.#joined !== ownership) return;
         if ('error' in ack) throw new MainCallError(ack.error.code);
         if (
