@@ -75,6 +75,7 @@ class TestSocket extends EventEmitter {
   id = crypto.randomUUID();
   volatile = this;
   dropSnapshots = false;
+  resyncForbidden = false;
   requests: { event: string; input: Record<string, unknown> }[] = [];
   responder: ((event: string, input: Record<string, unknown>) => Promise<unknown>) | undefined;
   connect() {
@@ -129,6 +130,13 @@ class TestSocket extends EventEmitter {
         policyRevision,
       };
       queueMicrotask(() => {
+        if (this.resyncForbidden) {
+          ack({
+            requestId: input.requestId,
+            error: { code: 'FORBIDDEN', message: 'Channel access revoked' },
+          });
+          return;
+        }
         ack({
           requestId: input.requestId,
           data: { status: 'completed', result: { snapshotId, partCount: 1 } },
@@ -739,6 +747,42 @@ it('resyncs the confirmed generation before retrying departure after a snapshot 
   });
   expect(initializeMainMedia).toHaveBeenCalledTimes(1);
   expect(call.getSnapshot()).toMatchObject({ phase: 'idle', cleanupPending: false });
+});
+it('releases the pending departure when channel access is revoked before snapshot resync', async () => {
+  vi.useFakeTimers();
+  await call.join(preferences);
+  const old = sockets[0]!;
+  old.responder = async () => {
+    old.disconnect();
+    throw new Error('Disconnected before departure ACK');
+  };
+  await call.leave();
+  generation = 2;
+  vi.mocked(io).mockImplementationOnce(() => {
+    const socket = new TestSocket();
+    sockets.push(socket);
+    socket.resyncForbidden = true;
+    return socket as unknown as Socket;
+  });
+
+  const retry = call.retryDeparture();
+  await vi.advanceTimersByTimeAsync(10000);
+  await retry;
+
+  const socket = sockets[1]!;
+  expect(socket.requests.map(({ event }) => event)).toEqual(['session.resume']);
+  expect(initializeMainMedia).toHaveBeenCalledTimes(1);
+  expect(socket.connected).toBe(false);
+  expect(call.getSnapshot()).toMatchObject({
+    phase: 'idle',
+    cleanupPending: false,
+    message: 'Bạn không còn quyền vào phòng này.',
+  });
+  expect(call.canResume()).toBe(false);
+  expect(owner.getSnapshot().status).toBe('idle');
+  const nextTarget = { ...target, channelId: '6'.repeat(24) };
+  call.open(nextTarget);
+  expect(call.getSnapshot()).toMatchObject({ phase: 'lobby', target: nextTarget });
 });
 it('ignores a late leave ACK after logout without restoring old pending UI', async () => {
   await call.join(preferences);

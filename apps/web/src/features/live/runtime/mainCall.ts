@@ -531,6 +531,11 @@ export class MainCall {
         onRuntime: (projection) => {
           this.#projection = projection;
         },
+        onTerminalResync: (errorCode) => {
+          if (this.#joined?.identity !== identity || this.#socket !== socket) return;
+          this.clear();
+          this.#set({ message: mainCallMessage(new MainCallError(errorCode)) });
+        },
         ...(initialize && { initialize }),
       }),
     );

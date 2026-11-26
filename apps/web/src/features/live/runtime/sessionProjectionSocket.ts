@@ -70,19 +70,23 @@ export function createSessionProjectionInitializer({
   owner,
   socket,
   onRuntime,
+  onTerminalResync,
   initialize,
 }: {
   owner: CallControllerOwner;
   socket: SessionProjectionSocket;
   onRuntime: (runtime: SessionProjectionRuntime) => void;
+  onTerminalResync?: (errorCode: string) => void;
   initialize?: Initialize;
 }): Initialize {
   return async (identity, signal, media) => {
-    const runtime = new SessionProjectionRuntime(identity, signal, media, () =>
-      owner.end(identity),
-    );
+    const runtime = new SessionProjectionRuntime(identity, signal, media, (errorCode) => {
+      owner.end(identity);
+      if (errorCode) onTerminalResync?.(errorCode);
+    });
     const unbind = bindSessionProjectionSocket(runtime, socket, signal);
     try {
+      signal.throwIfAborted();
       onRuntime(runtime);
       const dispose = await initialize?.(identity, signal, media);
       return () => {

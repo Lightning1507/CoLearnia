@@ -113,7 +113,7 @@ export class SessionProjectionRuntime {
     private readonly identity: CallIdentity,
     private readonly signal: AbortSignal,
     private readonly media: Pick<MediaSnapshotRuntime, 'updateContext'>,
-    private readonly onEnded: () => void,
+    private readonly onEnded: (errorCode?: string) => void,
   ) {
     this.#minimum = {
       ...identity,
@@ -267,7 +267,7 @@ export class SessionProjectionRuntime {
     if ('error' in parsed.data) {
       if (!terminal.has(parsed.data.error.code)) return this.#fail(attempt);
       this.close();
-      this.onEnded();
+      this.onEnded(parsed.data.error.code);
       return;
     }
     const descriptor = parsed.data.data.result;
