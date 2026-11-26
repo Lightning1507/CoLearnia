@@ -20,7 +20,13 @@ function ScreenIcon({ className }: { className: string }) {
 }
 
 // Render in the call toolbar with the picker owned by the call, above panel lifetime.
-export function ScreenShareControls({ picker }: { picker: ScreenSharePicker }) {
+export function ScreenShareControls({
+  picker,
+  compact = false,
+}: {
+  picker: ScreenSharePicker;
+  compact?: boolean;
+}) {
   const primary = useRef<HTMLButtonElement>(null);
   const dialog = useRef<HTMLDialogElement>(null);
   const announcement = useRef<HTMLSpanElement>(null);
@@ -81,6 +87,8 @@ export function ScreenShareControls({ picker }: { picker: ScreenSharePicker }) {
           type="button"
           className="live-toolbar-control inline-flex h-[42px] min-w-12 items-center justify-center gap-1.5 rounded-lg px-[11px] text-[9px]"
           data-state={sharing ? 'active' : undefined}
+          aria-pressed={sharing}
+          title={canStop ? 'Dừng chia sẻ màn hình' : 'Chia sẻ màn hình'}
           aria-label={
             retryStop
               ? 'Thử dừng chia sẻ màn hình lại'
@@ -99,7 +107,7 @@ export function ScreenShareControls({ picker }: { picker: ScreenSharePicker }) {
           }}
         >
           <ScreenIcon className="size-4" />
-          {action}
+          <span className={compact ? 'sr-only' : undefined}>{action}</span>
         </button>
       )}
       <span

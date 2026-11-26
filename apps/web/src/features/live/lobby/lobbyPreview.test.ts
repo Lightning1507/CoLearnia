@@ -452,6 +452,7 @@ describe('lobby preview ownership and browser devices', () => {
       camera: { selectedId: '', openedId: null, status: 'off', devices: [] },
       microphone: { openedId: null, status: 'off', devices: [] },
       videoStream: null,
+      audioStream: null,
       enumerating: false,
       enumerationError: null,
     });

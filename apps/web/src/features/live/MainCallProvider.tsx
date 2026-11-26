@@ -9,6 +9,8 @@ import { ScreenShareControls } from './share/ScreenShareControls';
 import { DeviceMediaControls } from './room/DeviceMediaControls';
 import { useWorkspaceTheme } from '../workspaces/workspace-appearance';
 import { WorkspaceIcon } from '../workspaces/WorkspaceIcon';
+import { MeetingNavigation } from '../workspaces/meeting-navigation';
+import './live-v11.css';
 
 import { MainCallContext } from './runtime/mainCallContext';
 
@@ -23,6 +25,9 @@ export function MainCallProvider({
   const state = useSyncExternalStore(call.subscribe, call.getSnapshot, call.getSnapshot);
   const location = useLocation();
   const navigate = useNavigate();
+  const [navigationOpen, setNavigationOpen] = useState(false);
+  const meetingFocused = state.expanded && state.phase === 'active';
+  if (!meetingFocused && navigationOpen) setNavigationOpen(false);
   const lastRoute = useRef<{ channel: string; live: string } | undefined>(undefined);
   useEffect(() => {
     if (state.phase === 'idle') {
@@ -65,20 +70,46 @@ export function MainCallProvider({
   return (
     <MainCallContext.Provider value={call}>
       <div className="main-call-layout">
-        <div className="main-call-background" inert={state.expanded}>
-          {children}
-        </div>
-        <MainCallHost call={call} />
+        <MeetingNavigation.Provider
+          value={{
+            focused: meetingFocused,
+            open: meetingFocused && navigationOpen,
+            close: () => setNavigationOpen(false),
+          }}
+        >
+          <div
+            className="main-call-background"
+            inert={state.expanded && !(meetingFocused && navigationOpen)}
+            data-meeting-focus={meetingFocused}
+          >
+            {children}
+          </div>
+          <MainCallHost
+            call={call}
+            navigationOpen={navigationOpen}
+            onOpenNavigation={() => setNavigationOpen(true)}
+          />
+        </MeetingNavigation.Provider>
       </div>
     </MainCallContext.Provider>
   );
 }
 
-function MainCallHost({ call }: { call: MainCall }) {
+function MainCallHost({
+  call,
+  navigationOpen,
+  onOpenNavigation,
+}: {
+  call: MainCall;
+  navigationOpen: boolean;
+  onOpenNavigation: () => void;
+}) {
   const { theme } = useWorkspaceTheme();
   const state = useSyncExternalStore(call.subscribe, call.getSnapshot, call.getSnapshot);
-  const [panel, setPanel] = useState(false);
+  const [panel, setPanel] = useState<'participants' | 'chat'>();
   const screen = useRef<HTMLDivElement>(null);
+  const departure = useRef<HTMLDialogElement>(null);
+  const [departureRole, setDepartureRole] = useState<'HOST' | 'MEMBER'>();
   const navigate = useNavigate();
   const showCall = (expanded: boolean) => {
     const target = call.getSnapshot().target;
@@ -104,6 +135,8 @@ function MainCallHost({ call }: { call: MainCall }) {
     ) : null;
   const target = state.target;
   if (!target) return null;
+  const host = state.projection?.viewer.role === 'HOST';
+  const leaveLabel = host ? 'Kết thúc phiên' : 'Rời cuộc họp';
   if (!state.expanded && state.cleanupPending)
     return (
       <aside
@@ -154,14 +187,15 @@ function MainCallHost({ call }: { call: MainCall }) {
       </aside>
     );
   const closePanel = () => {
-    setPanel(false);
+    setPanel(undefined);
     requestAnimationFrame(() =>
-      document.querySelector<HTMLButtonElement>('[data-main-participants]')?.focus(),
+      screen.current?.querySelector<HTMLButtonElement>(`[data-meeting-panel="${panel}"]`)?.focus(),
     );
   };
   return (
     <div
-      className="main-call-screen"
+      className="main-call-screen live-v11"
+      data-workspace-theme={theme}
       aria-label={`Cuộc gọi ${target.channelName}`}
       tabIndex={-1}
       ref={screen}
@@ -216,6 +250,7 @@ function MainCallHost({ call }: { call: MainCall }) {
         </section>
       ) : state.handle && state.resources ? (
         <RoomShell
+          meetingLayout
           channelName={target.channelName}
           sessionId={state.handle.identity.sessionId}
           devices={state.resources.devices}
@@ -223,14 +258,28 @@ function MainCallHost({ call }: { call: MainCall }) {
             navigation: (
               <button
                 type="button"
-                className="live-room-workspace-button"
-                onClick={() => showCall(false)}
+                className="meeting-icon"
+                aria-label="Mở điều hướng Workspace"
+                aria-haspopup="dialog"
+                aria-expanded={navigationOpen}
+                title="Mở điều hướng Workspace"
+                onClick={onOpenNavigation}
               >
-                ← Workspace
+                <WorkspaceIcon name="menu" />
               </button>
             ),
             description: `Phòng chung · ${state.projection?.viewer.role === 'HOST' ? 'Bạn là host' : 'Bạn là thành viên'}`,
-            position: 'Mic của bạn phát trong Phòng chung',
+            position: (
+              <button
+                type="button"
+                className="meeting-icon"
+                title="Thu gọn về Workspace"
+                aria-label="Thu gọn về Workspace"
+                onClick={() => showCall(false)}
+              >
+                <WorkspaceIcon name="minimize" />
+              </button>
+            ),
           }}
           participantNames={Object.fromEntries(
             state.projection?.participants.map((person) => [
@@ -238,44 +287,68 @@ function MainCallHost({ call }: { call: MainCall }) {
               person.displayName,
             ]) ?? [],
           )}
+          localParticipantId={state.handle.identity.participantId}
           stageMedia={state.stream ? { call: state.handle, stream: state.stream } : undefined}
           {...(state.shareLabel ? { shareLabel: state.shareLabel } : {})}
-          controls={<ScreenShareControls picker={state.resources.picker} />}
+          controls={<ScreenShareControls picker={state.resources.picker} compact />}
           secondaryControls={
             <>
               <button
                 type="button"
                 className="live-toolbar-control"
-                data-main-participants
-                aria-expanded={panel}
-                onClick={() => setPanel(!panel)}
+                data-meeting-panel="participants"
+                aria-label="Người tham gia"
+                title="Người tham gia"
+                aria-expanded={panel === 'participants'}
+                onClick={() => (panel === 'participants' ? closePanel() : setPanel('participants'))}
               >
-                Người tham gia ({state.projection?.participants.length ?? 0})
+                <WorkspaceIcon name="people" />
+              </button>
+              <button
+                type="button"
+                className="live-toolbar-control"
+                data-meeting-panel="chat"
+                aria-label="Chat cuộc họp"
+                title="Chat cuộc họp"
+                aria-expanded={panel === 'chat'}
+                onClick={() => (panel === 'chat' ? closePanel() : setPanel('chat'))}
+              >
+                <WorkspaceIcon name="chat" />
               </button>
               <button
                 type="button"
                 className="live-toolbar-control"
                 data-state="danger"
-                onClick={() => void call.leave()}
+                aria-label={leaveLabel}
+                title={leaveLabel}
+                aria-haspopup="dialog"
+                disabled={!state.projection}
+                onClick={() => {
+                  setDepartureRole(host ? 'HOST' : 'MEMBER');
+                  departure.current?.showModal();
+                }}
               >
-                {state.projection?.viewer.role === 'HOST' ? 'Kết thúc phiên' : 'Rời'}
+                <WorkspaceIcon name="phoneOff" />
               </button>
             </>
           }
           sidePanel={
             panel
               ? {
-                  label: 'Người tham gia',
-                  content: (
-                    <ul className="main-call-roster">
-                      {state.projection?.participants.map((person) => (
-                        <li key={person.participantId}>
-                          {person.displayName}
-                          {person.role === 'HOST' ? ' · Host' : ''}
-                        </li>
-                      ))}
-                    </ul>
-                  ),
+                  label: panel === 'participants' ? 'Người tham gia' : 'Chat cuộc họp',
+                  content:
+                    panel === 'chat' ? (
+                      <p>Chat cuộc họp chưa khả dụng.</p>
+                    ) : (
+                      <ul className="main-call-roster">
+                        {state.projection?.participants.map((person) => (
+                          <li key={person.participantId}>
+                            {person.displayName}
+                            {person.role === 'HOST' ? ' · Host' : ''}
+                          </li>
+                        ))}
+                      </ul>
+                    ),
                   onBackToStage: closePanel,
                 }
               : undefined
@@ -321,6 +394,50 @@ function MainCallHost({ call }: { call: MainCall }) {
             Xem Workspace
           </button>
         </section>
+      )}
+      {state.handle && state.resources && (
+        <dialog
+          ref={departure}
+          className="meeting-departure"
+          aria-label={departureRole === 'HOST' ? 'Kết thúc phiên' : 'Rời cuộc họp'}
+        >
+          <h2>{departureRole === 'HOST' ? 'Kết thúc phiên cho mọi người?' : 'Rời cuộc họp?'}</h2>
+          <p>
+            {departureRole === 'HOST'
+              ? 'Mọi người sẽ rời cuộc gọi. Kênh vẫn được giữ.'
+              : 'Các thành viên khác vẫn có thể tiếp tục cuộc gọi.'}
+          </p>
+          {state.projection && departureRole !== (host ? 'HOST' : 'MEMBER') && (
+            <p role="status">Vai trò trong phòng vừa thay đổi. Đóng hộp thoại và thử lại.</p>
+          )}
+          <div>
+            <button
+              type="button"
+              autoFocus
+              className="auth-secondary"
+              onClick={() => departure.current?.close()}
+            >
+              Ở lại
+            </button>
+            <button
+              type="button"
+              className="auth-secondary meeting-confirm-leave"
+              disabled={!state.projection || departureRole !== (host ? 'HOST' : 'MEMBER')}
+              onClick={() => {
+                const current = call.getSnapshot().projection;
+                if (
+                  !current ||
+                  departureRole !== (current.viewer.role === 'HOST' ? 'HOST' : 'MEMBER')
+                )
+                  return;
+                departure.current?.close();
+                void call.leave();
+              }}
+            >
+              {departureRole === 'HOST' ? 'Kết thúc phiên' : 'Rời cuộc họp'}
+            </button>
+          </div>
+        </dialog>
       )}
       {state.handle && state.message && (
         <p role="alert" className="main-call-notice">

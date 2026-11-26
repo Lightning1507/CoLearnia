@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 import type { RefObject } from 'react';
 import type { DeviceKind, PreviewStatus } from './lobbyPreview';
 import { useLobbyPreview } from './useLobbyPreview';
+import { LobbyMicMeter } from './LobbyMicMeter';
 
 const buttonClass = 'lobby-button';
 
@@ -169,7 +170,7 @@ export function LobbyDeviceCheck({
   };
 
   return (
-    <section className="live-lobby" aria-labelledby={`${id}-title`}>
+    <section className="live-lobby prejoin-v11" aria-labelledby={`${id}-title`}>
       <header className="live-lobby-header">
         <button className="lobby-back" type="button" onClick={back}>
           <span aria-hidden="true">←</span> Quay lại Phòng học
@@ -177,48 +178,51 @@ export function LobbyDeviceCheck({
         <strong>CoLearnia</strong>
       </header>
       <div className="live-lobby-main">
-        <section className="lobby-preview" aria-label="Xem trước camera, chỉ trên máy này">
-          {state.videoStream ? (
-            <CameraPreview
-              key={state.videoStream.id}
-              stream={state.videoStream}
-              videoRef={videoRef}
-            />
-          ) : (
-            <div className="lobby-placeholder">
-              <span className="lobby-placeholder-icon">
-                <DeviceIcon kind="camera" off />
-              </span>
-              <strong>
-                {state.camera.status === 'requesting' ? 'Đang mở camera…' : 'Camera đang tắt'}
-              </strong>
+        <div className="lobby-preview-column">
+          <section className="lobby-preview" aria-label="Xem trước camera, chỉ trên máy này">
+            {state.videoStream ? (
+              <CameraPreview
+                key={state.videoStream.id}
+                stream={state.videoStream}
+                videoRef={videoRef}
+              />
+            ) : (
+              <div className="lobby-placeholder">
+                <span className="lobby-placeholder-icon">
+                  <DeviceIcon kind="camera" off />
+                </span>
+                <strong>
+                  {state.camera.status === 'requesting' ? 'Đang mở camera…' : 'Camera đang tắt'}
+                </strong>
+              </div>
+            )}
+            <div className="lobby-preview-controls" role="group" aria-label="Bật hoặc tắt thiết bị">
+              {deviceControls.map(({ kind, name }) => {
+                const { status, isActive: enabled } = state[kind];
+                const requesting = status === 'requesting';
+                const action = enabled ? 'Tắt' : requesting ? 'Hủy mở' : 'Bật';
+                return (
+                  <button
+                    key={kind}
+                    className="lobby-device-toggle"
+                    type="button"
+                    aria-label={`${action} ${name.toLowerCase()}`}
+                    aria-pressed={enabled}
+                    aria-describedby={`${id}-${kind}-status`}
+                    disabled={deviceControlsDisabled}
+                    title={`${action} ${name.toLowerCase()}`}
+                    onClick={() =>
+                      enabled || requesting ? preview.stop(kind) : void preview.open(kind)
+                    }
+                  >
+                    <DeviceIcon kind={kind} off={!enabled} />
+                  </button>
+                );
+              })}
             </div>
-          )}
-          <div className="lobby-preview-controls" role="group" aria-label="Bật hoặc tắt thiết bị">
-            {deviceControls.map(({ kind, name }) => {
-              const { status, isActive: enabled } = state[kind];
-              const requesting = status === 'requesting';
-              const action = enabled ? 'Tắt' : requesting ? 'Hủy mở' : 'Bật';
-              return (
-                <button
-                  key={kind}
-                  className="lobby-device-toggle"
-                  type="button"
-                  aria-label={`${action} ${name.toLowerCase()}`}
-                  aria-pressed={enabled}
-                  aria-describedby={`${id}-${kind}-status`}
-                  disabled={deviceControlsDisabled}
-                  title={`${action} ${name.toLowerCase()}`}
-                  onClick={() =>
-                    enabled || requesting ? preview.stop(kind) : void preview.open(kind)
-                  }
-                >
-                  <DeviceIcon kind={kind} off={!enabled} />
-                </button>
-              );
-            })}
-          </div>
-        </section>
+          </section>
+          <LobbyMicMeter stream={state.audioStream} />
+        </div>
         <section className="lobby-settings" aria-labelledby={`${id}-title`}>
           <p className="lobby-channel">{channelName}</p>
           <h1 id={`${id}-title`}>

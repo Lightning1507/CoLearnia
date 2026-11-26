@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useId, useRef, useState } from 'react';
+import { Fragment, useContext, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { ChannelSummary } from '@colearnia/contracts';
 import type { WorkspaceShellProps } from './shell-contract';
@@ -7,6 +7,7 @@ import { WorkspaceIcon } from './WorkspaceIcon';
 import { WorkspaceSearch } from './WorkspaceSearch';
 import { useWorkspaceDrawer, useWorkspaceTheme, workspaceInitials } from './workspace-appearance';
 import './workspace-shell.css';
+import { MeetingNavigation } from './meeting-navigation';
 
 const roleNames = { OWNER: 'Chủ Workspace', ADMIN: 'Quản trị viên', MEMBER: 'Thành viên' };
 
@@ -91,6 +92,10 @@ export function WorkspaceShell({
   const accessible = readableSidebarChannels(channels, workspace.id).map(({ channel }) => channel);
   const selected = resolvePanelChannel(channels, workspace.id, panel)?.channel;
   const mobile = useWorkspaceDrawer();
+  const meeting = useContext(MeetingNavigation);
+  const meetingFocused = meeting?.focused === true;
+  const meetingDrawerOpen = meeting?.open === true;
+  const useDrawer = mobile || meetingFocused;
   const { theme, toggle } = useWorkspaceTheme();
   const [context, setContext] = useState<'members' | 'channel'>();
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -109,6 +114,13 @@ export function WorkspaceShell({
   const heading = useRef<HTMLHeadingElement>(null);
   const navigationId = useId();
   const contextId = useId();
+  useLayoutEffect(() => {
+    const dialog = drawer.current;
+    if (meetingFocused && meetingDrawerOpen && dialog && !dialog.open) dialog.showModal();
+    return () => {
+      if (meetingFocused && meetingDrawerOpen && dialog?.open) dialog.close();
+    };
+  }, [meetingDrawerOpen, meetingFocused]);
 
   function showContext(next: 'members' | 'channel') {
     if (context === next) {
@@ -168,7 +180,7 @@ export function WorkspaceShell({
           />{' '}
           CoLearnia
         </button>
-        {mobile && (
+        {useDrawer && (
           <button
             aria-label="Đóng danh sách kênh"
             type="button"
@@ -271,7 +283,7 @@ export function WorkspaceShell({
       data-workspace-theme={theme}
       data-testid="workspace-shell"
     >
-      {mobile ? (
+      {useDrawer ? (
         <dialog
           id={navigationId}
           ref={drawer}
@@ -279,6 +291,14 @@ export function WorkspaceShell({
           className="workspace-sidebar ws-drawer"
           onClose={() => {
             setDrawerOpen(false);
+            if (meetingFocused) {
+              meeting?.close();
+              if (focusChannelAfterDrawer.current) {
+                focusChannelAfterDrawer.current = false;
+                requestAnimationFrame(() => heading.current?.focus());
+              }
+              return;
+            }
             const focusTarget = focusChannelAfterDrawer.current ? heading : navigationButton;
             focusChannelAfterDrawer.current = false;
             focusTarget.current?.focus();
@@ -302,6 +322,7 @@ export function WorkspaceShell({
         </aside>
       )}
       <main
+        hidden={meetingFocused}
         className="workspace-main"
         onKeyDown={(event) => {
           if (context && event.key === 'Escape') {

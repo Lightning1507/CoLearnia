@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import type { CameraSnapshot, CameraView } from '../runtime/cameraProjection';
 import { cameraStatus } from '../runtime/cameraProjection';
+import { WorkspaceIcon } from '../../workspaces/WorkspaceIcon';
 
 function CameraVideo({
   track,
@@ -170,6 +171,107 @@ export function CameraTiles({
           />
         ))
       )}
+    </section>
+  );
+}
+
+function MeetingTile({
+  name,
+  local,
+  track,
+  pinned,
+  onPin,
+}: {
+  name: string;
+  local: boolean;
+  track: MediaStreamTrack | undefined;
+  pinned: boolean;
+  onPin: (() => void) | undefined;
+}) {
+  const [playing, setPlaying] = useState(false);
+  const videoVisible = Boolean(track && playing && (!local || track.enabled));
+  return (
+    <article
+      className="meeting-tile"
+      data-local={local}
+      data-pinned={pinned}
+      data-video={videoVisible}
+    >
+      {track && (
+        <CameraVideo track={track} onPlaying={setPlaying} visible={videoVisible} local={local} />
+      )}
+      {!videoVisible && (
+        <div className="meeting-avatar" aria-hidden="true">
+          <CameraPlaceholder name={name} />
+        </div>
+      )}
+      <div className="meeting-tile-label">
+        <strong>{name}</strong>
+        {local && <span>Bạn</span>}
+        {!videoVisible && <small>{track ? 'Đang chờ hình ảnh' : 'Camera tắt'}</small>}
+      </div>
+      {onPin && (
+        <button
+          className="meeting-icon meeting-pin"
+          type="button"
+          aria-pressed={pinned}
+          title={pinned ? 'Bỏ ghim' : 'Ghim ô'}
+          aria-label={(pinned ? 'Bỏ ghim ' : 'Ghim ') + name}
+          onClick={onPin}
+        >
+          <WorkspaceIcon name="pin" />
+        </button>
+      )}
+    </article>
+  );
+}
+
+export function MeetingTiles({
+  snapshot,
+  participantNames,
+  localParticipantId,
+  shared,
+}: {
+  snapshot: CameraSnapshot;
+  participantNames: Readonly<Record<string, string>> | undefined;
+  localParticipantId: string | undefined;
+  shared: boolean;
+}) {
+  const [pinned, setPinned] = useState<string>();
+  const roster = Object.entries(participantNames ?? {});
+  const hasPin = !shared && roster.some(([id]) => id === pinned);
+  return (
+    <section
+      aria-label="Hình ảnh người tham gia"
+      className="meeting-tiles"
+      data-count={roster.length}
+      data-share={shared}
+      data-has-pin={hasPin}
+    >
+      {roster.length === 0 && <p role="status">Đang đồng bộ người tham gia…</p>}
+      {roster.map(([id, name]) => {
+        const camera =
+          snapshot.synchronized &&
+          snapshot.cameras.find(
+            ({ source }) =>
+              source.ownerParticipantId === id && source.publicationState === 'PUBLISHING',
+          );
+        const track = camera ? camera.track : undefined;
+        return (
+          <MeetingTile
+            key={id + ':' + (track?.id ?? 'off')}
+            name={name}
+            local={id === localParticipantId}
+            track={track}
+            pinned={hasPin && id === pinned}
+            onPin={
+              !shared && roster.length > 1
+                ? () => setPinned(id === pinned ? undefined : id)
+                : undefined
+            }
+          />
+        );
+      })}
     </section>
   );
 }
