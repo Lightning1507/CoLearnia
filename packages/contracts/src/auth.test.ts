@@ -28,7 +28,7 @@ const auth = {
 describe('auth/profile input contracts', () => {
   const registration = {
     email: ' Quan+web@Example.com ',
-    password: ' hoc cung nhom web 2026 ',
+    password: 'CoWeb!8#',
     displayName: ' Quân ',
   };
 
@@ -40,7 +40,7 @@ describe('auth/profile input contracts', () => {
     });
   });
 
-  it('counts code points at the name and new-password limits', () => {
+  it('counts Unicode code points at the name limits', () => {
     for (const length of [1, 80]) {
       expect(
         registerInputSchema.safeParse({ ...registration, displayName: '😀'.repeat(length) })
@@ -50,31 +50,55 @@ describe('auth/profile input contracts', () => {
     for (const displayName of [' ', '😀'.repeat(81)]) {
       expect(registerInputSchema.safeParse({ ...registration, displayName }).success).toBe(false);
     }
-    for (const length of [15, 128]) {
+  });
+
+  it('accepts 8–128 printable ASCII characters with no spaces for new passwords', () => {
+    for (const length of [8, 128]) {
       expect(
-        registerInputSchema.safeParse({ ...registration, password: '😀'.repeat(length) }).success,
+        registerInputSchema.safeParse({ ...registration, password: 'A'.repeat(length) }).success,
       ).toBe(true);
     }
-    for (const length of [0, 14, 129]) {
-      expect(
-        registerInputSchema.safeParse({ ...registration, password: '😀'.repeat(length) }).success,
-      ).toBe(false);
+    for (const password of [
+      '',
+      'Short!7',
+      'A'.repeat(129),
+      'MậtKhau!2026',
+      'Ma\u0302tKhau!2026',
+      'Mat Khau!2026',
+      ' MatKhau!2026',
+      'MatKhau!2026 ',
+      'Mat\tKhau!2026',
+      'MatKhau!2026\n',
+      'MatKhau!😀2026',
+    ]) {
+      expect(registerInputSchema.safeParse({ ...registration, password }).success).toBe(false);
     }
   });
 
-  it('does not enforce the new-password minimum when verifying existing credentials', () => {
-    expect(loginInputSchema.parse({ email: user.email, password: ' old ' }).password).toBe(' old ');
+  it('verifies legacy credentials as entered and applies the new policy only to the replacement', () => {
+    const legacyPassword = ' Mật khẩu cũ! ';
+    expect(loginInputSchema.parse({ email: user.email, password: legacyPassword }).password).toBe(
+      legacyPassword,
+    );
+    expect(loginInputSchema.parse({ email: user.email, password: 'old' }).password).toBe('old');
     expect(loginInputSchema.safeParse({ email: user.email, password: '' }).success).toBe(false);
     expect(
       loginInputSchema.safeParse({ email: user.email, password: 'a'.repeat(129) }).success,
     ).toBe(false);
     expect(
-      changePasswordInputSchema.safeParse({
-        currentPassword: 'old',
+      changePasswordInputSchema.parse({
+        currentPassword: legacyPassword,
         newPassword: registration.password,
         requestId,
+      }).currentPassword,
+    ).toBe(legacyPassword);
+    expect(
+      changePasswordInputSchema.safeParse({
+        currentPassword: legacyPassword,
+        newPassword: legacyPassword,
+        requestId,
       }).success,
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it('rejects invalid email and identity/privilege injection', () => {

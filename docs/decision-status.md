@@ -121,3 +121,5 @@ Bỏ chuyển owner Workspace khỏi MVP; người tạo giữ OWNER, cấp/thu 
 ## Contract auth/profile — 06/11/2026
 
 PM đồng ý giới hạn tên 1–80 Unicode code point sau trim; mật khẩu mới 15–128, giữ nguyên Unicode/khoảng trắng, không bắt trộn loại ký tự. [Contract SCRUM-12](contracts/auth-profile.md) và schema input/output đã được soạn để M4 review; chưa là endpoint hoặc hành vi thu phiên đã chạy. Chuẩn hóa email là đề xuất kỹ thuật trong PR; cấu hình CSRF, hash/limiter, retry và upload avatar tiếp tục theo owner/task tại contract.
+
+Ngày 26/11, quy tắc mật khẩu mới đổi thành 8–128 ký tự ASCII in được, loại khoảng trắng. Đăng nhập vẫn đối chiếu nguyên văn mật khẩu đã đặt. [Quy tắc hiện hành](contracts/auth-profile.md#2-input-và-giới-hạn)

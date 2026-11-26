@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { Link } from 'react-router-dom';
-import { loginInputSchema, registerInputSchema } from '@colearnia/contracts';
+import { authInputLimits, loginInputSchema, registerInputSchema } from '@colearnia/contracts';
 import type { AuthenticatedData } from '@colearnia/contracts';
 import { AuthApiError } from './auth-api';
 import type { AuthField, AuthMode } from './auth-api';
 import { authApi } from './session';
 import { AuthBrand } from './AuthBrand';
+import { useTransientNotice } from '../../app/useTransientNotice';
 import './auth.css';
 
 type FormField = AuthField | 'confirmPassword';
@@ -44,6 +45,10 @@ export function AuthScreen({
     confirmPassword: false,
   });
   const [failure, setFailure] = useState<AuthApiError | null>(null);
+  const keepFailure =
+    failure?.retryAt || failure?.uncertain || failure?.code === 'ACCOUNT_CREATED_LOGIN_REQUIRED';
+  const timedFailure = useTransientNotice(keepFailure ? undefined : failure);
+  const visibleFailure = keepFailure ? failure : timedFailure;
   const [pending, setPending] = useState(false);
   const [now, setNow] = useState(Date.now);
   const request = useRef<AbortController | null>(null);
@@ -85,11 +90,8 @@ export function AuthScreen({
         if (field === 'email') next.email = 'Nhập email hợp lệ (tối đa 254 ký tự).';
         if (field === 'displayName')
           next.displayName = 'Họ và tên cần từ 1 đến 80 ký tự sau khi bỏ khoảng trắng đầu/cuối.';
-        if (field === 'password')
-          next.password =
-            mode === 'register'
-              ? 'Mật khẩu cần từ 15 đến 128 ký tự.'
-              : 'Nhập mật khẩu từ 1 đến 128 ký tự.';
+        if (field === 'password' && !next.password)
+          next.password = mode === 'register' ? issue.message : 'Nhập mật khẩu từ 1 đến 128 ký tự.';
       }
     }
     if (!parsed.success || Object.keys(next).length > 0) {
@@ -277,17 +279,19 @@ export function AuthScreen({
             'Mật khẩu',
             'password',
             mode === 'register' ? 'new-password' : 'current-password',
-            mode === 'register' ? '15–128 ký tự; có thể dùng dấu và khoảng trắng.' : undefined,
+            mode === 'register'
+              ? `${authInputLimits.newPasswordMin}–${authInputLimits.passwordMax} ký tự. Dùng chữ không dấu, số hoặc ký hiệu như !, @, #. Không dùng khoảng trắng.`
+              : undefined,
           )}
           {mode === 'register' &&
             field('confirmPassword', 'Nhập lại mật khẩu', 'password', 'new-password')}
           <div
             ref={summary}
             tabIndex={-1}
-            className={failure ? 'auth-error' : undefined}
-            role={failure ? 'alert' : undefined}
+            className={visibleFailure ? 'auth-error' : undefined}
+            role={visibleFailure ? 'alert' : undefined}
           >
-            {failure?.message}
+            {visibleFailure?.message}
             {failure?.code === 'ACCOUNT_CREATED_LOGIN_REQUIRED' && (
               <Link to="/login">Đăng nhập ngay</Link>
             )}

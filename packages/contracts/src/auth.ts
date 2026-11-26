@@ -10,7 +10,7 @@ const avatarUrlSchema = z.url({ protocol: /^https$/ }).nullable();
 export const authInputLimits = {
   displayNameMin: 1,
   displayNameMax: 80,
-  newPasswordMin: 15,
+  newPasswordMin: 8,
   passwordMax: 128,
   emailMax: 254,
 } as const;
@@ -34,8 +34,11 @@ export const authEmailSchema = z
 export const newPasswordSchema = codePointString(
   authInputLimits.newPasswordMin,
   authInputLimits.passwordMax,
+).refine(
+  (value) => !/[^!-~]/.test(value),
+  'Chỉ dùng chữ không dấu, số và ký hiệu như !, @, #. Không dùng khoảng trắng.',
 );
-// Existing credentials are verified as entered, not against new-password minimums.
+// Verify existing credentials as entered, including Unicode and whitespace.
 const existingPasswordSchema = codePointString(1, authInputLimits.passwordMax);
 
 export const registerInputSchema = z.strictObject({

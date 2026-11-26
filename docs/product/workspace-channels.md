@@ -54,7 +54,7 @@ Rejoin Workspace theo [messaging](messaging.md): có thể mở lại DM khi c�
 
 ## Hồ sơ cá nhân và đổi mật khẩu — chốt ngày 03/11/2026
 
-**Giới hạn được PM đồng ý ngày 06/11 (SCRUM-12):** tên hiển thị 1–80 Unicode code point sau khi bỏ khoảng trắng đầu/cuối; mật khẩu mới 15–128 code point, cho phép Unicode/khoảng trắng và không bắt trộn chữ hoa/số/ký hiệu. Không tự trim hoặc normalize mật khẩu. Áp dụng khi đăng ký/đổi mật khẩu; xác minh mật khẩu đã có không áp lại độ dài tối thiểu mới. Chi tiết schema và phần kỹ thuật chờ M4 review ở [contract auth/profile](../contracts/auth-profile.md).
+Tên hiển thị dài 1–80 Unicode code point sau khi bỏ khoảng trắng đầu và cuối. Từ 26/11, mật khẩu mới dài 8–128 ký tự, chấp nhận chữ không dấu, số và ký hiệu như `!`, `@`, `#`. Khoảng trắng và các ký tự ngoài ASCII bị từ chối khi tạo mật khẩu mới. Mật khẩu của tài khoản hiện có vẫn được kiểm nguyên văn khi đăng nhập. [Contract auth/profile](../contracts/auth-profile.md)
 
 M1 bổ sung xem/chỉnh tên hiển thị, cập nhật hoặc xóa avatar và đổi mật khẩu của chính người đang đăng nhập. Hồ sơ bản đầu gồm tên hiển thị và avatar; email chỉ hiển thị, không sửa. Không mở thêm bio/thông tin cá nhân khác hoặc quyền admin sửa hồ sơ người khác. Không có avatar thì hiển thị chữ cái từ tên. Quên mật khẩu/khôi phục qua email để sau MVP.
 

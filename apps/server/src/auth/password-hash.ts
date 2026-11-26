@@ -2,6 +2,15 @@ import { randomBytes } from 'node:crypto';
 import { argon2id, hash, verify } from 'argon2';
 
 const commonPasswords = new Set([
+  '12345678',
+  '123456789',
+  '1234567890',
+  '11111111',
+  'aaaaaaaa',
+  'password',
+  'password1',
+  'password123',
+  'qwerty123',
   '123456789012345',
   '1234567890123456',
   '111111111111111',

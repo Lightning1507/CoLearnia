@@ -19,19 +19,19 @@ ID là chuỗi ObjectId 24 ký tự hex; thời gian là ISO UTC có `Z`. `avata
 
 ## 2. Input và giới hạn
 
-PM đồng ý hướng giới hạn tên/mật khẩu ngày 06/11; M4 review schema trước khi tích hợp. Email là lựa chọn kỹ thuật đề xuất trong PR này, cần M4 đối chiếu cùng index ở T2.1.
+Giới hạn tên theo quyết định ngày 06/11. Quy tắc mật khẩu mới được cập nhật ngày 26/11.
 
 | Field                              | Quy tắc                                                                                                                                                                                                                      |
 | ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `email`                            | Bắt buộc, trim, viết thường toàn địa chỉ; định dạng theo `z.email()`, tối đa 254 ký tự. Không bỏ dấu chấm hoặc `+tag`; dùng cùng chuẩn hóa ở register/login/unique index. Chưa hỗ trợ email Unicode ngoài validator hiện tại |
 | `displayName`                      | Bắt buộc, 1–80 Unicode code point sau trim; không chỉ có khoảng trắng                                                                                                                                                        |
-| Password mới                       | 15–128 Unicode code point; cho phép Unicode/khoảng trắng, không bắt trộn hoa/số/ký hiệu; không trim/normalize/cắt ngắn                                                                                                       |
-| Password login / `currentPassword` | 1–128 code point; giữ nguyên và kiểm hash. Không áp min 15 của mật khẩu mới để khóa dữ liệu tài khoản cũ                                                                                                                     |
+| Password mới                       | 8–128 ký tự ASCII in được, gồm chữ không dấu, số và ký hiệu. Không chấp nhận khoảng trắng hoặc ký tự Unicode. Không bắt trộn các loại ký tự.                                                                                 |
+| Password login / `currentPassword` | 1–128 Unicode code point. Giữ nguyên chuỗi người dùng nhập, kể cả chữ có dấu và khoảng trắng, để đối chiếu hash của tài khoản đã có.                                                                                         |
 | Body `requestId`                   | UUID bắt buộc với PATCH tên và đổi mật khẩu, độc lập ID trace server ngoài envelope                                                                                                                                          |
 
 Object input strict, thiếu field hoặc field lạ đều bị từ chối; không nhận `actorId`, `userId`, `role`, `authSessionId` để xác định người thực hiện. Byte limit của body và quota auth kiểm ở server; validation schema không thay limiter hoặc kiểm mật khẩu phổ biến.
 
-Hướng mật khẩu tham khảo [NIST SP 800-63B-4](https://pages.nist.gov/800-63-4/sp800-63b.html#passwordver): min 15 khi chỉ dùng mật khẩu, cho phép max ít nhất 64. Max 128 là lựa chọn của dự án; giữ nguyên Unicode theo quy ước hiện hành, không tuyên bố đáp ứng toàn bộ NIST. M1 review blocklist/chi phí hash và tải đồng thời ở T3.1/T3.2 trước handler.
+Giới hạn 8–128 ký tự và tập ký tự ASCII là quy tắc của CoLearnia. Bản SCRUM-12 ban đầu tham khảo [NIST SP 800-63B-4](https://pages.nist.gov/800-63-4/sp800-63b.html#passwordver) và dùng mốc tối thiểu 15 ký tự. Server tiếp tục từ chối mật khẩu phổ biến khi đăng ký.
 
 ## 3. HTTP API
 
