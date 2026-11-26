@@ -2,6 +2,9 @@ import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { textMessageSendBodySchema, type TextHistoryMessage } from '@colearnia/contracts';
 import { mergeTextMessage, newTextIntent, type OutgoingText } from './text-intent';
 import { createTextFixture, type FixtureSendMode, type TextPort } from './text-fixture';
+import { useStore } from 'zustand';
+import { createTextMemory, emptyConversation } from './text-memory';
+import { workspaceInitials } from '../workspaces/workspace-appearance';
 import './text-timeline.css';
 
 const messageTime = new Intl.DateTimeFormat('vi-VN', {
@@ -20,6 +23,10 @@ export function TextTimeline({
   projection,
   visible = true,
   connected = true,
+  channelName,
+  memory,
+  scope = 'fixture',
+  onLoadOlder,
 }: {
   port: TextPort;
   senderId: string;
@@ -27,45 +34,54 @@ export function TextTimeline({
   projection?: TextHistoryMessage[];
   visible?: boolean;
   connected?: boolean;
+  channelName?: string | undefined;
+  memory?: ReturnType<typeof createTextMemory>;
+  scope?: string;
+  onLoadOlder?: () => void;
 }) {
+  const [fallbackMemory] = useState(createTextMemory);
+  const conversation = memory ?? fallbackMemory;
+  const { draft, outbox } = useStore(
+    conversation.store,
+    (records) => records.get(scope) ?? emptyConversation,
+  );
   const [messages, setMessages] = useState<TextHistoryMessage[]>([]);
-  const [outbox, setOutbox] = useState<OutgoingText[]>([]);
   const [historyState, setState] = useState<'loading' | 'ready' | 'error'>('loading');
   const state = projection ? 'ready' : historyState;
   const displayed = projection ?? messages;
-  const [previousProjection, setPreviousProjection] = useState(projection);
   const [reload, setReload] = useState(0);
-  const [draft, setDraft] = useState('');
   const [validation, setValidation] = useState('');
   const [draftNotice, setDraftNotice] = useState('');
   const composerId = useId();
   const input = useRef<HTMLTextAreaElement>(null);
   const history = useRef<HTMLDivElement>(null);
   const followingLatest = useRef(true);
+  const prepend = useRef<{ height: number; top: number; first?: string | undefined } | undefined>(
+    undefined,
+  );
   const lifetime = useRef<AbortController | null>(null);
   const sending = useRef(new Set<string>());
 
   useLayoutEffect(() => {
     const panel = history.current;
-    if (visible && panel?.clientHeight && followingLatest.current)
-      panel.scrollTop = panel.scrollHeight;
-  }, [displayed, outbox, visible]);
+    if (!visible || !panel?.clientHeight) return;
+    if (prepend.current && displayed[0]?.id !== prepend.current.first) {
+      panel.scrollTop = prepend.current.top + (panel.scrollHeight - prepend.current.height);
+      prepend.current = undefined;
+    } else if (followingLatest.current) panel.scrollTop = panel.scrollHeight;
+  }, [displayed, draft, outbox, visible]);
 
   // Resolve an outbox row when the committed event wins the race with its ACK.
-  if (projection !== previousProjection) {
-    setPreviousProjection(projection);
-    if (projection)
-      setOutbox((rows) =>
-        rows.filter(
-          (row) =>
-            !projection.some(
-              (message) =>
-                message.senderId === senderId &&
-                message.clientMessageId === row.payload.clientMessageId,
-            ),
-        ),
-      );
-  }
+  useEffect(() => {
+    if (!projection) return;
+    const committed = new Set(
+      projection.filter((row) => row.senderId === senderId).map((row) => row.clientMessageId),
+    );
+    conversation.update(scope, (current) => {
+      const pending = current.outbox.filter((row) => !committed.has(row.payload.clientMessageId));
+      return pending.length === current.outbox.length ? current : { ...current, outbox: pending };
+    });
+  }, [conversation, projection, scope, senderId]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -99,26 +115,37 @@ export function TextTimeline({
     const key = intent.payload.clientMessageId;
     if (!signal || signal.aborted || sending.current.has(key)) return;
     sending.current.add(key);
-    setOutbox((rows) =>
-      rows.map((row) =>
-        row.payload.clientMessageId === key ? { ...row, status: 'sending' } : row,
-      ),
-    );
+    function updateIntent(next: 'sending' | 'failed' | 'confirmed') {
+      conversation.update(scope, (current) => {
+        if (!current.outbox.some((row) => row.payload.clientMessageId === key)) return current;
+        const outbox = current.outbox.flatMap((row) =>
+          row.payload.clientMessageId !== key
+            ? [row]
+            : next === 'confirmed'
+              ? []
+              : [{ ...row, status: next }],
+        );
+        return { ...current, outbox };
+      });
+    }
+    updateIntent('sending');
+    const interrupted = () => updateIntent('failed');
+    signal.addEventListener('abort', interrupted, { once: true });
     try {
       const message = await port.send(intent.payload, signal);
       if (signal.aborted) return;
       if (!projection) setMessages((rows) => mergeTextMessage(rows, message));
-      setOutbox((rows) => rows.filter((row) => row.payload.clientMessageId !== key));
+      updateIntent('confirmed');
     } catch {
       if (signal.aborted) return;
-      setOutbox((rows) =>
-        rows.map((row) =>
-          row.payload.clientMessageId === key ? { ...row, status: 'failed' } : row,
-        ),
-      );
+      updateIntent('failed');
     } finally {
+      signal.removeEventListener('abort', interrupted);
       sending.current.delete(key);
     }
+  }
+  function setDraft(value: string) {
+    conversation.update(scope, (current) => ({ ...current, draft: value }));
   }
 
   function submit() {
@@ -133,8 +160,7 @@ export function TextTimeline({
       return;
     }
     const intent = newTextIntent(draft);
-    setOutbox((rows) => [...rows, intent]);
-    setDraft('');
+    conversation.update(scope, (current) => ({ draft: '', outbox: [...current.outbox, intent] }));
     setDraftNotice('');
     setValidation('');
     void send(intent);
@@ -176,6 +202,27 @@ export function TextTimeline({
         )}
         {state === 'ready' && (
           <>
+            {onLoadOlder && (
+              <div className="text-history-control">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const panel = history.current;
+                    if (panel) {
+                      followingLatest.current = false;
+                      prepend.current = {
+                        height: panel.scrollHeight,
+                        top: panel.scrollTop,
+                        first: displayed[0]?.id,
+                      };
+                    }
+                    onLoadOlder();
+                  }}
+                >
+                  Xem tin nhắn cũ
+                </button>
+              </div>
+            )}
             {displayed.length === 0 && outbox.length === 0 && (
               <div className="text-chat-state">
                 <h2>Bắt đầu cuộc trò chuyện</h2>
@@ -192,9 +239,14 @@ export function TextTimeline({
                       ? `Thành viên ${message.senderId.slice(-6)}`
                       : 'Linh · Fixture');
                 return (
-                  <li key={message.id} className="text-message">
+                  <li
+                    key={message.id}
+                    className="text-message"
+                    id={visible ? `workspace-message-${message.id}` : undefined}
+                    tabIndex={-1}
+                  >
                     <span className="text-avatar" aria-hidden="true">
-                      {Array.from(authorName)[0]}
+                      {workspaceInitials(authorName)}
                     </span>
                     <div>
                       <div className="text-message-meta">
@@ -211,7 +263,7 @@ export function TextTimeline({
               {outbox.map((intent) => (
                 <li key={intent.payload.clientMessageId} className="text-message">
                   <span className="text-avatar" aria-hidden="true">
-                    {displayName.slice(0, 1)}
+                    {workspaceInitials(displayName)}
                   </span>
                   <div>
                     <strong>{displayName}</strong>
@@ -222,7 +274,9 @@ export function TextTimeline({
                       ) : (
                         <>
                           <span>Chưa nhận được xác nhận gửi.</span>
-                          <button onClick={() => void send(intent)}>Thử gửi lại</button>
+                          <button disabled={!connected} onClick={() => void send(intent)}>
+                            Thử gửi lại
+                          </button>
                           <button
                             onClick={() => {
                               if (draft.length > 0) {
@@ -265,11 +319,12 @@ export function TextTimeline({
             ref={input}
             id={composerId}
             rows={1}
+            maxLength={4000}
             value={draft}
             disabled={state !== 'ready' || !connected}
             aria-invalid={!!validation}
             aria-describedby={validation ? `${composerId}-validation` : `${composerId}-help`}
-            placeholder="Viết tin nhắn cho nhóm…"
+            placeholder={channelName ? `Nhắn vào #${channelName}…` : 'Viết tin nhắn cho nhóm…'}
             onChange={(event) => {
               setDraft(event.target.value);
               setDraftNotice('');
@@ -286,16 +341,19 @@ export function TextTimeline({
               }
             }}
           />
-          <small className="sr-only" id={`${composerId}-help`}>
-            Ctrl / ⌘ + Enter để gửi. Enter xuống dòng.
-          </small>
           <button
             type="submit"
             aria-label="Gửi tin nhắn"
             disabled={state !== 'ready' || !connected || !draft.trim()}
           >
-            Gửi
+            Gửi tin
           </button>
+        </div>
+        <div className="text-composer-help" id={`${composerId}-help`}>
+          <small>
+            Enter xuống dòng <span>· Ctrl / ⌘ + Enter gửi tin</span>
+          </small>
+          {draft.length > 0 && <small>{draft.length.toLocaleString('vi-VN')} / 4.000</small>}
         </div>
         {draftNotice && (
           <p className="text-draft-notice" role="status">

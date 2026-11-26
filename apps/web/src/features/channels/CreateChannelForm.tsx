@@ -12,6 +12,7 @@ import type {
 import { authApi, sessionKey } from '../auth/session';
 import { ChannelApiError, createChannel } from './channel-api';
 import './create-channel.css';
+import { WorkspaceIcon } from '../workspaces/WorkspaceIcon';
 
 type Attempt = { input: CreateChannelInput; startedAt: number };
 const retryWindowMs = 600_000;
@@ -31,10 +32,12 @@ export function CreateChannelForm({
   workspaceId,
   userId,
   onAccessLost,
+  compact = false,
 }: {
   workspaceId: string;
   userId: string;
   onAccessLost: (message: string) => void;
+  compact?: boolean;
 }) {
   const client = useQueryClient();
   const dialog = useRef<HTMLDialogElement>(null);
@@ -174,7 +177,8 @@ export function CreateChannelForm({
       <button
         ref={trigger}
         type="button"
-        className="auth-primary"
+        className={compact ? 'ws-icon-button ws-small' : 'auth-primary'}
+        aria-label={compact ? (attempt ? 'Kiểm tra yêu cầu tạo kênh' : 'Tạo kênh') : undefined}
         aria-haspopup="dialog"
         onClick={() => {
           if (!attempt) {
@@ -184,7 +188,13 @@ export function CreateChannelForm({
           dialog.current?.showModal();
         }}
       >
-        {attempt ? 'Kiểm tra yêu cầu tạo kênh' : 'Tạo kênh'}
+        {compact ? (
+          <WorkspaceIcon name="plus" />
+        ) : attempt ? (
+          'Kiểm tra yêu cầu tạo kênh'
+        ) : (
+          'Tạo kênh'
+        )}
       </button>
       {created && (
         <p role="status">

@@ -1,189 +1,67 @@
-import type { ChannelSummary, WorkspaceSummary } from '@colearnia/contracts';
 import { Fragment, useEffect, useId, useRef, useState } from 'react';
-import type { RefObject } from 'react';
+import type { ReactNode } from 'react';
+import type { ChannelSummary } from '@colearnia/contracts';
 import type { WorkspaceShellProps } from './shell-contract';
 import { readableSidebarChannels, resolvePanelChannel } from './shell-contract';
+import { WorkspaceIcon } from './WorkspaceIcon';
+import { WorkspaceSearch } from './WorkspaceSearch';
+import { useWorkspaceDrawer, useWorkspaceTheme, workspaceInitials } from './workspace-appearance';
+import './workspace-shell.css';
 
-const channelIconPaths = {
-  hash: <path d="M5 9h14M4 15h14M10 3 8 21M16 3l-2 18" />,
-  lock: (
-    <>
-      <rect x="5" y="10" width="14" height="10" rx="2" />
-      <path d="M8 10V7a4 4 0 0 1 8 0v3" />
-    </>
-  ),
-  phone: (
-    <path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.4 19.4 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 2 .7 2.8a2 2 0 0 1-.5 2.1L8 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.5c.9.3 1.8.6 2.8.7A2 2 0 0 1 22 16.9Z" />
-  ),
-};
+const roleNames = { OWNER: 'Chủ Workspace', ADMIN: 'Quản trị viên', MEMBER: 'Thành viên' };
 
 function ChannelIcon({ channel }: { channel: ChannelSummary }) {
-  const icons = [
-    ...(channel.accessMode === 'PRIVATE' ? (['lock'] as const) : []),
-    channel.type === 'LIVE' ? ('phone' as const) : ('hash' as const),
-  ];
   return (
-    <span className="inline-flex shrink-0 items-center gap-1" aria-hidden="true">
-      {icons.map((icon) => (
-        <svg
-          key={icon}
-          className="size-[18px] shrink-0"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.7"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          data-channel-icon={icon}
-        >
-          {channelIconPaths[icon]}
-        </svg>
-      ))}
+    <span className="ws-channel-icon" aria-hidden="true">
+      {channel.accessMode === 'PRIVATE' && <WorkspaceIcon name="lock" />}
+      <WorkspaceIcon name={channel.type === 'LIVE' ? 'video' : 'hash'} />
     </span>
-  );
-}
-
-function WorkspaceMenu({
-  workspace,
-  onOpenWorkspaceList,
-  triggerRef,
-}: {
-  workspace: WorkspaceSummary;
-  onOpenWorkspaceList: () => void;
-  triggerRef: RefObject<HTMLButtonElement | null> | undefined;
-}) {
-  const [open, setOpen] = useState(false);
-  const container = useRef<HTMLDivElement>(null);
-  const internalTrigger = useRef<HTMLButtonElement>(null);
-  const trigger = triggerRef ?? internalTrigger;
-  const listButton = useRef<HTMLButtonElement>(null);
-  const menuId = useId();
-
-  useEffect(() => {
-    if (!open) return;
-    const document = container.current?.ownerDocument;
-    if (!document) return;
-    const onPointerDown = (event: PointerEvent) => {
-      if (!container.current?.contains(event.target as Node)) setOpen(false);
-    };
-    listButton.current?.focus();
-    document.addEventListener('pointerdown', onPointerDown);
-    return () => {
-      document.removeEventListener('pointerdown', onPointerDown);
-    };
-  }, [open]);
-
-  return (
-    <div
-      className="relative"
-      ref={container}
-      onBlur={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
-      }}
-      onKeyDown={(event) => {
-        if (open && event.key === 'Escape') {
-          event.stopPropagation();
-          setOpen(false);
-          trigger.current?.focus();
-        }
-      }}
-    >
-      <button
-        type="button"
-        className="flex h-16 w-full min-w-0 items-center gap-2.5 border-b border-[color:var(--workspace-border)] px-3.5 text-left hover:bg-[var(--workspace-channel-hover-bg)]"
-        ref={trigger}
-        aria-label={`Mở menu Workspace ${workspace.name}`}
-        aria-expanded={open}
-        aria-controls={open ? menuId : undefined}
-        onClick={() => setOpen(!open)}
-      >
-        <span
-          className="grid size-[34px] shrink-0 place-items-center rounded-lg bg-[var(--workspace-brand-bg)] text-xs font-bold text-[color:var(--workspace-brand-text)]"
-          aria-hidden="true"
-        >
-          C
-        </span>
-        <strong className="min-w-0 flex-1 truncate text-sm">{workspace.name}</strong>
-        <svg
-          aria-hidden="true"
-          className="size-4 shrink-0"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.8"
-        >
-          <path d="m7 10 5 5 5-5" />
-        </svg>
-      </button>
-      {open && (
-        <nav
-          id={menuId}
-          aria-label="Menu Workspace"
-          className="absolute inset-x-2 top-[60px] z-20 grid gap-2 rounded-lg border border-[color:var(--workspace-border)] bg-[var(--workspace-content-bg)] p-3 shadow-lg"
-        >
-          <div className="grid gap-1 border-b border-[color:var(--workspace-border)] pb-3">
-            <p className="text-xs text-[color:var(--workspace-muted)]">Workspace hiện tại</p>
-            <strong className="truncate text-sm">{workspace.name}</strong>
-          </div>
-          <button
-            type="button"
-            className="rounded-md px-2 py-2 text-left text-sm hover:bg-[var(--workspace-channel-hover-bg)]"
-            ref={listButton}
-            onClick={() => {
-              setOpen(false);
-              onOpenWorkspaceList();
-            }}
-          >
-            Danh sách Workspace
-          </button>
-        </nav>
-      )}
-    </div>
   );
 }
 
 function ChannelGroup({
   label,
-  groupId,
   channels,
   selectedId,
   onSelect,
+  actions,
+  live,
 }: {
   label: string;
-  groupId: string;
   channels: readonly ChannelSummary[];
-  selectedId: string | undefined;
+  selectedId?: string | undefined;
   onSelect: (channel: ChannelSummary) => void;
+  actions?: ReactNode;
+  live?: boolean;
 }) {
-  if (channels.length === 0) return null;
-
+  const headingId = useId();
   return (
-    <section className="shrink-0 min-[721px]:mt-3" aria-labelledby={groupId}>
-      <h2
-        className="sr-only px-2 pb-2 text-[10px] font-semibold tracking-wide text-[color:var(--workspace-muted)] min-[721px]:not-sr-only"
-        id={groupId}
-      >
-        {label}
-      </h2>
-      <ul className="flex gap-0.5 min-[721px]:flex-col">
-        {channels.map((channel) => {
-          const selected = channel.id === selectedId;
-          return (
-            <li className="max-w-56 shrink-0 min-[721px]:max-w-none" key={channel.id}>
-              <button
-                type="button"
-                className={`workspace-channel flex h-[34px] w-full items-center gap-[9px] rounded-md px-2.5 text-left text-[13px] ${selected ? 'bg-[var(--workspace-channel-selected-bg)] font-semibold text-[color:var(--workspace-channel-selected-text)]' : 'text-[color:var(--workspace-text)] hover:bg-[var(--workspace-channel-hover-bg)]'}`}
-                title={channel.name}
-                aria-label={`${channel.name} · ${channel.type === 'TEXT' ? 'Kênh trò chuyện' : 'Phòng trực tiếp'}${channel.accessMode === 'PRIVATE' ? ' · Riêng tư' : ''}`}
-                aria-current={selected ? 'page' : undefined}
-                onClick={() => onSelect(channel)}
-              >
-                <ChannelIcon channel={channel} />
-                <span className="min-w-0 truncate">{channel.name}</span>
-              </button>
-            </li>
-          );
-        })}
+    <section className="ws-channel-group" aria-labelledby={headingId}>
+      <div className="ws-section-heading">
+        <h2 id={headingId}>{label}</h2>
+        {actions}
+      </div>
+      <ul>
+        {channels.map((channel) => (
+          <li key={channel.id}>
+            <button
+              type="button"
+              className={live ? 'workspace-channel ws-channel-live' : 'workspace-channel'}
+              title={channel.name}
+              aria-label={
+                channel.name +
+                ' · ' +
+                (live ? 'Phòng trực tiếp' : 'Kênh trò chuyện') +
+                (channel.accessMode === 'PRIVATE' ? ' · Riêng tư' : '')
+              }
+              aria-current={channel.id === selectedId ? 'page' : undefined}
+              onClick={() => onSelect(channel)}
+            >
+              <ChannelIcon channel={channel} />
+              <span className="ws-truncate">{channel.name}</span>
+            </button>
+          </li>
+        ))}
       </ul>
     </section>
   );
@@ -195,6 +73,12 @@ export function WorkspaceShell({
   panel,
   onSelectChannel,
   onOpenWorkspaceList,
+  workspaceChoices,
+  onPickerOpen,
+  user,
+  createChannel,
+  workspaceActions,
+  searchMessages = [],
   workspaceMenuTriggerRef,
   chatPanel,
   retainedChatPanel,
@@ -204,108 +88,507 @@ export function WorkspaceShell({
   sidebarStatus,
   contentOverride,
 }: WorkspaceShellProps) {
-  const readable = readableSidebarChannels(channels, workspace.id);
-  const selected = resolvePanelChannel(channels, workspace.id, panel);
-  const showChat = selected && panel.kind === 'text' && !contentOverride;
-  const textChannels = readable.map(({ channel }) => channel).filter(({ type }) => type === 'TEXT');
-  const liveChannels = readable.map(({ channel }) => channel).filter(({ type }) => type === 'LIVE');
+  const accessible = readableSidebarChannels(channels, workspace.id).map(({ channel }) => channel);
+  const selected = resolvePanelChannel(channels, workspace.id, panel)?.channel;
+  const mobile = useWorkspaceDrawer();
+  const { theme, toggle } = useWorkspaceTheme();
+  const [context, setContext] = useState<'members' | 'channel'>();
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const drawer = useRef<HTMLDialogElement>(null);
+  const focusChannelAfterDrawer = useRef(false);
+  const navigationButton = useRef<HTMLButtonElement>(null);
+  const workspacePicker = useRef<HTMLDialogElement>(null);
+  const options = useRef<HTMLDialogElement>(null);
+  const dm = useRef<HTMLDialogElement>(null);
+  const search = useRef<HTMLDialogElement>(null);
+  const searchOrigin = useRef<HTMLElement | null>(null);
+  const searchButton = useRef<HTMLButtonElement>(null);
+  const channelInfo = useRef<HTMLButtonElement>(null);
+  const membersButton = useRef<HTMLButtonElement>(null);
+  const contextClose = useRef<HTMLButtonElement>(null);
+  const heading = useRef<HTMLHeadingElement>(null);
+  const navigationId = useId();
+  const contextId = useId();
+
+  function showContext(next: 'members' | 'channel') {
+    if (context === next) {
+      setContext(undefined);
+      return;
+    }
+    setContext(next);
+    requestAnimationFrame(() => contextClose.current?.focus());
+  }
+  function closeContext() {
+    const trigger = context === 'members' ? membersButton : channelInfo;
+    setContext(undefined);
+    trigger.current?.focus();
+  }
+  function select(channel: ChannelSummary) {
+    focusChannelAfterDrawer.current = drawer.current?.open === true;
+    drawer.current?.close();
+    setContext(undefined);
+    onSelectChannel(channel);
+  }
+  useEffect(() => {
+    function shortcut(event: KeyboardEvent) {
+      if (
+        event.key.toLowerCase() !== 'k' ||
+        (!event.ctrlKey && !event.metaKey) ||
+        event.isComposing ||
+        event.defaultPrevented
+      )
+        return;
+      if (document.querySelector('dialog[open]') || searchButton.current?.closest('[inert]'))
+        return;
+      event.preventDefault();
+      searchOrigin.current =
+        document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      search.current?.showModal();
+    }
+    window.addEventListener('keydown', shortcut);
+    return () => window.removeEventListener('keydown', shortcut);
+  }, []);
+
+  const sidebar = (
+    <>
+      <div className="ws-brand">
+        <button
+          type="button"
+          onClick={() => {
+            drawer.current?.close();
+            onOpenWorkspaceList();
+          }}
+        >
+          <img
+            className="ws-brand-mark"
+            src={new URL('./workspace-mark.svg', import.meta.url).href}
+            width="32"
+            height="32"
+            alt=""
+          />{' '}
+          CoLearnia
+        </button>
+        {mobile && (
+          <button
+            aria-label="Đóng danh sách kênh"
+            type="button"
+            className="ws-icon-button"
+            onClick={() => drawer.current?.close()}
+          >
+            <WorkspaceIcon name="close" />
+          </button>
+        )}
+      </div>
+      <div className="ws-switcher">
+        <button
+          type="button"
+          className="ws-workspace-button"
+          ref={workspaceMenuTriggerRef}
+          aria-label={'Mở menu Workspace ' + workspace.name}
+          aria-haspopup="dialog"
+          onClick={() => {
+            onPickerOpen?.();
+            workspacePicker.current?.showModal();
+          }}
+        >
+          <span className="ws-monogram" aria-hidden="true">
+            {workspaceInitials(workspace.name)}
+          </span>
+          <strong className="ws-truncate">{workspace.name}</strong>
+          <WorkspaceIcon name="chevron" />
+        </button>
+        <button
+          type="button"
+          className="ws-icon-button"
+          aria-label={'Tùy chọn Workspace ' + workspace.name}
+          aria-haspopup="dialog"
+          onClick={() => options.current?.showModal()}
+        >
+          <WorkspaceIcon name="more" />
+        </button>
+      </div>
+      <nav className="ws-channel-navigation" aria-label="Danh sách kênh">
+        <ChannelGroup
+          label="Kênh"
+          channels={accessible.filter(({ type }) => type === 'TEXT')}
+          actions={createChannel}
+          selectedId={selected?.id}
+          onSelect={select}
+        />
+        <ChannelGroup
+          label="Họp trực tiếp"
+          channels={accessible.filter(({ type }) => type === 'LIVE')}
+          selectedId={selected?.id}
+          live
+          onSelect={select}
+        />
+        <section className="ws-channel-group" aria-label="Trò chuyện riêng">
+          <div className="ws-section-heading">
+            <h2>Trò chuyện</h2>
+            <button
+              type="button"
+              className="ws-icon-button ws-small"
+              aria-label="Bắt đầu trò chuyện riêng"
+              aria-haspopup="dialog"
+              onClick={() => dm.current?.showModal()}
+            >
+              <WorkspaceIcon name="plus" />
+            </button>
+          </div>
+          <p className="ws-section-empty">Trò chuyện riêng chưa khả dụng.</p>
+        </section>
+        {sidebarControls}
+        {sidebarStatus}
+      </nav>
+      <div className="ws-account">
+        {user && (
+          <div className="ws-account-identity">
+            <span className="ws-monogram ws-avatar" aria-hidden="true">
+              {workspaceInitials(user.displayName)}
+            </span>
+            <span>
+              <strong className="ws-truncate">{user.displayName}</strong>
+              <small>{roleNames[user.role]}</small>
+            </span>
+          </div>
+        )}
+        <button
+          type="button"
+          className="ws-icon-button"
+          aria-pressed={theme === 'dark'}
+          aria-label={theme === 'dark' ? 'Chuyển sang chế độ sáng' : 'Chuyển sang chế độ tối'}
+          onClick={toggle}
+        >
+          <WorkspaceIcon name={theme === 'dark' ? 'sun' : 'moon'} />
+        </button>
+      </div>
+    </>
+  );
 
   return (
     <div
-      className={`workspace-shell @container/room-layout grid min-w-0 grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] bg-[var(--workspace-content-bg)] text-[color:var(--workspace-text)] min-[721px]:grid-cols-[256px_minmax(0,1fr)] min-[721px]:grid-rows-1 ${showChat ? 'h-dvh overflow-hidden min-[721px]:grid-rows-[minmax(0,1fr)]' : 'min-h-dvh'}`}
+      className="workspace-shell ws-v8 @container/room-layout"
+      data-workspace-theme={theme}
       data-testid="workspace-shell"
     >
-      <aside
-        className={`workspace-sidebar min-w-0 border-b border-[color:var(--workspace-border)] bg-[var(--workspace-sidebar-bg)] min-[721px]:border-r min-[721px]:border-b-0 ${showChat ? 'max-h-[42dvh] overflow-y-auto min-[721px]:max-h-none' : ''}`}
-        aria-label={`Kênh của ${workspace.name}`}
-      >
-        <WorkspaceMenu
-          workspace={workspace}
-          onOpenWorkspaceList={onOpenWorkspaceList}
-          triggerRef={workspaceMenuTriggerRef}
-        />
-
-        {sidebarControls}
-        {readable.length === 0 && !sidebarStatus ? (
-          <p className="px-4 py-6 text-sm text-[color:var(--workspace-muted)]">
-            Bạn chưa có kênh nào có thể truy cập.
-          </p>
-        ) : (
-          <nav
-            className="flex gap-3 overflow-x-auto px-2 py-2.5 min-[721px]:block"
-            aria-label="Danh sách kênh"
-          >
-            <ChannelGroup
-              label="KÊNH TRÒ CHUYỆN"
-              groupId="workspace-text-channels"
-              channels={textChannels}
-              selectedId={selected?.channel.id}
-              onSelect={onSelectChannel}
-            />
-            <ChannelGroup
-              label="PHÒNG TRỰC TIẾP"
-              groupId="workspace-live-channels"
-              channels={liveChannels}
-              selectedId={selected?.channel.id}
-              onSelect={onSelectChannel}
-            />
-          </nav>
-        )}
-        {sidebarStatus}
-      </aside>
-
-      <main
-        className={`workspace-main flex min-w-0 flex-col bg-[var(--workspace-content-bg)] ${showChat ? 'min-h-0' : ''}`}
-      >
-        <header className="workspace-topbar flex min-h-16 min-w-0 shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-[color:var(--workspace-border)] px-5 py-3">
-          <div className="flex min-w-0 flex-1 items-center gap-2.5">
-            {selected && <ChannelIcon channel={selected.channel} />}
-            <div className="min-w-0">
-              <h1 className="m-0 truncate text-[15px] leading-5 font-semibold tracking-normal">
-                {selected?.channel.name ?? workspace.name}
-              </h1>
-              <p className="truncate text-[11px] text-[color:var(--workspace-muted)]">
-                {selected
-                  ? selected.channel.type === 'TEXT'
-                    ? 'Kênh trò chuyện'
-                    : 'Phòng trực tiếp'
-                  : 'Workspace'}
-              </p>
-            </div>
-          </div>
-          <div className="min-w-0 max-w-full">{persistentCallControls}</div>
-        </header>
-
-        <section
-          className={`workspace-panel-host flex min-w-0 flex-1 flex-col ${showChat ? 'min-h-0' : ''}`}
-          aria-live="polite"
+      {mobile ? (
+        <dialog
+          id={navigationId}
+          ref={drawer}
+          aria-label={'Kênh của ' + workspace.name}
+          className="workspace-sidebar ws-drawer"
+          onClose={() => {
+            setDrawerOpen(false);
+            const focusTarget = focusChannelAfterDrawer.current ? heading : navigationButton;
+            focusChannelAfterDrawer.current = false;
+            focusTarget.current?.focus();
+          }}
+          onClick={(event) => {
+            if (event.target === event.currentTarget) {
+              const { left, right } = event.currentTarget.getBoundingClientRect();
+              if (event.clientX < left || event.clientX > right) event.currentTarget.close();
+            }
+          }}
         >
-          {contentOverride ??
-            (panel.kind === 'empty' ? (
-              <div className="grid min-h-80 flex-1 content-center gap-2 px-5 py-6 text-center">
-                <h2 className="text-lg font-semibold">Chọn một kênh để bắt đầu</h2>
-                <p className="text-sm text-[color:var(--workspace-muted)]">
-                  Chat và phòng học trực tiếp sẽ mở tại đây.
-                </p>
+          {sidebar}
+        </dialog>
+      ) : (
+        <aside
+          id={navigationId}
+          className="workspace-sidebar"
+          aria-label={'Kênh của ' + workspace.name}
+        >
+          {sidebar}
+        </aside>
+      )}
+      <main
+        className="workspace-main"
+        onKeyDown={(event) => {
+          if (context && event.key === 'Escape') {
+            event.stopPropagation();
+            closeContext();
+          }
+        }}
+      >
+        <header className="workspace-topbar">
+          {mobile && (
+            <button
+              type="button"
+              className="ws-icon-button"
+              aria-label="Mở danh sách kênh và trò chuyện"
+              ref={navigationButton}
+              aria-expanded={drawerOpen}
+              aria-controls={navigationId}
+              onClick={() => {
+                drawer.current?.showModal();
+                setDrawerOpen(true);
+              }}
+            >
+              <WorkspaceIcon name="menu" />
+            </button>
+          )}
+          {selected && (
+            <span className="ws-channel-mark">
+              <ChannelIcon channel={selected} />
+            </span>
+          )}
+          <div className="ws-header-copy">
+            <h1 ref={heading} tabIndex={-1}>
+              {selected ? (
+                <button
+                  className="ws-channel-title"
+                  ref={channelInfo}
+                  type="button"
+                  aria-expanded={context === 'channel'}
+                  aria-controls={context ? contextId : undefined}
+                  onClick={() => showContext('channel')}
+                >
+                  <span className="ws-truncate">{selected.name}</span>
+                  <WorkspaceIcon name="chevron" />
+                </button>
+              ) : (
+                <span className="ws-truncate">{workspace.name}</span>
+              )}
+            </h1>
+            {selected && <p>{selected.accessMode === 'PRIVATE' ? 'Riêng tư' : 'Toàn Workspace'}</p>}
+          </div>
+          <button
+            type="button"
+            className="ws-icon-button"
+            aria-label="Tìm tin nhắn và kênh"
+            title="Tìm kiếm (Ctrl/⌘ + K)"
+            aria-keyshortcuts="Control+K Meta+K"
+            aria-haspopup="dialog"
+            ref={searchButton}
+            onClick={() => {
+              searchOrigin.current = searchButton.current;
+              search.current?.showModal();
+            }}
+          >
+            <WorkspaceIcon name="search" />
+          </button>
+          <button
+            type="button"
+            className="ws-icon-button ws-members-button"
+            aria-label="Thành viên Workspace"
+            aria-expanded={context === 'members'}
+            aria-controls={context ? contextId : undefined}
+            ref={membersButton}
+            onClick={() => showContext('members')}
+          >
+            <WorkspaceIcon name="people" />
+            <span>Thành viên</span>
+          </button>
+          {!user && persistentCallControls}
+        </header>
+        <div className="ws-content" data-context-open={Boolean(context)}>
+          <section className="workspace-panel-host" aria-label="Nội dung kênh">
+            {contentOverride ??
+              (panel.kind === 'empty' ? (
+                <div className="ws-empty">
+                  <span className="ws-monogram" aria-hidden="true">
+                    <WorkspaceIcon name="chat" />
+                  </span>
+                  <h2>Chọn một kênh để bắt đầu</h2>
+                  <p>Tin nhắn và phòng học trực tiếp sẽ mở tại đây.</p>
+                </div>
+              ) : !selected ? (
+                <div className="ws-empty" role="status">
+                  <h2>Kênh không còn khả dụng</h2>
+                  <p>Quyền truy cập hoặc dữ liệu kênh đã thay đổi.</p>
+                </div>
+              ) : (
+                <Fragment key={workspace.id + ':' + selected.id}>
+                  {panel.kind === 'text' ? (retainedChatPanel ? null : chatPanel) : callPanel}
+                </Fragment>
+              ))}
+            {retainedChatPanel}
+          </section>
+          {context && (
+            <aside className="ws-context" aria-label="Thông tin Workspace và kênh" id={contextId}>
+              <div className="ws-dialog-heading">
+                <h2>Thông tin nhóm</h2>
+                <button
+                  className="ws-icon-button"
+                  ref={contextClose}
+                  type="button"
+                  aria-label="Đóng bảng thông tin"
+                  onClick={closeContext}
+                >
+                  <WorkspaceIcon name="close" />
+                </button>
               </div>
-            ) : !selected ? (
-              <div
-                className="grid min-h-80 flex-1 content-center gap-2 px-5 py-6 text-center"
-                role="status"
-              >
-                <h2 className="text-lg font-semibold">Kênh không còn khả dụng</h2>
-                <p className="text-sm text-[color:var(--workspace-muted)]">
-                  Quyền truy cập hoặc dữ liệu kênh đã thay đổi. Nội dung cũ đã được đóng.
-                </p>
+              <div className="ws-context-tabs" aria-label="Chọn nội dung">
+                <button
+                  type="button"
+                  aria-pressed={context === 'members'}
+                  onClick={() => setContext('members')}
+                >
+                  Thành viên
+                </button>
+                <button
+                  type="button"
+                  disabled={!selected}
+                  aria-pressed={context === 'channel'}
+                  onClick={() => setContext('channel')}
+                >
+                  Thông tin kênh
+                </button>
               </div>
-            ) : (
-              <Fragment key={`${workspace.id}:${selected.channel.id}`}>
-                {panel.kind === 'text' ? (retainedChatPanel ? null : chatPanel) : callPanel}
-              </Fragment>
-            ))}
-          {retainedChatPanel}
-        </section>
+              {context === 'channel' && selected ? (
+                <div className="ws-context-body">
+                  <p className="ws-muted">
+                    {selected.type === 'TEXT' ? 'Kênh chữ' : 'Họp trực tiếp'}
+                  </p>
+                  <h3>{selected.name}</h3>
+                  <p>
+                    {selected.accessMode === 'PRIVATE'
+                      ? 'Chỉ thành viên được cấp quyền truy cập.'
+                      : 'Dành cho thành viên Workspace.'}
+                  </p>
+                </div>
+              ) : (
+                <div className="ws-context-body">
+                  {user && (
+                    <div className="ws-account-identity">
+                      <span className="ws-monogram ws-avatar" aria-hidden="true">
+                        {workspaceInitials(user.displayName)}
+                      </span>
+                      <span>
+                        <strong>{user.displayName} · Bạn</strong>
+                        <small>{roleNames[user.role]}</small>
+                      </span>
+                    </div>
+                  )}
+                  <p className="ws-muted">Danh sách thành viên Workspace chưa khả dụng.</p>
+                </div>
+              )}
+            </aside>
+          )}
+        </div>
       </main>
+      <dialog ref={workspacePicker} className="ws-dialog ws-picker" aria-label="Menu Workspace">
+        <div className="ws-dialog-heading">
+          <h2>Chuyển Workspace</h2>
+          <button
+            className="ws-icon-button"
+            type="button"
+            aria-label="Đóng bộ chọn Workspace"
+            onClick={() => workspacePicker.current?.close()}
+          >
+            <WorkspaceIcon name="close" />
+          </button>
+        </div>
+        {workspaceChoices?.pending && (
+          <p role="status" className="ws-muted">
+            Đang tải Workspace…
+          </p>
+        )}
+        {workspaceChoices?.failed && (
+          <button type="button" className="ws-action" onClick={workspaceChoices.onRetry}>
+            Thử tải lại
+          </button>
+        )}
+        {workspaceChoices && !workspaceChoices.failed && (
+          <ul className="ws-picker-list">
+            {workspaceChoices.items.map((item) => (
+              <li key={item.id}>
+                <button
+                  type="button"
+                  aria-current={item.id === workspace.id ? 'true' : undefined}
+                  onClick={() => {
+                    workspacePicker.current?.close();
+                    drawer.current?.close();
+                    if (item.id !== workspace.id) workspaceChoices.onChoose(item);
+                  }}
+                >
+                  <span className="ws-monogram" aria-hidden="true">
+                    {workspaceInitials(item.name)}
+                  </span>
+                  <span className="ws-truncate">{item.name}</span>
+                  {item.id === workspace.id && <WorkspaceIcon name="check" />}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        {workspaceChoices?.onMore && (
+          <button
+            className="ws-action"
+            type="button"
+            disabled={workspaceChoices.loadingMore}
+            onClick={workspaceChoices.onMore}
+          >
+            Xem thêm
+          </button>
+        )}
+        <button
+          type="button"
+          className="ws-action"
+          onClick={() => {
+            workspacePicker.current?.close();
+            drawer.current?.close();
+            onOpenWorkspaceList();
+          }}
+        >
+          Danh sách Workspace
+        </button>
+      </dialog>
+      <dialog ref={options} className="ws-dialog ws-options" aria-label="Tùy chọn Workspace">
+        <div className="ws-dialog-heading">
+          <h2>{workspace.name}</h2>
+          <button
+            type="button"
+            className="ws-icon-button"
+            aria-label="Đóng tùy chọn Workspace"
+            onClick={() => options.current?.close()}
+          >
+            <WorkspaceIcon name="close" />
+          </button>
+        </div>
+        {user && <p className="ws-muted">{roleNames[user.role]}</p>}
+        <div
+          className="ws-option-actions"
+          onClick={(event) => {
+            if (
+              event.target instanceof Element &&
+              event.target.closest('button[data-workspace-option]')
+            ) {
+              options.current?.close();
+              drawer.current?.close();
+            }
+          }}
+        >
+          {workspaceActions}
+        </div>
+        {user && persistentCallControls}
+      </dialog>
+      <dialog ref={dm} className="ws-dialog" aria-label="Bắt đầu trò chuyện riêng">
+        <div className="ws-dialog-heading">
+          <h2>Bắt đầu trò chuyện riêng</h2>
+          <button
+            type="button"
+            className="ws-icon-button"
+            aria-label="Đóng trò chuyện riêng"
+            onClick={() => dm.current?.close()}
+          >
+            <WorkspaceIcon name="close" />
+          </button>
+        </div>
+        <p className="ws-muted" role="status">
+          Chưa thể chọn người nhận hoặc gửi tin nhắn riêng trong Workspace này.
+        </p>
+      </dialog>
+      <WorkspaceSearch
+        dialog={search}
+        channels={accessible}
+        messages={searchMessages}
+        onSelect={select}
+        onClose={() => {
+          if (searchOrigin.current?.isConnected) searchOrigin.current.focus();
+          else searchButton.current?.focus();
+        }}
+      />
     </div>
   );
 }

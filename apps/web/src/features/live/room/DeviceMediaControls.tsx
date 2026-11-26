@@ -4,7 +4,7 @@ import type { DeviceKind } from '../lobby/lobbyPreview';
 
 const labels = { microphone: 'mic', camera: 'camera' };
 
-function DeviceIcon({ kind }: { kind: DeviceKind }) {
+function DeviceIcon({ kind, muted }: { kind: DeviceKind; muted: boolean }) {
   return (
     <svg
       aria-hidden="true"
@@ -27,11 +27,20 @@ function DeviceIcon({ kind }: { kind: DeviceKind }) {
           <path d="m16 10 5-3v10l-5-3" />
         </>
       )}
+      {muted && <path d="M3 3l18 18" />}
     </svg>
   );
 }
 
-function DeviceControl({ devices, kind }: { devices: DeviceMedia; kind: DeviceKind }) {
+function DeviceControl({
+  devices,
+  kind,
+  compact,
+}: {
+  devices: DeviceMedia;
+  kind: DeviceKind;
+  compact: boolean;
+}) {
   const snapshot = useSyncExternalStore(
     devices.subscribe,
     devices.getSnapshot,
@@ -72,23 +81,33 @@ function DeviceControl({ devices, kind }: { devices: DeviceMedia; kind: DeviceKi
           else void devices.start(kind);
         }}
       >
-        <DeviceIcon kind={kind} />
-        <span>
+        <DeviceIcon kind={kind} muted={compact && phase === 'off'} />
+        <span className={compact ? 'sr-only' : undefined}>
           {statusLabel} {phase === 'on' ? 'bật' : phase === 'starting' ? 'đang bật' : 'tắt'}
         </span>
       </button>
-      <span id={helpId} role="status" className="text-sm empty:sr-only">
+      <span
+        id={helpId}
+        role="status"
+        className={compact && !error ? 'sr-only' : 'text-sm empty:sr-only'}
+      >
         {help}
       </span>
     </div>
   );
 }
 
-export function DeviceMediaControls({ devices }: { devices: DeviceMedia }) {
+export function DeviceMediaControls({
+  devices,
+  compact = false,
+}: {
+  devices: DeviceMedia;
+  compact?: boolean;
+}) {
   return (
     <>
-      <DeviceControl devices={devices} kind="microphone" />
-      <DeviceControl devices={devices} kind="camera" />
+      <DeviceControl devices={devices} kind="microphone" compact={compact} />
+      <DeviceControl devices={devices} kind="camera" compact={compact} />
     </>
   );
 }

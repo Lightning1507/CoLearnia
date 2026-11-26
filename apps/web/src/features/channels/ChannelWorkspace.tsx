@@ -6,6 +6,7 @@ import { useMainCall } from '../live/runtime/mainCallContext';
 import type {
   AuthenticatedData,
   ChannelSummary,
+  TextHistoryMessage,
   WorkspaceRole,
   WorkspaceSummary,
 } from '@colearnia/contracts';
@@ -17,6 +18,8 @@ import { ChannelApiError } from './channel-api';
 import { channelListOptions } from './channel-list-query';
 import './channel-list.css';
 import { TextChannel } from '../text/TextChannel';
+import { workspaceListOptions } from '../workspaces/workspace-api';
+import { useTextMemory } from '../text/text-memory';
 
 function message(error: unknown) {
   if (error instanceof ChannelApiError) {
@@ -48,10 +51,21 @@ export function ChannelWorkspace({
   const location = useLocation();
   const { channelId } = useParams();
   const [manage, setManage] = useState(false);
+  const [pickerOpened, setPickerOpened] = useState(false);
+  const picker = useInfiniteQuery({ ...workspaceListOptions(userId), enabled: pickerOpened });
+  const [searchProjection, setSearchProjection] = useState<{
+    channelId: string;
+    messages: readonly TextHistoryMessage[];
+  }>();
+  const textMemory = useTextMemory();
   const [recentText, setRecentText] = useState<string[]>([]);
   const [textAccessNotice, setTextAccessNotice] = useState('');
   const withdrawText = useCallback(
     (revokedChannelId: string) => {
+      textMemory?.forget(workspace.id, revokedChannelId);
+      setSearchProjection((current) =>
+        current?.channelId === revokedChannelId ? undefined : current,
+      );
       setRecentText((ids) => ids.filter((id) => id !== revokedChannelId));
       setTextAccessNotice(
         'Quyền truy cập chat đã thay đổi. Nội dung kênh đã được xóa khỏi bộ nhớ.',
@@ -65,7 +79,7 @@ export function ChannelWorkspace({
       }
       void client.invalidateQueries({ queryKey: sessionKey });
     },
-    [channelId, client, userId, workspace.id, expiresAt, navigate],
+    [channelId, client, userId, workspace.id, expiresAt, navigate, textMemory],
   );
   const notified = useRef<unknown>(null);
   const canManage = workspace.role === 'OWNER' || workspace.role === 'ADMIN';
@@ -92,8 +106,11 @@ export function ChannelWorkspace({
     if (current?.user.id !== userId || current.expiresAt !== expiresAt) return;
     notified.current = failure;
     if (failure.status === 401) client.setQueryData(sessionKey, null);
-    else onAccessLost(message(failure));
-  }, [failure, client, userId, expiresAt, workspace.id, onAccessLost]);
+    else {
+      textMemory?.forget(workspace.id);
+      onAccessLost(message(failure));
+    }
+  }, [failure, client, userId, expiresAt, workspace.id, onAccessLost, textMemory]);
 
   // A failed permission refresh also withdraws any previously rendered projection.
   const channels = content.isError
@@ -249,6 +266,30 @@ export function ChannelWorkspace({
       panel={manage && canManage ? { kind: 'empty' } : panel}
       onSelectChannel={select}
       onOpenWorkspaceList={() => navigate('/workspaces')}
+      onPickerOpen={() => setPickerOpened(true)}
+      workspaceChoices={{
+        items: [
+          ...new Map(
+            (picker.data?.pages ?? []).flatMap((page) =>
+              page.items.map((item) => [item.id, item] as const),
+            ),
+          ).values(),
+        ],
+        pending: picker.isPending,
+        failed: picker.isError,
+        loadingMore: picker.isFetchingNextPage,
+        ...(picker.hasNextPage && { onMore: () => void picker.fetchNextPage() }),
+        onRetry: () => void picker.refetch(),
+        onChoose: (item) => navigate(`/workspaces/${item.id}`),
+      }}
+      {...(session?.user.id === userId && {
+        user: { displayName: session.user.displayName, role: workspace.role },
+      })}
+      searchMessages={
+        !manage && selectedTextId && searchProjection?.channelId === selectedTextId
+          ? searchProjection.messages
+          : []
+      }
       chatPanel={selectedPanel}
       retainedChatPanel={
         hasSession && retainedText.length > 0
@@ -262,10 +303,13 @@ export function ChannelWorkspace({
                 >
                   <TextChannel
                     channelId={id}
+                    workspaceId={workspace.id}
+                    channelName={channels.find((channel) => channel.id === id)?.name}
                     session={session}
                     selected={visible}
                     onAccessLost={withdrawText}
                     onSubscriptionBusy={releaseHiddenText}
+                    onSearchProjection={setSearchProjection}
                   />
                 </div>
               );
@@ -274,9 +318,21 @@ export function ChannelWorkspace({
       }
       callPanel={selectedPanel}
       persistentCallControls={account}
-      sidebarControls={
-        <div className="channel-sidebar-actions">
+      createChannel={
+        canManage ? (
+          <CreateChannelForm
+            compact
+            workspaceId={workspace.id}
+            userId={userId}
+            onAccessLost={onAccessLost}
+          />
+        ) : undefined
+      }
+      workspaceActions={
+        <>
           <button
+            type="button"
+            data-workspace-option
             className="channel-list-button"
             onClick={refresh}
             disabled={content.isFetching || management.isFetching}
@@ -284,22 +340,17 @@ export function ChannelWorkspace({
             Làm mới danh sách
           </button>
           {canManage && (
-            <>
-              <button
-                className="channel-list-button"
-                aria-pressed={manage}
-                onClick={() => setManage(!manage)}
-              >
-                Quản lý kênh
-              </button>
-              <CreateChannelForm
-                workspaceId={workspace.id}
-                userId={userId}
-                onAccessLost={onAccessLost}
-              />
-            </>
+            <button
+              type="button"
+              data-workspace-option
+              className="channel-list-button"
+              aria-pressed={manage}
+              onClick={() => setManage(!manage)}
+            >
+              Quản lý kênh
+            </button>
           )}
-        </div>
+        </>
       }
       sidebarStatus={
         <div className="channel-sidebar-status">
