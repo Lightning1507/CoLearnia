@@ -169,8 +169,19 @@ function MainCallHost({
     ) : null;
   const target = state.target;
   if (!target) return null;
+  const joined = call.canResume();
   const host = state.projection?.viewer.role === 'HOST';
   const leaveLabel = host ? 'Kết thúc phiên' : 'Rời cuộc họp';
+  function requestDeparture() {
+    if (!call.canResume()) {
+      call.cancel();
+      return;
+    }
+    const current = call.getSnapshot().projection;
+    if (!current) return;
+    setDepartureRole(current.viewer.role === 'HOST' ? 'HOST' : 'MEMBER');
+    departure.current?.showModal();
+  }
   const renderDock = (content: ReactNode) => (dock ? createPortal(content, dock) : content);
   if (!state.expanded && state.cleanupPending)
     return renderDock(
@@ -191,35 +202,92 @@ function MainCallHost({
         )}
       </aside>,
     );
+  const departureDialog = joined && (
+    <dialog
+      ref={departure}
+      className="live-v11 meeting-departure"
+      data-workspace-theme={theme}
+      aria-label={departureRole === 'HOST' ? 'Kết thúc phiên' : 'Rời cuộc họp'}
+    >
+      <h2>{departureRole === 'HOST' ? 'Kết thúc phiên cho mọi người?' : 'Rời cuộc họp?'}</h2>
+      <p>
+        {departureRole === 'HOST'
+          ? 'Mọi người sẽ rời cuộc gọi. Kênh vẫn được giữ.'
+          : 'Các thành viên khác vẫn có thể tiếp tục cuộc gọi.'}
+      </p>
+      {departureRole && (!state.projection || departureRole !== (host ? 'HOST' : 'MEMBER')) && (
+        <p role="status">Trạng thái cuộc họp vừa thay đổi. Đóng hộp thoại và thử lại.</p>
+      )}
+      <div>
+        <button
+          type="button"
+          autoFocus
+          className="auth-secondary"
+          onClick={() => departure.current?.close()}
+        >
+          Ở lại
+        </button>
+        <button
+          type="button"
+          className="auth-secondary meeting-confirm-leave"
+          disabled={
+            !departureRole || !state.projection || departureRole !== (host ? 'HOST' : 'MEMBER')
+          }
+          onClick={() => {
+            const current = call.getSnapshot().projection;
+            if (!current || departureRole !== (current.viewer.role === 'HOST' ? 'HOST' : 'MEMBER'))
+              return;
+            departure.current?.close();
+            void call.leave();
+          }}
+        >
+          {departureRole === 'HOST' ? 'Kết thúc phiên' : 'Rời cuộc họp'}
+        </button>
+      </div>
+    </dialog>
+  );
   if (!state.expanded)
-    return renderDock(
-      <aside className="main-call-strip" data-workspace-theme={theme} aria-label="Cuộc gọi đang mở">
-        <button
-          type="button"
-          className="main-call-return"
-          aria-label={'Về cuộc gọi ' + target.channelName}
-          onClick={showCall}
-        >
-          <WorkspaceIcon name="video" />
-          <span>
-            <strong>{target.channelName}</strong>
-            <small>{state.phase === 'active' ? 'Đang trong cuộc gọi' : 'Cuộc gọi cần xử lý'}</small>
-          </span>
-          <WorkspaceIcon name="chevron" />
-        </button>
-        {state.phase === 'active' && state.resources && (
-          <div className="main-call-devices">
-            <DeviceMediaControls devices={state.resources.devices} compact />
-          </div>
+    return (
+      <>
+        {renderDock(
+          <aside
+            className="main-call-strip"
+            data-workspace-theme={theme}
+            aria-label="Cuộc gọi đang mở"
+          >
+            <button
+              type="button"
+              className="main-call-return"
+              aria-label={'Về cuộc gọi ' + target.channelName}
+              onClick={showCall}
+            >
+              <WorkspaceIcon name="video" />
+              <span>
+                <strong>{target.channelName}</strong>
+                <small>
+                  {state.phase === 'active' ? 'Đang trong cuộc gọi' : 'Cuộc gọi cần xử lý'}
+                </small>
+              </span>
+              <WorkspaceIcon name="chevron" />
+            </button>
+            {state.phase === 'active' && state.resources && (
+              <div className="main-call-devices">
+                <DeviceMediaControls devices={state.resources.devices} compact />
+              </div>
+            )}
+            <button
+              type="button"
+              className="auth-secondary main-call-leave"
+              aria-haspopup={joined ? 'dialog' : undefined}
+              disabled={joined && !state.projection}
+              onClick={requestDeparture}
+            >
+              {joined ? leaveLabel : 'Hủy tham gia'}
+            </button>
+          </aside>,
         )}
-        <button
-          type="button"
-          className="auth-secondary main-call-leave"
-          onClick={() => call.cancel()}
-        >
-          {state.phase === 'joining' || state.phase === 'lobby' ? 'Hủy tham gia' : 'Rời'}
-        </button>
-      </aside>,
+        {departureDialog}
+      </>
     );
   const closePanel = () => {
     setPanel(undefined);
@@ -346,10 +414,7 @@ function MainCallHost({
                 title={leaveLabel}
                 aria-haspopup="dialog"
                 disabled={!state.projection}
-                onClick={() => {
-                  setDepartureRole(host ? 'HOST' : 'MEMBER');
-                  departure.current?.showModal();
-                }}
+                onClick={requestDeparture}
               >
                 <WorkspaceIcon name="phoneOff" />
               </button>
@@ -409,8 +474,14 @@ function MainCallHost({
             </button>
           )}
           {!state.cleanupPending && (
-            <button type="button" className="auth-secondary" onClick={() => call.cancel()}>
-              Hủy và về Workspace
+            <button
+              type="button"
+              className="auth-secondary"
+              aria-haspopup={joined ? 'dialog' : undefined}
+              disabled={joined && !state.projection}
+              onClick={requestDeparture}
+            >
+              {joined ? leaveLabel : 'Hủy và về Workspace'}
             </button>
           )}
           <button type="button" className="auth-secondary" onClick={onReturnToWorkspace}>
@@ -418,50 +489,7 @@ function MainCallHost({
           </button>
         </section>
       )}
-      {state.handle && state.resources && (
-        <dialog
-          ref={departure}
-          className="meeting-departure"
-          aria-label={departureRole === 'HOST' ? 'Kết thúc phiên' : 'Rời cuộc họp'}
-        >
-          <h2>{departureRole === 'HOST' ? 'Kết thúc phiên cho mọi người?' : 'Rời cuộc họp?'}</h2>
-          <p>
-            {departureRole === 'HOST'
-              ? 'Mọi người sẽ rời cuộc gọi. Kênh vẫn được giữ.'
-              : 'Các thành viên khác vẫn có thể tiếp tục cuộc gọi.'}
-          </p>
-          {state.projection && departureRole !== (host ? 'HOST' : 'MEMBER') && (
-            <p role="status">Vai trò trong phòng vừa thay đổi. Đóng hộp thoại và thử lại.</p>
-          )}
-          <div>
-            <button
-              type="button"
-              autoFocus
-              className="auth-secondary"
-              onClick={() => departure.current?.close()}
-            >
-              Ở lại
-            </button>
-            <button
-              type="button"
-              className="auth-secondary meeting-confirm-leave"
-              disabled={!state.projection || departureRole !== (host ? 'HOST' : 'MEMBER')}
-              onClick={() => {
-                const current = call.getSnapshot().projection;
-                if (
-                  !current ||
-                  departureRole !== (current.viewer.role === 'HOST' ? 'HOST' : 'MEMBER')
-                )
-                  return;
-                departure.current?.close();
-                void call.leave();
-              }}
-            >
-              {departureRole === 'HOST' ? 'Kết thúc phiên' : 'Rời cuộc họp'}
-            </button>
-          </div>
-        </dialog>
-      )}
+      {departureDialog}
       {state.handle && notice && (
         <p role="alert" className="main-call-notice">
           {notice}
