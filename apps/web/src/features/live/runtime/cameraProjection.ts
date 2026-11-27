@@ -14,8 +14,13 @@ export type CameraSnapshot = Readonly<{
 
 export const emptyCameraSnapshot: CameraSnapshot = { synchronized: false, cameras: [] };
 
-export function cameraStatus(camera: CameraView, synchronized: boolean, playing: boolean) {
+export function cameraStatus(
+  camera: CameraView | undefined,
+  synchronized: boolean,
+  playing: boolean,
+) {
   if (!synchronized) return 'Đang đồng bộ camera';
+  if (!camera) return 'Camera tắt';
   if (camera.source.publicationState === 'PAUSED') return 'Camera tạm dừng';
   if (camera.source.publicationState === 'SWITCHING') return 'Đang chuyển camera';
   if (

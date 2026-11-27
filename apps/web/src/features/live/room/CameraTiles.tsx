@@ -178,12 +178,16 @@ export function CameraTiles({
 function MeetingTile({
   name,
   local,
+  camera,
+  synchronized,
   track,
   pinned,
   onPin,
 }: {
   name: string;
   local: boolean;
+  camera: CameraView | undefined;
+  synchronized: boolean;
   track: MediaStreamTrack | undefined;
   pinned: boolean;
   onPin: (() => void) | undefined;
@@ -208,7 +212,7 @@ function MeetingTile({
       <div className="meeting-tile-label">
         <strong>{name}</strong>
         {local && <span>Bạn</span>}
-        {!videoVisible && <small>{track ? 'Đang chờ hình ảnh' : 'Camera tắt'}</small>}
+        {!videoVisible && <small>{cameraStatus(camera, synchronized, playing)}</small>}
       </div>
       {onPin && (
         <button
@@ -250,18 +254,18 @@ export function MeetingTiles({
     >
       {roster.length === 0 && <p role="status">Đang đồng bộ người tham gia…</p>}
       {roster.map(([id, name]) => {
-        const camera =
-          snapshot.synchronized &&
-          snapshot.cameras.find(
-            ({ source }) =>
-              source.ownerParticipantId === id && source.publicationState === 'PUBLISHING',
-          );
-        const track = camera ? camera.track : undefined;
+        const camera = snapshot.cameras.find(({ source }) => source.ownerParticipantId === id);
+        const track =
+          snapshot.synchronized && camera?.source.publicationState === 'PUBLISHING'
+            ? camera.track
+            : undefined;
         return (
           <MeetingTile
             key={id + ':' + (track?.id ?? 'off')}
             name={name}
             local={id === localParticipantId}
+            camera={camera}
+            synchronized={snapshot.synchronized}
             track={track}
             pinned={hasPin && id === pinned}
             onPin={

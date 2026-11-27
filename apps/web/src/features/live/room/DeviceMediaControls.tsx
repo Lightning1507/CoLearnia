@@ -47,14 +47,21 @@ function DeviceControl({
     devices.getSnapshot,
     devices.getSnapshot,
   );
-  const { phase, error } = snapshot[kind];
-  const feedback = useTransientNotice(error);
+  const { phase, error, cleanupUnconfirmed } = snapshot[kind];
+  const notice = useTransientNotice(cleanupUnconfirmed ? undefined : error);
+  const feedback = cleanupUnconfirmed ? error : notice;
   const helpId = useId();
   const canStop = phase === 'on' || phase === 'starting';
   const disabled =
-    phase === 'stopping' || ((!snapshot.available || !devices.isAllowed(kind)) && !canStop);
+    phase === 'stopping' ||
+    (!canStop && (!snapshot.available || (!cleanupUnconfirmed && !devices.isAllowed(kind))));
   const label = labels[kind];
   const action = phase === 'starting' ? 'Hủy bật' : canStop ? 'Tắt' : 'Bật';
+  const actionLabel = cleanupUnconfirmed
+    ? phase === 'stopping'
+      ? 'Đang xác nhận đóng nguồn ' + label
+      : 'Thử đóng nguồn ' + label + ' lại'
+    : action + ' ' + label;
   const statusLabel = kind === 'microphone' ? 'Mic' : 'Camera';
   const help =
     feedback ??
@@ -71,8 +78,8 @@ function DeviceControl({
       <button
         type="button"
         className="live-toolbar-control inline-flex min-h-11 min-w-12 items-center justify-center gap-2 rounded-lg px-3 text-sm"
-        aria-label={action + ' ' + label}
-        title={action + ' ' + label}
+        aria-label={actionLabel}
+        title={actionLabel}
         aria-pressed={phase === 'on'}
         aria-disabled={disabled}
         aria-describedby={help ? helpId : undefined}
@@ -80,12 +87,17 @@ function DeviceControl({
         onClick={() => {
           if (disabled) return;
           if (canStop) void devices.stop(kind);
+          else if (cleanupUnconfirmed) void devices.retryCleanup(kind);
           else void devices.start(kind);
         }}
       >
         <DeviceIcon kind={kind} muted={compact && phase === 'off'} />
         <span className={compact ? 'sr-only' : undefined}>
-          {statusLabel} {phase === 'on' ? 'bật' : phase === 'starting' ? 'đang bật' : 'tắt'}
+          {cleanupUnconfirmed
+            ? actionLabel
+            : statusLabel +
+              ' ' +
+              (phase === 'on' ? 'bật' : phase === 'starting' ? 'đang bật' : 'tắt')}
         </span>
       </button>
       <span
