@@ -647,6 +647,7 @@
   background: #101b2b85;
 }
 .meeting-v11 .live-room-panel {
+  margin-top: 0;
   color: var(--meeting-ink);
   background: var(--meeting-surface);
   border-color: var(--meeting-line);
