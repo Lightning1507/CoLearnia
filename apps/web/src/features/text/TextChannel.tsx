@@ -1,10 +1,11 @@
 import { useEffect, useEffectEvent, useRef, useState } from 'react';
-import type { AuthenticatedData } from '@colearnia/contracts';
+import type { AuthenticatedData, TextHistoryMessage } from '@colearnia/contracts';
 import { io } from 'socket.io-client';
 import { TextTimeline } from './TextTimeline';
 import { createTextApi } from './text-api';
 import { createTextSynchronizer, type TextSyncState } from './text-sync';
 import { createTextConnection } from './text-connection';
+import { useTextMemory } from './text-memory';
 
 // Bounded in-memory projection. These budgets do not establish server capacity.
 const limits = {
@@ -18,17 +19,27 @@ const limits = {
 
 export function TextChannel({
   channelId,
+  workspaceId,
+  channelName,
   session,
   selected,
   onAccessLost,
   onSubscriptionBusy,
+  onSearchProjection,
 }: {
   channelId: string;
+  workspaceId?: string;
+  channelName?: string | undefined;
   session: AuthenticatedData;
   selected: boolean;
   onAccessLost: (channelId: string) => void;
   onSubscriptionBusy: (channelId: string) => boolean;
+  onSearchProjection?: (projection: {
+    channelId: string;
+    messages: readonly TextHistoryMessage[];
+  }) => void;
 }) {
+  const memory = useTextMemory();
   const [state, setState] = useState<TextSyncState>({
     phase: 'idle',
     messages: [],
@@ -41,8 +52,13 @@ export function TextChannel({
     disconnect: () => void;
   }>();
   const [opened, setOpened] = useState(false);
+  const [socketOnline, setSocketOnline] = useState(false);
   const [error, setError] = useState('');
   const connectionRef = useRef<ReturnType<typeof createTextConnection> | null>(null);
+  useEffect(() => {
+    if (selected && onSearchProjection)
+      onSearchProjection({ channelId, messages: state.phase === 'live' ? state.messages : [] });
+  }, [channelId, onSearchProjection, selected, state.messages, state.phase]);
   const reportAccessLost = useEffectEvent(() => onAccessLost(channelId));
   const isSelected = useEffectEvent(() => selected);
   const releaseHidden = useEffectEvent(() => selected && onSubscriptionBusy(channelId));
@@ -85,6 +101,7 @@ export function TextChannel({
       connected() {
         if (!active) return;
         setRuntime({ api, controller, disconnect: connection.disconnect });
+        setSocketOnline(true);
         setError('');
       },
       unavailable() {
@@ -96,10 +113,13 @@ export function TextChannel({
         reportAccessLost();
       },
     });
+    const onDisconnect = () => setSocketOnline(false);
+    socket.on('disconnect', onDisconnect);
     connectionRef.current = connection;
     socket.connect();
     return () => {
       active = false;
+      socket.off('disconnect', onDisconnect);
       if (connectionRef.current === connection) connectionRef.current = null;
       connection.dispose();
     };
@@ -114,17 +134,17 @@ export function TextChannel({
       </div>
     );
   return (
-    <div className="text-fixture-panel">
-      {error && <p role="alert">{error}</p>}
-      {state.olderCursor && state.phase === 'live' && (
-        <button onClick={() => void runtime?.controller.loadOlder()}>Xem tin nhắn cũ</button>
-      )}
-      {(state.phase === 'resync' || (!opened && state.phase !== 'live')) && (
-        <div role="status">
+    <div className="text-channel">
+      {(error ||
+        state.phase === 'resync' ||
+        (!opened && state.phase !== 'live') ||
+        (opened && !socketOnline)) && (
+        <div className="text-channel-status" role={error ? 'alert' : 'status'}>
           <p>
-            {state.phase === 'resync'
-              ? 'Chưa đồng bộ được chat. Dịch vụ có thể chưa sẵn sàng, hãy thử lại.'
-              : 'Đang kết nối và đồng bộ tin nhắn…'}
+            {error ||
+              (state.phase === 'resync'
+                ? 'Chưa đồng bộ được chat. Dịch vụ có thể chưa sẵn sàng, hãy thử lại.'
+                : 'Đang kết nối và đồng bộ tin nhắn…')}
           </p>
           <button onClick={() => connectionRef.current?.retry()}>Thử kết nối lại</button>
         </div>
@@ -155,10 +175,6 @@ export function TextChannel({
                     checkpoint: undefined,
                     olderCursor: null,
                   });
-                } else if (!signal.aborted) {
-                  setError(
-                    'Chưa gửi được tin nhắn. Dịch vụ có thể chưa sẵn sàng, hãy thử gửi lại cùng tin.',
-                  );
                 }
                 throw failure;
               }
@@ -168,7 +184,11 @@ export function TextChannel({
           displayName={session.user.displayName}
           projection={state.messages}
           visible={selected}
-          connected={state.phase === 'live'}
+          connected={socketOnline && state.phase === 'live'}
+          channelName={channelName}
+          {...(memory && workspaceId && { memory, scope: workspaceId + ':' + channelId })}
+          {...(state.olderCursor &&
+            state.phase === 'live' && { onLoadOlder: () => void runtime.controller.loadOlder() })}
         />
       )}
     </div>

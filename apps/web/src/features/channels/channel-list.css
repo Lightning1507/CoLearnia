@@ -71,13 +71,3 @@
   color: var(--workspace-muted);
   font-size: 0.875rem;
 }
-
-@media (max-width: 720px) {
-  .workspace-sidebar nav {
-    max-height: 16rem;
-    overflow-y: auto;
-  }
-  .workspace-sidebar nav > section {
-    min-width: 12rem;
-  }
-}

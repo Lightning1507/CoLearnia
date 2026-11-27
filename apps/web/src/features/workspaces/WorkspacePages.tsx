@@ -5,12 +5,13 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { workspaceNameSchema } from '@colearnia/contracts';
 import type { AuthenticatedData } from '@colearnia/contracts';
 import { authApi, sessionKey } from '../auth/session';
-import { WorkspaceApiError, workspaceApi } from './workspace-api';
+import { WorkspaceApiError, workspaceApi, workspaceListOptions } from './workspace-api';
 import './workspace-picker.css';
 import { ChannelWorkspace } from '../channels/ChannelWorkspace';
+import { useTextMemory } from '../text/text-memory';
+import { useWorkspaceTheme } from './workspace-appearance';
 
 const roles = { OWNER: 'Chủ Workspace', ADMIN: 'Quản trị viên', MEMBER: 'Thành viên' };
-const listKey = (userId: string) => ['workspaces', userId, 'list'] as const;
 const retryWindowMs = 600_000;
 type Attempt = { name: string; requestId: string; startedAt: number };
 type CreateIssue =
@@ -33,6 +34,7 @@ export function WorkspacePicker({
   session: AuthenticatedData;
   account: ReactNode;
 }) {
+  const { theme } = useWorkspaceTheme();
   const client = useQueryClient();
   const navigate = useNavigate();
   const [formOpen, setFormOpen] = useState(false);
@@ -52,15 +54,9 @@ export function WorkspacePicker({
   const retryExpired = attempt !== null && expiredAttempt === attempt.requestId;
   const [updating, setUpdating] = useState(false);
   const submitting = useRef(false);
-  const key = listKey(session.user.id);
-  const list = useInfiniteQuery({
-    queryKey: key,
-    initialPageParam: null as string | null,
-    queryFn: ({ pageParam, signal }) => workspaceApi.list(pageParam, signal),
-    getNextPageParam: (page) => page.nextCursor ?? undefined,
-    gcTime: 0,
-    retry: false,
-  });
+  const options = workspaceListOptions(session.user.id);
+  const key = options.queryKey;
+  const list = useInfiniteQuery(options);
   const create = useMutation({
     mutationFn: async ({ input, replay }: { input: Attempt; replay: boolean }) => {
       function post(csrfToken: string) {
@@ -156,7 +152,7 @@ export function WorkspacePicker({
 
   const sessionLost = list.error instanceof WorkspaceApiError && list.error.status === 401;
   return (
-    <main className="workspace-picker">
+    <main className="workspace-picker" data-workspace-theme={theme}>
       <header className="workspace-picker-header">
         <strong>CoLearnia</strong>
         <span>{session.user.displayName}</span>
@@ -317,12 +313,18 @@ export function WorkspaceOpen({
 }) {
   const { workspaceId = '' } = useParams();
   const client = useQueryClient();
+  const textMemory = useTextMemory();
   const result = useQuery({
     queryKey: ['workspaces', userId, 'open', workspaceId],
     queryFn: ({ signal }) => workspaceApi.open(workspaceId, signal),
     gcTime: 0,
     retry: false,
   });
+  const error = result.error;
+  useEffect(() => {
+    if (error instanceof WorkspaceApiError && [401, 403, 404].includes(error.status))
+      textMemory?.forget(workspaceId);
+  }, [error, textMemory, workspaceId]);
   if (result.isPending)
     return (
       <main className="auth-state" role="status">

@@ -4,6 +4,7 @@ import {
   workspaceResponseSchema,
   workspaceSelectionResponseSchema,
 } from '@colearnia/contracts';
+import { infiniteQueryOptions } from '@tanstack/react-query';
 
 export class WorkspaceApiError extends Error {
   constructor(
@@ -56,3 +57,14 @@ export const workspaceApi = {
     ).data;
   },
 };
+
+export function workspaceListOptions(userId: string) {
+  return infiniteQueryOptions({
+    queryKey: ['workspaces', userId, 'list'] as const,
+    initialPageParam: null as string | null,
+    queryFn: ({ pageParam, signal }) => workspaceApi.list(pageParam, signal),
+    getNextPageParam: (page) => page.nextCursor ?? undefined,
+    gcTime: 0,
+    retry: false,
+  });
+}

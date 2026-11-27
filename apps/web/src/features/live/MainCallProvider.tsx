@@ -6,6 +6,9 @@ import { MainCall } from './runtime/mainCall';
 import { LobbyDeviceCheck } from './lobby/LobbyDeviceCheck';
 import { RoomShell } from './room/RoomShell';
 import { ScreenShareControls } from './share/ScreenShareControls';
+import { DeviceMediaControls } from './room/DeviceMediaControls';
+import { useWorkspaceTheme } from '../workspaces/workspace-appearance';
+import { WorkspaceIcon } from '../workspaces/WorkspaceIcon';
 
 import { MainCallContext } from './runtime/mainCallContext';
 
@@ -61,15 +64,18 @@ export function MainCallProvider({
   }, [call]);
   return (
     <MainCallContext.Provider value={call}>
-      <div className="main-call-background" inert={state.expanded}>
-        {children}
+      <div className="main-call-layout">
+        <div className="main-call-background" inert={state.expanded}>
+          {children}
+        </div>
+        <MainCallHost call={call} />
       </div>
-      <MainCallHost call={call} />
     </MainCallContext.Provider>
   );
 }
 
 function MainCallHost({ call }: { call: MainCall }) {
+  const { theme } = useWorkspaceTheme();
   const state = useSyncExternalStore(call.subscribe, call.getSnapshot, call.getSnapshot);
   const [panel, setPanel] = useState(false);
   const screen = useRef<HTMLDivElement>(null);
@@ -100,7 +106,11 @@ function MainCallHost({ call }: { call: MainCall }) {
   if (!target) return null;
   if (!state.expanded && state.cleanupPending)
     return (
-      <aside className="main-call-strip" aria-label="Trạng thái rời cuộc gọi">
+      <aside
+        className="main-call-strip"
+        data-workspace-theme={theme}
+        aria-label="Trạng thái rời cuộc gọi"
+      >
         <span role="status">{state.message}</span>
         {state.phase === 'error' && (
           <button
@@ -115,15 +125,30 @@ function MainCallHost({ call }: { call: MainCall }) {
     );
   if (!state.expanded)
     return (
-      <aside className="main-call-strip" aria-label="Cuộc gọi đang mở">
-        <span>
-          {target.channelName} ·{' '}
-          {state.phase === 'active' ? 'Đang trong cuộc gọi' : 'Cuộc gọi cần xử lý'}
-        </span>
-        <button type="button" className="auth-secondary" onClick={() => showCall(true)}>
-          Về cuộc gọi
+      <aside className="main-call-strip" data-workspace-theme={theme} aria-label="Cuộc gọi đang mở">
+        <button
+          type="button"
+          className="main-call-return"
+          aria-label={'Về cuộc gọi ' + target.channelName}
+          onClick={() => showCall(true)}
+        >
+          <WorkspaceIcon name="video" />
+          <span>
+            <strong>{target.channelName}</strong>
+            <small>{state.phase === 'active' ? 'Đang trong cuộc gọi' : 'Cuộc gọi cần xử lý'}</small>
+          </span>
+          <WorkspaceIcon name="chevron" />
         </button>
-        <button type="button" className="auth-secondary" onClick={() => call.cancel()}>
+        {state.phase === 'active' && state.resources && (
+          <div className="main-call-devices">
+            <DeviceMediaControls devices={state.resources.devices} compact />
+          </div>
+        )}
+        <button
+          type="button"
+          className="auth-secondary main-call-leave"
+          onClick={() => call.cancel()}
+        >
           {state.phase === 'joining' || state.phase === 'lobby' ? 'Hủy tham gia' : 'Rời'}
         </button>
       </aside>
