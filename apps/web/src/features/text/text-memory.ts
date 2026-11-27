@@ -20,6 +20,18 @@ export function createTextMemory() {
         return records;
       }, true);
     },
+    forgetMissingChannels(workspaceId: string, readableIds: ReadonlySet<string>) {
+      const prefix = workspaceId + ':';
+      store.setState((current) => {
+        const records = new Map(current);
+        for (const key of current.keys()) {
+          if (key.startsWith(prefix) && !readableIds.has(key.slice(prefix.length))) {
+            records.delete(key);
+          }
+        }
+        return records.size === current.size ? current : records;
+      }, true);
+    },
     forget(workspaceId: string, channelId?: string) {
       store.setState((current) => {
         const records = new Map(current);

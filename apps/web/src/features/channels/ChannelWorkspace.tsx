@@ -134,6 +134,30 @@ export function ChannelWorkspace({
   const selected = channels.find((row) => row.id === channelId);
   const { data: session } = useQuery({ ...sessionOptions, enabled: false });
   const hasSession = session?.user.id === userId && session.expiresAt === expiresAt;
+  useEffect(() => {
+    // An incomplete page cannot prove that a channel's access was withdrawn.
+    if (
+      !hasSession ||
+      !content.isFetchedAfterMount ||
+      !content.isSuccess ||
+      content.isFetching ||
+      content.data.pageParams[0] !== null ||
+      content.data.pages.at(-1)?.nextCursor !== null
+    )
+      return;
+    const readableIds = new Set(
+      content.data.pages.flatMap((page) => page.items.map((row) => row.id)),
+    );
+    textMemory?.forgetMissingChannels(workspace.id, readableIds);
+  }, [
+    hasSession,
+    content.isFetchedAfterMount,
+    content.isSuccess,
+    content.isFetching,
+    content.data,
+    workspace.id,
+    textMemory,
+  ]);
   const selectedTextId = selected?.type === 'TEXT' ? selected.id : undefined;
   // Keep only the current and most recently visited authorized TEXT channels mounted.
   const retainedText = hasSession

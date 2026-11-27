@@ -1,5 +1,9 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
-import { textMessageSendBodySchema, type TextHistoryMessage } from '@colearnia/contracts';
+import {
+  textMessageMaxCodePoints,
+  textMessageSendBodySchema,
+  type TextHistoryMessage,
+} from '@colearnia/contracts';
 import { mergeTextMessage, newTextIntent, type OutgoingText } from './text-intent';
 import { createTextFixture, type FixtureSendMode, type TextPort } from './text-fixture';
 import { useStore } from 'zustand';
@@ -54,6 +58,7 @@ export function TextTimeline({
   const [validation, setValidation] = useState('');
   const [draftNotice, setDraftNotice] = useState('');
   const visibleDraftNotice = useTransientNotice(draftNotice);
+  const draftLength = [...draft].length;
   const composerId = useId();
   const input = useRef<HTMLTextAreaElement>(null);
   const history = useRef<HTMLDivElement>(null);
@@ -321,14 +326,14 @@ export function TextTimeline({
             ref={input}
             id={composerId}
             rows={1}
-            maxLength={4000}
             value={draft}
             disabled={state !== 'ready' || !connected}
             aria-invalid={!!validation}
             aria-describedby={validation ? `${composerId}-validation` : `${composerId}-help`}
             placeholder={channelName ? `Nhắn vào #${channelName}…` : 'Viết tin nhắn cho nhóm…'}
             onChange={(event) => {
-              setDraft(event.target.value);
+              const characters = [...event.target.value];
+              setDraft(characters.slice(0, textMessageMaxCodePoints).join(''));
               setDraftNotice('');
               setValidation('');
             }}
@@ -355,7 +360,12 @@ export function TextTimeline({
           <small>
             Enter xuống dòng <span>· Ctrl / ⌘ + Enter gửi tin</span>
           </small>
-          {draft.length > 0 && <small>{draft.length.toLocaleString('vi-VN')} / 4.000</small>}
+          {draftLength > 0 && (
+            <small>
+              {draftLength.toLocaleString('vi-VN')} /{' '}
+              {textMessageMaxCodePoints.toLocaleString('vi-VN')}
+            </small>
+          )}
         </div>
         {visibleDraftNotice && (
           <p className="text-draft-notice" role="status">

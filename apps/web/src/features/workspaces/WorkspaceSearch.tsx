@@ -2,31 +2,28 @@ import { useState, type RefObject } from 'react';
 import type { ChannelSummary, TextHistoryMessage } from '@colearnia/contracts';
 import { WorkspaceIcon } from './WorkspaceIcon';
 
+const pageSize = 24;
+
 export function WorkspaceSearch({
   dialog,
   channels,
   messages,
   onSelect,
+  onSelectMessage,
   onClose,
 }: {
   dialog: RefObject<HTMLDialogElement | null>;
   channels: readonly ChannelSummary[];
   messages: readonly TextHistoryMessage[];
   onSelect: (channel: ChannelSummary) => void;
+  onSelectMessage: (messageId: string) => void;
   onClose: () => void;
 }) {
   const [query, setQuery] = useState('');
   const [index, setIndex] = useState(0);
+  const [limit, setLimit] = useState(pageSize);
   const term = query.trim().toLocaleLowerCase('vi');
-  const results = [
-    ...channels
-      .filter((channel) => channel.name.toLocaleLowerCase('vi').includes(term))
-      .map((channel) => ({
-        key: channel.id,
-        label: channel.name,
-        kind: channel.type === 'TEXT' ? 'Kênh chữ' : 'Họp trực tiếp',
-        channel,
-      })),
+  const matches = [
     ...(term
       ? messages
           .filter((message) => message.text.toLocaleLowerCase('vi').includes(term))
@@ -37,17 +34,21 @@ export function WorkspaceSearch({
             channel: undefined,
           }))
       : []),
-  ].slice(0, 24);
+    ...channels
+      .filter((channel) => channel.name.toLocaleLowerCase('vi').includes(term))
+      .map((channel) => ({
+        key: channel.id,
+        label: channel.name,
+        kind: channel.type === 'TEXT' ? 'Kênh chữ' : 'Họp trực tiếp',
+        channel,
+      })),
+  ];
+  const results = matches.slice(0, limit);
   const selected = Math.min(index, results.length - 1);
   function choose(result: (typeof results)[number]) {
+    if (!result.channel) onSelectMessage(result.key);
     dialog.current?.close();
     if (result.channel) onSelect(result.channel);
-    else
-      requestAnimationFrame(() => {
-        const row = document.getElementById(`workspace-message-${result.key}`);
-        row?.focus({ preventScroll: true });
-        row?.scrollIntoView({ block: 'center' });
-      });
   }
   return (
     <dialog
@@ -57,6 +58,7 @@ export function WorkspaceSearch({
       onClose={() => {
         setQuery('');
         setIndex(0);
+        setLimit(pageSize);
         onClose();
       }}
     >
@@ -81,6 +83,7 @@ export function WorkspaceSearch({
         onChange={(event) => {
           setQuery(event.target.value);
           setIndex(0);
+          setLimit(pageSize);
         }}
         onKeyDown={(event) => {
           if (results.length === 0) return;
@@ -125,6 +128,11 @@ export function WorkspaceSearch({
         <p className="ws-muted" role="status">
           Không có kết quả trong dữ liệu đã tải.
         </p>
+      )}
+      {results.length < matches.length && (
+        <button className="ws-action" type="button" onClick={() => setLimit(limit + pageSize)}>
+          Xem thêm kết quả
+        </button>
       )}
     </dialog>
   );
