@@ -63,7 +63,7 @@ export function TextTimeline({
   const input = useRef<HTMLTextAreaElement>(null);
   const history = useRef<HTMLDivElement>(null);
   const followingLatest = useRef(true);
-  const prepend = useRef<{ height: number; top: number; first?: string | undefined } | undefined>(
+  const prepend = useRef<{ first: string; row: HTMLElement; offset: number } | undefined>(
     undefined,
   );
   const lifetime = useRef<AbortController | null>(null);
@@ -72,9 +72,16 @@ export function TextTimeline({
   useLayoutEffect(() => {
     const panel = history.current;
     if (!visible || !panel?.clientHeight) return;
-    if (prepend.current && displayed[0]?.id !== prepend.current.first) {
-      panel.scrollTop = prepend.current.top + (panel.scrollHeight - prepend.current.height);
+    const anchor = prepend.current;
+    if (anchor && displayed[0]?.id !== anchor.first) {
       prepend.current = undefined;
+      if (panel.contains(anchor.row)) {
+        const offset =
+          anchor.row.getBoundingClientRect().top -
+          panel.getBoundingClientRect().top +
+          panel.scrollTop;
+        panel.scrollTop += offset - anchor.offset;
+      }
     } else if (followingLatest.current) panel.scrollTop = panel.scrollHeight;
   }, [displayed, draft, outbox, visible]);
 
@@ -215,12 +222,18 @@ export function TextTimeline({
                   type="button"
                   onClick={() => {
                     const panel = history.current;
-                    if (panel) {
-                      followingLatest.current = false;
+                    const first = displayed[0];
+                    const row = panel?.querySelector<HTMLElement>('.text-message[id]');
+                    followingLatest.current = false;
+                    if (panel && first && row) {
+                      // Capture the row's content offset, independent of where the reader scrolls.
                       prepend.current = {
-                        height: panel.scrollHeight,
-                        top: panel.scrollTop,
-                        first: displayed[0]?.id,
+                        first: first.id,
+                        row,
+                        offset:
+                          row.getBoundingClientRect().top -
+                          panel.getBoundingClientRect().top +
+                          panel.scrollTop,
                       };
                     }
                     onLoadOlder();
