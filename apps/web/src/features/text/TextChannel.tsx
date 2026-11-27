@@ -52,6 +52,7 @@ export function TextChannel({
     disconnect: () => void;
   }>();
   const [opened, setOpened] = useState(false);
+  const [socketOnline, setSocketOnline] = useState(false);
   const [error, setError] = useState('');
   const connectionRef = useRef<ReturnType<typeof createTextConnection> | null>(null);
   useEffect(() => {
@@ -100,6 +101,7 @@ export function TextChannel({
       connected() {
         if (!active) return;
         setRuntime({ api, controller, disconnect: connection.disconnect });
+        setSocketOnline(true);
         setError('');
       },
       unavailable() {
@@ -111,10 +113,13 @@ export function TextChannel({
         reportAccessLost();
       },
     });
+    const onDisconnect = () => setSocketOnline(false);
+    socket.on('disconnect', onDisconnect);
     connectionRef.current = connection;
     socket.connect();
     return () => {
       active = false;
+      socket.off('disconnect', onDisconnect);
       if (connectionRef.current === connection) connectionRef.current = null;
       connection.dispose();
     };
@@ -133,7 +138,7 @@ export function TextChannel({
       {(error ||
         state.phase === 'resync' ||
         (!opened && state.phase !== 'live') ||
-        (opened && state.phase !== 'live')) && (
+        (opened && !socketOnline)) && (
         <div className="text-channel-status" role={error ? 'alert' : 'status'}>
           <p>
             {error ||
@@ -179,7 +184,7 @@ export function TextChannel({
           displayName={session.user.displayName}
           projection={state.messages}
           visible={selected}
-          connected={state.phase === 'live'}
+          connected={socketOnline && state.phase === 'live'}
           channelName={channelName}
           {...(memory && workspaceId && { memory, scope: workspaceId + ':' + channelId })}
           {...(state.olderCursor &&

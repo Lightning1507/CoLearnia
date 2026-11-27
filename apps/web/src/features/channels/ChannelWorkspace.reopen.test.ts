@@ -11,6 +11,7 @@ import { sessionKey } from '../auth/session';
 import { MainCallProvider } from '../live/MainCallProvider';
 import { CallControllerOwner } from '../live/runtime/callController';
 import { createTextApi } from '../text/text-api';
+import { createTextMemory, TextMemoryContext } from '../text/text-memory';
 import { workspaceFixture } from '../workspaces/workspace-fixture';
 import { ChannelWorkspace } from './ChannelWorkspace';
 import { listChannels } from './channel-api';
@@ -57,6 +58,8 @@ it.each([1, 2])('opens channels with subscription quota %i', async (perUser) => 
   }));
   const [general, demo, study] = channels;
   const client = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity } } });
+  const memory = createTextMemory();
+  const channelKey = ['channels', auth.user.id, workspaceFixture.id, auth.expiresAt, 'content'];
   const rootElement = document.createElement('div');
   document.body.append(rootElement);
   const root = createRoot(rootElement);
@@ -148,10 +151,10 @@ it.each([1, 2])('opens channels with subscription quota %i', async (perUser) => 
     )?.textContent;
   try {
     client.setQueryData(sessionKey, auth);
-    client.setQueryData(
-      ['channels', auth.user.id, workspaceFixture.id, auth.expiresAt, 'content'],
-      { pages: [{ items: channels, nextCursor: null }], pageParams: [null] },
-    );
+    client.setQueryData(channelKey, {
+      pages: [{ items: channels, nextCursor: null }],
+      pageParams: [null],
+    });
     await act(async () => {
       root.render(
         createElement(
@@ -163,18 +166,22 @@ it.each([1, 2])('opens channels with subscription quota %i', async (perUser) => 
             createElement(MainCallProvider, {
               owner: new CallControllerOwner(),
               children: createElement(
-                Routes,
-                null,
-                createElement(Route, {
-                  path: '/workspaces/:workspaceId/channels/:channelId',
-                  element: createElement(ChannelWorkspace, {
-                    workspace: { ...workspaceFixture, role: 'MEMBER' },
-                    userId: auth.user.id,
-                    expiresAt: auth.expiresAt,
-                    account: null,
-                    onAccessLost: () => {},
+                TextMemoryContext.Provider,
+                { value: memory },
+                createElement(
+                  Routes,
+                  null,
+                  createElement(Route, {
+                    path: '/workspaces/:workspaceId/channels/:channelId',
+                    element: createElement(ChannelWorkspace, {
+                      workspace: { ...workspaceFixture, role: 'MEMBER' },
+                      userId: auth.user.id,
+                      expiresAt: auth.expiresAt,
+                      account: null,
+                      onAccessLost: () => {},
+                    }),
                   }),
-                }),
+                ),
               ),
             }),
           ),
@@ -213,6 +220,24 @@ it.each([1, 2])('opens channels with subscription quota %i', async (perUser) => 
     expect([...listeners.keys()]).toEqual([general!.id, study!.id]);
     expect(rootElement.textContent).not.toContain('Tin ở chat-demo');
     expect(sockets.filter(({ connected }) => connected)).toHaveLength(2);
+
+    // This channel is no longer mounted, so it cannot receive a socket invalidation.
+    const savedKey = workspaceFixture.id + ':' + demo!.id;
+    memory.update(savedKey, (current) => ({ ...current, draft: 'Nháp cũ' }));
+    const accessList = [general!, study!];
+    vi.mocked(listChannels).mockResolvedValue({ items: accessList, nextCursor: 'more' });
+    await act(async () => {
+      await client.refetchQueries({ queryKey: channelKey });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(memory.store.getState().get(savedKey)?.draft).toBe('Nháp cũ');
+
+    vi.mocked(listChannels).mockResolvedValue({ items: accessList, nextCursor: null });
+    await act(async () => {
+      await client.refetchQueries({ queryKey: channelKey });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(memory.store.getState().has(savedKey)).toBe(false);
 
     const revoked = listeners.get(general!.id)!;
     vi.mocked(listChannels).mockResolvedValue({ items: channels.slice(1), nextCursor: null });

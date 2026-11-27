@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useId, useRef, useState } from 'react';
+import { Fragment, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { ChannelSummary } from '@colearnia/contracts';
 import type { WorkspaceShellProps } from './shell-contract';
@@ -95,6 +95,15 @@ export function WorkspaceShell({
   const [context, setContext] = useState<'members' | 'channel'>();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const drawer = useRef<HTMLDialogElement>(null);
+  const wasMobile = useRef(mobile);
+  if (!mobile && drawerOpen) setDrawerOpen(false);
+  useLayoutEffect(() => {
+    const sidebar = drawer.current;
+    if (!sidebar) return;
+    if (!mobile && wasMobile.current && sidebar.open) sidebar.close();
+    sidebar.open = !mobile;
+    wasMobile.current = mobile;
+  }, [mobile]);
   const focusChannelAfterDrawer = useRef(false);
   const navigationButton = useRef<HTMLButtonElement>(null);
   const workspacePicker = useRef<HTMLDialogElement>(null);
@@ -102,6 +111,7 @@ export function WorkspaceShell({
   const dm = useRef<HTMLDialogElement>(null);
   const search = useRef<HTMLDialogElement>(null);
   const searchOrigin = useRef<HTMLElement | null>(null);
+  const selectedMessage = useRef<string | null>(null);
   const searchButton = useRef<HTMLButtonElement>(null);
   const channelInfo = useRef<HTMLButtonElement>(null);
   const membersButton = useRef<HTMLButtonElement>(null);
@@ -123,9 +133,12 @@ export function WorkspaceShell({
     setContext(undefined);
     trigger.current?.focus();
   }
+  function closeDrawer() {
+    if (mobile && drawer.current?.open) drawer.current.close();
+  }
   function select(channel: ChannelSummary) {
-    focusChannelAfterDrawer.current = drawer.current?.open === true;
-    drawer.current?.close();
+    focusChannelAfterDrawer.current = mobile && drawer.current?.open === true;
+    closeDrawer();
     setContext(undefined);
     onSelectChannel(channel);
   }
@@ -138,7 +151,10 @@ export function WorkspaceShell({
         event.defaultPrevented
       )
         return;
-      if (document.querySelector('dialog[open]') || searchButton.current?.closest('[inert]'))
+      if (
+        document.querySelector('dialog[open]:not([data-desktop-sidebar])') ||
+        searchButton.current?.closest('[inert]')
+      )
         return;
       event.preventDefault();
       searchOrigin.current =
@@ -155,7 +171,7 @@ export function WorkspaceShell({
         <button
           type="button"
           onClick={() => {
-            drawer.current?.close();
+            closeDrawer();
             onOpenWorkspaceList();
           }}
         >
@@ -173,7 +189,7 @@ export function WorkspaceShell({
             aria-label="Đóng danh sách kênh"
             type="button"
             className="ws-icon-button"
-            onClick={() => drawer.current?.close()}
+            onClick={closeDrawer}
           >
             <WorkspaceIcon name="close" />
           </button>
@@ -271,36 +287,29 @@ export function WorkspaceShell({
       data-workspace-theme={theme}
       data-testid="workspace-shell"
     >
-      {mobile ? (
-        <dialog
-          id={navigationId}
-          ref={drawer}
-          aria-label={'Kênh của ' + workspace.name}
-          className="workspace-sidebar ws-drawer"
-          onClose={() => {
-            setDrawerOpen(false);
-            const focusTarget = focusChannelAfterDrawer.current ? heading : navigationButton;
-            focusChannelAfterDrawer.current = false;
-            focusTarget.current?.focus();
-          }}
-          onClick={(event) => {
-            if (event.target === event.currentTarget) {
-              const { left, right } = event.currentTarget.getBoundingClientRect();
-              if (event.clientX < left || event.clientX > right) event.currentTarget.close();
-            }
-          }}
-        >
-          {sidebar}
-        </dialog>
-      ) : (
-        <aside
-          id={navigationId}
-          className="workspace-sidebar"
-          aria-label={'Kênh của ' + workspace.name}
-        >
-          {sidebar}
-        </aside>
-      )}
+      <dialog
+        id={navigationId}
+        ref={drawer}
+        role={mobile ? undefined : 'complementary'}
+        data-desktop-sidebar={mobile ? undefined : true}
+        aria-label={'Kênh của ' + workspace.name}
+        className="workspace-sidebar ws-drawer"
+        onClose={() => {
+          if (!mobile || drawer.current?.open) return;
+          setDrawerOpen(false);
+          const focusTarget = focusChannelAfterDrawer.current ? heading : navigationButton;
+          focusChannelAfterDrawer.current = false;
+          focusTarget.current?.focus();
+        }}
+        onClick={(event) => {
+          if (mobile && event.target === event.currentTarget) {
+            const { left, right } = event.currentTarget.getBoundingClientRect();
+            if (event.clientX < left || event.clientX > right) closeDrawer();
+          }
+        }}
+      >
+        {sidebar}
+      </dialog>
       <main
         className="workspace-main"
         onKeyDown={(event) => {
@@ -498,7 +507,7 @@ export function WorkspaceShell({
                   aria-current={item.id === workspace.id ? 'true' : undefined}
                   onClick={() => {
                     workspacePicker.current?.close();
-                    drawer.current?.close();
+                    closeDrawer();
                     if (item.id !== workspace.id) workspaceChoices.onChoose(item);
                   }}
                 >
@@ -527,7 +536,7 @@ export function WorkspaceShell({
           className="ws-action"
           onClick={() => {
             workspacePicker.current?.close();
-            drawer.current?.close();
+            closeDrawer();
             onOpenWorkspaceList();
           }}
         >
@@ -555,7 +564,7 @@ export function WorkspaceShell({
               event.target.closest('button[data-workspace-option]')
             ) {
               options.current?.close();
-              drawer.current?.close();
+              closeDrawer();
             }
           }}
         >
@@ -584,8 +593,20 @@ export function WorkspaceShell({
         channels={accessible}
         messages={searchMessages}
         onSelect={select}
+        onSelectMessage={(messageId) => {
+          selectedMessage.current = messageId;
+          setContext(undefined);
+        }}
         onClose={() => {
-          if (searchOrigin.current?.isConnected) searchOrigin.current.focus();
+          const messageId = selectedMessage.current;
+          selectedMessage.current = null;
+          if (messageId) {
+            requestAnimationFrame(() => {
+              const row = document.getElementById(`workspace-message-${messageId}`);
+              row?.focus({ preventScroll: true });
+              row?.scrollIntoView({ block: 'center' });
+            });
+          } else if (searchOrigin.current?.isConnected) searchOrigin.current.focus();
           else searchButton.current?.focus();
         }}
       />
