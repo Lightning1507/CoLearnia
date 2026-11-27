@@ -11,6 +11,7 @@ import type {
   WorkspaceSummary,
 } from '@colearnia/contracts';
 import { WorkspaceShell } from '../workspaces/WorkspaceShell';
+import { WorkspaceIcon } from '../workspaces/WorkspaceIcon';
 import type { WorkspacePanel } from '../workspaces/shell-contract';
 import { sessionKey, sessionOptions } from '../auth/session';
 import { CreateChannelForm } from './CreateChannelForm';
@@ -18,8 +19,13 @@ import { ChannelApiError } from './channel-api';
 import { channelListOptions } from './channel-list-query';
 import './channel-list.css';
 import { TextChannel } from '../text/TextChannel';
-import { workspaceListOptions } from '../workspaces/workspace-api';
+import { WorkspaceApiError, workspaceListOptions } from '../workspaces/workspace-api';
 import { useTextMemory } from '../text/text-memory';
+import { useTransientNotice } from '../../app/useTransientNotice';
+
+function accessRejected(error: unknown): error is ChannelApiError {
+  return error instanceof ChannelApiError && [401, 403, 404].includes(error.status);
+}
 
 function message(error: unknown) {
   if (error instanceof ChannelApiError) {
@@ -83,7 +89,6 @@ export function ChannelWorkspace({
   );
   const notified = useRef<unknown>(null);
   const canManage = workspace.role === 'OWNER' || workspace.role === 'ADMIN';
-  const prefix = ['channels', userId, workspace.id, expiresAt] as const;
   const content = useInfiniteQuery(
     channelListOptions(client, userId, workspace.id, expiresAt, 'content'),
   );
@@ -100,8 +105,7 @@ export function ChannelWorkspace({
   }, [client, userId, workspace.id, expiresAt]);
   const failure = content.error ?? (manage ? management.error : null);
   useEffect(() => {
-    if (!(failure instanceof ChannelApiError) || notified.current === failure) return;
-    if (![401, 403, 404].includes(failure.status)) return;
+    if (!accessRejected(failure) || notified.current === failure) return;
     const current = client.getQueryData<AuthenticatedData | null>(sessionKey);
     if (current?.user.id !== userId || current.expiresAt !== expiresAt) return;
     notified.current = failure;
@@ -112,8 +116,15 @@ export function ChannelWorkspace({
     }
   }, [failure, client, userId, expiresAt, workspace.id, onAccessLost, textMemory]);
 
-  // A failed permission refresh also withdraws any previously rendered projection.
-  const channels = content.isError
+  const contentRefreshError = useTransientNotice(
+    content.isRefetchError ? content.error : undefined,
+  );
+  const managementRefreshError = useTransientNotice(
+    management.isRefetchError ? management.error : undefined,
+  );
+  const accessNotice = useTransientNotice(textAccessNotice);
+  // A network failure keeps the current view. An explicit access denial removes it.
+  const channels = accessRejected(content.error)
     ? []
     : [
         ...new Map(
@@ -242,7 +253,7 @@ export function ChannelWorkspace({
     )
       void content.fetchNextPage({ cancelRefetch: false });
   }, [channelId, selected, content]);
-  const managed = management.isError
+  const managed = accessRejected(management.error)
     ? []
     : [
         ...new Map(
@@ -252,10 +263,12 @@ export function ChannelWorkspace({
   function select(channel: ChannelSummary) {
     setTextAccessNotice('');
     setManage(false);
-    navigate(`/workspaces/${workspace.id}/channels/${channel.id}`);
+    const channelPath = `/workspaces/${workspace.id}/channels/${channel.id}`;
+    navigate(channel.type === 'LIVE' ? channelPath + '/live' : channelPath);
   }
   function refresh() {
-    void client.resetQueries({ queryKey: prefix });
+    void content.refetch({ cancelRefetch: false });
+    if (manage && canManage) void management.refetch({ cancelRefetch: false });
   }
   const selectedPanel = selected && (
     <section
@@ -300,7 +313,11 @@ export function ChannelWorkspace({
           ).values(),
         ],
         pending: picker.isPending,
-        failed: picker.isError,
+        failed:
+          picker.isError &&
+          (!picker.data ||
+            (picker.error instanceof WorkspaceApiError &&
+              [401, 403, 404].includes(picker.error.status))),
         loadingMore: picker.isFetchingNextPage,
         ...(picker.hasNextPage && { onMore: () => void picker.fetchNextPage() }),
         onRetry: () => void picker.refetch(),
@@ -356,13 +373,21 @@ export function ChannelWorkspace({
         <>
           <button
             type="button"
-            data-workspace-option
             className="channel-list-button"
             onClick={refresh}
+            aria-busy={content.isRefetching || management.isRefetching}
             disabled={content.isFetching || management.isFetching}
           >
-            Làm mới danh sách
+            <WorkspaceIcon name="refresh" />
+            {content.isRefetching || management.isRefetching
+              ? 'Đang làm mới…'
+              : 'Làm mới danh sách'}
           </button>
+          {contentRefreshError && !accessRejected(contentRefreshError) && (
+            <p className="ws-muted" role="alert">
+              Chưa cập nhật được danh sách kênh.
+            </p>
+          )}
           {canManage && (
             <button
               type="button"
@@ -371,6 +396,7 @@ export function ChannelWorkspace({
               aria-pressed={manage}
               onClick={() => setManage(!manage)}
             >
+              <WorkspaceIcon name="settings" />
               Quản lý kênh
             </button>
           )}
@@ -378,9 +404,9 @@ export function ChannelWorkspace({
       }
       sidebarStatus={
         <div className="channel-sidebar-status">
-          {textAccessNotice && <p role="status">{textAccessNotice}</p>}
+          {accessNotice && <p role="status">{accessNotice}</p>}
           {content.isPending && <p role="status">Đang tải kênh…</p>}
-          {content.isError && <p role="alert">{message(content.error)}</p>}
+          {content.isLoadingError && <p role="alert">{message(content.error)}</p>}
           {content.isSuccess && channels.length === 0 && (
             <p role="status">
               {content.hasNextPage
@@ -407,7 +433,10 @@ export function ChannelWorkspace({
               <p>Các kênh trong {workspace.name}</p>
             </header>
             {management.isPending && <p role="status">Đang tải danh sách quản trị…</p>}
-            {management.isError && <p role="alert">{message(management.error)}</p>}
+            {management.isLoadingError && <p role="alert">{message(management.error)}</p>}
+            {managementRefreshError && !accessRejected(managementRefreshError) && (
+              <p role="alert">Chưa cập nhật được danh sách quản trị.</p>
+            )}
             {management.isSuccess && managed.length === 0 && <p>Chưa có kênh trong trang này.</p>}
             <ul className="channel-management-list">
               {managed.map((row) => (

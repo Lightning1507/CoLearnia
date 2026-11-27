@@ -121,3 +121,5 @@ Bỏ chuyển owner Workspace khỏi MVP; người tạo giữ OWNER, cấp/thu 
 ## Contract auth/profile — 06/11/2026
 
 PM đồng ý giới hạn tên 1–80 Unicode code point sau trim; mật khẩu mới 15–128, giữ nguyên Unicode/khoảng trắng, không bắt trộn loại ký tự. [Contract SCRUM-12](contracts/auth-profile.md) và schema input/output đã được soạn để M4 review; chưa là endpoint hoặc hành vi thu phiên đã chạy. Chuẩn hóa email là đề xuất kỹ thuật trong PR; cấu hình CSRF, hash/limiter, retry và upload avatar tiếp tục theo owner/task tại contract.
+
+Ngày 27/11, PM/M1 xác nhận quy tắc áp dụng cho mật khẩu mới khi đăng ký hoặc đổi mật khẩu: 8–128 ký tự ASCII in được, không có khoảng trắng và không yêu cầu trộn loại ký tự. Giữ nguyên giá trị nhập để kiểm tra, không trim hoặc chuẩn hóa. Đăng nhập và `currentPassword` tiếp tục đối chiếu nguyên văn mật khẩu đã đặt, kể cả Unicode và khoảng trắng của tài khoản cũ. Kiểm mật khẩu phổ biến, hash và limiter thực hiện ở server theo contract. [Xác nhận PM/M1 trên PR #157](https://github.com/Lightning1507/CoLearnia/pull/157#issuecomment-7220233607) · [Quy tắc hiện hành](contracts/auth-profile.md#2-input-và-giới-hạn)

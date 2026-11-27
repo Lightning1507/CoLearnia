@@ -14,6 +14,11 @@ const shapes = {
   sun: 'M12 2v2m0 16v2M2 12h2m16 0h2M5 5l2 2m10 10 2 2m0-14-2 2M7 17l-2 2m11-5a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z',
   chat: 'M20 5H4v12h4v4l4-4h8z',
   check: 'm5 12 4 4L19 6',
+  minimize: 'M5 12h14',
+  refresh: 'M20 7v5h-5M19.8 12a8 8 0 1 0-2.2 5.5',
+  settings: 'M4 6h16M4 12h16M4 18h16M8 4v4M16 10v4M10 16v4',
+  pin: 'm9 4 11 11-2 2-5-1-4 2-1-1 2-4-1-5zM9 17l-5 4',
+  phoneOff: 'M3 16v-4c4-5 14-5 18 0v4h-5v-3a12 12 0 0 0-8 0v3z',
 };
 
 export function WorkspaceIcon({ name }: { name: keyof typeof shapes }) {

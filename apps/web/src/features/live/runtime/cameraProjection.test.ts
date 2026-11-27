@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { MediaSnapshotRuntime } from './mediaSnapshotRuntime';
 import { CallControllerOwner } from './callController';
 import { cameraStatus } from './cameraProjection';
-import { CameraTiles } from '../room/CameraTiles';
+import { CameraTiles, MeetingTiles } from '../room/CameraTiles';
 import type { ConsumerBinding } from './mediaSnapshot';
 import {
   applySnapshot,
@@ -29,6 +29,36 @@ function setup() {
   const handle = { attach: vi.fn(), close: vi.fn(), videoTrack: track };
   return { media, abort, track, handle };
 }
+
+it.each([
+  { synchronized: true, state: 'PAUSED', label: 'Camera tạm dừng' },
+  { synchronized: true, state: 'SWITCHING', label: 'Đang chuyển camera' },
+  { synchronized: false, state: 'PUBLISHING', label: 'Đang đồng bộ camera' },
+  { synchronized: true, state: 'PUBLISHING', label: 'Đang chờ hình ảnh' },
+  { synchronized: true, state: undefined, label: 'Camera tắt' },
+] as const)('renders the meeting camera label $label without displaying stale video', (row) => {
+  const participant = camera.ownerParticipantId;
+  const { track } = setup();
+  const views = row.state
+    ? [
+        {
+          source: { ...camera, publicationState: row.state },
+          local: false,
+          track: row.synchronized && row.state === 'PUBLISHING' ? undefined : track,
+        },
+      ]
+    : [];
+  const markup = renderToStaticMarkup(
+    createElement(MeetingTiles, {
+      snapshot: { synchronized: row.synchronized, cameras: views },
+      participantNames: { [participant]: 'Người tham gia' },
+      localParticipantId: undefined,
+      shared: false,
+    }),
+  );
+  expect(markup).toContain(row.label);
+  expect(markup).not.toContain('<video');
+});
 const current = (media: MediaSnapshotRuntime) => media.getCameraSnapshot().cameras[0]!;
 
 async function pendingCameraPair() {

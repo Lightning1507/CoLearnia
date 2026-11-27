@@ -29,11 +29,11 @@ Quy ước tránh deadlock: khi thực sự cần khóa lồng nhau, thứ tự 
 
 ### 6.3. Share lease và browser picker
 
-Flow chính để giữ user activation: xin lease từ server → khi được cấp hiển thị nút **“Chọn màn hình để chia sẻ”** → click gọi `getDisplayMedia()` trực tiếp → tạo Producer nếu lease/grant còn hợp lệ. Nếu hết lease/hủy picker/thua quyền: stop toàn bộ track vừa lấy, release lease và báo thử lại. Không giữ queue khi chờ picker.
+Bấm **Chia sẻ màn hình** gọi trực tiếp `getDisplayMedia()` để trình duyệt mở bộ chọn. Sau khi chọn nguồn, FE xin lease từ server và chỉ tạo Producer khi lease cùng quyền chia sẻ còn hợp lệ. Khi hủy, hết hạn hoặc mất quyền, FE dừng các track đã lấy và trả lease đã được cấp. Server chưa giữ chỗ trong lúc người dùng chọn màn hình.
 
 API yêu cầu thao tác người dùng và browser picker; không tự chọn màn hình hay tái dùng quyền capture. Audio phụ thuộc browser/OS/nguồn người dùng chọn. [MDN getDisplayMedia](https://developer.mozilla.org/en-US/docs/Web/API/MediaDevices/getDisplayMedia).
 
-Lease chờ picker khởi đầu 30 giây; khi commit chuyển thành share ownership gắn participant/generation, được giám sát theo signaling lease. Browser Stop/track ended/rời/kick/mất quyền scope: đóng SCREEN và SCREEN_AUDIO, release ownership, tăng source revision, hủy freeze intent cũ, xóa live overlay cũ. Frame đã FROZEN vẫn có thể dùng đến resume/cleanup nhưng hiển thị nguồn cũ đã dừng; không giả còn live.
+Lease chờ phát có hạn 30 giây sau khi server giữ chỗ. Khi commit, lease chuyển thành share ownership gắn với participant/generation và được giám sát theo signaling lease. Browser Stop/track ended/rời/kick/mất quyền scope: đóng SCREEN và SCREEN_AUDIO, release ownership, tăng source revision, hủy freeze intent cũ, xóa live overlay cũ. Frame đã FROZEN vẫn có thể dùng đến resume/cleanup nhưng hiển thị nguồn cũ đã dừng; không giả còn live.
 
 Lease/source registry phải có scope và mode theo [group modes](group-modes.md). MAIN dùng một lease độc quyền; DISCUSSION không có lease share riêng; mỗi ACTIVITY có lease độc quyền riêng, mọi member trong nhóm được bấm share mà không host approval. Reserve lease tự động chỉ chống tranh nguồn, không là xin phép host. Browser Stop/rời nhóm/revoke chỉ invalidate nguồn và board refs liên quan, không reset mọi nguồn của toàn session.
 

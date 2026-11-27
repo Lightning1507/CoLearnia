@@ -22,6 +22,20 @@ Nếu phòng trước đang kết thúc, endpoint cấp vé trả HTTP 409 `SESS
 
 Chat trong phiên và board cần adapter của miền phụ trách khi bật. Guard xác nhận truy vấn MongoDB và giữ cleanup pending khi còn dữ liệu chưa được xử lý. Nghiệm thu thay phiên đăng nhập cần SCRUM-94. SCRUM-89 kiểm cuộc gọi thật trên hai mạng và TURN.
 
+### Bàn giao kiểm chia sẻ màn hình v11
+
+M3 chủ trì phần trình duyệt và media. M4 phối hợp đối chiếu quyền phát, giữ chỗ và xác nhận dọn nguồn trên server. Ghi kết quả và liên kết bằng chứng tại [SCRUM-89](https://faker1652005.atlassian.net/browse/SCRUM-89), dẫn về [PR #157](https://github.com/Lightning1507/CoLearnia/pull/157).
+
+| Ca trên bản triển khai cuối                         | Điều kiện đạt                                                                                                                                                                                    |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Mở picker và hủy                                    | Một lần bấm mở bộ chọn thật của trình duyệt. Hủy hoặc từ chối chọn vẫn giữ cuộc gọi và không để lại track, nguồn phát hoặc lượt giữ chỗ.                                                         |
+| Phát và dừng                                        | Tài khoản khác nhận đúng nguồn. Dừng bằng nút trong app và bằng Browser Stop đều cập nhật phía nhận và giải phóng chỗ sau khi dọn nguồn được xác nhận.                                           |
+| Hai tài khoản tranh lượt trong MAIN                 | Server chỉ chấp nhận một nguồn. Phía còn lại được báo đang bận và dọn track đã chọn, không thay nguồn đang phát hay tự phát lại.                                                                 |
+| Rời phòng, đổi ngữ cảnh hoặc mất quyền khi đang chờ | Track, producer và lượt giữ chỗ đến muộn được dọn đúng lượt. Lượt cũ không phát sau khi rời và không đóng nguồn của generation mới. Ghi rõ ca chỉ kiểm ở runtime nếu UI chưa hỗ trợ ngữ cảnh đó. |
+| Hai mạng và forced TURN                             | Chạy trên staging theo SCRUM-89 và lưu bằng chứng relay của cuộc gọi trên bản đang nghiệm thu.                                                                                                   |
+
+Mỗi ca ghi SHA hoặc image/build đã triển khai, thời gian và múi giờ, trình duyệt/OS, môi trường và mạng, bước kiểm, kết quả đạt/chưa đạt/chưa chạy và bằng chứng đã che credential. Kết quả với nguồn mô phỏng, browser headless, unit test và native smoke mô tả đúng môi trường đã kiểm. [Kết quả SCRUM-63](../test-evidence/2026-11-11-scrum-63-turn.md) là tham chiếu cho TURN. SCRUM-89 vẫn theo tiêu chí nghiệm thu riêng sau khi PR UI được merge.
+
 ## Giao diện Workspace → MAIN (SCRUM-93)
 
 `MainCallProvider` giữ một cuộc gọi trong vòng đời ứng dụng đã đăng nhập, dùng lại `CallControllerOwner`. Chọn kênh LIVE có quyền rồi bấm **Vào phòng trực tiếp** để mở lobby. Sau khi vào phòng, **Workspace** thu nhỏ cuộc gọi; đổi sang TEXT không tạo owner/socket mới. Host thấy **Kết thúc phiên**, thành viên thấy **Rời**; quyền lấy từ projection server.

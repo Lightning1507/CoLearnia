@@ -46,7 +46,9 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
-function fixture(publish?: ConstructorParameters<typeof ScreenSharePicker>[1]['publish']) {
+function fixture(
+  publish: ConstructorParameters<typeof ScreenSharePicker>[1]['publish'] = async () => {},
+) {
   vi.useFakeTimers();
   const context: SessionProjectionCursor = {
     sessionId: '111111111111111111111111',
@@ -73,7 +75,7 @@ function fixture(publish?: ConstructorParameters<typeof ScreenSharePicker>[1]['p
     acquire: vi.fn(async () => lease),
     release: vi.fn(async () => {}),
     capture: vi.fn(async () => stream),
-    ...(publish && { publish }),
+    publish: vi.fn(publish),
   };
   const picker = new ScreenSharePicker(context, ports, () => Date.now());
   picker.updateContext({ ...context, projection: projectionFor(context) });
@@ -83,59 +85,68 @@ function fixture(publish?: ConstructorParameters<typeof ScreenSharePicker>[1]['p
 afterEach(() => vi.useRealTimers());
 
 describe('screen picker lease', () => {
-  it('only opens capture on the second action and does so synchronously', async () => {
-    const f = fixture();
-    await f.picker.choose();
-    expect(f.ports.capture).not.toHaveBeenCalled();
-    await f.picker.reserve();
-    expect(f.ports.capture).not.toHaveBeenCalled();
-    const choosing = f.picker.choose();
+  it('opens the native picker on the first click before asking for a reservation', async () => {
+    const f = fixture(async () => {});
+    const pending = deferred<MediaStream>();
+    f.ports.capture.mockReturnValueOnce(pending.promise);
+    const starting = f.picker.start();
     expect(f.ports.capture).toHaveBeenCalledOnce();
-    expect(await choosing).toMatchObject({ lease: f.lease, stream: f.stream });
-    const selection = f.picker.getSelection();
+    expect(f.ports.acquire).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(screenPickerLeaseMs + 1);
+    pending.resolve(f.stream);
+    await starting;
+    expect(f.ports.acquire).toHaveBeenCalledOnce();
+    expect(f.picker.getSnapshot().status).toBe('sharing');
+  });
+
+  it('stops capture after a reservation expires in flight without publishing', async () => {
+    const f = fixture();
+    const pending = deferred<ScreenPickerLease>();
+    f.ports.acquire.mockReturnValueOnce(pending.promise);
+    const starting = f.picker.start();
+    await Promise.resolve();
     await vi.advanceTimersByTimeAsync(screenPickerLeaseMs);
-    expect(selection?.signal.aborted).toBe(true);
+    pending.resolve(f.lease);
+    await starting;
+    expect(f.ports.publish).not.toHaveBeenCalled();
     expect(f.video.stop).toHaveBeenCalledOnce();
     expect(f.audio.stop).toHaveBeenCalledOnce();
     expect(f.ports.release).toHaveBeenCalledExactlyOnceWith(f.context, f.lease);
   });
 
-  it('releases the reservation when the browser picker is cancelled', async () => {
+  it('does not acquire a reservation when the browser picker is cancelled', async () => {
     const f = fixture();
     f.ports.capture.mockRejectedValueOnce(new DOMException('Cancelled', 'NotAllowedError'));
-    await f.picker.reserve();
-    await f.picker.choose();
-    expect(f.ports.release).toHaveBeenCalledExactlyOnceWith(f.context, f.lease);
+    await f.picker.start();
+    expect(f.ports.acquire).not.toHaveBeenCalled();
     expect(f.picker.getSnapshot().status).toBe('idle');
   });
 
-  it('stops a capture arriving after expiry without clearing a newer lease', async () => {
+  it('stops a capture arriving after cancellation without clearing a newer attempt', async () => {
     const f = fixture();
     const pending = deferred<MediaStream>();
     f.ports.capture.mockReturnValueOnce(pending.promise);
-    await f.picker.reserve();
-    const old = f.picker.choose();
-    await vi.advanceTimersByTimeAsync(screenPickerLeaseMs);
-    f.ports.acquire.mockResolvedValueOnce({
-      ...f.lease,
-      leaseId: '10000000-0000-4000-8000-000000000005',
-      leaseGeneration: 2,
-    });
-    await f.picker.reserve();
+    const old = f.picker.start();
+    f.picker.cancel();
+    const next = deferred<MediaStream>();
+    f.ports.capture.mockReturnValueOnce(next.promise);
+    const newer = f.picker.start();
     pending.resolve(f.stream);
     expect(await old).toBeUndefined();
     expect(f.video.stop).toHaveBeenCalledOnce();
     expect(f.audio.stop).toHaveBeenCalledOnce();
-    expect(f.ports.release).toHaveBeenCalledExactlyOnceWith(f.context, f.lease);
-    expect(f.picker.getSnapshot().status).toBe('reserved');
-    f.picker.dispose();
+    expect(f.ports.acquire).not.toHaveBeenCalled();
+    expect(f.picker.getSnapshot().status).toBe('choosing');
+    next.resolve(f.stream);
+    await newer;
   });
 
-  it('releases a late acquire ACK after scope changes without opening the picker', async () => {
+  it('stops local capture and releases a late acquire ACK after scope changes', async () => {
     const f = fixture();
     const pending = deferred<ScreenPickerLease>();
     f.ports.acquire.mockReturnValueOnce(pending.promise);
-    const old = f.picker.reserve();
+    const old = f.picker.start();
+    await Promise.resolve();
     const scope = {
       type: 'GROUP',
       groupId: '10000000-0000-4000-8000-000000000005',
@@ -152,16 +163,17 @@ describe('screen picker lease', () => {
     pending.resolve(f.lease);
     await old;
     expect(f.ports.release).toHaveBeenCalledExactlyOnceWith(f.context, f.lease);
-    expect(f.ports.capture).not.toHaveBeenCalled();
+    expect(f.video.stop).toHaveBeenCalledOnce();
+    expect(f.ports.publish).not.toHaveBeenCalled();
     expect(f.picker.getSnapshot()).toMatchObject({ status: 'hidden', error: expect.any(String) });
-    await f.picker.reserve();
+    await f.picker.start();
     expect(f.ports.acquire).toHaveBeenCalledOnce();
+    expect(f.ports.capture).toHaveBeenCalledOnce();
   });
 
   it('cleans up and blocks a new attempt when projection revokes permission in the same scope', async () => {
     const f = fixture();
-    await f.picker.reserve();
-    await f.picker.choose();
+    await f.picker.start();
     const next = { ...f.context, policyRevision: 1, projectionSequence: 1 };
     f.picker.updateContext({ ...next, projection: projectionFor(next, { type: 'MAIN' }, false) });
     expect(f.picker.getSnapshot()).toMatchObject({
@@ -172,14 +184,27 @@ describe('screen picker lease', () => {
     expect(f.audio.stop).toHaveBeenCalledOnce();
     expect(f.ports.release).toHaveBeenCalledExactlyOnceWith(f.context, f.lease);
     f.picker.updateContext({ ...f.context, projection: projectionFor(f.context) });
-    await f.picker.reserve();
+    await f.picker.start();
     expect(f.ports.acquire).toHaveBeenCalledOnce();
 
     const restored = { ...next, policyRevision: 2, projectionSequence: 2 };
     f.picker.updateContext({ ...restored, projection: projectionFor(restored) });
-    await f.picker.reserve();
-    expect(f.picker.getSnapshot().status).toBe('reserved');
+    await f.picker.start();
+    expect(f.picker.getSnapshot().status).toBe('sharing');
     f.picker.dispose();
+  });
+
+  it('stops the selected tracks when another participant already holds the slot', async () => {
+    const f = fixture();
+    f.ports.acquire.mockRejectedValueOnce(new Error('SHARE_BUSY'));
+    await f.picker.start();
+    expect(f.ports.publish).not.toHaveBeenCalled();
+    expect(f.video.stop).toHaveBeenCalledOnce();
+    expect(f.audio.stop).toHaveBeenCalledOnce();
+    expect(f.picker.getSnapshot()).toMatchObject({
+      status: 'idle',
+      error: expect.stringContaining('Đang có người chia sẻ'),
+    });
   });
 });
 
@@ -188,8 +213,7 @@ it('browser Stop aborts the published pair and releases the exact lease after pi
     async () => {},
   );
   const f = fixture(publish);
-  await f.picker.reserve();
-  await f.picker.choose();
+  await f.picker.start();
   const signal = publish.mock.calls[0]![3];
   expect(f.picker.getSnapshot().status).toBe('sharing');
   await vi.advanceTimersByTimeAsync(screenPickerLeaseMs);
@@ -213,14 +237,13 @@ it('keeps the old lease for retry when browser Stop cannot be confirmed', async 
   f.ports.release
     .mockRejectedValueOnce(new Error('Stop request timed out'))
     .mockReturnValueOnce(confirmation.promise);
-  await f.picker.reserve();
-  await f.picker.choose();
+  await f.picker.start();
   f.video.dispatchEvent(new Event('ended'));
   await Promise.resolve();
   expect(f.picker.getSnapshot().status).toBe('stopFailed');
   expect(f.video.stop).toHaveBeenCalledOnce();
   expect(f.audio.stop).toHaveBeenCalledOnce();
-  await f.picker.reserve();
+  await f.picker.start();
   expect(f.ports.acquire).toHaveBeenCalledOnce();
 
   f.picker.cancel();
@@ -242,9 +265,12 @@ it('does not stop a committed SCREEN at the picker deadline while audio is pendi
     () => audio.promise,
   );
   const f = fixture(publish);
-  await f.picker.reserve();
+  const lease = deferred<ScreenPickerLease>();
+  f.ports.acquire.mockReturnValueOnce(lease.promise);
+  const choosing = f.picker.start();
+  await Promise.resolve();
   await vi.advanceTimersByTimeAsync(screenPickerLeaseMs - 1);
-  const choosing = f.picker.choose();
+  lease.resolve(f.lease);
   await vi.advanceTimersByTimeAsync(2);
   expect(publish).toHaveBeenCalledOnce();
   expect(publish.mock.calls[0]![3].aborted).toBe(false);
@@ -258,8 +284,7 @@ it('does not stop a committed SCREEN at the picker deadline while audio is pendi
 it('cancels publication that exceeds its own deadline and ignores a late result', async () => {
   const publication = deferred<void>();
   const f = fixture(() => publication.promise);
-  await f.picker.reserve();
-  const choosing = f.picker.choose();
+  const choosing = f.picker.start();
   await vi.advanceTimersByTimeAsync(sessionControlBudget.foregroundTransitionTimeoutMs);
   expect(f.ports.release).toHaveBeenCalledExactlyOnceWith(f.context, f.lease);
   expect(f.video.stop).toHaveBeenCalledOnce();

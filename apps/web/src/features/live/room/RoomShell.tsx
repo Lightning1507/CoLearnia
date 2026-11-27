@@ -4,7 +4,7 @@ import type { CallHandle, CallIdentity, CallSnapshot } from '../runtime/callCont
 import { DeviceMediaControls } from './DeviceMediaControls';
 import type { DeviceMedia } from '../runtime/deviceMedia';
 import { useCallAudio, useCallCameras, useCallSnapshot } from '../runtime/callControllerContext';
-import { CameraTiles } from './CameraTiles';
+import { CameraTiles, MeetingTiles } from './CameraTiles';
 
 const statusLabels: Record<CallSnapshot['status'], string> = {
   idle: 'Chưa tham gia cuộc gọi',
@@ -35,6 +35,8 @@ type RoomShellProps = {
   shareLabel?: string;
   secondaryControls?: ReactNode;
   volumeControls?: ReactNode;
+  meetingLayout?: boolean;
+  localParticipantId?: string;
 };
 
 function StageVideo({ stream }: { stream: MediaStream }) {
@@ -78,6 +80,8 @@ export function RoomShell({
   shareLabel,
   secondaryControls,
   volumeControls,
+  meetingLayout = false,
+  localParticipantId,
 }: RoomShellProps) {
   const call = useCallSnapshot();
   const audio = useCallAudio();
@@ -155,10 +159,18 @@ export function RoomShell({
       ? stageMedia.stream
       : undefined;
   const sharedStage = !error && roomCall?.status === 'active' && Boolean(stage || stream);
+  const meetingTiles = meetingLayout && roomCall?.status === 'active' && (
+    <MeetingTiles
+      snapshot={cameras}
+      participantNames={participantNames}
+      localParticipantId={localParticipantId}
+      shared={sharedStage}
+    />
+  );
 
   return (
     <article
-      className={`live-room-shell ${useWorkspaceWidth ? 'live-room-in-workspace' : '@container/room-layout live-room-standalone'}`}
+      className={`live-room-shell ${useWorkspaceWidth ? 'live-room-in-workspace' : '@container/room-layout live-room-standalone'} ${meetingLayout ? 'meeting-v11' : ''}`}
       aria-labelledby={titleId}
       ref={roomElement}
     >
@@ -196,15 +208,22 @@ export function RoomShell({
                   (stream ? (
                     <StageVideo stream={stream} />
                   ) : roomCall?.status === 'active' ? (
-                    <CameraTiles snapshot={cameras} participantNames={participantNames} />
+                    meetingTiles || (
+                      <CameraTiles snapshot={cameras} participantNames={participantNames} />
+                    )
                   ) : (
                     <p>Chưa có hình ảnh sân khấu.</p>
                   )))
                 )}
               </section>
-              {sharedStage && (
-                <CameraTiles snapshot={cameras} layout="rail" participantNames={participantNames} />
-              )}
+              {sharedStage &&
+                (meetingTiles || (
+                  <CameraTiles
+                    snapshot={cameras}
+                    layout="rail"
+                    participantNames={participantNames}
+                  />
+                ))}
             </div>
           </div>
           {sidePanel && (
@@ -265,7 +284,7 @@ export function RoomShell({
             {volumeControls && <div className="live-room-volume">{volumeControls}</div>}
             <div className="live-room-controls-main">
               {roomCall?.status === 'active' && devices && (
-                <DeviceMediaControls devices={devices} />
+                <DeviceMediaControls devices={devices} compact={meetingLayout} />
               )}
               {controls ?? (!devices && <p>Chưa có điều khiển cuộc gọi khả dụng.</p>)}
             </div>

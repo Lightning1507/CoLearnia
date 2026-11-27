@@ -52,8 +52,8 @@ export function createDeviceMediaSocket(
     }
   }
 
-  async function close(kind: string, pending: PendingClose) {
-    const { context, target } = pending;
+  async function close(kind: string, pending: PendingClose, context = pending.context) {
+    const { target } = pending;
     const input = mediaDeviceProducerCloseInputSchema.parse({
       ...envelope(context),
       payload: { transportId: send.id, target },
@@ -118,6 +118,17 @@ export function createDeviceMediaSocket(
     {
       microphone: preferences?.microphone.deviceId ?? '',
       camera: preferences?.camera.deviceId ?? '',
+    },
+    async (device, context) => {
+      const kind = device === 'microphone' ? 'audio' : 'video';
+      const pending = pendingClose.get(kind);
+      if (!pending) return;
+      if (!sameDeviceBinding(pending.context, context)) {
+        // This warning belongs to the previous binding. Never replay its close here.
+        pendingClose.delete(kind);
+        return;
+      }
+      await close(kind, pending, context);
     },
   );
 

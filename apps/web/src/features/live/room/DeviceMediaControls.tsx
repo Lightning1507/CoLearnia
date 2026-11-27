@@ -1,6 +1,7 @@
 import { useId, useSyncExternalStore } from 'react';
 import type { DeviceMedia } from '../runtime/deviceMedia';
 import type { DeviceKind } from '../lobby/lobbyPreview';
+import { useTransientNotice } from '../../../app/useTransientNotice';
 
 const labels = { microphone: 'mic', camera: 'camera' };
 
@@ -46,16 +47,24 @@ function DeviceControl({
     devices.getSnapshot,
     devices.getSnapshot,
   );
-  const { phase, error } = snapshot[kind];
+  const { phase, error, cleanupUnconfirmed } = snapshot[kind];
+  const notice = useTransientNotice(cleanupUnconfirmed ? undefined : error);
+  const feedback = cleanupUnconfirmed ? error : notice;
   const helpId = useId();
   const canStop = phase === 'on' || phase === 'starting';
   const disabled =
-    phase === 'stopping' || ((!snapshot.available || !devices.isAllowed(kind)) && !canStop);
+    phase === 'stopping' ||
+    (!canStop && (!snapshot.available || (!cleanupUnconfirmed && !devices.isAllowed(kind))));
   const label = labels[kind];
   const action = phase === 'starting' ? 'Hủy bật' : canStop ? 'Tắt' : 'Bật';
+  const actionLabel = cleanupUnconfirmed
+    ? phase === 'stopping'
+      ? 'Đang xác nhận đóng nguồn ' + label
+      : 'Thử đóng nguồn ' + label + ' lại'
+    : action + ' ' + label;
   const statusLabel = kind === 'microphone' ? 'Mic' : 'Camera';
   const help =
-    error ??
+    feedback ??
     (phase === 'starting'
       ? 'Đang mở thiết bị. Bạn có thể hủy.'
       : phase === 'stopping'
@@ -69,27 +78,32 @@ function DeviceControl({
       <button
         type="button"
         className="live-toolbar-control inline-flex min-h-11 min-w-12 items-center justify-center gap-2 rounded-lg px-3 text-sm"
-        aria-label={action + ' ' + label}
-        title={action + ' ' + label}
+        aria-label={actionLabel}
+        title={actionLabel}
         aria-pressed={phase === 'on'}
         aria-disabled={disabled}
         aria-describedby={help ? helpId : undefined}
-        data-state={phase === 'off' ? 'off' : undefined}
+        data-state={phase === 'off' ? 'off' : phase === 'on' ? 'active' : undefined}
         onClick={() => {
           if (disabled) return;
           if (canStop) void devices.stop(kind);
+          else if (cleanupUnconfirmed) void devices.retryCleanup(kind);
           else void devices.start(kind);
         }}
       >
         <DeviceIcon kind={kind} muted={compact && phase === 'off'} />
         <span className={compact ? 'sr-only' : undefined}>
-          {statusLabel} {phase === 'on' ? 'bật' : phase === 'starting' ? 'đang bật' : 'tắt'}
+          {cleanupUnconfirmed
+            ? actionLabel
+            : statusLabel +
+              ' ' +
+              (phase === 'on' ? 'bật' : phase === 'starting' ? 'đang bật' : 'tắt')}
         </span>
       </button>
       <span
         id={helpId}
         role="status"
-        className={compact && !error ? 'sr-only' : 'text-sm empty:sr-only'}
+        className={compact && !feedback ? 'sr-only' : 'text-sm empty:sr-only'}
       >
         {help}
       </span>

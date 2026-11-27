@@ -15,6 +15,7 @@ export type LobbyPreviewState = {
   camera: DeviceState;
   microphone: DeviceState;
   videoStream: MediaStream | null;
+  audioStream: MediaStream | null;
   enumerating: boolean;
   enumerationError: string | null;
   environmentError: string | null;
@@ -75,6 +76,7 @@ export class LobbyPreview {
     camera: initialDevice(),
     microphone: initialDevice(),
     videoStream: null,
+    audioStream: null,
     enumerating: false,
     enumerationError: null,
     environmentError: null,
@@ -104,7 +106,7 @@ export class LobbyPreview {
   private update(
     kind: DeviceKind,
     patch: Partial<DeviceState>,
-    videoStream = this.state.videoStream,
+    stream = this.state[kind === 'camera' ? 'videoStream' : 'audioStream'],
   ) {
     this.publish({
       [kind]: {
@@ -114,7 +116,7 @@ export class LobbyPreview {
           this.owned[kind]?.stream.getTracks().some((track) => track.readyState === 'live') ??
           false,
       },
-      videoStream: kind === 'camera' ? videoStream : this.state.videoStream,
+      [kind === 'camera' ? 'videoStream' : 'audioStream']: stream,
     });
   }
 
@@ -331,6 +333,7 @@ export class LobbyPreview {
       camera: initialDevice(),
       microphone: initialDevice(),
       videoStream: null,
+      audioStream: null,
       enumerating: false,
       enumerationError: null,
     });

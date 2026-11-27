@@ -1,6 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useId, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
+import { useTransientNotice } from '../../app/useTransientNotice';
 import { channelNameSchema } from '@colearnia/contracts';
 import type {
   AuthenticatedData,
@@ -55,7 +56,11 @@ export function CreateChannelForm({
   const [error, setError] = useState<string>();
   const [invalidName, setInvalidName] = useState(false);
   const [blocked, setBlocked] = useState(false);
+  const persistentError = invalidName || Boolean(attempt) || blocked;
+  const timedError = useTransientNotice(persistentError ? undefined : error);
+  const visibleError = persistentError ? error : timedError;
   const [created, setCreated] = useState<ChannelSummary>();
+  const createdNotice = useTransientNotice(created);
   useEffect(() => {
     alive.current = true;
     return () => {
@@ -196,10 +201,10 @@ export function CreateChannelForm({
           'Tạo kênh'
         )}
       </button>
-      {created && (
+      {createdNotice && (
         <p role="status">
-          Đã tạo kênh {created.name} · {created.type} ·{' '}
-          {created.accessMode === 'PRIVATE'
+          Đã tạo kênh {createdNotice.name} · {createdNotice.type} ·{' '}
+          {createdNotice.accessMode === 'PRIVATE'
             ? 'Riêng tư — chưa cấp quyền nội dung'
             : 'Toàn Workspace'}
           .
@@ -233,7 +238,7 @@ export function CreateChannelForm({
                 disabled={pending}
                 readOnly={Boolean(attempt)}
                 aria-invalid={invalidName}
-                aria-describedby={error ? errorId : undefined}
+                aria-describedby={visibleError ? errorId : undefined}
                 onChange={(event) => setName(event.target.value)}
               />
             </div>
@@ -288,9 +293,9 @@ export function CreateChannelForm({
                 danh sách quyền PRIVATE trước khi sử dụng.
               </p>
             )}
-            {error && (
+            {visibleError && (
               <p id={errorId} className="channel-error" role="alert">
-                {error}
+                {visibleError}
               </p>
             )}
           </div>

@@ -5,6 +5,10 @@ import { QueryClient } from '@tanstack/react-query';
 import { CreateChannelForm } from './CreateChannelForm';
 import { sessionKey } from '../auth/session';
 
+vi.mock('../../app/useTransientNotice', () => ({
+  useTransientNotice: (notice: unknown) => notice,
+}));
+
 const controls = vi.hoisted(() => ({
   stateIndex: 0,
   pending: vi.fn(),

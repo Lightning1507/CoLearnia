@@ -135,7 +135,7 @@ async function bootstrap(http: ReturnType<typeof client>) {
 function input() {
   return {
     email: `${randomUUID()}@example.test`,
-    password: '  Học theo nhóm 🌱 hôm nay  ',
+    password: 'HocTheoNhom!@#',
     displayName: '  Quân  ',
   };
 }
@@ -619,7 +619,6 @@ describe('SCRUM-18 registration with MongoDB', () => {
     const user = await User.findById(data.user.id).select('+passwordHash').orFail();
     expect(user.passwordHash).toMatch(/^\$argon2id\$v=19\$m=32768,t=2,p=1\$/);
     expect(await verify(user.passwordHash, body.password)).toBe(true);
-    expect(await verify(user.passwordHash, body.password.trim())).toBe(false);
     const session = await AuthSession.findOne({ userId: user._id }).select('+tokenHash').orFail();
     expect(session.tokenHash).toBe(hashAuthToken(rawToken));
     expect(session.expiresAt.toISOString()).toBe(data.expiresAt);
@@ -676,6 +675,9 @@ describe('SCRUM-18 registration with MongoDB', () => {
       { ...body, displayName: '  ' },
       { ...body, role: 'OWNER' },
       { ...body, password: 'PasswordPassword' },
+      { ...body, password: 'HocNhom' },
+      { ...body, password: 'HọcTheoNhom!' },
+      { ...body, password: 'Hoc Theo Nhom!' },
       { ...body, password: 'x'.repeat(16) + '\uD800' },
     ]) {
       const response = await register(http, csrf).send(invalid).expect(400);
@@ -835,6 +837,25 @@ describe('SCRUM-20 password login with MongoDB', () => {
     });
   }
 
+  it('still authenticates a stored password with Unicode and surrounding spaces', async () => {
+    const http = client();
+    const body = input();
+    const first = await signUp(http, body);
+    const legacyPassword = '  Học theo nhóm 🌱 hôm nay  ';
+    await User.updateOne(
+      { _id: first.data.user.id },
+      { passwordHash: await hashPassword(legacyPassword) },
+    );
+
+    await loginRequest(http, await bootstrap(http))
+      .send({ email: body.email, password: legacyPassword.trim() })
+      .expect(401);
+    const response = await loginRequest(http, await bootstrap(http))
+      .send({ email: body.email, password: legacyPassword })
+      .expect(200);
+    expect(sessionFrom(response).data.user.id).toBe(first.data.user.id);
+  });
+
   it.each([false, true])(
     'allows an expired cookie awaiting TTL with revocation dependency=%s',
     async (withRevocation) => {
@@ -970,7 +991,7 @@ describe('SCRUM-20 password login with MongoDB', () => {
       .send({ ...credentials, password: '\ud800' })
       .expect(400);
     const wrong = await loginWithSession(http, signedIn)
-      .send({ ...credentials, password: credentials.password.trim() })
+      .send({ ...credentials, password: credentials.password + 'x' })
       .expect(401);
     expect(wrong.headers['set-cookie']).toBeUndefined();
     await http

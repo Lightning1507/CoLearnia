@@ -18,7 +18,7 @@ export function sameDeviceBinding(left: DeviceMediaContext, right: DeviceMediaCo
 }
 
 type DevicePhase = 'off' | 'starting' | 'on' | 'stopping';
-type DeviceState = { phase: DevicePhase; error?: string };
+type DeviceState = { phase: DevicePhase; error?: string; cleanupUnconfirmed?: true };
 type Snapshot = Record<DeviceKind, DeviceState> & { available: boolean };
 type Publication = { close(): Promise<void> };
 type Attempt = {
@@ -29,6 +29,7 @@ type Attempt = {
 
 const kinds = ['microphone', 'camera'] as const;
 const unconfirmedClose = 'Thiết bị đã tắt. Chưa xác nhận được việc đóng nguồn trên máy chủ.';
+const cleanupUnconfirmed = { error: unconfirmedClose, cleanupUnconfirmed: true } as const;
 
 export class DeviceCleanupUnconfirmedError extends Error {
   constructor(cause: unknown) {
@@ -57,6 +58,7 @@ export class DeviceMedia {
       signal: AbortSignal,
     ) => Promise<Publication>,
     deviceIds: Partial<Record<DeviceKind, string>> = {},
+    private readonly retryClose?: (kind: DeviceKind, context: DeviceMediaContext) => Promise<void>,
   ) {
     this.#deviceIds = { ...deviceIds };
   }
@@ -91,11 +93,19 @@ export class DeviceMedia {
 
   async start(kind: DeviceKind) {
     const context = this.#context;
-    if (!context || this.#disposed || this.#attempts[kind] || !this.#allowed[kind]) return;
+    if (
+      !context ||
+      this.#disposed ||
+      this.#attempts[kind] ||
+      this.#snapshot[kind].phase !== 'off' ||
+      !this.#allowed[kind]
+    )
+      return;
+    const unresolved = this.#snapshot[kind].cleanupUnconfirmed ? cleanupUnconfirmed : {};
     const attempt: Attempt = { abort: new AbortController() };
     this.#attempts[kind] = attempt;
-    this.#set(kind, { phase: 'starting' });
-    let stopped: DeviceState = { phase: 'off' };
+    this.#set(kind, { phase: 'starting', ...unresolved });
+    let stopped: DeviceState = { phase: 'off', ...unresolved };
     try {
       const deviceId = this.#deviceIds[kind];
       const constraints = deviceId ? { deviceId: { exact: deviceId } } : true;
@@ -139,8 +149,8 @@ export class DeviceMedia {
       this.#set(kind, { phase: 'on' });
     } catch (error) {
       if (error instanceof DeviceCleanupUnconfirmedError) {
-        stopped = { phase: 'off', error: unconfirmedClose };
-      } else if (!attempt.abort.signal.aborted) {
+        stopped = { phase: 'off', ...cleanupUnconfirmed };
+      } else if (!attempt.abort.signal.aborted && !stopped.cleanupUnconfirmed) {
         const message =
           error instanceof Error &&
           (error.name === 'NotAllowedError' || error.name === 'SecurityError')
@@ -172,10 +182,10 @@ export class DeviceMedia {
     }
     if (!attempt.track) {
       delete this.#attempts[kind];
-      this.#set(kind, { phase: 'off' });
+      this.#set(kind, { ...this.#snapshot[kind], phase: 'off' });
       return;
     }
-    this.#set(kind, { phase: 'stopping' });
+    this.#set(kind, { ...this.#snapshot[kind], phase: 'stopping' });
     if (!attempt.publication) return; // start() disposes any late result.
     try {
       await attempt.publication.close();
@@ -183,11 +193,34 @@ export class DeviceMedia {
     } catch {
       this.#set(kind, {
         phase: 'off',
-        error: unconfirmedClose,
+        ...cleanupUnconfirmed,
       });
     } finally {
       delete this.#attempts[kind];
     }
+  }
+
+  async retryCleanup(kind: DeviceKind) {
+    const context = this.#context;
+    const state = this.#snapshot[kind];
+    if (
+      !context ||
+      this.#disposed ||
+      !this.retryClose ||
+      state.phase !== 'off' ||
+      !state.cleanupUnconfirmed
+    )
+      return;
+    this.#set(kind, { phase: 'stopping', ...cleanupUnconfirmed });
+    let confirmed = false;
+    try {
+      await this.retryClose(kind, context);
+      confirmed = true;
+    } catch {
+      // Keep the unresolved server state visible until a close is confirmed.
+    }
+    if (!this.#disposed)
+      this.#set(kind, confirmed ? { phase: 'off' } : { phase: 'off', ...cleanupUnconfirmed });
   }
 
   dispose() {

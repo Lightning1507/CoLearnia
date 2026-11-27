@@ -6,6 +6,7 @@ import { createTextApi } from './text-api';
 import { createTextSynchronizer, type TextSyncState } from './text-sync';
 import { createTextConnection } from './text-connection';
 import { useTextMemory } from './text-memory';
+import { useTransientNotice } from '../../app/useTransientNotice';
 
 // Bounded in-memory projection. These budgets do not establish server capacity.
 const limits = {
@@ -52,8 +53,10 @@ export function TextChannel({
     disconnect: () => void;
   }>();
   const [opened, setOpened] = useState(false);
+  const [syncAttempt, setSyncAttempt] = useState(0);
   const [socketOnline, setSocketOnline] = useState(false);
   const [error, setError] = useState('');
+  const errorNotice = useTransientNotice(error);
   const connectionRef = useRef<ReturnType<typeof createTextConnection> | null>(null);
   useEffect(() => {
     if (selected && onSearchProjection)
@@ -123,14 +126,26 @@ export function TextChannel({
       if (connectionRef.current === connection) connectionRef.current = null;
       connection.dispose();
     };
-  }, [channelId, session.csrfToken]);
+  }, [channelId, session.csrfToken, syncAttempt]);
 
   if (state.phase === 'revoked') return <p role="alert">Bạn không còn quyền đọc kênh này.</p>;
   if (state.phase === 'blocked')
     return (
       <div role="alert">
         <p>Bộ nhớ chat đã đạt giới hạn.</p>
-        <button onClick={() => window.location.reload()}>Tải lại trang để mở cửa sổ tin mới</button>
+        <button
+          type="button"
+          onClick={() => {
+            setRuntime(undefined);
+            setOpened(false);
+            setSocketOnline(false);
+            setError('');
+            setState({ phase: 'idle', messages: [], checkpoint: undefined, olderCursor: null });
+            setSyncAttempt((value) => value + 1);
+          }}
+        >
+          Tải lại tin nhắn của kênh
+        </button>
       </div>
     );
   return (
@@ -139,12 +154,14 @@ export function TextChannel({
         state.phase === 'resync' ||
         (!opened && state.phase !== 'live') ||
         (opened && !socketOnline)) && (
-        <div className="text-channel-status" role={error ? 'alert' : 'status'}>
+        <div className="text-channel-status" role={errorNotice ? 'alert' : 'status'}>
           <p>
-            {error ||
+            {errorNotice ||
               (state.phase === 'resync'
-                ? 'Chưa đồng bộ được chat. Dịch vụ có thể chưa sẵn sàng, hãy thử lại.'
-                : 'Đang kết nối và đồng bộ tin nhắn…')}
+                ? 'Chat đang chờ đồng bộ.'
+                : error
+                  ? 'Chat đang chờ kết nối.'
+                  : 'Đang kết nối và đồng bộ tin nhắn…')}
           </p>
           <button onClick={() => connectionRef.current?.retry()}>Thử kết nối lại</button>
         </div>

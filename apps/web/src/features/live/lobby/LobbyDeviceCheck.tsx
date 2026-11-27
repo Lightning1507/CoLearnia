@@ -2,6 +2,8 @@ import { useEffect, useId, useRef, useState } from 'react';
 import type { RefObject } from 'react';
 import type { DeviceKind, PreviewStatus } from './lobbyPreview';
 import { useLobbyPreview } from './useLobbyPreview';
+import { LobbyMicMeter } from './LobbyMicMeter';
+import { useTransientNotice } from '../../../app/useTransientNotice';
 
 const buttonClass = 'lobby-button';
 
@@ -43,12 +45,7 @@ function DeviceIcon({ kind, off = false }: { kind: DeviceKind; off?: boolean }) 
           <path d="M5 11v1a7 7 0 0 0 14 0v-1m-7 8v3m-3 0h6" />
         </>
       )}
-      {off && (
-        <>
-          <path d="M3 3l18 18" className="stroke-feedback-error-surface" strokeWidth="4" />
-          <path d="M3 3l18 18" />
-        </>
-      )}
+      {off && <path d="M3 3l18 18" />}
     </svg>
   );
 }
@@ -135,6 +132,16 @@ export function LobbyDeviceCheck({
   const { state, preview } = useLobbyPreview();
   const videoRef = useRef<HTMLVideoElement>(null);
   const id = useId();
+  const lobbyNotice = useTransientNotice(notice);
+  const enumerationError = useTransientNotice(state.enumerationError);
+  const cameraNotice = useTransientNotice(
+    ['off', 'ready', 'requesting'].includes(state.camera.status) ? undefined : state.camera.message,
+  );
+  const micNotice = useTransientNotice(
+    ['off', 'ready', 'requesting'].includes(state.microphone.status)
+      ? undefined
+      : state.microphone.message,
+  );
   const deviceControlsDisabled = !!state.environmentError || continuePending;
   const deviceRequestPending =
     state.camera.status === 'requesting' || state.microphone.status === 'requesting';
@@ -169,7 +176,7 @@ export function LobbyDeviceCheck({
   };
 
   return (
-    <section className="live-lobby" aria-labelledby={`${id}-title`}>
+    <section className="live-lobby prejoin-v11" aria-labelledby={`${id}-title`}>
       <header className="live-lobby-header">
         <button className="lobby-back" type="button" onClick={back}>
           <span aria-hidden="true">←</span> Quay lại Phòng học
@@ -177,23 +184,28 @@ export function LobbyDeviceCheck({
         <strong>CoLearnia</strong>
       </header>
       <div className="live-lobby-main">
-        <section className="lobby-preview" aria-label="Xem trước camera, chỉ trên máy này">
-          {state.videoStream ? (
-            <CameraPreview
-              key={state.videoStream.id}
-              stream={state.videoStream}
-              videoRef={videoRef}
-            />
-          ) : (
-            <div className="lobby-placeholder">
-              <span className="lobby-placeholder-icon">
-                <DeviceIcon kind="camera" off />
-              </span>
-              <strong>
-                {state.camera.status === 'requesting' ? 'Đang mở camera…' : 'Camera đang tắt'}
-              </strong>
+        <div className="lobby-preview-column">
+          <section className="lobby-preview" aria-label="Xem trước camera, chỉ trên máy này">
+            {state.videoStream ? (
+              <CameraPreview
+                key={state.videoStream.id}
+                stream={state.videoStream}
+                videoRef={videoRef}
+              />
+            ) : (
+              <div className="lobby-placeholder">
+                <span className="lobby-placeholder-icon">
+                  <DeviceIcon kind="camera" off />
+                </span>
+                <strong>Sẵn sàng kiểm tra thiết bị?</strong>
+                <span>Bật camera để xem hình của bạn.</span>
+              </div>
+            )}
+            <div className="lobby-preview-caption">
+              <strong>Hình xem trước của bạn</strong>
+              <span>Camera {deviceStatusLabel[state.camera.status].toLowerCase()}</span>
             </div>
-          )}
+          </section>
           <div className="lobby-preview-controls" role="group" aria-label="Bật hoặc tắt thiết bị">
             {deviceControls.map(({ kind, name }) => {
               const { status, isActive: enabled } = state[kind];
@@ -214,13 +226,15 @@ export function LobbyDeviceCheck({
                   }
                 >
                   <DeviceIcon kind={kind} off={!enabled} />
+                  <span>{kind === 'microphone' ? 'Micro' : name}</span>
                 </button>
               );
             })}
           </div>
-        </section>
+          <LobbyMicMeter stream={state.audioStream} />
+        </div>
         <section className="lobby-settings" aria-labelledby={`${id}-title`}>
-          <p className="lobby-channel">{channelName}</p>
+          <p className="lobby-channel">Phòng trực tiếp</p>
           <h1 id={`${id}-title`}>
             {transfer ? 'Chuyển cuộc gọi sang thiết bị này?' : 'Sẵn sàng tham gia?'}
           </h1>
@@ -229,9 +243,9 @@ export function LobbyDeviceCheck({
               ? 'Cuộc gọi đang mở trên tab hoặc thiết bị khác. Khi chuyển, kết nối cũ sẽ ngắt và bạn tiếp tục cuộc gọi tại đây. Mic và camera bật theo lựa chọn của bạn.'
               : 'Kiểm tra thiết bị trước khi vào phòng. Chỉ bật camera hoặc micro khi bạn muốn.'}
           </p>
-          {notice && (
+          {lobbyNotice && (
             <p className="lobby-device-message" role="status">
-              {notice}
+              {lobbyNotice}
             </p>
           )}
           {state.environmentError && (
@@ -239,17 +253,10 @@ export function LobbyDeviceCheck({
               {state.environmentError}
             </p>
           )}
-          <p
-            className={
-              state.enumerating || state.enumerationError ? 'lobby-device-message' : 'sr-only'
-            }
-            role="status"
-          >
-            {state.enumerating ? 'Đang đọc danh sách thiết bị…' : state.enumerationError}
-          </p>
           {deviceControls.map(({ kind, name }) => {
             const device = state[kind];
-            const showMessage = !['off', 'ready'].includes(device.status);
+            const feedback = kind === 'camera' ? cameraNotice : micNotice;
+            const showMessage = device.status === 'requesting' || Boolean(feedback);
             return (
               <div className="lobby-device-field" key={kind}>
                 <label htmlFor={`${id}-${kind}`}>{kind === 'microphone' ? 'Micro' : name}</label>
@@ -274,15 +281,17 @@ export function LobbyDeviceCheck({
                 >
                   {device.status === 'requesting' && device.isActive
                     ? 'Đang đổi thiết bị…'
-                    : device.message}
+                    : showMessage
+                      ? (feedback ?? device.message)
+                      : ''}
                 </p>
               </div>
             );
           })}
           <div className="lobby-device-state">
             {deviceControls.map(({ kind }) => (
-              <span key={kind}>
-                <DeviceIcon kind={kind} />
+              <span key={kind} data-state={state[kind].status}>
+                <DeviceIcon kind={kind} off={!state[kind].isActive} />
                 {kind === 'camera' ? 'Camera' : 'Mic'}{' '}
                 {deviceStatusLabel[state[kind].status].toLowerCase()}
               </span>
@@ -291,18 +300,20 @@ export function LobbyDeviceCheck({
           <button
             className="lobby-refresh"
             type="button"
+            aria-busy={state.enumerating}
             disabled={!!state.environmentError || state.enumerating || continuePending}
             onClick={() => void preview.refreshDevices()}
           >
-            Làm mới thiết bị
+            {state.enumerating ? 'Đang làm mới…' : 'Làm mới thiết bị'}
           </button>
+          {enumerationError && (
+            <p className="lobby-device-message" role="status">
+              {enumerationError}
+            </p>
+          )}
           {onContinue && (
             <>
-              <p
-                id={`${id}-continue-status`}
-                className={deviceRequestPending ? 'lobby-device-message' : 'sr-only'}
-                role="status"
-              >
+              <p id={`${id}-continue-status`} className="lobby-entry-hint" role="status">
                 {deviceRequestPending
                   ? 'Đang mở hoặc đổi thiết bị. Hãy chờ hoàn tất hoặc tắt thiết bị để tiếp tục.'
                   : 'Bạn có thể tham gia khi mic và camera đang tắt.'}
@@ -322,6 +333,10 @@ export function LobbyDeviceCheck({
               </button>
             </>
           )}
+          <dl className="lobby-entry-details">
+            <dt>Phòng</dt>
+            <dd>{channelName}</dd>
+          </dl>
         </section>
       </div>
     </section>

@@ -9,6 +9,7 @@ import { createTextFixture, type FixtureSendMode, type TextPort } from './text-f
 import { useStore } from 'zustand';
 import { createTextMemory, emptyConversation } from './text-memory';
 import { workspaceInitials } from '../workspaces/workspace-appearance';
+import { useTransientNotice } from '../../app/useTransientNotice';
 import './text-timeline.css';
 
 const messageTime = new Intl.DateTimeFormat('vi-VN', {
@@ -56,6 +57,7 @@ export function TextTimeline({
   const [reload, setReload] = useState(0);
   const [validation, setValidation] = useState('');
   const [draftNotice, setDraftNotice] = useState('');
+  const visibleDraftNotice = useTransientNotice(draftNotice);
   const draftLength = [...draft].length;
   const composerId = useId();
   const input = useRef<HTMLTextAreaElement>(null);
@@ -378,9 +380,9 @@ export function TextTimeline({
             </small>
           )}
         </div>
-        {draftNotice && (
+        {visibleDraftNotice && (
           <p className="text-draft-notice" role="status">
-            {draftNotice}
+            {visibleDraftNotice}
           </p>
         )}
         {validation && (

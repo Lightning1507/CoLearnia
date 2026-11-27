@@ -849,19 +849,6 @@ button:focus-visible {
   outline: 2px solid var(--cl-color-focus-ring);
   outline-offset: 2px;
 }
-.live-dialog {
-  background: white;
-  border-color: var(--cl-color-dialog-border);
-  color: var(--cl-color-dialog-text, #17201e);
-  box-shadow: 0 18px 50px var(--cl-color-dialog-shadow);
-}
-.live-dialog::backdrop {
-  background: var(--cl-color-dialog-backdrop);
-}
-.live-dialog button:focus-visible {
-  outline: 2px solid var(--cl-color-focus-ring);
-  outline-offset: 2px;
-}
 .shell {
   min-height: 100dvh;
   display: grid;

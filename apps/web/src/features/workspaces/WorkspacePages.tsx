@@ -10,6 +10,7 @@ import './workspace-picker.css';
 import { ChannelWorkspace } from '../channels/ChannelWorkspace';
 import { useTextMemory } from '../text/text-memory';
 import { useWorkspaceTheme } from './workspace-appearance';
+import { useTransientNotice } from '../../app/useTransientNotice';
 
 const roles = { OWNER: 'Chủ Workspace', ADMIN: 'Quản trị viên', MEMBER: 'Thành viên' };
 const retryWindowMs = 600_000;
@@ -40,6 +41,9 @@ export function WorkspacePicker({
   const [formOpen, setFormOpen] = useState(false);
   const [name, setName] = useState('');
   const [issue, setIssue] = useState<CreateIssue | null>(null);
+  const temporaryIssue = issue === 'csrf' || issue === 'busy';
+  const timedIssue = useTransientNotice(temporaryIssue ? issue : undefined);
+  const visibleIssue = temporaryIssue ? timedIssue : issue;
   const [attempt, setAttempt] = useState<Attempt | null>(null);
   const [reviewed, setReviewed] = useState(false);
   const [expiredAttempt, setExpiredAttempt] = useState<string>();
@@ -57,6 +61,7 @@ export function WorkspacePicker({
   const options = workspaceListOptions(session.user.id);
   const key = options.queryKey;
   const list = useInfiniteQuery(options);
+  const refreshError = useTransientNotice(list.isRefetchError ? list.error : undefined);
   const create = useMutation({
     mutationFn: async ({ input, replay }: { input: Attempt; replay: boolean }) => {
       function post(csrfToken: string) {
@@ -151,6 +156,8 @@ export function WorkspacePicker({
   }
 
   const sessionLost = list.error instanceof WorkspaceApiError && list.error.status === 401;
+  const listDenied =
+    list.error instanceof WorkspaceApiError && [401, 403, 404].includes(list.error.status);
   return (
     <main className="workspace-picker" data-workspace-theme={theme}>
       <header className="workspace-picker-header">
@@ -182,12 +189,12 @@ export function WorkspacePicker({
               readOnly={Boolean(attempt)}
               disabled={create.isPending}
               aria-invalid={issue === 'invalid'}
-              aria-describedby={issue ? 'workspace-create-error' : undefined}
+              aria-describedby={visibleIssue ? 'workspace-create-error' : undefined}
               onChange={(event) => setName(event.target.value)}
             />
-            {issue && (
+            {visibleIssue && (
               <p role="alert" id="workspace-create-error">
-                {issueMessages[issue]}
+                {issueMessages[visibleIssue]}
               </p>
             )}
             {attempt && reviewed && (
@@ -243,7 +250,7 @@ export function WorkspacePicker({
           </form>
         )}
         {list.isPending && <p role="status">Đang tải Workspace…</p>}
-        {list.isError && (
+        {(list.isLoadingError || listDenied) && (
           <div role="alert">
             <p>
               {sessionLost ? 'Phiên đăng nhập đã hết hạn.' : 'Chưa tải được danh sách Workspace.'}
@@ -266,7 +273,8 @@ export function WorkspacePicker({
             )}
           </div>
         )}
-        {!list.isError && items.length > 0 && (
+        {refreshError && !listDenied && <p role="alert">Chưa cập nhật được danh sách Workspace.</p>}
+        {!listDenied && items.length > 0 && (
           <ul className="workspace-picker-grid">
             {items.map((item) => (
               <li key={item.id}>
@@ -288,7 +296,7 @@ export function WorkspacePicker({
             )}
           </section>
         )}
-        {list.hasNextPage && !list.isError && (
+        {list.hasNextPage && !listDenied && (
           <button
             className="auth-secondary"
             disabled={list.isFetching}

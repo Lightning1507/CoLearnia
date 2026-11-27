@@ -167,16 +167,20 @@ export function createAuthRouter(
 
     const parsed = registerInputSchema.safeParse(req.body);
     if (!parsed.success) {
-      const fieldErrors = (['email', 'displayName', 'password'] as const)
-        .filter((field) => parsed.error.issues.some((issue) => issue.path[0] === field))
-        .map((field) => ({ field, message: 'Giá trị không hợp lệ.' }));
+      const fieldErrors = (['email', 'displayName', 'password'] as const).flatMap((field) => {
+        const issue = parsed.error.issues.find((issue) => issue.path[0] === field);
+        if (!issue) return [];
+        return [
+          {
+            field,
+            message:
+              field === 'password' && issue.code === 'custom'
+                ? issue.message
+                : 'Giá trị không hợp lệ.',
+          },
+        ];
+      });
       fail(res, 'VALIDATION_ERROR', 'Thông tin đăng ký không hợp lệ.', fieldErrors);
-      return;
-    }
-    if (/[\uD800-\uDFFF]/u.test(parsed.data.password)) {
-      fail(res, 'VALIDATION_ERROR', 'Mật khẩu chứa ký tự Unicode không hợp lệ.', [
-        { field: 'password', message: 'Mật khẩu chứa ký tự Unicode không hợp lệ.' },
-      ]);
       return;
     }
     if (isCommonPassword(parsed.data.password)) {
