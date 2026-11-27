@@ -19,7 +19,7 @@ ID là chuỗi ObjectId 24 ký tự hex; thời gian là ISO UTC có `Z`. `avata
 
 ## 2. Input và giới hạn
 
-Giới hạn tên theo quyết định ngày 06/11. Quy tắc mật khẩu mới được cập nhật ngày 26/11.
+Giới hạn tên theo quyết định ngày 06/11. [PM/M1 xác nhận quy tắc mật khẩu mới ngày 27/11](https://github.com/Lightning1507/CoLearnia/pull/157#issuecomment-7220233607) cho đăng ký và đổi mật khẩu. Kiểm tra nguyên văn mật khẩu mới, không trim hoặc chuẩn hóa trước khi validation.
 
 | Field                              | Quy tắc                                                                                                                                                                                                                      |
 | ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -84,7 +84,7 @@ Origin thiếu hoặc khác `APP_ORIGIN` bị chặn ở transport. Các lỗi t
 
 Handler lấy `AuthenticatedContext` từ `socket.data.auth` và kiểm quyền tài nguyên theo [contract M4](session-context.md#danh-tính-và-quyền-trong-phiên). SCRUM-24 xác thực ở lúc kết nối. Thu quyền và đóng các socket đang mở thuộc phần tích hợp vòng đời phiên.
 
-Đăng ký từ chối mật khẩu thuộc danh sách cục bộ gồm các giá trị dễ đoán đã biết và chuỗi Unicode lỗi mã hóa bằng `400 VALIDATION_ERROR` tại field `password`. Giới hạn thử là 10 yêu cầu đã qua kiểm CSRF/phút/IP trong mỗi tiến trình. Khi vượt giới hạn, API trả `429 RATE_LIMITED` cùng `Retry-After`. Hàng chờ băm dùng chung trong tiến trình có một slot chạy, hai chỗ chờ và hạn chờ 250 ms. Đầy hoặc hết hạn chờ trả `503 DEPENDENCY_UNAVAILABLE`. Đây là cấu hình thử, cần đo thêm cùng tải MongoDB và media trên staging.
+Đăng ký trả `400 VALIDATION_ERROR` tại field `password` khi mật khẩu vi phạm giới hạn ở mục 2 hoặc thuộc danh sách dễ đoán. Giới hạn thử là 10 yêu cầu đã qua kiểm CSRF/phút/IP trong mỗi tiến trình. Khi vượt giới hạn, API trả `429 RATE_LIMITED` cùng `Retry-After`. Hàng chờ băm dùng chung trong tiến trình có một slot chạy, hai chỗ chờ và hạn chờ 250 ms. Đầy hoặc hết hạn chờ trả `503 DEPENDENCY_UNAVAILABLE`. Đây là cấu hình thử, cần đo thêm cùng tải MongoDB và media trên staging.
 
 SCRUM-20 giới hạn riêng đăng nhập ở 10 yêu cầu đã qua CSRF/Origin mỗi phút theo IP và 5 yêu cầu hợp lệ về cú pháp mỗi phút theo cặp email đã chuẩn hóa + IP. Vượt một trong hai ngưỡng trả `429 RATE_LIMITED` cùng `Retry-After` trước khi đọc DB hoặc xác minh mật khẩu. Bộ đếm dùng cửa sổ cố định trong bộ nhớ tiến trình và reset khi restart. Cấu hình IP dùng cùng `AUTH_TRUST_PROXY` với đăng ký.
 
@@ -135,7 +135,7 @@ Ví dụ register hợp lệ (tên/email được trim, password giữ nguyên):
 ```json
 {
   "email": " Quan+web@Example.com ",
-  "password": " hoc cung nhom web 2026 ",
+  "password": "HocCungNhom!2026",
   "displayName": " Quân "
 }
 ```
@@ -158,7 +158,7 @@ Ví dụ response register/login/me:
 }
 ```
 
-Ví dụ invalid: `email: "quan@"`, `displayName: "   "`, password mới 14 hoặc 129 code point; thêm `role: "OWNER"` khi register; thêm ID của B vào PATCH tên của A. Route `/users/me` luôn nhắm chính chủ, nên field ID B bị validation từ chối; không thêm API sửa người khác để minh họa 403. Route hồ sơ người khác chưa hỗ trợ trả 404. Cookie B là credential của B, không phải tình huống schema có thể phân biệt với A.
+Ví dụ không hợp lệ: `email: "quan@"`, `displayName: "   "`, mật khẩu mới có 7 hoặc 129 ký tự, có khoảng trắng hoặc có ký tự ngoài ASCII, gửi thêm `role: "OWNER"` khi đăng ký, hoặc gửi ID của B khi A sửa tên của mình. Route `/users/me` luôn nhắm chính chủ, nên field ID B bị validation từ chối; không thêm API sửa người khác để minh họa 403. Route hồ sơ người khác chưa hỗ trợ trả 404. Cookie B là credential của B, không phải tình huống schema có thể phân biệt với A.
 
 Ví dụ sai mật khẩu hiện tại:
 
