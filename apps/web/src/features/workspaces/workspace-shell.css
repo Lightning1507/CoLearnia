@@ -103,6 +103,10 @@
   border-right: 1px solid var(--workspace-border);
   background: var(--workspace-sidebar-bg);
 }
+.ws-v8 .workspace-sidebar[data-desktop-sidebar] {
+  /* Reset the dialog's intrinsic height so the desktop grid can stretch it. */
+  height: auto;
+}
 .ws-brand {
   display: flex;
   align-items: center;
